@@ -63,7 +63,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
             {{ __('Customers') }}
         </h1>
-        @if(auth()->user()->hasAnyRole(['admin','manager']))
+        @if(auth()->user()?->hasAnyRole(['admin','manager']))
             <div class="flex gap-2">
                 <flux:button :href="route('customers.import')" wire:navigate variant="ghost">
                     {{ __('Import') }}
@@ -158,7 +158,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ optional($customer->updated_at)->format('Y-m-d H:i') ?? '—' }}</td>
                         <td class="px-3 py-3 text-sm">
                             <div class="flex flex-wrap gap-2">
-                                @if(auth()->user()->hasAnyRole(['admin','manager']))
+                                @if(auth()->user()?->hasAnyRole(['admin','manager']))
                                     <flux:button size="xs" :href="route('customers.edit', $customer)" wire:navigate>
                                         {{ __('Edit') }}
                                     </flux:button>
@@ -167,7 +167,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                             {{ __('Deactivate') }}
                                         </flux:button>
                                     @else
-                                        <flux:button size="xs" variant="success" wire:click="toggleActive({{ $customer->id }})">
+                                        <flux:button size="xs" variant="primary" color="emerald" wire:click="toggleActive({{ $customer->id }})">
                                             {{ __('Activate') }}
                                         </flux:button>
                                     @endif

@@ -2,6 +2,7 @@
 
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Services\Orders\OrderWorkflowService;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -94,61 +95,27 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function advanceOrderStatus(int $orderId, string $toStatus): void
     {
         $this->ensureCanUpdate();
-
-        DB::transaction(function () use ($orderId, $toStatus) {
+        try {
             /** @var Order $order */
-            $order = Order::whereKey($orderId)->lockForUpdate()->firstOrFail();
-
-            if (in_array($order->status, ['Cancelled','Delivered'], true)) {
-                return;
-            }
-
-            $current = $order->status;
-            $allowed = [
-                'Confirmed' => 'InProduction',
-                'InProduction' => 'Ready',
-            ];
-
-            if (! isset($allowed[$current]) || $allowed[$current] !== $toStatus) {
-                return;
-            }
-
-            $order->status = $toStatus;
-            $order->save();
-        });
-
-        $this->dispatch('toast', type: 'success', message: __('Order status updated.'));
+            $order = Order::findOrFail($orderId);
+            app(OrderWorkflowService::class)->advanceOrder($order, $toStatus, (int) auth()->id());
+            $this->dispatch('toast', type: 'success', message: __('Order status updated.'));
+        } catch (\Throwable $e) {
+            $this->dispatch('toast', type: 'error', message: __('Could not update order status.'));
+        }
     }
 
     public function setItemStatus(int $itemId, string $toStatus): void
     {
         $this->ensureCanUpdate();
-
-        DB::transaction(function () use ($itemId, $toStatus) {
+        try {
             /** @var OrderItem $item */
-            $item = OrderItem::with('order')->lockForUpdate()->findOrFail($itemId);
-            $order = $item->order;
-
-            if (! $order || in_array($order->status, ['Cancelled','Delivered'], true)) {
-                return;
-            }
-
-            $map = [
-                'Pending' => ['InProduction','Cancelled'],
-                'InProduction' => ['Ready','Cancelled'],
-                'Ready' => ['Completed','Cancelled'],
-            ];
-
-            $current = $item->status;
-            if (! isset($map[$current]) || ! in_array($toStatus, $map[$current], true)) {
-                return;
-            }
-
-            $item->status = $toStatus;
-            $item->save();
-        });
-
-        $this->dispatch('toast', type: 'success', message: __('Item status updated.'));
+            $item = OrderItem::findOrFail($itemId);
+            app(OrderWorkflowService::class)->setItemStatus($item, $toStatus, (int) auth()->id());
+            $this->dispatch('toast', type: 'success', message: __('Item status updated.'));
+        } catch (\Throwable $e) {
+            $this->dispatch('toast', type: 'error', message: __('Could not update item status.'));
+        }
     }
 }; ?>
 
@@ -261,4 +228,5 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endforelse
     </div>
 </div>
+
 

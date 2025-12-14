@@ -1,5 +1,33 @@
 <?php
 
+// #region agent log
+try {
+    $logPath = dirname(__DIR__).DIRECTORY_SEPARATOR.'.cursor'.DIRECTORY_SEPARATOR.'debug.log';
+    file_put_contents(
+        $logPath,
+        json_encode([
+            'sessionId' => 'debug-session',
+            'runId' => 'pre-fix',
+            'hypothesisId' => 'H_ENV',
+            'location' => 'tests/Pest.php:1',
+            'message' => 'Pest bootstrap env snapshot',
+            'data' => [
+                'php_sapi' => PHP_SAPI,
+                'base_path_defined' => function_exists('base_path'),
+                'app_env' => getenv('APP_ENV') ?: null,
+                'db_connection' => getenv('DB_CONNECTION') ?: null,
+                'db_host' => getenv('DB_HOST') ?: null,
+                'db_database' => getenv('DB_DATABASE') ?: null,
+            ],
+            'timestamp' => (int) (microtime(true) * 1000),
+        ], JSON_UNESCAPED_SLASHES) . PHP_EOL,
+        FILE_APPEND
+    );
+} catch (\Throwable $e) {
+    // ignore
+}
+// #endregion
+
 /*
 |--------------------------------------------------------------------------
 | Test Case

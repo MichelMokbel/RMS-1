@@ -22,6 +22,7 @@ class Order extends Model
         'customer_id',
         'customer_name_snapshot',
         'customer_phone_snapshot',
+        'customer_email_snapshot',
         'delivery_address_snapshot',
         'scheduled_date',
         'scheduled_time',

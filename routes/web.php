@@ -68,6 +68,20 @@ Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
 });
 
 Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+    Volt::route('meal-plan-requests', 'meal-plan-requests.index')->name('meal-plan-requests.index');
+    Volt::route('meal-plan-requests/{mealPlanRequest}', 'meal-plan-requests.show')->name('meal-plan-requests.show');
+});
+
+Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->group(function () {
+    Volt::route('daily-dish/ops/{branch}/{date}', 'daily-dish.ops.day')->name('daily-dish.ops.day');
+    Volt::route('kitchen/ops/{branch}/{date}', 'kitchen.ops')->name('kitchen.ops');
+});
+
+Route::middleware(['auth', 'active', 'role:admin|manager|cashier'])->group(function () {
+    Volt::route('daily-dish/ops/{branch}/{date}/manual/create', 'daily-dish.ops.manual-create')->name('daily-dish.ops.manual.create');
+});
+
+Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
     Volt::route('subscriptions', 'subscriptions.index')->name('subscriptions.index');
     Volt::route('subscriptions/create', 'subscriptions.create')->name('subscriptions.create');
     Volt::route('subscriptions/{subscription}', 'subscriptions.show')->name('subscriptions.show');
@@ -79,11 +93,37 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
     Volt::route('orders', 'orders.index')->name('orders.index');
     Volt::route('orders/create', 'orders.create')->name('orders.create');
     Volt::route('orders/{order}/edit', 'orders.edit')->name('orders.edit');
-    Volt::route('orders/daily-dish', 'orders.daily-dish')->name('orders.daily-dish');
-    Volt::route('orders/kitchen', 'orders.kitchen')->name('orders.kitchen');
-    Volt::route('orders/kitchen/cards', 'orders.kitchen-cards')->name('orders.kitchen.cards');
-    Volt::route('orders/pastry', 'orders.pastry')->name('orders.pastry');
-    Volt::route('orders/items', 'orders.items')->name('orders.items');
+
+    // Deprecated operational routes - redirect to new hubs
+    Route::get('orders/daily-dish', function () {
+        $branch = (int) request()->integer('branch', 1);
+        $date = (string) request()->input('date', now()->toDateString());
+        return redirect()->route('daily-dish.ops.day', [$branch, $date]);
+    })->name('orders.daily-dish');
+
+    Route::get('orders/kitchen', function () {
+        $branch = (int) request()->integer('branch', 1);
+        $date = (string) request()->input('date', now()->toDateString());
+        return redirect()->route('kitchen.ops', [$branch, $date]);
+    })->name('orders.kitchen');
+
+    Route::get('orders/kitchen/cards', function () {
+        $branch = (int) request()->integer('branch', 1);
+        $date = (string) request()->input('date', now()->toDateString());
+        return redirect()->route('kitchen.ops', [$branch, $date]);
+    })->name('orders.kitchen.cards');
+
+    Route::get('orders/pastry', function () {
+        $branch = (int) request()->integer('branch', 1);
+        $date = (string) request()->input('date', now()->toDateString());
+        return redirect()->to(route('kitchen.ops', ['branch' => $branch, 'date' => $date, 'department' => 'Pastry']));
+    })->name('orders.pastry');
+
+    Route::get('orders/items', function () {
+        $branch = (int) request()->integer('branch', 1);
+        $date = (string) request()->input('date', now()->toDateString());
+        return redirect()->route('kitchen.ops', [$branch, $date]);
+    })->name('orders.items');
 });
 
 Route::middleware(['auth', 'active', 'role:admin|manager|cashier'])->group(function () {

@@ -7,13 +7,15 @@ use Livewire\Volt\Volt;
 
 use function Pest\Laravel\actingAs;
 
-function adminUser(): User
-{
-    $user = User::factory()->create(['status' => 'active']);
-    $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
-    $user->assignRole($role);
+if (! function_exists('adminUser')) {
+    function adminUser(): User
+    {
+        $user = User::factory()->create(['status' => 'active']);
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
 
-    return $user;
+        return $user;
+    }
 }
 
 it('allows admin to create supplier', function () {

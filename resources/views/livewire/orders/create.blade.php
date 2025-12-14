@@ -64,7 +64,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $data = $this->validate([
             'branch_id' => ['required', 'integer'],
-            'source' => ['required', 'in:POS,Phone,WhatsApp,Subscription,Backoffice'],
+            'source' => ['required', 'in:POS,Phone,WhatsApp,Subscription,Backoffice,Website'],
             'is_daily_dish' => ['boolean'],
             'type' => ['required', 'in:DineIn,Takeaway,Delivery,Pastry'],
             'status' => ['required', 'in:Draft,Confirmed,InProduction,Ready,OutForDelivery,Delivered,Cancelled'],
@@ -169,6 +169,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <option value="Backoffice">{{ __('Backoffice') }}</option>
                     <option value="Phone">{{ __('Phone') }}</option>
                     <option value="WhatsApp">{{ __('WhatsApp') }}</option>
+                    <option value="Website">{{ __('Website') }}</option>
                 </select>
             </div>
             <div class="flex items-center gap-3 pt-6">

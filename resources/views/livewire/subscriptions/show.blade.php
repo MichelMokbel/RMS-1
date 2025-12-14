@@ -1,7 +1,12 @@
 <?php
 
 use App\Models\MealSubscription;
+use App\Models\MealSubscriptionOrder;
+use App\Models\Order;
+use App\Services\Orders\OrderWorkflowService;
 use App\Services\Subscriptions\MealSubscriptionService;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -12,6 +17,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?string $pause_start = null;
     public ?string $pause_end = null;
     public ?string $pause_reason = null;
+    public bool $pause_cancel_generated_orders = false;
 
     public function with(): array
     {
@@ -21,24 +27,81 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
     }
 
-    public function pause(MealSubscriptionService $service): void
+    public function pause(MealSubscriptionService $service, OrderWorkflowService $workflow): void
     {
         $data = $this->validate([
             'pause_start' => ['required', 'date'],
             'pause_end' => ['required', 'date'],
             'pause_reason' => ['nullable', 'string', 'max:255'],
+            'pause_cancel_generated_orders' => ['boolean'],
         ]);
 
         try {
-            $service->pause($this->subscription, [
+            $actorId = (int) (auth()->id() ?? 1);
+
+            $this->subscription = $service->pause($this->subscription, [
                 'pause_start' => $data['pause_start'],
                 'pause_end' => $data['pause_end'],
                 'reason' => $data['pause_reason'] ?? null,
-            ], auth()->id());
+            ], $actorId);
 
-            $this->reset(['pause_start', 'pause_end', 'pause_reason']);
+            $cancelledCount = 0;
+            $skippedCount = 0;
+
+            if (! empty($data['pause_cancel_generated_orders'])) {
+                $start = Carbon::parse($data['pause_start'])->toDateString();
+                $end = Carbon::parse($data['pause_end'])->toDateString();
+
+                $orderIds = MealSubscriptionOrder::query()
+                    ->where('subscription_id', $this->subscription->id)
+                    ->whereDate('service_date', '>=', $start)
+                    ->whereDate('service_date', '<=', $end)
+                    ->pluck('order_id')
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                if (! empty($orderIds)) {
+                    /** @var \Illuminate\Support\Collection<int, Order> $orders */
+                    $orders = Order::query()->whereIn('id', $orderIds)->get();
+
+                    foreach ($orders as $o) {
+                        try {
+                            $workflow->advanceOrder($o, 'Cancelled', $actorId);
+                            $cancelledCount++;
+                        } catch (\Throwable $e) {
+                            $skippedCount++;
+                        }
+                    }
+
+                    // Restore quota for cancelled generated days (our quota is currently "consumed at generation time")
+                    if ($cancelledCount > 0 && $this->subscription->plan_meals_total !== null) {
+                        DB::transaction(function () use ($cancelledCount) {
+                            $sub = MealSubscription::query()->lockForUpdate()->find($this->subscription->id);
+                            if (! $sub) {
+                                return;
+                            }
+                            $sub->meals_used = max(0, (int) $sub->meals_used - $cancelledCount);
+                            if ($sub->status === 'expired' && $sub->plan_meals_total !== null && $sub->meals_used < $sub->plan_meals_total) {
+                                // If it was marked expired purely due to quota, revive it.
+                                $sub->status = 'active';
+                                $sub->end_date = null;
+                            }
+                            $sub->save();
+                            $this->subscription = $sub->fresh(['days', 'pauses', 'customer']);
+                        });
+                    }
+                }
+            }
+
+            $this->reset(['pause_start', 'pause_end', 'pause_reason', 'pause_cancel_generated_orders']);
             $this->showPauseModal = false;
-            session()->flash('status', __('Subscription paused.'));
+
+            $msg = __('Subscription paused.');
+            if ($cancelledCount > 0 || $skippedCount > 0) {
+                $msg .= ' ' . __('Cancelled :c order(s). Skipped :s.', ['c' => $cancelledCount, 's' => $skippedCount]);
+            }
+            session()->flash('status', $msg);
         } catch (ValidationException $e) {
             $message = collect($e->errors())->flatten()->first() ?? __('Pause failed.');
             session()->flash('status', $message);
@@ -148,24 +211,41 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     {{-- Pause modal --}}
-    @if ($showPauseModal)
-        <div class="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-            <div class="w-full max-w-xl rounded-lg border border-neutral-200 bg-white p-4 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
-                <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Pause Subscription') }}</h3>
-                    <flux:button type="button" wire:click="$set('showPauseModal', false)" variant="ghost">{{ __('Close') }}</flux:button>
-                </div>
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <flux:input wire:model="pause_start" type="date" :label="__('Pause Start')" />
-                    <flux:input wire:model="pause_end" type="date" :label="__('Pause End')" />
-                    <flux:input wire:model="pause_reason" :label="__('Reason')" />
-                </div>
-                <div class="mt-4 flex justify-end gap-2">
-                    <flux:button type="button" wire:click="$set('showPauseModal', false)" variant="ghost">{{ __('Cancel') }}</flux:button>
-                    <flux:button type="button" wire:click="pause" variant="primary">{{ __('Save Pause') }}</flux:button>
+    <flux:modal
+        name="pause-subscription"
+        wire:model="showPauseModal"
+        focusable
+        class="max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto"
+    >
+        <form wire:submit="pause" class="space-y-4">
+            <div class="space-y-1">
+                <flux:heading size="lg">{{ __('Pause Subscription') }}</flux:heading>
+                <flux:subheading>{{ __('Set a pause range. Orders will not be generated during this period.') }}</flux:subheading>
+            </div>
+
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <flux:input wire:model="pause_start" type="date" :label="__('Pause Start')" />
+                <flux:input wire:model="pause_end" type="date" :label="__('Pause End')" />
+                <flux:input wire:model="pause_reason" :label="__('Reason')" />
+            </div>
+
+            <div class="rounded-md border border-neutral-200 p-3 text-sm text-neutral-700 dark:border-neutral-700 dark:text-neutral-200">
+                <flux:checkbox
+                    wire:model="pause_cancel_generated_orders"
+                    :label="__('Cancel already-generated orders within this pause range')"
+                />
+                <div class="mt-1 text-xs text-neutral-600 dark:text-neutral-300">
+                    {{ __('This will cancel linked subscription orders in the selected date range (if any). Delivered/cancelled orders will be skipped.') }}
                 </div>
             </div>
-        </div>
-    @endif
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+                <flux:button type="submit" variant="primary">{{ __('Save Pause') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
 </div>
 

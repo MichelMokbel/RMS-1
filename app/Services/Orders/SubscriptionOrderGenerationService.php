@@ -7,6 +7,9 @@ use App\Models\DailyDishMenuItem;
 use App\Models\MealSubscription;
 use App\Models\MealSubscriptionOrder;
 use App\Models\MenuItem;
+use App\Models\OpsEvent;
+use App\Models\SubscriptionOrderRun;
+use App\Models\SubscriptionOrderRunError;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -15,7 +18,20 @@ class SubscriptionOrderGenerationService
 {
     public function generateForDate(string $serviceDate, int $branchId, int $userId, bool $dryRun = false): array
     {
+        $run = SubscriptionOrderRun::create([
+            'service_date' => $serviceDate,
+            'branch_id' => $branchId,
+            'started_at' => now(),
+            'finished_at' => null,
+            'status' => 'running',
+            'created_by' => $userId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
         $result = [
+            'run_id' => $run->id,
+            'dry_run' => $dryRun,
             'created_count' => 0,
             'skipped_existing_count' => 0,
             'skipped_no_menu_count' => 0,
@@ -32,6 +48,14 @@ class SubscriptionOrderGenerationService
         if (! $menu) {
             $result['skipped_no_menu_count'] = 1;
             $result['errors'][] = __('No published daily dish menu for date.');
+            SubscriptionOrderRunError::create([
+                'run_id' => $run->id,
+                'subscription_id' => null,
+                'message' => __('No published daily dish menu for date.'),
+                'context_json' => ['branch_id' => $branchId, 'service_date' => $serviceDate],
+                'created_at' => now(),
+            ]);
+            $this->finishRun($run, $result, 'failed');
             return $result;
         }
 
@@ -43,7 +67,14 @@ class SubscriptionOrderGenerationService
                 $q->whereNull('end_date')->orWhereDate('end_date', '>=', $serviceDate);
             })
             ->get()
-            ->filter(fn ($s) => $s->isActiveOn($serviceDate));
+            ->filter(fn ($s) => $s->isActiveOn($serviceDate))
+            ->filter(function (MealSubscription $s) {
+                // Optional quota-based subscriptions (20/26 meals). If set, stop generating once used >= total.
+                if ($s->plan_meals_total === null) {
+                    return true;
+                }
+                return (int) ($s->meals_used ?? 0) < (int) $s->plan_meals_total;
+            });
 
         $menuItemsGrouped = $menu->items->groupBy('role');
 
@@ -80,6 +111,17 @@ class SubscriptionOrderGenerationService
                         'branch_id' => $branchId,
                     ]);
 
+                    // Increment quota usage if this subscription is quota-bound.
+                    if ($sub->plan_meals_total !== null) {
+                        $sub->meals_used = (int) ($sub->meals_used ?? 0) + 1;
+                        // If quota reached, expire it at this date.
+                        if ((int) $sub->meals_used >= (int) $sub->plan_meals_total) {
+                            $sub->status = 'expired';
+                            $sub->end_date = $serviceDate;
+                        }
+                        $sub->save();
+                    }
+
                     $result['created_count']++;
                 });
             } catch (\Throwable $e) {
@@ -87,9 +129,23 @@ class SubscriptionOrderGenerationService
                     $result['skipped_existing_count']++;
                 } else {
                     $result['errors'][] = $e->getMessage();
+                    SubscriptionOrderRunError::create([
+                        'run_id' => $run->id,
+                        'subscription_id' => $sub->id,
+                        'message' => $e->getMessage(),
+                        'context_json' => ['subscription_id' => $sub->id],
+                        'created_at' => now(),
+                    ]);
                 }
             }
         }
+
+        $status = 'success';
+        if (! empty($result['errors'])) {
+            $status = $result['created_count'] > 0 ? 'partial' : 'failed';
+        }
+
+        $this->finishRun($run, $result, $status);
 
         return $result;
     }
@@ -189,5 +245,38 @@ class SubscriptionOrderGenerationService
 
         return $number;
     }
+
+    private function finishRun(SubscriptionOrderRun $run, array $result, string $status): void
+    {
+        $run->status = $status;
+        $run->finished_at = now();
+        $run->created_count = (int) ($result['created_count'] ?? 0);
+        $run->skipped_existing_count = (int) ($result['skipped_existing_count'] ?? 0);
+        $run->skipped_no_menu_count = (int) ($result['skipped_no_menu_count'] ?? 0);
+        $run->skipped_no_items_count = (int) ($result['skipped_no_items_count'] ?? 0);
+        $run->error_summary = ! empty($result['errors']) ? implode("\n", array_slice($result['errors'], 0, 25)) : null;
+        $run->updated_at = now();
+        $run->save();
+
+        OpsEvent::create([
+            'event_type' => 'subscription_generated',
+            'branch_id' => $run->branch_id,
+            'service_date' => $run->service_date?->format('Y-m-d'),
+            'order_id' => null,
+            'order_item_id' => null,
+            'actor_user_id' => $run->created_by,
+            'metadata_json' => [
+                'run_id' => $run->id,
+                'status' => $status,
+                'created_count' => $run->created_count,
+                'skipped_existing_count' => $run->skipped_existing_count,
+                'skipped_no_menu_count' => $run->skipped_no_menu_count,
+                'skipped_no_items_count' => $run->skipped_no_items_count,
+                'dry_run' => (bool) (($result['dry_run'] ?? false) ?: false),
+            ],
+            'created_at' => now(),
+        ]);
+    }
 }
+
 

@@ -137,7 +137,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <flux:button type="submit" variant="primary">
                 {{ __('Save') }}
             </flux:button>
-            <flux:button type="button" variant="{{ $menuItem->is_active ? 'danger' : 'success' }}" wire:click="toggleStatus">
+            <flux:button type="button" variant="{{ $menuItem->is_active ? 'danger' : 'primary' }}" color="{{ $menuItem->is_active ? null : 'emerald' }}" wire:click="toggleStatus">
                 {{ $menuItem->is_active ? __('Deactivate') : __('Activate') }}
             </flux:button>
         </div>

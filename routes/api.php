@@ -1,7 +1,24 @@
 <?php
 
+use App\Http\Controllers\Api\AP\ApInvoiceController;
+use App\Http\Controllers\Api\AP\ApPaymentController;
+use App\Http\Controllers\Api\AP\ApReportsController;
+use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DailyDishMenuController;
+use App\Http\Controllers\Api\PublicDailyDishController;
+use App\Http\Controllers\Api\PublicDailyDishOrderController;
+use App\Http\Controllers\Api\Expenses\ExpenseCategoryController;
+use App\Http\Controllers\Api\Expenses\ExpenseController as ApiExpenseController;
+use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\MealSubscriptionController;
+use App\Http\Controllers\Api\MenuItemController;
+use App\Http\Controllers\Api\PettyCash\ExpenseController as PettyCashExpenseController;
+use App\Http\Controllers\Api\PettyCash\IssueController as PettyCashIssueController;
+use App\Http\Controllers\Api\PettyCash\ReconciliationController as PettyCashReconciliationController;
+use App\Http\Controllers\Api\PettyCash\WalletController as PettyCashWalletController;
+use App\Http\Controllers\Api\PurchaseOrderController;
+use App\Http\Controllers\Api\SupplierController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum'])->group(function () {
@@ -19,6 +36,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('subscriptions/{subscription}/pause', [MealSubscriptionController::class, 'pause']);
     Route::post('subscriptions/{subscription}/resume', [MealSubscriptionController::class, 'resume']);
     Route::post('subscriptions/{subscription}/cancel', [MealSubscriptionController::class, 'cancel']);
+});
+
+// Public endpoints for the external website form (no session/cookies)
+Route::middleware(['api', 'throttle:60,1'])->prefix('public')->group(function () {
+    Route::get('daily-dish/menus', [PublicDailyDishController::class, 'menus']);
+    Route::post('daily-dish/orders', [PublicDailyDishOrderController::class, 'store'])->middleware('throttle:20,1');
 });
 
 Route::middleware('api')->group(function () {
@@ -86,17 +109,17 @@ Route::middleware(['api', $apiAuthMiddleware])->group(function () {
     Route::get('ap/aging', [ApReportsController::class, 'aging'])->name('api.ap.aging');
 
     // Expenses
-    Route::get('expenses', [ExpenseController::class, 'index'])->name('api.expenses.index');
-    Route::get('expenses/{expense}', [ExpenseController::class, 'show'])->name('api.expenses.show');
+    Route::get('expenses', [ApiExpenseController::class, 'index'])->name('api.expenses.index');
+    Route::get('expenses/{expense}', [ApiExpenseController::class, 'show'])->name('api.expenses.show');
     Route::get('expense-categories', [ExpenseCategoryController::class, 'index'])->name('api.expense-categories.index');
 
     Route::middleware(['role:admin|manager'])->group(function () {
-        Route::post('expenses', [ExpenseController::class, 'store'])->name('api.expenses.store');
-        Route::put('expenses/{expense}', [ExpenseController::class, 'update'])->name('api.expenses.update');
-        Route::delete('expenses/{expense}', [ExpenseController::class, 'destroy'])->name('api.expenses.destroy');
-        Route::post('expenses/{expense}/payments', [ExpenseController::class, 'storePayment'])->name('api.expenses.payments.store');
-        Route::post('expenses/{expense}/attachments', [ExpenseController::class, 'storeAttachment'])->name('api.expenses.attachments.store');
-        Route::delete('expense-attachments/{attachment}', [ExpenseController::class, 'destroyAttachment'])->name('api.expenses.attachments.destroy');
+        Route::post('expenses', [ApiExpenseController::class, 'store'])->name('api.expenses.store');
+        Route::put('expenses/{expense}', [ApiExpenseController::class, 'update'])->name('api.expenses.update');
+        Route::delete('expenses/{expense}', [ApiExpenseController::class, 'destroy'])->name('api.expenses.destroy');
+        Route::post('expenses/{expense}/payments', [ApiExpenseController::class, 'storePayment'])->name('api.expenses.payments.store');
+        Route::post('expenses/{expense}/attachments', [ApiExpenseController::class, 'storeAttachment'])->name('api.expenses.attachments.store');
+        Route::delete('expense-attachments/{attachment}', [ApiExpenseController::class, 'destroyAttachment'])->name('api.expenses.attachments.destroy');
 
         Route::post('expense-categories', [ExpenseCategoryController::class, 'store'])->name('api.expense-categories.store');
         Route::put('expense-categories/{category}', [ExpenseCategoryController::class, 'update'])->name('api.expense-categories.update');

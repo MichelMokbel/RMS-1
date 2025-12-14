@@ -22,8 +22,9 @@ it('admin can create retail customer with credit forced to zero', function () {
         'credit_terms_days' => 30,
     ])->toArray();
 
+    $this->actingAs($user);
+
     Volt::test('customers.create')
-        ->actingAs($user)
         ->set('name', $payload['name'])
         ->set('customer_type', $payload['customer_type'])
         ->set('credit_limit', $payload['credit_limit'])
@@ -33,7 +34,9 @@ it('admin can create retail customer with credit forced to zero', function () {
         ->assertHasNoErrors();
 
     $customer = Customer::where('name', $payload['name'])->first();
-    expect($customer->credit_limit)->toBeFloat()->toBe(0.0);
+    // credit_limit is stored as DECIMAL and cast as 'decimal:3' (string) for precision.
+    // Assert via float conversion for business logic expectation.
+    expect((float) $customer->credit_limit)->toBe(0.0);
     expect($customer->credit_terms_days)->toBe(0);
 });
 
@@ -41,8 +44,9 @@ it('search filter works', function () {
     $user = adminCustomer();
     $target = Customer::factory()->create(['name' => 'Acme Unique Name', 'email' => 'unique@example.com']);
 
+    $this->actingAs($user);
+
     Volt::test('customers.index')
-        ->actingAs($user)
         ->set('search', 'Acme Unique Name')
         ->assertSee('Acme Unique Name');
 });

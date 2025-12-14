@@ -53,6 +53,9 @@
                             <flux:navlist.item icon="calendar-days" :href="route('daily-dish.menus.index')" :current="request()->routeIs('daily-dish.menus.*')" wire:navigate>
                                 {{ __('Daily Dish') }}
                             </flux:navlist.item>
+                            <flux:navlist.item icon="clipboard-document" :href="route('meal-plan-requests.index')" :current="request()->routeIs('meal-plan-requests.*')" wire:navigate>
+                                {{ __('Meal Plan Requests') }}
+                            </flux:navlist.item>
                             <flux:navlist.item icon="ticket" :href="route('subscriptions.index')" :current="request()->routeIs('subscriptions.*')" wire:navigate>
                                 {{ __('Subscriptions') }}
                             </flux:navlist.item>

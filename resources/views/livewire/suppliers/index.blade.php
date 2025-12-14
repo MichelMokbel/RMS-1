@@ -188,7 +188,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         {{ __('Deactivate') }}
                                     </flux:button>
                                 @else
-                                    <flux:button size="xs" variant="success" wire:click="toggleStatus({{ $supplier->id }})">
+                                    <flux:button size="xs" variant="primary" color="emerald" wire:click="toggleStatus({{ $supplier->id }})">
                                         {{ __('Activate') }}
                                     </flux:button>
                                 @endif

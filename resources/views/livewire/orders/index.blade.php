@@ -1,9 +1,11 @@
 <?php
 
 use App\Models\Order;
+use App\Services\Orders\OrderWorkflowService;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
+use Illuminate\Validation\ValidationException;
 
 new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
@@ -28,6 +30,29 @@ new #[Layout('components.layouts.app')] class extends Component {
         return [
             'orders' => $this->query()->paginate(15),
         ];
+    }
+
+    public function confirmOrder(int $orderId): void
+    {
+        $order = Order::find($orderId);
+        if (! $order) {
+            return;
+        }
+
+        if ($order->status !== 'Draft') {
+            return;
+        }
+
+        try {
+            $actorId = (int) (auth()->id() ?? 1);
+            app(OrderWorkflowService::class)->advanceOrder($order, 'Confirmed', $actorId);
+            session()->flash('status_message', __('Order confirmed.'));
+        } catch (ValidationException $e) {
+            session()->flash('error_message', $e->getMessage());
+        } catch (\Throwable $e) {
+            report($e);
+            session()->flash('error_message', __('Failed to confirm order.'));
+        }
     }
 
     private function query()
@@ -60,6 +85,17 @@ new #[Layout('components.layouts.app')] class extends Component {
             <flux:button :href="route('subscriptions.generate')" wire:navigate variant="ghost">{{ __('Generate Subscriptions') }}</flux:button>
         </div>
     </div>
+
+    @if (session('status_message'))
+        <div class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">
+            {{ session('status_message') }}
+        </div>
+    @endif
+    @if (session('error_message'))
+        <div class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-100">
+            {{ session('error_message') }}
+        </div>
+    @endif
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
         <div class="flex flex-wrap items-end gap-3">
@@ -130,6 +166,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ number_format((float) $order->total_amount, 3) }}</td>
                         <td class="px-3 py-2 text-sm text-right">
                             <div class="flex flex-wrap justify-end gap-2">
+                                @if ($order->status === 'Draft')
+                                    <flux:button
+                                        size="xs"
+                                        type="button"
+                                        variant="primary"
+                                        wire:click="confirmOrder({{ $order->id }})"
+                                        wire:loading.attr="disabled"
+                                    >{{ __('Confirm') }}</flux:button>
+                                @endif
                                 <flux:button size="xs" :href="route('orders.edit', $order)" wire:navigate>{{ __('Edit') }}</flux:button>
                             </div>
                         </td>

@@ -14,11 +14,13 @@ beforeEach(function () {
     Role::findOrCreate('admin', 'web');
 });
 
-function adminUser(): User
-{
-    $u = User::factory()->create(['status' => 'active']);
-    $u->assignRole('admin');
-    return $u;
+if (! function_exists('adminUser')) {
+    function adminUser(): User
+    {
+        $u = User::factory()->create(['status' => 'active']);
+        $u->assignRole('admin');
+        return $u;
+    }
 }
 
 it('creates recipe with items transactionally', function () {

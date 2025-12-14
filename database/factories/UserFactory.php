@@ -25,6 +25,7 @@ class UserFactory extends Factory
     {
         return [
             'username' => Str::lower(fake()->unique()->userName()),
+            'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),
             'status' => 'active',

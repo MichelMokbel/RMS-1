@@ -3,6 +3,7 @@
 namespace App\Actions\Fortify;
 
 use App\Models\User;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Laravel\Fortify\Contracts\CreatesNewUsers;
@@ -30,7 +31,36 @@ class CreateNewUser implements CreatesNewUsers
             'password' => $this->passwordRules(),
         ])->validate();
 
+        $name = isset($input['name']) && is_string($input['name']) && trim($input['name']) !== ''
+            ? trim($input['name'])
+            : Str::headline($input['username']);
+
+        // #region agent log
+        try {
+            file_put_contents(
+                base_path('.cursor/debug.log'),
+                json_encode([
+                    'sessionId' => 'debug-session',
+                    'runId' => 'post-fix',
+                    'hypothesisId' => 'H_USER_NAME',
+                    'location' => 'app/Actions/Fortify/CreateNewUser.php:create',
+                    'message' => 'CreateNewUser computed name',
+                    'data' => [
+                        'has_name_input' => isset($input['name']) && is_string($input['name']) && trim($input['name']) !== '',
+                        'name_source' => (isset($input['name']) && is_string($input['name']) && trim($input['name']) !== '') ? 'input' : 'username',
+                        'will_set_name' => $name !== '',
+                    ],
+                    'timestamp' => (int) (microtime(true) * 1000),
+                ], JSON_UNESCAPED_SLASHES) . PHP_EOL,
+                FILE_APPEND
+            );
+        } catch (\Throwable $e) {
+            // ignore
+        }
+        // #endregion
+
         return User::create([
+            'name' => $name,
             'username' => $input['username'],
             'email' => $input['email'],
             'password' => $input['password'],
