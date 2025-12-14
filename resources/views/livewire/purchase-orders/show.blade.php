@@ -127,7 +127,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Supplier:') }} {{ $purchaseOrder->supplier->name ?? '—' }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Order Date:') }} {{ $purchaseOrder->order_date?->format('Y-m-d') ?? '—' }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Expected Delivery:') }} {{ $purchaseOrder->expected_delivery_date?->format('Y-m-d') ?? '—' }}</p>
-            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Created By:') }} {{ $purchaseOrder->creator->name ?? '—' }}</p>
+            <p class="text-sm text-neutral-700 dark:text-neutral-200">
+                {{ __('Created By:') }}
+                {{ $purchaseOrder->creator->name ?? $purchaseOrder->creator->username ?? $purchaseOrder->creator->email ?? '—' }}
+            </p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Notes:') }} {{ $purchaseOrder->notes ?? '—' }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Payment Terms:') }} {{ $purchaseOrder->payment_terms ?? '—' }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Payment Type:') }} {{ $purchaseOrder->payment_type ?? '—' }}</p>

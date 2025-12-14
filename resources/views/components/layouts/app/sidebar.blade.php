@@ -28,6 +28,9 @@
                         <flux:navlist.item icon="users" :href="route('customers.index')" :current="request()->routeIs('customers.*')" wire:navigate>
                             {{ __('Customers') }}
                         </flux:navlist.item>
+                        <flux:navlist.item icon="clipboard-document" :href="route('orders.index')" :current="request()->routeIs('orders.*')" wire:navigate>
+                            {{ __('Orders') }}
+                        </flux:navlist.item>
                         <flux:navlist.item icon="archive-box" :href="route('inventory.index')" :current="request()->routeIs('inventory.*')" wire:navigate>
                             {{ __('Inventory') }}
                         </flux:navlist.item>
@@ -40,6 +43,23 @@
                             </flux:navlist.item>
                             <flux:navlist.item icon="banknotes" :href="route('payables.index')" :current="request()->routeIs('payables.*')" wire:navigate>
                                 {{ __('Payables') }}
+                            </flux:navlist.item>
+                            <flux:navlist.item icon="credit-card" :href="route('expenses.index')" :current="request()->routeIs('expenses.*')" wire:navigate>
+                                {{ __('Expenses') }}
+                            </flux:navlist.item>
+                            <flux:navlist.item icon="beaker" :href="route('recipes.index')" :current="request()->routeIs('recipes.*')" wire:navigate>
+                                {{ __('Recipes') }}
+                            </flux:navlist.item>
+                            <flux:navlist.item icon="calendar-days" :href="route('daily-dish.menus.index')" :current="request()->routeIs('daily-dish.menus.*')" wire:navigate>
+                                {{ __('Daily Dish') }}
+                            </flux:navlist.item>
+                            <flux:navlist.item icon="ticket" :href="route('subscriptions.index')" :current="request()->routeIs('subscriptions.*')" wire:navigate>
+                                {{ __('Subscriptions') }}
+                            </flux:navlist.item>
+                        @endif
+                        @if (auth()->user()->hasAnyRole(['admin','manager','staff']))
+                            <flux:navlist.item icon="wallet" :href="route('petty-cash.index')" :current="request()->routeIs('petty-cash.*')" wire:navigate>
+                                {{ __('Petty Cash') }}
                             </flux:navlist.item>
                         @endif
                     @endif

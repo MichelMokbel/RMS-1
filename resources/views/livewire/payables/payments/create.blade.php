@@ -44,7 +44,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'invoice_number' => $inv->invoice_number,
                     'due_date' => $inv->due_date?->format('Y-m-d'),
                     'outstanding' => $outstanding,
-                    'allocated_amount' => 0,
+                    'allocated_amount' => $outstanding, // default allocate full outstanding
+                    'selected' => $outstanding > 0,
                 ];
             })
             ->filter(fn ($inv) => $inv['outstanding'] > 0)
@@ -63,7 +64,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'reference' => $this->reference,
             'notes' => $this->notes,
             'allocations' => collect($this->allocations)
-                ->filter(fn ($a) => (float) ($a['allocated_amount'] ?? 0) > 0)
+                ->filter(fn ($a) => ($a['selected'] ?? false) && (float) ($a['allocated_amount'] ?? 0) > 0)
                 ->map(fn ($a) => ['invoice_id' => $a['invoice_id'], 'allocated_amount' => (float) $a['allocated_amount']])
                 ->values()
                 ->toArray(),
@@ -74,7 +75,17 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
-        $data = $this->validate([
+        $allocTotal = collect($payload['allocations'])->sum('allocated_amount');
+        if ($allocTotal <= 0) {
+            $this->addError('allocations', __('Allocation amount must be greater than zero.'));
+            return;
+        }
+        if ($this->amount < $allocTotal - 0.0001 || abs($this->amount - $allocTotal) > 0.01) {
+            $this->addError('amount', __('Payment amount must match the total allocated amount.'));
+            return;
+        }
+
+        $this->validate([
             'supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
             'payment_date' => ['required', 'date'],
             'amount' => ['required', 'numeric', 'min:0.01'],
@@ -149,28 +160,32 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
                     <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                         <tr>
-                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Invoice') }}</th>
-                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Due') }}</th>
-                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Outstanding') }}</th>
-                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Allocate') }}</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                        @forelse ($allocations as $idx => $alloc)
-                            <tr>
-                                <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $alloc['invoice_number'] }}</td>
-                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $alloc['due_date'] }}</td>
-                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ number_format((float)$alloc['outstanding'], 2) }}</td>
-                                <td class="px-3 py-2 text-sm">
-                                    <flux:input wire:model="allocations.{{ $idx }}.allocated_amount" type="number" step="0.01" min="0" />
-                                </td>
-                            </tr>
-                        @empty
-                            <tr><td colspan="4" class="px-3 py-3 text-sm text-neutral-600 dark:text-neutral-300 text-center">{{ __('No open invoices for supplier') }}</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Select') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Invoice') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Due') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Outstanding') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Allocate') }}</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                @forelse ($allocations as $idx => $alloc)
+                    <tr>
+                        <td class="px-3 py-2 text-sm">
+                            <input type="checkbox" wire:model="allocations.{{ $idx }}.selected" class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500">
+                        </td>
+                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $alloc['invoice_number'] }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $alloc['due_date'] }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ number_format((float)$alloc['outstanding'], 2) }}</td>
+                        <td class="px-3 py-2 text-sm">
+                            <flux:input wire:model="allocations.{{ $idx }}.allocated_amount" type="number" step="0.01" min="0" />
+                        </td>
+                    </tr>
+                @empty
+                    <tr><td colspan="5" class="px-3 py-3 text-sm text-neutral-600 dark:text-neutral-300 text-center">{{ __('No open invoices for supplier') }}</td></tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
         </div>
 
         <div class="flex justify-end">

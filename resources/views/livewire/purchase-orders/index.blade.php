@@ -62,6 +62,21 @@ new #[Layout('components.layouts.app')] class extends Component {
         session()->flash('status', __('Purchase order approved.'));
     }
 
+    public function post(int $id): void
+    {
+        $po = PurchaseOrder::with('items')->findOrFail($id);
+        if (! $po->isDraft()) {
+            $this->addError('status', __('Only draft POs can be posted.'));
+            return;
+        }
+        if (! $po->supplier_id || $po->items->count() === 0) {
+            $this->addError('status', __('Supplier and at least one line are required.'));
+            return;
+        }
+        $po->update(['status' => PurchaseOrder::STATUS_PENDING]);
+        session()->flash('status', __('Purchase order posted.'));
+    }
+
     public function cancel(int $id): void
     {
         $po = PurchaseOrder::with('items')->findOrFail($id);
@@ -139,6 +154,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Supplier') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Order Date') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Expected') }}</th>
+                    <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Created By') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Status') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Total') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Received') }}</th>
@@ -152,6 +168,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->supplier->name ?? '—' }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->order_date?->format('Y-m-d') }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->expected_delivery_date?->format('Y-m-d') }}</td>
+                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">
+                            {{ $order->creator->name ?? $order->creator->username ?? $order->creator->email ?? '—' }}
+                        </td>
                         <td class="px-3 py-3 text-sm">
                             <span class="inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold
                                 @if($order->status === 'received') bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100
@@ -169,6 +188,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <flux:button size="xs" :href="route('purchase-orders.show', $order)" wire:navigate>{{ __('View') }}</flux:button>
                                 @if($order->canEditLines())
                                     <flux:button size="xs" :href="route('purchase-orders.edit', $order)" wire:navigate>{{ __('Edit') }}</flux:button>
+                                @endif
+                                @if($order->isDraft())
+                                    <flux:button size="xs" wire:click="post({{ $order->id }})">{{ __('Post') }}</flux:button>
                                 @endif
                                 @if($order->isPending())
                                     <flux:button size="xs" wire:click="approve({{ $order->id }})">{{ __('Approve') }}</flux:button>

@@ -44,6 +44,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             'paymentPage' => $this->paymentQuery()->paginate(10, pageName: 'payPage'),
             'suppliers' => $suppliers,
             'aging' => app(ApReportsService::class)->agingSummary(),
+            'agingInvoices' => ApInvoice::with('supplier')
+                ->withSum('allocations as paid_sum', 'allocated_amount')
+                ->when(true, function ($q) {
+                    // exclude void and paid; only show open balances
+                    $q->whereNotIn('status', ['void', 'paid']);
+                })
+                ->orderByDesc('due_date')
+                ->limit(100)
+                ->get(),
         ];
     }
 
@@ -80,9 +89,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Accounts Payable') }}</h1>
         <div class="flex gap-2">
             <flux:button :href="route('payables.invoices.create')" wire:navigate>{{ __('New Invoice') }}</flux:button>
-            @if($tab === 'payments')
-                <flux:button :href="route('payables.payments.create')" wire:navigate>{{ __('New Payment') }}</flux:button>
-            @endif
+            <flux:button :href="route('payables.payments.create')" wire:navigate>{{ __('New Payment') }}</flux:button>
         </div>
     </div>
 
@@ -93,10 +100,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     @if($tab === 'invoices')
-        <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <flux:input wire:model="invoice_number" placeholder="{{ __('Search invoice #') }}" />
-                <div>
+        <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-2">
+            <div class="flex flex-wrap gap-3">
+                <div class="flex-1 min-w-[220px]">
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Invoice #') }}</label>
+                    <input wire:model="invoice_number" type="text" placeholder="{{ __('Search invoice #') }}" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" />
+                </div>
+                <div class="flex-1 min-w-[180px]">
                     <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Supplier') }}</label>
                     <select wire:model="invoice_supplier_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                         <option value="">{{ __('All') }}</option>
@@ -105,7 +115,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endforeach
                     </select>
                 </div>
-                <div>
+                <div class="flex-1 min-w-[160px]">
                     <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Status') }}</label>
                     <select wire:model="invoice_status" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                         <option value="all">{{ __('All') }}</option>
@@ -115,6 +125,22 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <option value="paid">{{ __('Paid') }}</option>
                         <option value="void">{{ __('Void') }}</option>
                     </select>
+                </div>
+                <div class="flex-1 min-w-[170px]">
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Invoice Date From') }}</label>
+                    <input wire:model="invoice_date_from" type="date" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" />
+                </div>
+                <div class="flex-1 min-w-[170px]">
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Invoice Date To') }}</label>
+                    <input wire:model="invoice_date_to" type="date" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" />
+                </div>
+                <div class="flex-1 min-w-[170px]">
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Due Date From') }}</label>
+                    <input wire:model="due_date_from" type="date" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" />
+                </div>
+                <div class="flex-1 min-w-[170px]">
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Due Date To') }}</label>
+                    <input wire:model="due_date_to" type="date" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" />
                 </div>
             </div>
 
@@ -166,9 +192,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     @endif
 
     @if($tab === 'payments')
-        <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <div>
+        <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-2">
+            <div class="flex flex-wrap gap-3">
+                <div class="flex-1 min-w-[180px]">
                     <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Supplier') }}</label>
                     <select wire:model="payment_supplier_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                         <option value="">{{ __('All') }}</option>
@@ -177,7 +203,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endforeach
                     </select>
                 </div>
-                <div>
+                <div class="flex-1 min-w-[160px]">
                     <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Method') }}</label>
                     <select wire:model="payment_method" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                         <option value="">{{ __('All') }}</option>
@@ -187,6 +213,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <option value="cheque">Cheque</option>
                         <option value="other">Other</option>
                     </select>
+                </div>
+                <div class="flex-1 min-w-[160px]">
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Payment Date From') }}</label>
+                    <input wire:model="payment_date_from" type="date" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" />
+                </div>
+                <div class="flex-1 min-w-[160px]">
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Payment Date To') }}</label>
+                    <input wire:model="payment_date_to" type="date" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" />
                 </div>
             </div>
 
@@ -227,28 +261,67 @@ new #[Layout('components.layouts.app')] class extends Component {
     @if($tab === 'aging')
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
             <h3 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{{ __('Aging Summary') }}</h3>
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-5 text-sm text-neutral-900 dark:text-neutral-100">
-                <div class="rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
-                    <p class="text-xs text-neutral-600 dark:text-neutral-300 uppercase">{{ __('Current') }}</p>
-                    <p class="text-lg font-semibold">{{ number_format($aging['current'] ?? 0, 2) }}</p>
+            <div class="flex flex-col gap-3 text-sm text-neutral-900 dark:text-neutral-100">
+                <div class="flex flex-col gap-2 sm:flex-row sm:gap-3">
+                    <div class="flex-1 rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
+                        <p class="text-xs text-neutral-600 dark:text-neutral-300 uppercase">{{ __('Current') }}</p>
+                        <p class="text-lg font-semibold">{{ number_format($aging['current'] ?? 0, 2) }}</p>
+                    </div>
+                    <div class="flex-1 rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
+                        <p class="text-xs text-neutral-600 dark:text-neutral-300 uppercase">{{ __('1-30') }}</p>
+                        <p class="text-lg font-semibold">{{ number_format($aging['1_30'] ?? 0, 2) }}</p>
+                    </div>
                 </div>
-                <div class="rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
-                    <p class="text-xs text-neutral-600 dark:text-neutral-300 uppercase">{{ __('1-30') }}</p>
-                    <p class="text-lg font-semibold">{{ number_format($aging['1_30'] ?? 0, 2) }}</p>
+                <div class="flex flex-col gap-2 sm:flex-row sm:gap-3">
+                    <div class="flex-1 rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
+                        <p class="text-xs text-neutral-600 dark:text-neutral-300 uppercase">{{ __('31-60') }}</p>
+                        <p class="text-lg font-semibold">{{ number_format($aging['31_60'] ?? 0, 2) }}</p>
+                    </div>
+                    <div class="flex-1 rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
+                        <p class="text-xs text-neutral-600 dark:text-neutral-300 uppercase">{{ __('61-90') }}</p>
+                        <p class="text-lg font-semibold">{{ number_format($aging['61_90'] ?? 0, 2) }}</p>
+                    </div>
                 </div>
-                <div class="rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
-                    <p class="text-xs text-neutral-600 dark:text-neutral-300 uppercase">{{ __('31-60') }}</p>
-                    <p class="text-lg font-semibold">{{ number_format($aging['31_60'] ?? 0, 2) }}</p>
+                <div class="flex flex-col gap-2 sm:flex-row sm:gap-3">
+                    <div class="flex-1 rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
+                        <p class="text-xs text-neutral-600 dark:text-neutral-300 uppercase">{{ __('90+') }}</p>
+                        <p class="text-lg font-semibold">{{ number_format($aging['90_plus'] ?? 0, 2) }}</p>
+                    </div>
+                    <div class="flex-1"></div>
                 </div>
-                <div class="rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
-                    <p class="text-xs text-neutral-600 dark:text-neutral-300 uppercase">{{ __('61-90') }}</p>
-                    <p class="text-lg font-semibold">{{ number_format($aging['61_90'] ?? 0, 2) }}</p>
-                </div>
-                <div class="rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
-                    <p class="text-xs text-neutral-600 dark:text-neutral-300 uppercase">{{ __('90+') }}</p>
-                    <p class="text-lg font-semibold">{{ number_format($aging['90_plus'] ?? 0, 2) }}</p>
-                </div>
+            </div>
+
+            <div class="mt-6 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+                <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
+                    <thead class="bg-neutral-50 dark:bg-neutral-800/90">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Invoice #') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Supplier') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Due Date') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Status') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Outstanding') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                        @forelse($agingInvoices as $inv)
+                            @php
+                                $paid = (float)($inv->paid_sum ?? 0);
+                                $outstanding = max((float)$inv->total_amount - $paid, 0);
+                            @endphp
+                            <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
+                                <td class="px-3 py-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $inv->invoice_number }}</td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $inv->supplier->name ?? '—' }}</td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $inv->due_date?->format('Y-m-d') }}</td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $inv->status }}</td>
+                                <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ number_format($outstanding, 2) }}</td>
+                            </tr>
+                        @empty
+                            <tr><td colspan="5" class="px-3 py-4 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No open invoices') }}</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
             </div>
         </div>
     @endif
 </div>
+

@@ -61,7 +61,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! $this->purchase_order_id || ! Schema::hasTable('purchase_orders')) {
             return;
         }
-        $po = PurchaseOrder::with('items')->find($this->purchase_order_id);
+        $po = PurchaseOrder::with(['items.item'])->find($this->purchase_order_id);
         if (! $po) {
             $this->addError('purchase_order_id', __('Purchase order not found.'));
             return;
@@ -75,8 +75,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         $this->supplier_id = $po->supplier_id;
         $this->lines = $po->items->map(function ($item) {
+            $inv = $item->item;
+            $code = $inv->item_code ?? $inv->code ?? null;
+            $name = $inv->name ?? $inv->description ?? null;
+            $label = trim(($code ? '['.$code.'] ' : '').($name ?? ''), ' []');
             return [
-                'description' => '['.$item->item_code.'] '.$item->name,
+                'description' => $label !== '' ? $label : ($item->description ?? __('Item')),
                 'quantity' => $item->quantity,
                 'unit_price' => $item->unit_price,
                 'line_total' => round((float) $item->quantity * (float) $item->unit_price, 2),
@@ -132,7 +136,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'created_by' => auth()->id(),
             ]);
 
-            foreach ($data['items'] as $item) {
+            foreach ($data['lines'] as $item) {
                 $lineTotal = round((float) $item['quantity'] * (float) $item['unit_price'], 2);
                 ApInvoiceItem::create([
                     'invoice_id' => $invoice->id,
@@ -173,10 +177,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             'due_date' => ['required', 'date', 'after_or_equal:invoice_date'],
             'tax_amount' => ['required', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string'],
-            'items' => ['required', 'array', 'min:1'],
-            'items.*.description' => ['required', 'string', 'max:255'],
-            'items.*.quantity' => ['required', 'numeric', 'min:0.001'],
-            'items.*.unit_price' => ['required', 'numeric', 'min:0'],
+            'lines' => ['required', 'array', 'min:1'],
+            'lines.*.description' => ['required', 'string', 'max:255'],
+            'lines.*.quantity' => ['required', 'numeric', 'min:0.001'],
+            'lines.*.unit_price' => ['required', 'numeric', 'min:0'],
         ];
     }
 
@@ -196,7 +200,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function purchaseOrders()
     {
-        return Schema::hasTable('purchase_orders') ? PurchaseOrder::orderByDesc('id')->get() : collect();
+        if (! Schema::hasTable('purchase_orders')) {
+            return collect();
+        }
+
+        return PurchaseOrder::orderByDesc('id')
+            ->when($this->supplier_id, fn ($q) => $q->where('supplier_id', $this->supplier_id))
+            ->get();
     }
 }; ?>
 
@@ -249,32 +259,44 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <flux:button type="button" wire:click="addLine">{{ __('Add line') }}</flux:button>
             </div>
 
-            <div class="space-y-3">
-                @foreach ($lines as $index => $line)
-                    <div class="grid grid-cols-1 gap-3 md:grid-cols-12 items-end rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
-                        <div class="md:col-span-6">
-                            <flux:input wire:model="lines.{{ $index }}.description" :label="__('Description')" />
-                            @error("lines.$index.description") <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
-                        </div>
-                        <div class="md:col-span-2">
-                            <flux:input wire:model.live="lines.{{ $index }}.quantity" type="number" step="0.001" min="0.001" :label="__('Qty')" />
-                            @error("lines.$index.quantity") <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
-                        </div>
-                        <div class="md:col-span-2">
-                            <flux:input wire:model.live="lines.{{ $index }}.unit_price" type="number" step="0.0001" min="0" :label="__('Unit Price')" />
-                            @error("lines.$index.unit_price") <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
-                        </div>
-                        <div class="md:col-span-1">
-                            <label class="block text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">{{ __('Line Total') }}</label>
-                            <div class="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                                {{ number_format((float) ($line['line_total'] ?? ((float) ($line['quantity'] ?? 0) * (float) ($line['unit_price'] ?? 0))), 2) }}
-                            </div>
-                        </div>
-                        <div class="md:col-span-1 flex justify-end">
-                            <flux:button type="button" wire:click="removeLine({{ $index }})" variant="ghost">{{ __('Remove') }}</flux:button>
-                        </div>
-                    </div>
-                @endforeach
+            <div class="overflow-x-auto">
+                <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
+                    <thead class="bg-neutral-50 dark:bg-neutral-800/90">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">#</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Description') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Qty') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Unit Price') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Line Total') }}</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Actions') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                        @foreach ($lines as $index => $line)
+                            <tr class="align-top">
+                                <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $loop->iteration }}</td>
+                                <td class="px-3 py-3 text-sm">
+                                    <flux:input wire:model="lines.{{ $index }}.description" />
+                                    @error("lines.$index.description") <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                                </td>
+                                <td class="px-3 py-3 text-sm">
+                                    <flux:input wire:model.live="lines.{{ $index }}.quantity" type="number" step="0.001" min="0.001" />
+                                    @error("lines.$index.quantity") <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                                </td>
+                                <td class="px-3 py-3 text-sm">
+                                    <flux:input wire:model.live="lines.{{ $index }}.unit_price" type="number" step="0.0001" min="0" />
+                                    @error("lines.$index.unit_price") <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                                </td>
+                                <td class="px-3 py-3 text-sm text-neutral-900 dark:text-neutral-100">
+                                    {{ number_format((float) ($line['line_total'] ?? ((float) ($line['quantity'] ?? 0) * (float) ($line['unit_price'] ?? 0))), 2) }}
+                                </td>
+                                <td class="px-3 py-3 text-sm text-right">
+                                    <flux:button type="button" wire:click="removeLine({{ $index }})" variant="ghost">{{ __('Remove') }}</flux:button>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
             </div>
 
             <div class="flex justify-end">

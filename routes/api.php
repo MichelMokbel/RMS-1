@@ -1,15 +1,25 @@
 <?php
 
-use App\Http\Controllers\Api\CategoryController;
-use App\Http\Controllers\Api\SupplierController;
-use App\Http\Controllers\Api\CustomerController;
-use App\Http\Controllers\Api\InventoryController;
-use App\Http\Controllers\Api\MenuItemController;
-use App\Http\Controllers\Api\PurchaseOrderController;
-use App\Http\Controllers\Api\AP\ApInvoiceController;
-use App\Http\Controllers\Api\AP\ApPaymentController;
-use App\Http\Controllers\Api\AP\ApReportsController;
+use App\Http\Controllers\Api\DailyDishMenuController;
+use App\Http\Controllers\Api\MealSubscriptionController;
 use Illuminate\Support\Facades\Route;
+
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('daily-dish/menus', [DailyDishMenuController::class, 'index']);
+    Route::get('daily-dish/menus/{menu}', [DailyDishMenuController::class, 'show']);
+    Route::put('daily-dish/menus/{branchId}/{serviceDate}', [DailyDishMenuController::class, 'upsert']);
+    Route::post('daily-dish/menus/{menu}/publish', [DailyDishMenuController::class, 'publish']);
+    Route::post('daily-dish/menus/{menu}/unpublish', [DailyDishMenuController::class, 'unpublish']);
+    Route::post('daily-dish/menus/{menu}/clone', [DailyDishMenuController::class, 'clone']);
+
+    Route::get('subscriptions', [MealSubscriptionController::class, 'index']);
+    Route::get('subscriptions/{subscription}', [MealSubscriptionController::class, 'show']);
+    Route::post('subscriptions', [MealSubscriptionController::class, 'store']);
+    Route::put('subscriptions/{subscription}', [MealSubscriptionController::class, 'update']);
+    Route::post('subscriptions/{subscription}/pause', [MealSubscriptionController::class, 'pause']);
+    Route::post('subscriptions/{subscription}/resume', [MealSubscriptionController::class, 'resume']);
+    Route::post('subscriptions/{subscription}/cancel', [MealSubscriptionController::class, 'cancel']);
+});
 
 Route::middleware('api')->group(function () {
     Route::get('categories', [CategoryController::class, 'index']);
@@ -74,4 +84,43 @@ Route::middleware(['api', $apiAuthMiddleware])->group(function () {
     Route::get('ap/payments', [ApPaymentController::class, 'index'])->name('api.ap.payments.index');
     Route::get('ap/payments/{payment}', [ApPaymentController::class, 'show'])->name('api.ap.payments.show');
     Route::get('ap/aging', [ApReportsController::class, 'aging'])->name('api.ap.aging');
+
+    // Expenses
+    Route::get('expenses', [ExpenseController::class, 'index'])->name('api.expenses.index');
+    Route::get('expenses/{expense}', [ExpenseController::class, 'show'])->name('api.expenses.show');
+    Route::get('expense-categories', [ExpenseCategoryController::class, 'index'])->name('api.expense-categories.index');
+
+    Route::middleware(['role:admin|manager'])->group(function () {
+        Route::post('expenses', [ExpenseController::class, 'store'])->name('api.expenses.store');
+        Route::put('expenses/{expense}', [ExpenseController::class, 'update'])->name('api.expenses.update');
+        Route::delete('expenses/{expense}', [ExpenseController::class, 'destroy'])->name('api.expenses.destroy');
+        Route::post('expenses/{expense}/payments', [ExpenseController::class, 'storePayment'])->name('api.expenses.payments.store');
+        Route::post('expenses/{expense}/attachments', [ExpenseController::class, 'storeAttachment'])->name('api.expenses.attachments.store');
+        Route::delete('expense-attachments/{attachment}', [ExpenseController::class, 'destroyAttachment'])->name('api.expenses.attachments.destroy');
+
+        Route::post('expense-categories', [ExpenseCategoryController::class, 'store'])->name('api.expense-categories.store');
+        Route::put('expense-categories/{category}', [ExpenseCategoryController::class, 'update'])->name('api.expense-categories.update');
+        Route::delete('expense-categories/{category}', [ExpenseCategoryController::class, 'destroy'])->name('api.expense-categories.destroy');
+    });
+
+    // Petty cash (auth + role)
+    Route::middleware(['role:admin|manager|staff'])->group(function () {
+        Route::get('petty-cash/wallets', [PettyCashWalletController::class, 'index'])->name('api.petty-cash.wallets.index');
+        Route::get('petty-cash/issues', [PettyCashIssueController::class, 'index'])->name('api.petty-cash.issues.index');
+        Route::get('petty-cash/expenses', [PettyCashExpenseController::class, 'index'])->name('api.petty-cash.expenses.index');
+    });
+
+    Route::middleware(['role:admin|manager'])->group(function () {
+        Route::post('petty-cash/wallets', [PettyCashWalletController::class, 'store'])->name('api.petty-cash.wallets.store');
+        Route::put('petty-cash/wallets/{id}', [PettyCashWalletController::class, 'update'])->name('api.petty-cash.wallets.update');
+
+        Route::post('petty-cash/issues', [PettyCashIssueController::class, 'store'])->name('api.petty-cash.issues.store');
+
+        Route::post('petty-cash/reconciliations', [PettyCashReconciliationController::class, 'store'])->name('api.petty-cash.reconciliations.store');
+    });
+
+    Route::middleware(['role:admin|manager|staff'])->group(function () {
+        Route::post('petty-cash/expenses', [PettyCashExpenseController::class, 'store'])->name('api.petty-cash.expenses.store');
+        Route::post('petty-cash/expenses/{id}', [PettyCashExpenseController::class, 'update'])->name('api.petty-cash.expenses.update');
+    });
 });

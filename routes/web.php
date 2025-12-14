@@ -52,6 +52,40 @@ Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
     Volt::route('customers/import', 'customers.import')->name('customers.import');
 });
 
+Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+    Volt::route('recipes', 'recipes.index')->name('recipes.index');
+    Volt::route('recipes/create', 'recipes.create')->name('recipes.create');
+    Volt::route('recipes/{recipe}', 'recipes.show')->name('recipes.show');
+    Volt::route('recipes/{recipe}/edit', 'recipes.edit')->name('recipes.edit');
+});
+
+Route::middleware(['auth', 'active', 'role:admin|manager|kitchen'])->group(function () {
+    Volt::route('daily-dish/menus', 'daily-dish.menus.index')->name('daily-dish.menus.index');
+});
+
+Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+    Volt::route('daily-dish/menus/{branch}/{serviceDate}', 'daily-dish.menus.edit')->name('daily-dish.menus.edit');
+});
+
+Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+    Volt::route('subscriptions', 'subscriptions.index')->name('subscriptions.index');
+    Volt::route('subscriptions/create', 'subscriptions.create')->name('subscriptions.create');
+    Volt::route('subscriptions/{subscription}', 'subscriptions.show')->name('subscriptions.show');
+    Volt::route('subscriptions/{subscription}/edit', 'subscriptions.edit')->name('subscriptions.edit');
+    Volt::route('subscriptions/generate', 'subscriptions.generate')->name('subscriptions.generate');
+});
+
+Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->group(function () {
+    Volt::route('orders', 'orders.index')->name('orders.index');
+    Volt::route('orders/create', 'orders.create')->name('orders.create');
+    Volt::route('orders/{order}/edit', 'orders.edit')->name('orders.edit');
+    Volt::route('orders/daily-dish', 'orders.daily-dish')->name('orders.daily-dish');
+    Volt::route('orders/kitchen', 'orders.kitchen')->name('orders.kitchen');
+    Volt::route('orders/kitchen/cards', 'orders.kitchen-cards')->name('orders.kitchen.cards');
+    Volt::route('orders/pastry', 'orders.pastry')->name('orders.pastry');
+    Volt::route('orders/items', 'orders.items')->name('orders.items');
+});
+
 Route::middleware(['auth', 'active', 'role:admin|manager|cashier'])->group(function () {
     Volt::route('inventory', 'inventory.index')->name('inventory.index');
     Volt::route('inventory/{item}', 'inventory.show')->name('inventory.show');
@@ -81,4 +115,17 @@ Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
     Volt::route('purchase-orders/create', 'purchase-orders.create')->name('purchase-orders.create');
     Volt::route('purchase-orders/{purchaseOrder}', 'purchase-orders.show')->name('purchase-orders.show');
     Volt::route('purchase-orders/{purchaseOrder}/edit', 'purchase-orders.edit')->name('purchase-orders.edit');
+
+    // Expenses
+    Volt::route('expenses', 'expenses.index')->name('expenses.index');
+    Volt::route('expenses/create', 'expenses.create')->name('expenses.create');
+    // Categories (place before parameterized expense routes to avoid collisions)
+    Volt::route('expenses/categories', 'expenses.categories')->name('expenses.categories');
+    Volt::route('expenses/{expense}', 'expenses.show')->name('expenses.show');
+    Volt::route('expenses/{expense}/edit', 'expenses.edit')->name('expenses.edit');
+});
+
+Route::middleware(['auth', 'active', 'role:admin|manager|staff'])->group(function () {
+    // Use the richer petty cash Volt page component
+    Volt::route('petty-cash', 'petty-cash.page')->name('petty-cash.index');
 });
