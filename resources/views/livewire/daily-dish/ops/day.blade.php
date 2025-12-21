@@ -7,7 +7,6 @@ use App\Models\OrderItem;
 use App\Services\DailyDish\DailyDishOpsQueryService;
 use App\Services\DailyDish\DailyDishMenuService;
 use App\Services\Orders\OrderWorkflowService;
-use App\Services\Orders\SubscriptionOrderGenerationService;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -46,22 +45,6 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $statusCounts = $q->getStatusCounts($this->branch, $this->date, ['is_daily_dish' => true]);
 
-        $subscriptionOrders = $q->getOrdersForDay($this->branch, $this->date, [
-            'is_daily_dish' => true,
-            'include_subscription' => true,
-            'include_manual' => false,
-            'statuses' => ['Draft', 'Confirmed', 'InProduction', 'Ready', 'OutForDelivery', 'Delivered', 'Cancelled'],
-            'search' => $this->search,
-        ]);
-
-        $manualOrders = $q->getOrdersForDay($this->branch, $this->date, [
-            'is_daily_dish' => true,
-            'include_subscription' => false,
-            'include_manual' => true,
-            'statuses' => ['Draft', 'Confirmed', 'InProduction', 'Ready', 'OutForDelivery', 'Delivered', 'Cancelled'],
-            'search' => $this->search,
-        ]);
-
         $workOrders = $q->getOrdersForDay($this->branch, $this->date, [
             'is_daily_dish' => true,
             'include_subscription' => $this->includeSubscription,
@@ -77,17 +60,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             'department' => 'DailyDish',
         ]);
 
-        $runs = $q->getRecentSubscriptionRuns($this->branch, $this->date, 8);
-
         return compact(
             'menu',
             'publishedMenu',
             'statusCounts',
-            'subscriptionOrders',
-            'manualOrders',
             'workOrders',
-            'prepTotals',
-            'runs'
+            'prepTotals'
         );
     }
 
@@ -149,26 +127,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
-    public function dryRunSubscriptions(SubscriptionOrderGenerationService $service): void
-    {
-        if (! $this->canManage()) {
-            abort(403);
-        }
-
-        $service->generateForDate($this->date, $this->branch, (int) auth()->id(), dryRun: true);
-        $this->dispatch('toast', type: 'success', message: __('Dry run completed.'));
-    }
-
-    public function generateSubscriptions(SubscriptionOrderGenerationService $service): void
-    {
-        if (! $this->canManage()) {
-            abort(403);
-        }
-
-        $service->generateForDate($this->date, $this->branch, (int) auth()->id(), dryRun: false);
-        $this->dispatch('toast', type: 'success', message: __('Generation completed.'));
-    }
-
     public function advanceOrderStatus(int $orderId, string $toStatus): void
     {
         if (! $this->canKitchen()) {
@@ -217,10 +175,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-5">
-            <flux:input wire:model.live="branch" type="number" min="1" :label="__('Branch')" class="md:col-span-1" />
-            <flux:input wire:model.live="date" type="date" :label="__('Date')" class="md:col-span-1" />
-            <div class="md:col-span-3">
+        <div class="flex flex-wrap items-end gap-4">
+            <flux:input wire:model.live="branch" type="number" min="1" :label="__('Branch')" class="w-28" />
+            <flux:input wire:model.live="date" type="date" :label="__('Date')" class="w-44" />
+            <div class="flex-1 min-w-[220px]">
                 <flux:input wire:model.live.debounce.300ms="search" :label="__('Search')" placeholder="{{ __('Order # or customer') }}" />
             </div>
         </div>
@@ -267,10 +225,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @foreach($grouped as $role => $rows)
                     <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
                         <p class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ ucfirst($role) }}</p>
-                        <ul class="mt-2 space-y-1 text-sm text-neutral-700 dark:text-neutral-200">
+                        <ul class="mt-2 flex flex-wrap gap-2 text-sm text-neutral-700 dark:text-neutral-200">
                             @foreach($rows as $row)
-                                <li class="flex justify-between gap-2">
-                                    <span>{{ $row->menuItem?->name ?? '—' }}</span>
+                                <li class="inline-flex items-center gap-2 rounded-full border border-neutral-200 px-2.5 py-1 text-xs text-neutral-700 dark:border-neutral-700 dark:text-neutral-200">
+                                    <span>{{ $row->menuItem?->name ?? '-' }}</span>
                                     @if($role === 'addon' && $row->is_required)
                                         <span class="text-[11px] text-neutral-500 dark:text-neutral-300">{{ __('Required') }}</span>
                                     @endif
@@ -296,52 +254,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <flux:button :href="route('daily-dish.menus.edit', [$branch, $date])" wire:navigate variant="ghost">{{ __('Edit Menu') }}</flux:button>
             </div>
         @endif
-    </div>
-
-    {{-- Subscription generation --}}
-    <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
-        <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Subscriptions') }}</h2>
-            @if(auth()->user()?->hasAnyRole(['admin','manager']))
-                <div class="flex gap-2">
-                    <flux:button type="button" wire:click="dryRunSubscriptions" variant="ghost">{{ __('Dry Run') }}</flux:button>
-                    <flux:button type="button" wire:click="generateSubscriptions" variant="primary">{{ __('Generate Now') }}</flux:button>
-                </div>
-            @endif
-        </div>
-
-        @if(! $publishedMenu)
-            <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
-                {{ __('A published menu is required before generating subscription orders.') }}
-            </div>
-        @endif
-
-        <div class="overflow-x-auto">
-            <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
-                <thead class="bg-neutral-50 dark:bg-neutral-800/90">
-                    <tr>
-                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Started') }}</th>
-                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Status') }}</th>
-                        <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Created') }}</th>
-                        <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Skipped') }}</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    @forelse($runs as $r)
-                        <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
-                            <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $r->started_at?->format('H:i:s') ?? '—' }}</td>
-                            <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $r->status }}</td>
-                            <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $r->created_count }}</td>
-                            <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $r->skipped_existing_count }}</td>
-                        </tr>
-                    @empty
-                        <tr>
-                            <td colspan="4" class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ __('No runs yet.') }}</td>
-                        </tr>
-                    @endforelse
-                </tbody>
-            </table>
-        </div>
     </div>
 
     {{-- Work mode --}}
@@ -463,49 +375,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endif
     </div>
 
-    {{-- Orders breakdown (subscription vs manual) --}}
-    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
-            <div class="flex items-center justify-between">
-                <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Subscription Orders') }}</h2>
-            </div>
-            <div class="space-y-2">
-                @forelse($subscriptionOrders as $o)
-                    <div class="flex items-center justify-between rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
-                        <div>
-                            <div class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $o->order_number }}</div>
-                            <div class="text-xs text-neutral-600 dark:text-neutral-300">{{ $o->customer_name_snapshot ?? '—' }} · {{ $o->status }}</div>
-                        </div>
-                        <flux:button size="xs" :href="route('orders.edit', $o)" wire:navigate variant="ghost">{{ __('View') }}</flux:button>
-                    </div>
-                @empty
-                    <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('No subscription orders.') }}</p>
-                @endforelse
-            </div>
-        </div>
-
-        <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
-            <div class="flex items-center justify-between">
-                <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Manual Daily Dish Orders') }}</h2>
-                <flux:button :href="route('daily-dish.ops.manual.create', [$branch, $date])" wire:navigate variant="primary">
-                    {{ __('New Manual Order') }}
-                </flux:button>
-            </div>
-            <div class="space-y-2">
-                @forelse($manualOrders as $o)
-                    <div class="flex items-center justify-between rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
-                        <div>
-                            <div class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $o->order_number }}</div>
-                            <div class="text-xs text-neutral-600 dark:text-neutral-300">{{ $o->customer_name_snapshot ?? '—' }} · {{ $o->status }}</div>
-                        </div>
-                        <flux:button size="xs" :href="route('orders.edit', $o)" wire:navigate>{{ __('Edit') }}</flux:button>
-                    </div>
-                @empty
-                    <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('No manual daily dish orders.') }}</p>
-                @endforelse
-            </div>
-        </div>
     </div>
-</div>
 
 

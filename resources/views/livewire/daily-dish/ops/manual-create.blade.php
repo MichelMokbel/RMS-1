@@ -53,7 +53,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $itemsByRole = collect();
         if ($menu) {
-            $itemsByRole = $menu->items->groupBy('role');
+            $itemsByRole = $menu->items->groupBy('role')->toBase();
         }
 
         $mains = $itemsByRole->only(['main', 'diet', 'vegetarian'])->flatten(1)->values();

@@ -111,8 +111,8 @@ try {
             'key' => $day['key'] ?? null,
             'enDay' => $day['enDay'] ?? null,
             'arDay' => $day['arDay'] ?? null,
-            'salad' => (is_array($day['salad'] ?? null) ? ($day['salad']['name'] ?? null) : ($day['salad'] ?? null)),
-            'dessert' => (is_array($day['dessert'] ?? null) ? ($day['dessert']['name'] ?? null) : ($day['dessert'] ?? null)),
+            'salad' => $day['salad'] ?? null,
+            'dessert' => $day['dessert'] ?? null,
             'mains' => $mains,
         ];
     }, $json['data']);

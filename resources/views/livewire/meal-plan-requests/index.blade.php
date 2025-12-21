@@ -90,6 +90,28 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
+    public function acceptNoPlanRequest(int $id): void
+    {
+        $req = MealPlanRequest::find($id);
+        if (! $req) {
+            return;
+        }
+
+        if ((int) $req->plan_meals > 0) {
+            return;
+        }
+
+        if (in_array($req->status, ['converted', 'closed'], true)) {
+            return;
+        }
+
+        $req->status = 'converted';
+        $req->save();
+
+        $this->confirmRequestOrders($req);
+        session()->flash('status', __('Accepted. Orders confirmed.'));
+    }
+
     private function estimateEndDate(string $startDate, array $weekdays, int $totalMeals): ?string
     {
         if ($totalMeals <= 0) {
@@ -118,7 +140,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         return null;
     }
 
-    public function convertToSubscription(MealSubscriptionService $subscriptionService): void
+    public function convertToSubscription(MealSubscriptionService $subscriptionService, \App\Services\Orders\OrderTotalsService $totalsService): void
     {
         $reqId = $this->convertRequestId;
         if (! $reqId) {
@@ -130,11 +152,16 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! $req) {
             return;
         }
+        if ((int) $req->plan_meals <= 0) {
+            session()->flash('status', __('This request has no meal plan to convert.'));
+            return;
+        }
 
         // Prevent double conversion
         if (MealSubscription::where('meal_plan_request_id', $req->id)->exists()) {
             $req->status = 'converted';
             $req->save();
+            $this->confirmRequestOrders($req);
             session()->flash('status', __('Already converted.'));
             return;
         }
@@ -253,6 +280,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                             $used++;
                         }
 
+                        $totalsService->recalc($o->fresh(['items']));
+
                         $maxDate = $maxDate ? max($maxDate, $serviceDate) : $serviceDate;
                     }
 
@@ -275,6 +304,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
                 $req->status = 'converted';
                 $req->save();
+                $this->confirmRequestOrders($req);
             });
 
             session()->flash('status', __('Converted to subscription.'));
@@ -298,6 +328,20 @@ new #[Layout('components.layouts.app')] class extends Component {
         $req->status = $status;
         $req->save();
         session()->flash('status', __('Updated.'));
+    }
+
+    private function confirmRequestOrders(MealPlanRequest $req): void
+    {
+        $orderIds = is_array($req->order_ids) ? $req->order_ids : [];
+        $orderIds = array_values(array_filter($orderIds, fn ($id) => $id !== null && $id !== ''));
+        if (empty($orderIds)) {
+            return;
+        }
+
+        Order::query()
+            ->whereIn('id', $orderIds)
+            ->where('status', 'Draft')
+            ->update(['status' => 'Confirmed']);
     }
 
     public function with(): array
@@ -371,7 +415,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
                             <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $r->created_at?->format('Y-m-d H:i') }}</td>
                             <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $r->customer_name }}</td>
-                            <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $r->plan_meals }}</td>
+                            <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
+                                {{ $r->plan_meals > 0 ? $r->plan_meals : __('No plan') }}
+                            </td>
                             <td class="px-3 py-2 text-sm">
                                 @php
                                     $statusLabel = match ($r->status) {
@@ -381,6 +427,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         'closed' => __('Closed'),
                                         default => (string) $r->status,
                                     };
+                                    if ((int) $r->plan_meals <= 0 && $r->status === 'converted') {
+                                        $statusLabel = __('Accepted');
+                                    }
                                     $statusClasses = match ($r->status) {
                                         'new' => 'bg-neutral-100 text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100',
                                         'contacted' => 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-100',
@@ -405,7 +454,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         wire:navigate
                                     >{{ __('View') }}</flux:button>
 
-                                    @php $sub = $subscriptionsByRequestId[$r->id] ?? null; @endphp
+                                    @php
+                                        $sub = $subscriptionsByRequestId[$r->id] ?? null;
+                                        $hasPlan = (int) $r->plan_meals > 0;
+                                    @endphp
                                     @if($sub)
                                         <flux:button
                                             size="sm"
@@ -423,15 +475,26 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         :disabled="in_array($r->status, ['contacted','converted','closed'], true)"
                                         wire:click="markStatus({{ $r->id }}, 'contacted')"
                                     >{{ __('Contacted') }}</flux:button>
-                                    <flux:button
-                                        size="sm"
-                                        type="button"
-                                        :variant="in_array($r->status, ['converted','closed'], true) ? 'primary' : 'ghost'"
-                                        :color="in_array($r->status, ['converted','closed'], true) ? 'emerald' : null"
-                                        :disabled="in_array($r->status, ['converted','closed'], true)"
-                                        x-data=""
-                                        x-on:click.prevent="$wire.openConvertModal({{ $r->id }}); $dispatch('open-modal', 'convert-mpr')"
-                                    >{{ __('Converted') }}</flux:button>
+                                    @if ($hasPlan)
+                                        <flux:button
+                                            size="sm"
+                                            type="button"
+                                            :variant="in_array($r->status, ['converted','closed'], true) ? 'primary' : 'ghost'"
+                                            :color="in_array($r->status, ['converted','closed'], true) ? 'emerald' : null"
+                                            :disabled="in_array($r->status, ['converted','closed'], true)"
+                                            x-data=""
+                                            x-on:click.prevent="$wire.openConvertModal({{ $r->id }}); $dispatch('modal-show', { name: 'convert-mpr' })"
+                                        >{{ __('Converted') }}</flux:button>
+                                    @else
+                                        <flux:button
+                                            size="sm"
+                                            type="button"
+                                            :variant="in_array($r->status, ['converted','closed'], true) ? 'primary' : 'ghost'"
+                                            :color="in_array($r->status, ['converted','closed'], true) ? 'emerald' : null"
+                                            :disabled="in_array($r->status, ['converted','closed'], true)"
+                                            wire:click="acceptNoPlanRequest({{ $r->id }})"
+                                        >{{ __('Accept') }}</flux:button>
+                                    @endif
                                     <flux:button
                                         size="sm"
                                         type="button"

@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
+use Illuminate\Support\Facades\Auth;
 
 new #[Layout('components.layouts.app')] class extends Component {
     public int $branch_id = 1;
@@ -54,7 +55,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private function canManageMenus(): bool
     {
-        return auth()->user()?->hasAnyRole(['admin', 'manager']) ?? false;
+        /** @var \App\Models\User|null $user */
+        $user = Auth::user();
+        return $user?->hasAnyRole(['admin', 'manager']) ?? false;
     }
 
     public function openMenuDrawer(string $serviceDate): void
@@ -171,7 +174,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'notes' => $data['drawer_notes'] ?? null,
                     'items' => $data['drawer_items'],
                 ],
-                auth()->id()
+                Auth::id()
             );
 
             $this->drawer_menu = $menu;
@@ -195,7 +198,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            $menu = $service->publish($this->drawer_menu, auth()->id());
+            $menu = $service->publish($this->drawer_menu, Auth::id());
             $this->drawer_menu = $menu;
             $this->drawer_status = $menu->status;
             session()->flash('status', __('Menu published.'));
@@ -217,7 +220,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            $menu = $service->unpublish($this->drawer_menu, auth()->id());
+            $menu = $service->unpublish($this->drawer_menu, Auth::id());
             $this->drawer_menu = $menu;
             $this->drawer_status = $menu->status;
             session()->flash('status', __('Menu reverted to draft.'));
@@ -246,7 +249,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            $service->cloneMenu($from, $data['clone_to'], $data['clone_branch_id'], auth()->id());
+            $service->cloneMenu($from, $data['clone_to'], $data['clone_branch_id'], Auth::id());
             session()->flash('status', __('Menu cloned.'));
             $this->showCloneModal = false;
         } catch (ValidationException $e) {
@@ -259,9 +262,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="w-full max-w-6xl mx-auto px-4 space-y-6">
     <div class="flex items-center justify-between">
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Daily Dish Planner') }}</h1>
-        <div class="flex gap-2">
+        <!-- <div class="flex gap-2">
             <flux:button type="button" wire:click="$set('showCloneModal', true)">{{ __('Clone Menu') }}</flux:button>
-        </div>
+        </div> -->
     </div>
 
     @if (session('status'))
@@ -463,10 +466,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     {{-- Clone modal --}}
     @if ($showCloneModal)
-        <div class="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-            <div class="w-full max-w-xl rounded-lg border border-neutral-200 bg-white p-4 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+        <div class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4 overflow-y-auto">
+            <div class="w-full max-w-xl max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-lg border border-neutral-200 bg-white p-4 shadow-lg dark:border-neutral-700 dark:bg-neutral-900" role="dialog" aria-modal="true" aria-labelledby="clone-menu-title">
                 <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Clone Menu') }}</h3>
+                    <h3 id="clone-menu-title" class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Clone Menu') }}</h3>
                     <flux:button type="button" wire:click="$set('showCloneModal', false)" variant="ghost">{{ __('Close') }}</flux:button>
                 </div>
 

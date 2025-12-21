@@ -289,6 +289,38 @@
       gap: 14px;
       margin-top: 8px;
     }
+    .menu-grid.loading{
+      opacity: 0.4;
+      pointer-events: none;
+    }
+    .menu-loader{
+      display: none;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px dashed rgba(0,0,0,0.15);
+      background: #faf8f4;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .menu-loader.show{
+      display: flex;
+    }
+    .menu-loader::before{
+      content: "";
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid rgba(31,59,134,0.2);
+      border-top-color: var(--blue);
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin{
+      to { transform: rotate(360deg); }
+    }
 
     .day-card{
       border: 1px solid rgba(0,0,0,0.05);
@@ -408,6 +440,23 @@
       letter-spacing: 0.08em;
       margin-bottom: 6px;
     }
+    .section-head{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .section-clear{
+      border: 1px solid rgba(0,0,0,0.08);
+      background: #fff;
+      color: var(--muted);
+      font-size: 11px;
+      padding: 6px 10px;
+      border-radius: 10px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
 
     /* Bilingual section titles: English left, Arabic right (mirrored) */
     .section-title.dual{
@@ -476,7 +525,7 @@
 
     .choice-group{
       display: grid;
-      gap: 6px;
+      gap: 0;
       margin-top: 6px;
     }
     .choice{
@@ -496,16 +545,77 @@
       height: 16px;
       margin-right: 8px;
     }
+    .item-row{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(0,0,0,0.05);
+    }
+    .item-row:last-child{
+      border-bottom: none;
+    }
+    .item-row.has-qty{
+      background: rgba(31,59,134,0.04);
+      border-radius: 10px;
+      padding: 12px 10px;
+    }
+    .item-info{
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .item-name-en{
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .item-options{
+      display: grid;
+      gap: 6px;
+      justify-items: end;
+      text-align: right;
+    }
+    .item-name-ar{
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink);
+      font-family: Cairo, system-ui, sans-serif;
+      direction: rtl;
+    }
     .quantity-choice{
       display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      padding: 10px 0;
-      border-bottom: 1px solid rgba(0,0,0,0.05);
-      gap: 12px;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 4px 0;
+      cursor: pointer;
     }
-    .quantity-choice:last-child{
-      border-bottom: none;
+    .quantity-choice.has-qty{
+      font-weight: 600;
+    }
+    .quantity-choice.disabled{
+      opacity: 0.55;
+      pointer-events: none;
+    }
+    .increment-check{
+      width: 18px;
+      height: 18px;
+      margin: 0 0 0 8px;
+      cursor: pointer;
+    }
+    .option-label{
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .qty-display{
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--blue);
+      min-width: 34px;
+      text-align: right;
     }
     .bilingual-label{
       flex: 1;
@@ -514,7 +624,7 @@
       justify-content: space-between;
       align-items: center;
       min-width: 0;
-      max-width: calc(100% - 90px);
+      max-width: none;
       gap: 12px;
     }
     .label-en{
@@ -554,6 +664,50 @@
     .quantity-input::-webkit-outer-spin-button{
       opacity: 1;
       cursor: pointer;
+    }
+
+    .portion-grid{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: flex-end;
+      align-items: flex-start;
+    }
+    .portion-item{
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      color: var(--muted);
+    }
+    .portion-item span{
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .portion-input{
+      width: 60px;
+      padding: 6px 8px;
+      border: 1px solid rgba(0,0,0,0.15);
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      text-align: center;
+      background: #fff;
+      color: var(--blue);
+    }
+    .portion-input:focus{
+      outline: none;
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(31,59,134,0.1);
+    }
+    .portion-input:disabled{
+      background: #f3f3f3;
+      color: #9b9b9b;
+      cursor: not-allowed;
     }
 
     .bundle-preview{
@@ -760,6 +914,7 @@
       .clear-day{ grid-column: 2; }
       .meal-plan-options{ grid-template-columns: 1fr; }
       .quantity-input{ width: 60px; }
+      .item-row{ grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -878,14 +1033,22 @@
           <div id="mealPlanStatus" class="meal-plan-status"></div>
         </div>
 
-        <div id="menuGrid" class="menu-grid"></div>
+        <div id="menuLoader" class="menu-loader" aria-live="polite">Loading daily menu...</div>
+        <div id="menuGrid" class="menu-grid loading"></div>
 
         <div class="pricing">
           <div>
-            <div><strong>FULL MEAL:</strong> QAR 65</div>
-            <div><strong>MAIN DISH WITH SALAD:</strong> QAR 55</div>
-            <div><strong>MAIN DISH WITH DESSERT:</strong> QAR 55</div>
-            <div><strong>MAIN DISH ONLY:</strong> QAR 50</div>
+            <div><strong>Plate bundles (plate-only):</strong></div>
+            <div>Full meal: QAR 65</div>
+            <div>Main dish + salad: QAR 55</div>
+            <div>Main dish + dessert: QAR 55</div>
+            <div>Main dish only: QAR 50</div>
+            <div style="margin-top:8px;"><strong>Portions (no meal plan):</strong></div>
+            <div>Plate: QAR 50</div>
+            <div>Half portion: QAR 130</div>
+            <div>Full portion: QAR 200</div>
+            <div style="margin-top:8px;"><strong>Add-ons (with portions):</strong> Salad QAR 15, Dessert QAR 15</div>
+            <div style="margin-top:8px;"><strong>Meal plan pricing:</strong> 20 meals QAR 40/meal, 26 meals QAR 42.30/meal</div>
             <div class="note">Above prices include delivery charge.</div>
             <div class="note">Kindly place your orders before 24 hours.</div>
             <div class="note">Call / WhatsApp: <strong>55683442</strong></div>
@@ -928,15 +1091,29 @@
   </div>
 
   <script>
-    const PRICES = {
+    const BUNDLE_PRICES = {
       full: 65,
       mainSalad: 55,
       mainDessert: 55,
       mainOnly: 50
     };
+    const PORTION_PRICES = {
+      plate: 50,
+      half: 130,
+      full: 200
+    };
+    const ADDON_PRICES = {
+      salad: 15,
+      dessert: 15
+    };
+    const PLAN_PRICES = {
+      '20': 40,
+      '26': 42.30
+    };
 
-    // Meal plan selection is tracked as a request/lead in the dashboard (no discounts applied here).
+    // Meal plan selection is tracked as a request/lead in the dashboard.
     let selectedMealPlan = null;
+    let selectedMealCount = 0;
 
       // reCAPTCHA (v3). Set RECAPTCHA_SITE_KEY on the website host.
       const RECAPTCHA_SITE_KEY = document.querySelector('meta[name="recaptcha-site-key"]')?.content || '';
@@ -948,6 +1125,62 @@
           return '';
         }
       }
+
+    function roundMoney(value){
+      return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+    }
+
+    function formatPrice(value){
+      const rounded = roundMoney(value);
+      return Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(2);
+    }
+
+    function parseQuantity(value){
+      const qty = parseInt(value, 10);
+      return Number.isFinite(qty) && qty > 0 ? qty : 0;
+    }
+
+    function formatPortionLabel(portion){
+      if (portion === 'full') return 'Full Portion';
+      if (portion === 'half') return 'Half Portion';
+      return 'Plate';
+    }
+
+    function setRowQty(row, qty){
+      if (!row) {
+        return;
+      }
+      const safeQty = Math.max(0, parseInt(qty, 10) || 0);
+      row.dataset.qty = safeQty;
+      const display = row.querySelector('[data-role="qty-display"]');
+      if (display) {
+        display.textContent = safeQty > 0 ? `x${safeQty}` : '';
+      }
+      row.classList.toggle('has-qty', safeQty > 0);
+
+      const itemRow = row.closest('.item-row');
+      if (itemRow) {
+        const hasAnyQty = Array.from(itemRow.querySelectorAll('.quantity-choice'))
+          .some((option) => parseQuantity(option.dataset.qty) > 0);
+        itemRow.classList.toggle('has-qty', hasAnyQty);
+      }
+    }
+
+    function incrementRow(row){
+      const current = parseQuantity(row?.dataset?.qty);
+      setRowQty(row, current + 1);
+    }
+
+    function setRowDisabled(row, disabled){
+      if (!row) {
+        return;
+      }
+      row.classList.toggle('disabled', !!disabled);
+      const checkbox = row.querySelector('[data-role="increment"]');
+      if (checkbox) {
+        checkbox.disabled = !!disabled;
+      }
+    }
 
     // Translation helper
     const TRANSLATIONS = {
@@ -1047,6 +1280,51 @@
       return TRANSLATIONS[text] || text;
     }
 
+    function normalizeMainSelections(mains){
+      if (!Array.isArray(mains)) {
+        return [];
+      }
+      return mains
+        .map((row) => {
+          const name = (row?.name ?? row?.main ?? '').toString().trim();
+          const portion = (row?.portion ?? 'plate').toString().toLowerCase();
+          const qty = parseQuantity(row?.qty);
+          if (!name || qty <= 0) {
+            return null;
+          }
+          return {
+            name,
+            portion: PORTION_PRICES[portion] ? portion : 'plate',
+            qty
+          };
+        })
+        .filter(Boolean);
+    }
+
+    function groupSelections(mains){
+      const grouped = {};
+      mains.forEach((item) => {
+        const key = `${item.name}|${item.portion}`;
+        if (!grouped[key]) {
+          grouped[key] = { ...item, qty: 0 };
+        }
+        grouped[key].qty += item.qty;
+      });
+      return Object.values(grouped);
+    }
+
+    function groupMainNames(mains){
+      const grouped = {};
+      mains.forEach((item) => {
+        const key = item.name;
+        if (!grouped[key]) {
+          grouped[key] = { name: item.name, qty: 0 };
+        }
+        grouped[key].qty += item.qty;
+      });
+      return Object.values(grouped);
+    }
+
     // Your existing menu data
     let MENU_DAYS = [
       { key: "2025-11-30", enDay: "Sunday Nov 30", arDay: "الأحد ٣٠ نوفمبر", salad: "Green Salad", dessert: "Chocolate Cake", mains: ["Fajita", "Fassolia with meat", "Fassolia with oil"] },
@@ -1084,6 +1362,7 @@
     ];
 
     const menuGrid = document.getElementById("menuGrid");
+    const menuLoader = document.getElementById("menuLoader");
     const mealPlanStatus = document.getElementById("mealPlanStatus");
     const mealPlanRadios = document.querySelectorAll('input[name="mealPlan"]');
 
@@ -1095,6 +1374,7 @@
       radio.addEventListener('change', () => {
         selectedMealPlan = radio.value || null;
         updateMealPlanStatus();
+        updateAllCardStates();
       });
     });
 
@@ -1105,57 +1385,130 @@
       }
       mealPlanStatus.classList.add('show');
       mealPlanStatus.className = 'meal-plan-status show info';
+      const planPrice = PLAN_PRICES[selectedMealPlan] ?? 0;
       mealPlanStatus.textContent = selectedMealPlan === '20'
-        ? 'Meal plan request: 20 meals. Our team will contact you to finalize.'
-        : 'Meal plan request: 26 meals. Our team will contact you to finalize.';
+        ? `Meal plan request: 20 meals (QAR ${formatPrice(planPrice)} per meal). Our team will contact you to finalize.`
+        : `Meal plan request: 26 meals (QAR ${formatPrice(planPrice)} per meal). Our team will contact you to finalize.`;
     }
 
     function updateAllCardStates(){
-      // no-op: meal plan does not gate ordering in this form
+      document.querySelectorAll(".day-card").forEach((card, idx) => {
+        applyMealPlanRules(card, idx);
+        updateCardSelectionState(card, idx);
+      });
     }
 
     function countSelectedMeals(){
       const cards = document.querySelectorAll('.day-card:not(.disabled)');
       let totalMeals = 0;
       cards.forEach((card, idx) => {
-        const bundles = getDayBundles(card, idx);
-        totalMeals += bundles.length;
+        const selection = getCardSelections(card, idx);
+        totalMeals += selection.mainCount;
       });
       return totalMeals;
     }
 
-    function getDayBundles(card, idx){
-      // Get quantities for this day
-      const mainInputs = Array.from(card.querySelectorAll(`input[data-role="main"]`));
-      const saladInput = card.querySelector(`input[name="salad_${idx}"][data-role="salad"]`);
-      const dessertInput = card.querySelector(`input[name="dessert_${idx}"][data-role="dessert"]`);
-      
-      // Build array of mains with quantities
-      const mainsWithQty = [];
-      mainInputs.forEach(input => {
-        const qty = parseInt(input.value) || 0;
+    function getCardSelections(card, idx){
+      const mainRows = Array.from(card.querySelectorAll(`[data-role="main-row"]`));
+      const mains = [];
+      mainRows.forEach(row => {
+        const qty = parseQuantity(row.dataset.qty);
         if (qty > 0) {
-          const mainName = input.dataset.value || input.dataset.mainName;
-          for (let i = 0; i < qty; i++) {
-            mainsWithQty.push(mainName);
-          }
+          mains.push({
+            name: row.dataset.mainName || '',
+            portion: row.dataset.portion || 'plate',
+            qty
+          });
         }
       });
-      
-      const saladQty = parseInt(saladInput?.value) || 0;
-      const dessertQty = parseInt(dessertInput?.value) || 0;
-      
+
+      const saladRow = card.querySelector(`[data-role="salad-row"]`);
+      const dessertRow = card.querySelector(`[data-role="dessert-row"]`);
+      const saladQty = parseQuantity(saladRow?.dataset?.qty);
+      const dessertQty = parseQuantity(dessertRow?.dataset?.qty);
+      const mainCount = mains.reduce((sum, item) => sum + item.qty, 0);
+      const hasNonPlate = mains.some(item => item.portion !== 'plate');
+
+      return { mains, saladQty, dessertQty, mainCount, hasNonPlate };
+    }
+
+    function applyMealPlanRules(card, idx){
+      if (card.classList.contains('disabled')) {
+        return;
+      }
+
+      const mainRows = Array.from(card.querySelectorAll(`[data-role="main-row"]`));
+      const saladRow = card.querySelector(`[data-role="salad-row"]`);
+      const dessertRow = card.querySelector(`[data-role="dessert-row"]`);
+
+      if (selectedMealPlan) {
+        let plateCount = 0;
+        mainRows.forEach(row => {
+          if (row.dataset.portion !== 'plate') {
+            setRowQty(row, 0);
+            setRowDisabled(row, true);
+            return;
+          }
+          setRowDisabled(row, false);
+          plateCount += parseQuantity(row.dataset.qty);
+        });
+        if (saladRow) {
+          setRowQty(saladRow, plateCount);
+          setRowDisabled(saladRow, true);
+        }
+        if (dessertRow) {
+          setRowQty(dessertRow, plateCount);
+          setRowDisabled(dessertRow, true);
+        }
+        return;
+      }
+
+      mainRows.forEach(row => {
+        setRowDisabled(row, false);
+      });
+      setRowDisabled(saladRow, false);
+      setRowDisabled(dessertRow, false);
+
+      const selection = getCardSelections(card, idx);
+      if (selection.mainCount === 0) {
+        setRowQty(saladRow, 0);
+        setRowQty(dessertRow, 0);
+        return;
+      }
+
+      if (!selection.hasNonPlate) {
+        const maxQty = selection.mainCount;
+        if (saladRow && parseQuantity(saladRow.dataset.qty) > maxQty) {
+          setRowQty(saladRow, maxQty);
+        }
+        if (dessertRow && parseQuantity(dessertRow.dataset.qty) > maxQty) {
+          setRowQty(dessertRow, maxQty);
+        }
+      }
+    }
+
+    function buildBundlesFromSelections(mains, saladQty, dessertQty){
+      const mainsWithQty = [];
+      mains.forEach((item) => {
+        if (item.portion !== 'plate') {
+          return;
+        }
+        for (let i = 0; i < item.qty; i++) {
+          mainsWithQty.push(item.name);
+        }
+      });
+
+      let remainingSalads = Math.min(saladQty, mainsWithQty.length);
+      let remainingDesserts = Math.min(dessertQty, mainsWithQty.length);
+
       const bundles = [];
       let mainIndex = 0;
-      let remainingSalads = saladQty;
-      let remainingDesserts = dessertQty;
-      
-      // First create Full Meal bundles (main + salad + dessert) - prioritize highest value
+
       while (mainIndex < mainsWithQty.length && remainingSalads > 0 && remainingDesserts > 0) {
-        bundles.push({ 
-          type: 'full', 
-          main: mainsWithQty[mainIndex], 
-          salad: true, 
+        bundles.push({
+          type: 'full',
+          main: mainsWithQty[mainIndex],
+          salad: true,
           dessert: true,
           quantity: 1
         });
@@ -1163,49 +1516,150 @@
         remainingSalads--;
         remainingDesserts--;
       }
-      
-      // Then create Main+Salad bundles
+
       while (mainIndex < mainsWithQty.length && remainingSalads > 0) {
-        bundles.push({ 
-          type: 'mainSalad', 
-          main: mainsWithQty[mainIndex], 
-          salad: true, 
+        bundles.push({
+          type: 'mainSalad',
+          main: mainsWithQty[mainIndex],
+          salad: true,
           dessert: false,
           quantity: 1
         });
         mainIndex++;
         remainingSalads--;
       }
-      
-      // Then create Main+Dessert bundles
+
       while (mainIndex < mainsWithQty.length && remainingDesserts > 0) {
-        bundles.push({ 
-          type: 'mainDessert', 
-          main: mainsWithQty[mainIndex], 
-          salad: false, 
+        bundles.push({
+          type: 'mainDessert',
+          main: mainsWithQty[mainIndex],
+          salad: false,
           dessert: true,
           quantity: 1
         });
         mainIndex++;
         remainingDesserts--;
       }
-      
-      // Finally create Main Only bundles
+
       while (mainIndex < mainsWithQty.length) {
-        bundles.push({ 
-          type: 'mainOnly', 
-          main: mainsWithQty[mainIndex], 
-          salad: false, 
+        bundles.push({
+          type: 'mainOnly',
+          main: mainsWithQty[mainIndex],
+          salad: false,
           dessert: false,
           quantity: 1
         });
         mainIndex++;
       }
-      
+
       return bundles;
     }
 
+    function getBundleLabel(type){
+      if (type === 'full') return 'Full Meal';
+      if (type === 'mainSalad') return 'Main + Salad';
+      if (type === 'mainDessert') return 'Main + Dessert';
+      return 'Main Only';
+    }
+
+    function computeDayPricing(selection, mealPlan){
+      const mains = normalizeMainSelections(selection.mains);
+      const saladQty = parseQuantity(selection.saladQty);
+      const dessertQty = parseQuantity(selection.dessertQty);
+      const mainCount = mains.reduce((sum, item) => sum + item.qty, 0);
+      const hasNonPlate = mains.some(item => item.portion !== 'plate');
+
+      if (mainCount === 0) {
+        return { mode: 'none', total: 0, mainCount: 0, mains, saladQty, dessertQty };
+      }
+
+      if (mealPlan) {
+        const planPrice = PLAN_PRICES[mealPlan] ?? 0;
+        return {
+          mode: 'plan',
+          total: roundMoney(planPrice * mainCount),
+          planPrice,
+          mainCount,
+          mains,
+          saladQty: mainCount,
+          dessertQty: mainCount
+        };
+      }
+
+      if (hasNonPlate) {
+        const portionLines = groupSelections(mains).map((item) => {
+          const unitPrice = PORTION_PRICES[item.portion] ?? PORTION_PRICES.plate;
+          const lineTotal = roundMoney(unitPrice * item.qty);
+          return {
+            ...item,
+            unitPrice,
+            lineTotal
+          };
+        });
+
+        let total = portionLines.reduce((sum, line) => sum + line.lineTotal, 0);
+        const addonLines = [];
+
+        if (saladQty > 0) {
+          const lineTotal = roundMoney(saladQty * ADDON_PRICES.salad);
+          addonLines.push({ type: 'salad', qty: saladQty, unitPrice: ADDON_PRICES.salad, lineTotal });
+          total += lineTotal;
+        }
+
+        if (dessertQty > 0) {
+          const lineTotal = roundMoney(dessertQty * ADDON_PRICES.dessert);
+          addonLines.push({ type: 'dessert', qty: dessertQty, unitPrice: ADDON_PRICES.dessert, lineTotal });
+          total += lineTotal;
+        }
+
+        return {
+          mode: 'portion',
+          total: roundMoney(total),
+          mainCount,
+          mains,
+          portionLines,
+          addonLines,
+          saladQty,
+          dessertQty
+        };
+      }
+
+      const bundleGroups = {};
+      const bundles = buildBundlesFromSelections(mains, saladQty, dessertQty);
+      bundles.forEach((bundle) => {
+        const key = `${bundle.type}|${bundle.main}`;
+        if (!bundleGroups[key]) {
+          bundleGroups[key] = { ...bundle, qty: 0 };
+        }
+        bundleGroups[key].qty += 1;
+      });
+
+      let total = 0;
+      const bundleLines = Object.values(bundleGroups).map((bundle) => {
+        const unitPrice = BUNDLE_PRICES[bundle.type] ?? BUNDLE_PRICES.full;
+        const lineTotal = roundMoney(unitPrice * bundle.qty);
+        total += lineTotal;
+        return {
+          ...bundle,
+          unitPrice,
+          lineTotal
+        };
+      });
+
+      return {
+        mode: 'bundle',
+        total: roundMoney(total),
+        mainCount,
+        mains,
+        bundleLines,
+        saladQty,
+        dessertQty
+      };
+    }
+
     async function loadMenu(){
+      menuLoader?.classList.add('show');
+      menuGrid.classList.add('loading');
       try{
         const res = await fetch(API_MENU_URL);
         const json = await res.json();
@@ -1214,8 +1668,11 @@
         }
       }catch(err){
         console.warn('Menu load failed, using bundled data', err);
+      }finally{
+        renderMenu();
+        menuGrid.classList.remove('loading');
+        menuLoader?.classList.remove('show');
       }
-      renderMenu();
     }
 
     function escapeHtml(str){
@@ -1286,70 +1743,101 @@
                 <span class="st-ar">اختر الكميات</span>
               </div>
               
-              <div class="section-title dual" style="margin-top:16px;">
-                <span class="st-en">Main Dishes</span>
-                <span class="st-ar">الأطباق الرئيسية</span>
+              <div class="section-head">
+                <div class="section-title dual" style="margin:0;">
+                  <span class="st-en">Main Dishes</span>
+                  <span class="st-ar">الأطباق الرئيسية</span>
+                </div>
+                <button class="section-clear" type="button" data-role="clear-section" data-target="main">Clear</button>
               </div>
               <div class="choice-group">
-                ${day.mains.map((m, mainIdx) => `
-                  <label class="choice quantity-choice">
-                    <div class="bilingual-label">
-                      <span class="label-en">${escapeHtml(m)}</span>
-                      <span class="label-ar">${escapeHtml(getArTranslation(m))}</span>
+                ${day.mains.map((m) => {
+                  const portions = [
+                    { key: 'full', label: 'Full Portion' },
+                    { key: 'half', label: 'Half Portion' },
+                    { key: 'plate', label: 'Plate' },
+                  ];
+                  return `
+                    <div class="item-row">
+                      <div class="item-info">
+                        <div class="item-name-en">${escapeHtml(m)}</div>
+                      </div>
+                      <div class="item-options">
+                        <div class="item-name-ar">${escapeHtml(getArTranslation(m))}</div>
+                        ${portions.map((portion) => `
+                          <label class="quantity-choice option-row"
+                                 data-role="main-row"
+                                 data-main-name="${escapeHtml(m)}"
+                                 data-portion="${portion.key}"
+                                 data-qty="0">
+                            <span class="option-label">${portion.label}</span>
+                            <span class="qty-display" data-role="qty-display"></span>
+                            <input type="checkbox"
+                                   class="increment-check"
+                                   data-role="increment"
+                                   aria-label="Add ${portion.label} for ${escapeHtml(m)}" />
+                          </label>
+                        `).join("")}
+                      </div>
                     </div>
-                    <input type="number"
-                           name="main_${idx}_${mainIdx}"
-                           data-main-name="${escapeHtml(m)}"
-                           data-role="main"
-                           data-value="${escapeHtml(m)}"
-                           min="0"
-                           max="20"
-                           value="0"
-                           class="quantity-input" />
-                  </label>
-                `).join("")}
+                  `;
+                }).join("")}
               </div>
 
-              <div class="section-title dual" style="margin-top:16px;">
-                <span class="st-en">Salad</span>
-                <span class="st-ar">سلطة</span>
+              <div class="section-head">
+                <div class="section-title dual" style="margin:0;">
+                  <span class="st-en">Salad</span>
+                  <span class="st-ar">سلطة</span>
+                </div>
+                <button class="section-clear" type="button" data-role="clear-section" data-target="salad">Clear</button>
               </div>
               <div class="choice-group">
-                <label class="choice quantity-choice">
-                  <div class="bilingual-label">
-                    <span class="label-en">${escapeHtml(day.salad)}</span>
-                    <span class="label-ar">${escapeHtml(getArTranslation(day.salad))}</span>
+                <div class="item-row">
+                  <div class="item-info">
+                    <div class="item-name-en">${escapeHtml(day.salad)}</div>
                   </div>
-                  <input type="number"
-                         name="salad_${idx}"
-                         data-salad-name="${escapeHtml(day.salad)}"
-                         data-role="salad"
-                         min="0"
-                         max="20"
-                         value="0"
-                         class="quantity-input" />
-                </label>
+                  <div class="item-options">
+                    <div class="item-name-ar">${escapeHtml(getArTranslation(day.salad))}</div>
+                    <label class="quantity-choice option-row"
+                           data-role="salad-row"
+                           data-qty="0">
+                      <span class="option-label">Plate</span>
+                      <span class="qty-display" data-role="qty-display"></span>
+                      <input type="checkbox"
+                             class="increment-check"
+                             data-role="increment"
+                             aria-label="Add salad" />
+                    </label>
+                  </div>
+                </div>
               </div>
 
-              <div class="section-title dual" style="margin-top:16px;">
-                <span class="st-en">Dessert</span>
-                <span class="st-ar">تحلية</span>
+              <div class="section-head">
+                <div class="section-title dual" style="margin:0;">
+                  <span class="st-en">Dessert</span>
+                  <span class="st-ar">تحلية</span>
+                </div>
+                <button class="section-clear" type="button" data-role="clear-section" data-target="dessert">Clear</button>
               </div>
               <div class="choice-group">
-                <label class="choice quantity-choice">
-                  <div class="bilingual-label">
-                    <span class="label-en">${escapeHtml(day.dessert)}</span>
-                    <span class="label-ar">${escapeHtml(getArTranslation(day.dessert))}</span>
+                <div class="item-row">
+                  <div class="item-info">
+                    <div class="item-name-en">${escapeHtml(day.dessert)}</div>
                   </div>
-                  <input type="number"
-                         name="dessert_${idx}"
-                         data-dessert-name="${escapeHtml(day.dessert)}"
-                         data-role="dessert"
-                         min="0"
-                         max="20"
-                         value="0"
-                         class="quantity-input" />
-                </label>
+                  <div class="item-options">
+                    <div class="item-name-ar">${escapeHtml(getArTranslation(day.dessert))}</div>
+                    <label class="quantity-choice option-row"
+                           data-role="dessert-row"
+                           data-qty="0">
+                      <span class="option-label">Plate</span>
+                      <span class="qty-display" data-role="qty-display"></span>
+                      <input type="checkbox"
+                             class="increment-check"
+                             data-role="increment"
+                             aria-label="Add dessert" />
+                    </label>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1366,88 +1854,128 @@
         return;
       }
 
-      const mainInputs = Array.from(card.querySelectorAll(`input[data-role="main"]`));
-      const saladInput = card.querySelector(`input[name="salad_${idx}"][data-role="salad"]`);
-      const dessertInput = card.querySelector(`input[name="dessert_${idx}"][data-role="dessert"]`);
+      const incrementers = Array.from(card.querySelectorAll(`[data-role="increment"]`));
+      const rows = Array.from(card.querySelectorAll(`.quantity-choice`));
+      const sectionClears = Array.from(card.querySelectorAll(`[data-role="clear-section"]`));
       const clearBtn = card.querySelector('[data-role="clear-day"]');
 
       function handleChange(){
+        applyMealPlanRules(card, idx);
         updateCardSelectionState(card, idx);
         selectedMealCount = countSelectedMeals();
         updateMealPlanStatus();
-        updateAllCardStates();
       }
 
-      mainInputs.forEach(input => {
-        input.addEventListener("input", handleChange);
-        input.addEventListener("change", handleChange);
+      incrementers.forEach((checkbox) => {
+        checkbox.addEventListener("click", (event) => {
+          event.preventDefault();
+          const row = checkbox.closest('.quantity-choice');
+          if (!row || row.classList.contains('disabled')) {
+            return;
+          }
+          incrementRow(row);
+          checkbox.checked = false;
+          handleChange();
+        });
       });
 
-      if (saladInput) {
-        saladInput.addEventListener("input", handleChange);
-        saladInput.addEventListener("change", handleChange);
-      }
+      sectionClears.forEach((button) => {
+        button.addEventListener("click", () => {
+          const target = button.dataset.target;
+          if (target === 'main') {
+            card.querySelectorAll(`[data-role="main-row"]`).forEach(row => setRowQty(row, 0));
+          } else if (target === 'salad') {
+            setRowQty(card.querySelector(`[data-role="salad-row"]`), 0);
+          } else if (target === 'dessert') {
+            setRowQty(card.querySelector(`[data-role="dessert-row"]`), 0);
+          }
 
-      if (dessertInput) {
-        dessertInput.addEventListener("input", handleChange);
-        dessertInput.addEventListener("change", handleChange);
-      }
+          applyMealPlanRules(card, idx);
+          updateCardSelectionState(card, idx);
+          selectedMealCount = countSelectedMeals();
+          updateMealPlanStatus();
+        });
+      });
 
       clearBtn.addEventListener("click", () => {
-        mainInputs.forEach(input => input.value = 0);
-        if (saladInput) saladInput.value = 0;
-        if (dessertInput) dessertInput.value = 0;
+        rows.forEach(row => setRowQty(row, 0));
 
+        applyMealPlanRules(card, idx);
         updateCardSelectionState(card, idx);
         selectedMealCount = countSelectedMeals();
         updateMealPlanStatus();
-        updateAllCardStates();
       });
     }
 
     function updateCardSelectionState(card, idx){
-      const bundles = getDayBundles(card, idx);
-      const selected = bundles.length > 0;
+      const selection = getCardSelections(card, idx);
+      const pricing = computeDayPricing({
+        mains: selection.mains,
+        saladQty: selection.saladQty,
+        dessertQty: selection.dessertQty
+      }, selectedMealPlan);
+      const selected = pricing.mainCount > 0;
 
       const status = card.querySelector('[data-role="status"]');
       const preview = card.querySelector('[data-role="bundle-preview"]');
 
       card.classList.toggle("selected", selected);
       status.classList.toggle("active", selected);
-      
+
       if (selected) {
-        const dayMealCount = bundles.length;
-        status.textContent = `Selected (${dayMealCount} bundle${dayMealCount !== 1 ? 's' : ''})`;
-        
-        // Show bundle breakdown with quantities and prices
-        const bundleGroups = {};
-        bundles.forEach(b => {
-          const key = `${b.type}_${b.main}`;
-          if (!bundleGroups[key]) {
-            bundleGroups[key] = { ...b, quantity: 0 };
+        status.textContent = `Selected (${pricing.mainCount} meal${pricing.mainCount !== 1 ? 's' : ''})`;
+
+        const day = MENU_DAYS[idx] || {};
+        const lines = [];
+
+        if (pricing.mode === 'plan') {
+          const mainNames = groupMainNames(pricing.mains)
+            .map((item) => `${escapeHtml(item.name)} x${item.qty}`)
+            .join(', ');
+          lines.push(`<strong>Meal Plan:</strong> ${pricing.mainCount} meal${pricing.mainCount !== 1 ? 's' : ''} x QAR ${formatPrice(pricing.planPrice)}`);
+          if (mainNames) {
+            lines.push(`Mains: ${mainNames}`);
           }
-          bundleGroups[key].quantity++;
-        });
-        
-        let totalDayPrice = 0;
-        const bundleTexts = Object.values(bundleGroups).map((b, i) => {
-          let typeText = b.type === 'full' ? 'Full Meal' 
-            : b.type === 'mainSalad' ? 'Main+Salad' 
-            : b.type === 'mainDessert' ? 'Main+Dessert'
-            : 'Main Only';
-          const price = PRICES[b.type] ?? PRICES.full;
-          const bundleTotal = price * b.quantity;
-          totalDayPrice += bundleTotal;
-          
-          const qtyText = b.quantity > 1 ? ` ×${b.quantity}` : '';
-          const priceText = b.quantity > 1 ? ` = QAR ${bundleTotal}` : ` (QAR ${price})`;
-          return `${i+1}. ${typeText}: ${b.main}${qtyText}${priceText}`;
-        });
-        
+          if (day.salad) {
+            lines.push(`Salad: ${escapeHtml(day.salad)} x${pricing.mainCount}`);
+          }
+          if (day.dessert) {
+            lines.push(`Dessert: ${escapeHtml(day.dessert)} x${pricing.mainCount}`);
+          }
+        } else if (pricing.mode === 'portion') {
+          const portionTexts = pricing.portionLines.map((line) => {
+            const qtyText = line.qty > 1 ? ` x${line.qty}` : '';
+            const priceText = line.qty > 1
+              ? ` = QAR ${formatPrice(line.lineTotal)}`
+              : ` (QAR ${formatPrice(line.unitPrice)})`;
+            return `${formatPortionLabel(line.portion)}: ${escapeHtml(line.name)}${qtyText}${priceText}`;
+          });
+          lines.push(`<strong>Portions:</strong> ${portionTexts.join('; ')}`);
+          pricing.addonLines.forEach((addon) => {
+            const label = addon.type === 'salad' ? day.salad : day.dessert;
+            if (label) {
+              const qtyText = addon.qty > 1 ? ` x${addon.qty}` : '';
+              const priceText = addon.qty > 1
+                ? ` = QAR ${formatPrice(addon.lineTotal)}`
+                : ` (QAR ${formatPrice(addon.unitPrice)})`;
+              lines.push(`${addon.type === 'salad' ? 'Salad' : 'Dessert'}: ${escapeHtml(label)}${qtyText}${priceText}`);
+            }
+          });
+        } else if (pricing.mode === 'bundle') {
+          const bundleTexts = pricing.bundleLines.map((bundle) => {
+            const qtyText = bundle.qty > 1 ? ` x${bundle.qty}` : '';
+            const priceText = bundle.qty > 1
+              ? ` = QAR ${formatPrice(bundle.lineTotal)}`
+              : ` (QAR ${formatPrice(bundle.unitPrice)})`;
+            return `${getBundleLabel(bundle.type)}: ${escapeHtml(bundle.main)}${qtyText}${priceText}`;
+          });
+          lines.push(`<strong>Bundles:</strong> ${bundleTexts.join('; ')}`);
+        }
+
         preview.innerHTML = `
-          <div style="margin-bottom:6px;"><strong>Bundles:</strong> ${bundleTexts.join('; ')}</div>
+          <div style="margin-bottom:6px;">${lines.map(line => `<div>${line}</div>`).join('')}</div>
           <div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(0,0,0,0.1);font-weight:600;color:var(--blue);">
-            Day Total: QAR ${totalDayPrice}
+            Day Total: QAR ${formatPrice(pricing.total)}
           </div>
         `;
         preview.style.display = 'block';
@@ -1488,37 +2016,41 @@
       const mealPlan = (fd.get("mealPlan") || "").toString().trim();
 
       const items = [];
+      const errors = [];
       let total = 0;
 
       const cards = Array.from(document.querySelectorAll(".day-card"));
 
       cards.forEach((card, idx) => {
         const day = MENU_DAYS[idx];
-        const bundles = getDayBundles(card, idx);
+        const selection = getCardSelections(card, idx);
 
-        if (bundles.length === 0) return;
+        if ((selection.saladQty > 0 || selection.dessertQty > 0) && selection.mainCount === 0) {
+          errors.push(`Please select a main dish for ${day.enDay}.`);
+          return;
+        }
 
-        bundles.forEach((bundle) => {
-          const mealTypeLabel =
-            bundle.type === "full" ? "Full Meal"
-            : bundle.type === "mainSalad" ? "Main + Salad"
-            : bundle.type === "mainDessert" ? "Main + Dessert"
-            : "Main Only";
+        if (selection.mainCount === 0) {
+          return;
+        }
 
-          const price = PRICES[bundle.type] ?? PRICES.full;
-          total += price;
+        const pricing = computeDayPricing({
+          mains: selection.mains,
+          saladQty: selection.saladQty,
+          dessertQty: selection.dessertQty
+        }, mealPlan || null);
 
-          items.push({
-            key: day.key,
-            enDay: day.enDay,
-            arDay: day.arDay,
-            salad: bundle.salad ? day.salad : '',
-            dessert: bundle.dessert ? day.dessert : '',
-            main: bundle.main,
-            mealType: bundle.type,
-            mealTypeLabel,
-            price: price
-          });
+        total += pricing.total;
+
+        items.push({
+          key: day.key,
+          enDay: day.enDay,
+          arDay: day.arDay,
+          salad: day.salad,
+          dessert: day.dessert,
+          salad_qty: pricing.saladQty,
+          dessert_qty: pricing.dessertQty,
+          mains: selection.mains
         });
       });
 
@@ -1529,8 +2061,9 @@
         address, 
         notes, 
         items, 
-        total,
-        mealPlan: mealPlan || null
+        total: roundMoney(total),
+        mealPlan: mealPlan || null,
+        errors
       };
     }
 
@@ -1559,15 +2092,66 @@
       lines.push("--------------");
 
       const itemsHtml = data.items.map((it, i) => {
-        const priceText = `QAR ${it.price}`;
-        
+        const pricing = computeDayPricing({
+          mains: it.mains,
+          saladQty: it.salad_qty,
+          dessertQty: it.dessert_qty
+        }, data.mealPlan);
+
+        const mainsSummary = groupSelections(pricing.mains)
+          .map((item) => `${item.name} (${formatPortionLabel(item.portion)} x${item.qty})`)
+          .join(', ') || 'None';
+
+        const saladLine = pricing.saladQty > 0
+          ? `${it.salad} x${pricing.saladQty}`
+          : 'None';
+        const dessertLine = pricing.dessertQty > 0
+          ? `${it.dessert} x${pricing.dessertQty}`
+          : 'None';
+
+        const pricingLines = [];
+        if (pricing.mode === 'plan') {
+          pricingLines.push(`Meal Plan: ${pricing.mainCount} meal${pricing.mainCount !== 1 ? 's' : ''} x QAR ${formatPrice(pricing.planPrice)}`);
+        } else if (pricing.mode === 'portion') {
+          pricing.portionLines.forEach((line) => {
+            const qtyText = line.qty > 1 ? ` x${line.qty}` : '';
+            const priceText = line.qty > 1
+              ? ` = QAR ${formatPrice(line.lineTotal)}`
+              : ` (QAR ${formatPrice(line.unitPrice)})`;
+            pricingLines.push(`${formatPortionLabel(line.portion)}: ${line.name}${qtyText}${priceText}`);
+          });
+          pricing.addonLines.forEach((addon) => {
+            const label = addon.type === 'salad' ? it.salad : it.dessert;
+            const qtyText = addon.qty > 1 ? ` x${addon.qty}` : '';
+            const priceText = addon.qty > 1
+              ? ` = QAR ${formatPrice(addon.lineTotal)}`
+              : ` (QAR ${formatPrice(addon.unitPrice)})`;
+            pricingLines.push(`${addon.type === 'salad' ? 'Salad' : 'Dessert'}: ${label}${qtyText}${priceText}`);
+          });
+        } else if (pricing.mode === 'bundle') {
+          pricing.bundleLines.forEach((bundle) => {
+            const qtyText = bundle.qty > 1 ? ` x${bundle.qty}` : '';
+            const priceText = bundle.qty > 1
+              ? ` = QAR ${formatPrice(bundle.lineTotal)}`
+              : ` (QAR ${formatPrice(bundle.unitPrice)})`;
+            pricingLines.push(`${getBundleLabel(bundle.type)}: ${bundle.main}${qtyText}${priceText}`);
+          });
+        }
+
         lines.push(
           `${i+1}. ${it.enDay} (${it.key})\n` +
-          `   Meal Type: ${it.mealTypeLabel} - ${priceText}\n` +
-          `   Salad: ${it.salad || 'None'}\n` +
-          `   Dessert: ${it.dessert || 'None'}\n` +
-          `   Main: ${it.main}`
+          `   Mains: ${mainsSummary}\n` +
+          `   Salad: ${saladLine}\n` +
+          `   Dessert: ${dessertLine}\n` +
+          `   Pricing:\n` +
+          pricingLines.map(line => `     - ${line}`).join("\n") + "\n" +
+          `   Day Total: QAR ${formatPrice(pricing.total)}`
         );
+
+        const pricingHtml = pricingLines.length
+          ? pricingLines.map(line => escapeHtml(line)).join('<br>')
+          : '';
+
         return `
           <div class="item">
             <div class="title">
@@ -1575,17 +2159,18 @@
               <span class="sub">${escapeHtml(it.key)}</span>
             </div>
             <ul>
-              <li><strong>Meal Type:</strong> ${escapeHtml(it.mealTypeLabel)} - ${priceText}</li>
-              <li><strong>Salad:</strong> ${escapeHtml(it.salad || 'None')}</li>
-              <li><strong>Dessert:</strong> ${escapeHtml(it.dessert || 'None')}</li>
-              <li><strong>Main:</strong> ${escapeHtml(it.main)}</li>
+              <li><strong>Mains:</strong> ${escapeHtml(mainsSummary)}</li>
+              <li><strong>Salad:</strong> ${escapeHtml(saladLine)}</li>
+              <li><strong>Dessert:</strong> ${escapeHtml(dessertLine)}</li>
+              ${pricingHtml ? `<li><strong>Pricing:</strong><br>${pricingHtml}</li>` : ''}
+              <li><strong>Day Total:</strong> QAR ${formatPrice(pricing.total)}</li>
             </ul>
           </div>
         `;
       }).join("");
 
       lines.push("");
-      lines.push(`TOTAL: QAR ${data.total}`);
+      lines.push(`TOTAL: QAR ${formatPrice(data.total)}`);
       lines.push("");
       lines.push("Please place orders before 24 hours.");
       lines.push("Contact: 55683442");
@@ -1608,7 +2193,7 @@
         </div>
         ${planHtml}
         <div class="items">${itemsHtml}</div>
-        <div class="total">TOTAL: QAR ${data.total}</div>
+        <div class="total">TOTAL: QAR ${formatPrice(data.total)}</div>
         <p class="note" style="margin-top:8px;color:${'var(--muted)'};font-size:12px;">Please place orders before 24 hours. Contact: 55683442</p>
       `;
 
@@ -1620,10 +2205,17 @@
 
       const data = collectFormData();
 
+      if (data.errors && data.errors.length) {
+        alert(data.errors[0]);
+        return;
+      }
+
       if (!data.items.length){
         alert("Please choose at least one main dish for any day.");
         return;
       }
+
+      delete data.errors;
 
       // reCAPTCHA disabled for now; dashboard will accept requests without a token.
       // If you re-enable it later, restore token generation here.
@@ -1708,15 +2300,8 @@
       selectedMealPlan = null;
 
       document.querySelectorAll(".day-card").forEach((card, idx) => {
-        const mainInputs = card.querySelectorAll(`input[data-role="main"]`);
-        const saladInput = card.querySelector(`input[name="salad_${idx}"][data-role="salad"]`);
-        const dessertInput = card.querySelector(`input[name="dessert_${idx}"][data-role="dessert"]`);
-        
-        mainInputs.forEach(input => input.value = 0);
-        if (saladInput) saladInput.value = 0;
-        if (dessertInput) dessertInput.value = 0;
-
-        updateCardSelectionState(card, idx);
+        const rows = card.querySelectorAll(`.quantity-choice`);
+        rows.forEach(row => setRowQty(row, 0));
       });
 
       selectedMealCount = 0;
@@ -1726,4 +2311,5 @@
   </script>
 </body>
 </html>
+
 

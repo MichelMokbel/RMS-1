@@ -6,6 +6,8 @@ use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 
 new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
@@ -13,14 +15,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $status = 'all';
     public ?string $source = null;
     public ?int $branch_id = null;
-    public bool $daily_dish_only = false;
+    public string $daily_dish_filter = 'all';
+    public ?string $scheduled_date = null;
     public string $search = '';
 
     protected $paginationTheme = 'tailwind';
 
     public function updating($field): void
     {
-        if (in_array($field, ['status','source','branch_id','daily_dish_only','search'], true)) {
+        if (in_array($field, ['status','source','branch_id','daily_dish_filter','scheduled_date','search'], true)) {
             $this->resetPage();
         }
     }
@@ -44,7 +47,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            $actorId = (int) (auth()->id() ?? 1);
+            $actorId = (int) (Auth::id() ?? 1);
             app(OrderWorkflowService::class)->advanceOrder($order, 'Confirmed', $actorId);
             session()->flash('status_message', __('Order confirmed.'));
         } catch (ValidationException $e) {
@@ -61,7 +64,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->status !== 'all', fn ($q) => $q->where('status', $this->status))
             ->when($this->source, fn ($q) => $q->where('source', $this->source))
             ->when($this->branch_id, fn ($q) => $q->where('branch_id', $this->branch_id))
-            ->when($this->daily_dish_only, fn ($q) => $q->where('is_daily_dish', 1))
+            ->when($this->daily_dish_filter === 'only', fn ($q) => $q->where('is_daily_dish', 1))
+            ->when($this->daily_dish_filter === 'exclude', function ($q) {
+                $q->where(function ($qq) {
+                    $qq->whereNull('is_daily_dish')
+                        ->orWhere('is_daily_dish', 0);
+                });
+            })
+            ->when($this->scheduled_date, fn ($q) => $q->whereDate('scheduled_date', $this->scheduled_date))
             ->when($this->search, function ($q) {
                 $term = '%'.$this->search.'%';
                 $q->where(function ($qq) use ($term) {
@@ -69,6 +79,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                        ->orWhere('customer_name_snapshot', 'like', $term)
                        ->orWhere('customer_phone_snapshot', 'like', $term);
                 });
+            })
+            ->when(Schema::hasTable('meal_plan_requests'), function ($q) {
+                $q->whereRaw(
+                    "NOT EXISTS (
+                        SELECT 1
+                        FROM meal_plan_requests mpr
+                        WHERE mpr.status NOT IN ('converted', 'closed')
+                          AND mpr.order_ids IS NOT NULL
+                          AND JSON_CONTAINS(mpr.order_ids, JSON_ARRAY(orders.id))
+                    )"
+                );
             })
             ->orderByDesc('created_at');
     }
@@ -80,9 +101,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="flex gap-2">
             <flux:button :href="route('orders.create')" wire:navigate variant="primary">{{ __('New Order') }}</flux:button>
             <flux:button :href="route('orders.kitchen')" wire:navigate variant="ghost">{{ __('Kitchen View') }}</flux:button>
-            <flux:button :href="route('orders.daily-dish')" wire:navigate variant="ghost">{{ __('Daily Dish') }}</flux:button>
+            <!-- <flux:button :href="route('orders.daily-dish')" wire:navigate variant="ghost">{{ __('Daily Dish') }}</flux:button>
             <flux:button :href="route('daily-dish.menus.index')" wire:navigate variant="ghost">{{ __('Daily Dish Menus') }}</flux:button>
-            <flux:button :href="route('subscriptions.generate')" wire:navigate variant="ghost">{{ __('Generate Subscriptions') }}</flux:button>
+            <flux:button :href="route('subscriptions.generate')" wire:navigate variant="ghost">{{ __('Generate Subscriptions') }}</flux:button> -->
         </div>
     </div>
 
@@ -99,12 +120,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
         <div class="flex flex-wrap items-end gap-3">
-            <div class="flex-1 min-w-[200px]">
-                <flux:input wire:model.live.debounce.300ms="search" placeholder="{{ __('Search order number / customer') }}" />
+            <div class="min-w-[220px] flex-1">
+                <flux:input wire:model.live.debounce.300ms="search" :label="__('Search')" placeholder="{{ __('Search order number / customer') }}" />
             </div>
-            <div>
+            <div class="w-40">
+                <flux:input wire:model.live="scheduled_date" type="date" :label="__('Date')" />
+            </div>
+            <div class="w-40">
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Status') }}</label>
-                <select wire:model.live="status" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                <select wire:model.live="status" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                     <option value="all">{{ __('All') }}</option>
                     <option value="Draft">{{ __('Draft') }}</option>
                     <option value="Confirmed">{{ __('Confirmed') }}</option>
@@ -115,9 +139,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <option value="Cancelled">{{ __('Cancelled') }}</option>
                 </select>
             </div>
-            <div>
+            <div class="w-40">
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Source') }}</label>
-                <select wire:model.live="source" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                <select wire:model.live="source" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                     <option value="">{{ __('All') }}</option>
                     <option value="Subscription">{{ __('Subscription') }}</option>
                     <option value="Backoffice">{{ __('Backoffice') }}</option>
@@ -126,12 +150,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <option value="WhatsApp">{{ __('WhatsApp') }}</option>
                 </select>
             </div>
-            <div>
-                <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Branch') }}</label>
-                <flux:input wire:model.live="branch_id" type="number" class="w-24" />
+            <div class="w-28">
+                <flux:input wire:model.live="branch_id" type="number" :label="__('Branch')" />
             </div>
-            <div class="flex items-center gap-2 pt-6">
-                <flux:checkbox wire:model.live="daily_dish_only" :label="__('Daily Dish only')" />
+            <div class="w-48">
+                <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Orders') }}</label>
+                <select wire:model.live="daily_dish_filter" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                    <option value="all">{{ __('All orders') }}</option>
+                    <option value="exclude">{{ __('Hide Daily Dish') }}</option>
+                    <option value="only">{{ __('Daily Dish only') }}</option>
+                </select>
             </div>
         </div>
     </div>
@@ -194,4 +222,3 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{ $orders->links() }}
     </div>
 </div>
-

@@ -59,6 +59,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             'closed' => __('Closed'),
             default => (string) $mpr->status,
         };
+        if ((int) $mpr->plan_meals <= 0 && $mpr->status === 'converted') {
+            $statusLabel = __('Accepted');
+        }
         $statusClasses = match ($mpr->status) {
             'new' => 'bg-neutral-100 text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100',
             'contacted' => 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-100',
@@ -74,7 +77,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{ $statusLabel }}
             </span>
             <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Requested') }}: {{ $mpr->created_at?->format('Y-m-d H:i') }}</span>
-            <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Plan') }}: {{ $mpr->plan_meals }} {{ __('meals') }}</span>
+            <span class="text-sm text-neutral-700 dark:text-neutral-200">
+                {{ __('Plan') }}:
+                {{ $mpr->plan_meals > 0 ? $mpr->plan_meals.' '.__('meals') : __('No plan') }}
+            </span>
             <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Orders attached') }}: {{ is_array($mpr->order_ids) ? count($mpr->order_ids) : 0 }}</span>
         </div>
 

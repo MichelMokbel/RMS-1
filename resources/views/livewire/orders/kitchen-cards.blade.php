@@ -4,6 +4,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Services\Orders\OrderWorkflowService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -87,7 +88,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private function ensureCanUpdate(): void
     {
-        if (! auth()->user()?->hasAnyRole(['admin','manager','kitchen'])) {
+        /** @var \App\Models\User|null $user */
+        $user = Auth::user();
+        if (! $user || ! $user->hasAnyRole(['admin','manager','kitchen'])) {
             abort(403);
         }
     }
@@ -98,7 +101,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         try {
             /** @var Order $order */
             $order = Order::findOrFail($orderId);
-            app(OrderWorkflowService::class)->advanceOrder($order, $toStatus, (int) auth()->id());
+            app(OrderWorkflowService::class)->advanceOrder($order, $toStatus, (int) Auth::id());
             $this->dispatch('toast', type: 'success', message: __('Order status updated.'));
         } catch (\Throwable $e) {
             $this->dispatch('toast', type: 'error', message: __('Could not update order status.'));
@@ -111,7 +114,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         try {
             /** @var OrderItem $item */
             $item = OrderItem::findOrFail($itemId);
-            app(OrderWorkflowService::class)->setItemStatus($item, $toStatus, (int) auth()->id());
+            app(OrderWorkflowService::class)->setItemStatus($item, $toStatus, (int) Auth::id());
             $this->dispatch('toast', type: 'success', message: __('Item status updated.'));
         } catch (\Throwable $e) {
             $this->dispatch('toast', type: 'error', message: __('Could not update item status.'));
@@ -159,68 +162,174 @@ new #[Layout('components.layouts.app')] class extends Component {
             @php
                 $urgent = $order->scheduled_time && ! in_array($order->status, ['Ready','Delivered','Cancelled'], true)
                     && \Carbon\Carbon::parse($order->scheduled_time)->between(now()->subMinutes(5), now()->addMinutes(30));
+                $mainLines = [];
+                $saladLines = [];
+                $dessertLines = [];
+                $otherLines = [];
+                $formatQty = function ($qty) {
+                    $qty = (float) $qty;
+                    if (abs($qty - round($qty)) < 0.0001) {
+                        return (string) (int) round($qty);
+                    }
+                    return rtrim(rtrim(number_format($qty, 2, '.', ''), '0'), '.');
+                };
+                $pushLine = function (&$bucket, $key, $line) {
+                    if (! isset($bucket[$key])) {
+                        $bucket[$key] = $line;
+                        return;
+                    }
+                    $bucket[$key]['qty'] += $line['qty'];
+                };
+
+                foreach ($order->items as $item) {
+                    $description = trim((string) $item->description_snapshot);
+                    $qty = (float) $item->quantity;
+                    if ($description === '') {
+                        continue;
+                    }
+                    if (preg_match('/^Daily Dish \\(([^)]+)\\)\\s*-\\s*(.+)$/i', $description, $matches)) {
+                        $label = trim($matches[1]);
+                        $name = trim($matches[2]);
+
+                        if ($label === 'Salad Add-on') {
+                            $pushLine($saladLines, strtolower($name), ['name' => $name, 'qty' => $qty]);
+                            continue;
+                        }
+                        if ($label === 'Dessert Add-on') {
+                            $pushLine($dessertLines, strtolower($name), ['name' => $name, 'qty' => $qty]);
+                            continue;
+                        }
+
+                        $portion = $label === 'Half Portion' ? 'Half Portion' : ($label === 'Full Portion' ? 'Full Portion' : 'Plate');
+                        $key = strtolower($name.'|'.$portion);
+                        $pushLine($mainLines, $key, ['name' => $name, 'portion' => $portion, 'qty' => $qty]);
+                        continue;
+                    }
+
+                    $pushLine($otherLines, strtolower($description), ['name' => $description, 'qty' => $qty]);
+                }
+
+                $mainLines = array_values($mainLines);
+                $saladLines = array_values($saladLines);
+                $dessertLines = array_values($dessertLines);
+                $otherLines = array_values($otherLines);
+                $statusClasses = [
+                    'Confirmed' => 'bg-neutral-100 text-neutral-700 border-neutral-200 dark:bg-neutral-800 dark:text-neutral-100 dark:border-neutral-700',
+                    'InProduction' => 'bg-neutral-100 text-neutral-700 border-neutral-200 dark:bg-neutral-800 dark:text-neutral-100 dark:border-neutral-700',
+                    'Ready' => 'bg-neutral-100 text-neutral-700 border-neutral-200 dark:bg-neutral-800 dark:text-neutral-100 dark:border-neutral-700',
+                    'Cancelled' => 'bg-neutral-100 text-neutral-700 border-neutral-200 dark:bg-neutral-800 dark:text-neutral-100 dark:border-neutral-700',
+                    'Delivered' => 'bg-neutral-100 text-neutral-700 border-neutral-200 dark:bg-neutral-800 dark:text-neutral-100 dark:border-neutral-700',
+                    'Draft' => 'bg-neutral-100 text-neutral-700 border-neutral-200 dark:bg-neutral-800 dark:text-neutral-100 dark:border-neutral-700',
+                ];
+                $statusClass = $statusClasses[$order->status] ?? 'bg-neutral-100 text-neutral-700 border-neutral-200 dark:bg-neutral-800 dark:text-neutral-100 dark:border-neutral-700';
             @endphp
-            <div class="flex flex-col justify-between rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 @if($urgent) ring-2 ring-amber-400 dark:ring-amber-500 @endif">
+            <div class="flex flex-col gap-3 rounded-[28px] border border-neutral-300 bg-white px-6 py-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 @if($urgent) ring-2 ring-amber-400 dark:ring-amber-500 @endif">
+                {{-- Header: Customer info and status tags --}}
                 <div class="flex items-start justify-between gap-3">
-                    <div>
-                        <p class="text-sm font-semibold text-neutral-900 dark:text-neutral-50">{{ $order->customer_name_snapshot ?? '—' }}</p>
-                        <p class="text-xs text-neutral-600 dark:text-neutral-300">{{ $order->order_number }}</p>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2 mb-1">
+                            <p class="text-base font-semibold text-neutral-900 dark:text-neutral-50">{{ $order->customer_name_snapshot ?? __('Unknown') }}</p>
+                            <span class="text-xs font-medium text-neutral-500 dark:text-neutral-400">{{ $order->order_number }}</span>
+                        </div>
+                        <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Phone') }}: {{ $order->customer_phone_snapshot ?? __('N/A') }}</p>
+                        <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Address') }}: {{ $order->delivery_address_snapshot ?? __('N/A') }}</p>
                     </div>
-                    <div class="text-right space-y-1">
-                        <p class="text-xs text-neutral-600 dark:text-neutral-300">{{ $order->scheduled_time ?? __('No time') }}</p>
-                        <span class="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100">
+                    <div class="flex flex-wrap items-center gap-1.5 justify-end">
+                        <span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold {{ $statusClass }}">
                             {{ $order->status }}
                         </span>
-                        <div class="flex flex-wrap justify-end gap-1 text-[10px]">
-                            <span class="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 dark:bg-neutral-800">{{ $order->type }}</span>
-                            <span class="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 dark:bg-neutral-800">{{ $order->source }}</span>
-                            @if($order->is_daily_dish)
-                                <span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-800 dark:bg-blue-900 dark:text-blue-100">
-                                    DD
-                                </span>
-                            @endif
-                        </div>
+                        <span class="inline-flex items-center rounded-full border border-neutral-300 px-2.5 py-0.5 text-[11px] font-semibold text-neutral-600 dark:border-neutral-700 dark:text-neutral-300">
+                            {{ $order->type }}
+                        </span>
+                        <span class="inline-flex items-center rounded-full border border-neutral-300 px-2.5 py-0.5 text-[11px] font-semibold text-neutral-600 dark:border-neutral-700 dark:text-neutral-300">
+                            {{ $order->source }}
+                        </span>
+                        @if($order->is_daily_dish)
+                            <span class="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700 dark:border-blue-600/40 dark:bg-blue-900/20 dark:text-blue-300">DD</span>
+                        @endif
                     </div>
                 </div>
 
-                <div class="mt-3 space-y-1 text-xs text-neutral-800 dark:text-neutral-100">
-                    <div>{{ $order->customer_phone_snapshot ?? '—' }}</div>
-                    @if(in_array($order->type, ['Delivery','Pastry']) || $order->source === 'Subscription')
-                        <div class="line-clamp-2 text-[11px] text-neutral-700 dark:text-neutral-300">
-                            {{ $order->delivery_address_snapshot ?? '—' }}
-                        </div>
+                {{-- Items list: Simple and clear --}}
+                <div class="space-y-1.5">
+                    @if (count($mainLines) || count($saladLines) || count($dessertLines))
+                        @foreach ($mainLines as $line)
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="text-neutral-900 dark:text-neutral-100">
+                                    <span class="text-neutral-500 dark:text-neutral-400">{{ __('Main Dish') }}:</span>
+                                    <span class="ml-1 font-medium">{{ $line['name'] }}</span>
+                                    @if($line['portion'] !== 'Plate')
+                                        <span class="ml-1 text-xs text-neutral-500 dark:text-neutral-400">({{ $line['portion'] }})</span>
+                                    @endif
+                                </span>
+                                <span class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">x {{ $formatQty($line['qty']) }}</span>
+                            </div>
+                        @endforeach
+                        @foreach ($saladLines as $line)
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="text-neutral-900 dark:text-neutral-100">
+                                    <span class="text-neutral-500 dark:text-neutral-400">{{ __('Salad') }}:</span>
+                                    <span class="ml-1 font-medium">{{ $line['name'] }}</span>
+                                </span>
+                                <span class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">x {{ $formatQty($line['qty']) }}</span>
+                            </div>
+                        @endforeach
+                        @foreach ($dessertLines as $line)
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="text-neutral-900 dark:text-neutral-100">
+                                    <span class="text-neutral-500 dark:text-neutral-400">{{ __('Dessert') }}:</span>
+                                    <span class="ml-1 font-medium">{{ $line['name'] }}</span>
+                                </span>
+                                <span class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">x {{ $formatQty($line['qty']) }}</span>
+                            </div>
+                        @endforeach
+                        @foreach ($otherLines as $line)
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="text-neutral-900 dark:text-neutral-100">
+                                    <span class="text-neutral-500 dark:text-neutral-400">{{ __('Item') }}:</span>
+                                    <span class="ml-1 font-medium">{{ $line['name'] }}</span>
+                                </span>
+                                <span class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">x {{ $formatQty($line['qty']) }}</span>
+                            </div>
+                        @endforeach
+                    @elseif (count($otherLines))
+                        @foreach ($otherLines as $line)
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="text-neutral-900 dark:text-neutral-100">
+                                    <span class="text-neutral-500 dark:text-neutral-400">{{ __('Item') }}:</span>
+                                    <span class="ml-1 font-medium">{{ $line['name'] }}</span>
+                                </span>
+                                <span class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">x {{ $formatQty($line['qty']) }}</span>
+                            </div>
+                        @endforeach
+                    @else
+                        <p class="text-sm text-neutral-500 dark:text-neutral-400">{{ __('No items.') }}</p>
                     @endif
                 </div>
 
+                {{-- Notes --}}
                 @if($order->notes)
-                    <div class="mt-2 rounded-md bg-neutral-50 p-2 text-[11px] text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200 line-clamp-3">
-                        {!! nl2br(e($order->notes)) !!}
+                    <div class="text-xs text-neutral-600 dark:text-neutral-300 pt-1 border-t border-neutral-200 dark:border-neutral-700">
+                        <span class="font-semibold text-neutral-500 dark:text-neutral-400">{{ __('Notes') }}:</span>
+                        <span class="ml-1">{!! nl2br(e($order->notes)) !!}</span>
                     </div>
                 @endif
 
-                <div class="mt-3 grid grid-cols-[1fr_auto] gap-2">
-                    <div class="space-y-1">
-                        @foreach ($order->items as $item)
-                            <div class="flex justify-between text-xs">
-                                <span class="text-neutral-900 dark:text-neutral-100">{{ $item->description_snapshot }}</span>
-                                <span class="text-[11px] text-neutral-600 dark:text-neutral-300">{{ number_format((float) $item->quantity, 3) }}</span>
-                            </div>
-                        @endforeach
-                    </div>
-                </div>
-
-                <div class="mt-3 flex items-center justify-between">
-                    @php $locked = in_array($order->status, ['Cancelled','Delivered'], true); @endphp
-                    <div class="flex flex-wrap gap-2 text-[11px]">
+                {{-- Action button --}}
+                <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                        @php $locked = in_array($order->status, ['Cancelled','Delivered'], true); @endphp
                         @if (! $locked && $order->status === 'Confirmed')
-                            <flux:button size="xs" wire:click="advanceOrderStatus({{ $order->id }}, 'InProduction')">{{ __('Start') }}</flux:button>
+                            <flux:button size="xs" variant="ghost" class="rounded-md border border-neutral-300 bg-neutral-50 px-4 py-1.5 text-xs font-semibold text-neutral-700 shadow-sm hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700" wire:click="advanceOrderStatus({{ $order->id }}, 'InProduction')">{{ __('Start Order') }}</flux:button>
                         @elseif (! $locked && $order->status === 'InProduction')
-                            <flux:button size="xs" wire:click="advanceOrderStatus({{ $order->id }}, 'Ready')">{{ __('Mark Ready') }}</flux:button>
+                            <flux:button size="xs" variant="ghost" class="rounded-md border border-neutral-300 bg-neutral-50 px-4 py-1.5 text-xs font-semibold text-neutral-700 shadow-sm hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700" wire:click="advanceOrderStatus({{ $order->id }}, 'Ready')">{{ __('Mark Ready') }}</flux:button>
+                        @elseif (! $locked && $order->status === 'Ready')
+                            <flux:button size="xs" variant="ghost" class="rounded-md border border-neutral-300 bg-neutral-50 px-4 py-1.5 text-xs font-semibold text-neutral-700 shadow-sm hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700" wire:click="advanceOrderStatus({{ $order->id }}, 'Delivered')">{{ __('Complete Order') }}</flux:button>
                         @endif
                     </div>
-                    <div class="text-right text-[11px] text-neutral-600 dark:text-neutral-300">
-                        {{ __('Items') }}: {{ $order->items->count() }}
-                    </div>
+                    @if(auth()->user()?->hasAnyRole(['admin','manager']))
+                        <flux:button size="xs" variant="ghost" :href="route('orders.edit', $order)" wire:navigate>{{ __('Edit') }}</flux:button>
+                    @endif
                 </div>
             </div>
         @empty

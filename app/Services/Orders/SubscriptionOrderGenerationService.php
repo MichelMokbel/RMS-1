@@ -181,6 +181,7 @@ class SubscriptionOrderGenerationService
         $orderNumber = $this->generateOrderNumber();
         $status = config('subscriptions.generated_order_status', 'Confirmed');
         $quantity = (float) config('subscriptions.generated_item_quantity', 1.0);
+        $planPrice = $this->subscriptionOrderPrice($sub);
 
         $orderId = DB::table('orders')->insertGetId([
             'order_number' => $orderNumber,
@@ -203,20 +204,15 @@ class SubscriptionOrderGenerationService
             'created_at' => now(),
         ]);
 
-        $lineTotalSum = 0;
         foreach ($items as $idx => $menuItem) {
-            $price = (float) ($menuItem->menuItem->selling_price_per_unit ?? 0);
-            $lineTotal = round($quantity * $price, 3);
-            $lineTotalSum += $lineTotal;
-
             DB::table('order_items')->insert([
                 'order_id' => $orderId,
                 'menu_item_id' => $menuItem->menu_item_id,
                 'description_snapshot' => trim(($menuItem->menuItem->code ?? '').' '.$menuItem->menuItem->name),
                 'quantity' => $quantity,
-                'unit_price' => $price,
+                'unit_price' => 0,
                 'discount_amount' => 0,
-                'line_total' => $lineTotal,
+                'line_total' => 0,
                 'status' => 'Pending',
                 'sort_order' => $menuItem->sort_order ?? $idx,
             ]);
@@ -225,13 +221,38 @@ class SubscriptionOrderGenerationService
         DB::table('orders')
             ->where('id', $orderId)
             ->update([
-                'total_before_tax' => $lineTotalSum,
+                'total_before_tax' => $planPrice,
                 'tax_amount' => 0,
-                'total_amount' => $lineTotalSum,
+                'total_amount' => $planPrice,
                 'updated_at' => now(),
             ]);
 
         return $orderId;
+    }
+
+    private function subscriptionOrderPrice(MealSubscription $sub): float
+    {
+        $totalMeals = $sub->plan_meals_total;
+        if ($totalMeals !== null) {
+            if ((int) $totalMeals === 20) {
+                return 40.000;
+            }
+            if ((int) $totalMeals === 26) {
+                return 42.300;
+            }
+        }
+
+        $hasSalad = (bool) $sub->include_salad;
+        $hasDessert = (bool) $sub->include_dessert;
+
+        if ($hasSalad && $hasDessert) {
+            return 65.000;
+        }
+        if ($hasSalad || $hasDessert) {
+            return 55.000;
+        }
+
+        return 50.000;
     }
 
     private function generateOrderNumber(): string
