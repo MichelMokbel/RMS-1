@@ -89,7 +89,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             <h1 class="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{{ $order->order_number }}</h1>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ $order->source }} · {{ $order->type }} · {{ $order->status }}</p>
         </div>
-        <flux:button :href="route('orders.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
+        <div class="flex items-center gap-2">
+            <flux:button :href="route('orders.create')" wire:navigate variant="primary">{{ __('Create New Order') }}</flux:button>
+            <flux:button :href="route('orders.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
+        </div>
     </div>
 
     @if (session('status'))

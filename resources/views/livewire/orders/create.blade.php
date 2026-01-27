@@ -50,12 +50,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function with(): array
     {
-        $menus = DailyDishMenu::with('items.menuItem')
-            ->where('status', 'published')
-            ->where('branch_id', $this->branch_id)
-            ->orderByDesc('service_date')
-            ->limit(30)
-            ->get();
+        $menus = collect();
+        if ($this->is_daily_dish) {
+            $menus = DailyDishMenu::with('items.menuItem')
+                ->where('status', 'published')
+                ->where('branch_id', $this->branch_id)
+                ->orderByDesc('service_date')
+                ->limit(30)
+                ->get();
+        }
 
         $customers = collect();
         if (Schema::hasTable('customers') && $this->customer_id === null && $this->customer_search !== '') {
@@ -66,27 +69,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->get();
         }
 
-        $menuItemOptions = [];
-        if (! $this->is_daily_dish && Schema::hasTable('menu_items')) {
-            foreach ($this->item_search as $idx => $term) {
-                $term = trim((string) $term);
-                if ($term === '' || ! empty($this->selected_items[$idx]['menu_item_id'])) {
-                    continue;
-                }
-
-                $menuItemOptions[$idx] = MenuItem::query()
-                    ->active()
-                    ->search($term)
-                    ->ordered()
-                    ->limit(15)
-                    ->get();
-            }
-        }
-
         return [
             'customers' => $customers,
             'menus' => $menus,
-            'menu_item_options' => $menuItemOptions,
             'categories' => Schema::hasTable('categories') ? Category::orderBy('name')->get() : collect(),
         ];
     }
@@ -208,15 +193,36 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! $menuItem) {
             return;
         }
+        $label = trim(($menuItem->code ?? '').' '.$menuItem->name);
+        $price = $menuItem->selling_price_per_unit !== null ? (float) $menuItem->selling_price_per_unit : 0.0;
+        $this->selectMenuItemPayload($index, $menuItem->id, $label, $price);
+    }
 
-        $this->selected_items[$index]['menu_item_id'] = $menuItem->id;
+    public function selectMenuItemPayload(int $index, int $menuItemId, string $label, ?float $price = null): void
+    {
+        if (! array_key_exists($index, $this->selected_items)) {
+            return;
+        }
+
+        $this->selected_items[$index]['menu_item_id'] = $menuItemId;
         $this->selected_items[$index]['quantity'] = $this->selected_items[$index]['quantity'] ?? 1;
-        $this->selected_items[$index]['unit_price'] = (float) ($menuItem->selling_price_per_unit ?? 0);
+        $this->selected_items[$index]['unit_price'] = $price !== null ? (float) $price : 0.0;
         $this->selected_items[$index]['discount_amount'] = $this->selected_items[$index]['discount_amount'] ?? 0;
         $this->selected_items[$index]['sort_order'] = $this->selected_items[$index]['sort_order'] ?? $index;
-        $this->item_search[$index] = trim(($menuItem->code ?? '').' '.$menuItem->name);
+        $this->item_search[$index] = $label;
 
         $this->ensureTrailingItemRow();
+    }
+
+    public function clearMenuItemSelection(int $index): void
+    {
+        if (! array_key_exists($index, $this->selected_items)) {
+            return;
+        }
+
+        $this->selected_items[$index]['menu_item_id'] = null;
+        $this->selected_items[$index]['unit_price'] = null;
+        $this->item_search[$index] = '';
     }
 
     public function prepareMenuItemModal(): void
@@ -266,7 +272,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $targetIndex = count($this->selected_items) - 1;
             }
 
-            $this->selectMenuItem($targetIndex, $menuItem->id);
+            $label = trim(($menuItem->code ?? '').' '.$menuItem->name);
+            $price = $menuItem->selling_price_per_unit !== null ? (float) $menuItem->selling_price_per_unit : 0.0;
+            $this->selectMenuItemPayload($targetIndex, $menuItem->id, $label, $price);
         }
 
         $this->dispatch('modal-close', name: 'create-menu-item');
@@ -579,51 +587,55 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @endphp
                             <tr>
                                 <td class="px-3 py-2 align-top">
-                                    <div class="relative">
-                                        <flux:input
-                                            wire:model.live.debounce.300ms="item_search.{{ $idx }}"
+                                    <div
+                                        class="relative"
+                                        wire:ignore
+                                        x-data="menuItemLookup({
+                                            index: {{ $idx }},
+                                            initial: @js($item_search[$idx] ?? ''),
+                                            selectedId: @js($row['menu_item_id'] ?? null),
+                                            searchUrl: '{{ route('orders.menu-items.search') }}'
+                                        })"
+                                        x-on:keydown.escape.stop="close()"
+                                        x-on:click.outside="close()"
+                                    >
+                                        <input
+                                            type="text"
+                                            class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
+                                            x-model="query"
+                                            x-on:input.debounce.200ms="onInput()"
+                                            x-on:focus="onInput(true)"
                                             placeholder="{{ __('Search item') }}"
                                         />
-                                        @if(($item_search[$idx] ?? '') !== '' && empty($row['menu_item_id']))
-                                            <div x-data="{
-                                                positionDropdown() {
-                                                    const container = this.$el.closest('.relative');
-                                                    const input = container?.querySelector('input');
-                                                    if (input) {
-                                                        const rect = input.getBoundingClientRect();
-                                                        this.$el.style.position = 'fixed';
-                                                        this.$el.style.left = rect.left + 'px';
-                                                        this.$el.style.bottom = (window.innerHeight - rect.top) + 'px';
-                                                        this.$el.style.width = rect.width + 'px';
-                                                        this.$el.style.zIndex = '9999';
-                                                    }
-                                                }
-                                            }"
-                                            x-init="setTimeout(() => positionDropdown(), 10)"
-                                            class="mb-1 overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+                                        <template x-if="open">
+                                            <div
+                                                x-ref="panel"
+                                                x-bind:style="panelStyle"
+                                                class="mb-1 overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+                                            >
                                                 <div class="max-h-60 overflow-auto">
-                                                    @forelse ($menu_item_options[$idx] ?? [] as $item)
+                                                    <template x-for="item in results" :key="item.id">
                                                         <button
                                                             type="button"
                                                             class="w-full px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-50 dark:text-neutral-100 dark:hover:bg-neutral-800/80"
-                                                            wire:click="selectMenuItem({{ $idx }}, {{ $item->id }})"
+                                                            x-on:click="choose(item)"
                                                         >
                                                             <div class="flex items-center justify-between gap-2">
-                                                                <span class="font-medium">{{ $item->name }}</span>
-                                                                @if($item->code)
-                                                                    <span class="text-xs text-neutral-500 dark:text-neutral-400">{{ $item->code }}</span>
-                                                                @endif
+                                                                <span class="font-medium" x-text="item.name"></span>
+                                                                <span class="text-xs text-neutral-500 dark:text-neutral-400" x-show="item.code" x-text="item.code"></span>
                                                             </div>
-                                                            @if($item->selling_price_per_unit !== null)
-                                                                <div class="text-xs text-neutral-500 dark:text-neutral-400">{{ number_format((float) $item->selling_price_per_unit, 3, '.', '') }}</div>
-                                                            @endif
+                                                            <div class="text-xs text-neutral-500 dark:text-neutral-400" x-show="item.price_formatted" x-text="item.price_formatted"></div>
                                                         </button>
-                                                    @empty
-                                                        <div class="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">{{ __('No items found.') }}</div>
-                                                    @endforelse
+                                                    </template>
+                                                    <div x-show="loading" class="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">
+                                                        {{ __('Searching...') }}
+                                                    </div>
+                                                    <div x-show="!loading && hasSearched && results.length === 0" class="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">
+                                                        {{ __('No items found.') }}
+                                                    </div>
                                                 </div>
                                             </div>
-                                        @endif
+                                        </template>
                                     </div>
                                 </td>
                                 <td class="px-3 py-2 align-top">
@@ -754,6 +766,284 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         </form>
     </flux:modal>
+
+    @once
+        <script>
+            if (!window.__orderItemsBootstrapped) {
+                window.__orderItemsBootstrapped = true;
+
+                window.registerMenuItemLookup = () => {
+                    Alpine.data('menuItemLookup', ({ index, initial, selectedId, searchUrl, onSelect, onClear }) => ({
+                    index,
+                    query: initial || '',
+                    selectedId: selectedId || null,
+                    selectedLabel: initial || '',
+                    searchUrl,
+                    results: [],
+                    loading: false,
+                    open: false,
+                    hasSearched: false,
+                    panelStyle: '',
+                    controller: null,
+                    onInput(force = false) {
+                        if (this.selectedId !== null && this.query !== this.selectedLabel) {
+                            this.selectedId = null;
+                            this.selectedLabel = '';
+                            this.$wire.clearMenuItemSelection(this.index);
+                        }
+
+                        const term = this.query.trim();
+                        if (!force && term.length < 2) {
+                            this.open = false;
+                            this.results = [];
+                            this.hasSearched = false;
+                            return;
+                        }
+                        if (term.length < 2) {
+                            this.open = false;
+                            this.results = [];
+                            this.hasSearched = false;
+                            return;
+                        }
+
+                        this.fetchResults(term);
+                    },
+                    fetchResults(term) {
+                        this.loading = true;
+                        this.hasSearched = true;
+                        this.open = true;
+                        if (this.controller) {
+                            this.controller.abort();
+                        }
+                        this.controller = new AbortController();
+                        fetch(this.searchUrl + '?q=' + encodeURIComponent(term), {
+                            headers: { 'Accept': 'application/json' },
+                            signal: this.controller.signal,
+                            credentials: 'same-origin',
+                        })
+                            .then((response) => response.ok ? response.json() : [])
+                            .then((data) => {
+                                this.results = Array.isArray(data) ? data : [];
+                                this.loading = false;
+                                this.$nextTick(() => this.positionDropdown());
+                            })
+                            .catch((error) => {
+                                if (error.name === 'AbortError') {
+                                    return;
+                                }
+                                this.loading = false;
+                                this.results = [];
+                            });
+                    },
+                    choose(item) {
+                        const label = item.label || item.name || '';
+                        this.query = label;
+                        this.selectedLabel = label;
+                        this.selectedId = item.id;
+                        this.open = false;
+                        this.results = [];
+                        this.loading = false;
+                        this.$wire.selectMenuItemPayload(this.index, item.id, label, item.price);
+                    },
+                    close() {
+                        this.open = false;
+                    },
+                    positionDropdown() {
+                        const input = this.$el.querySelector('input');
+                        if (!input) {
+                            return;
+                        }
+                        const rect = input.getBoundingClientRect();
+                        this.panelStyle = [
+                            'position: fixed',
+                            'left: ' + rect.left + 'px',
+                            'top: ' + rect.bottom + 'px',
+                            'width: ' + rect.width + 'px',
+                            'z-index: 9999',
+                        ].join('; ');
+                    },
+                }));
+                };
+
+                window.registerOrderItemsEditor = () => {
+                    Alpine.data('orderItemsEditor', ({ initialItems, initialSearch, searchUrl, orderDiscount, isDailyDish }) => ({
+                    items: [],
+                    searchUrl,
+                    orderDiscount: Number(orderDiscount || 0),
+                    isDailyDish,
+                    nextUid: 1,
+                    init() {
+                        const rows = Array.isArray(initialItems) ? initialItems : [];
+                        const labels = Array.isArray(initialSearch) ? initialSearch : [];
+                        this.items = rows.map((row, idx) => ({
+                            uid: this.nextUid++,
+                            menu_item_id: row.menu_item_id ?? null,
+                            quantity: row.quantity ?? 1,
+                            unit_price: row.unit_price ?? null,
+                            discount_amount: row.discount_amount ?? 0,
+                            sort_order: row.sort_order ?? idx,
+                            label: labels[idx] ?? '',
+                        }));
+                        if (this.items.length === 0) {
+                            this.addRow();
+                        }
+                        this.$watch('isDailyDish', (value) => {
+                            if (!value && this.items.length === 0) {
+                                this.addRow();
+                            }
+                        });
+                        window.addEventListener('menu-item-created', (event) => {
+                            if (this.isDailyDish) {
+                                return;
+                            }
+                            this.applyCreatedItem(event.detail || {});
+                        });
+                    },
+                    addRow() {
+                        this.items.push({
+                            uid: this.nextUid++,
+                            menu_item_id: null,
+                            quantity: 1,
+                            unit_price: null,
+                            discount_amount: 0,
+                            sort_order: this.items.length,
+                            label: '',
+                        });
+                    },
+                    removeRow(index) {
+                        this.items.splice(index, 1);
+                        if (this.items.length === 0) {
+                            this.addRow();
+                        }
+                        this.reindex();
+                    },
+                    reindex() {
+                        this.items.forEach((row, idx) => {
+                            row.sort_order = idx;
+                        });
+                    },
+                    selectItem(index, item) {
+                        const row = this.items[index];
+                        if (!row) {
+                            return;
+                        }
+                        row.menu_item_id = item.id;
+                        row.label = item.label || item.name || '';
+                        row.quantity = row.quantity || 1;
+                        row.unit_price = item.price !== null && item.price !== undefined ? Number(item.price) : 0;
+                        row.discount_amount = row.discount_amount || 0;
+                        this.ensureTrailingRow();
+                    },
+                    clearItem(index) {
+                        const row = this.items[index];
+                        if (!row) {
+                            return;
+                        }
+                        row.menu_item_id = null;
+                        row.label = '';
+                        row.unit_price = null;
+                    },
+                    applyCreatedItem(detail) {
+                        if (!detail || !detail.id) {
+                            return;
+                        }
+                        let targetIndex = this.items.findIndex((row) => !row.menu_item_id);
+                        if (targetIndex === -1) {
+                            this.addRow();
+                            targetIndex = this.items.length - 1;
+                        }
+                        this.selectItem(targetIndex, {
+                            id: detail.id,
+                            label: detail.label || '',
+                            name: detail.label || '',
+                            price: detail.price ?? 0,
+                        });
+                    },
+                    ensureTrailingRow() {
+                        for (const row of this.items) {
+                            const qty = Number(row.quantity || 0);
+                            const hasPrice = row.unit_price !== null && row.unit_price !== '';
+                            if (!row.menu_item_id || qty <= 0 || !hasPrice) {
+                                return;
+                            }
+                        }
+                        this.addRow();
+                    },
+                    lineTotal(row) {
+                        const qty = Number(row.quantity || 0);
+                        const price = Number(row.unit_price || 0);
+                        const discount = Number(row.discount_amount || 0);
+                        return Math.max(0, (qty * price) - discount);
+                    },
+                    subtotal() {
+                        return this.items.reduce((sum, row) => {
+                            if (!row.menu_item_id) {
+                                return sum;
+                            }
+                            return sum + this.lineTotal(row);
+                        }, 0);
+                    },
+                    total() {
+                        return Math.max(0, this.subtotal() - Number(this.orderDiscount || 0));
+                    },
+                    formatMoney(value) {
+                        const num = Number(value || 0);
+                        return num.toFixed(3);
+                    },
+                    itemsPayload() {
+                        return this.items
+                            .filter((row) => row.menu_item_id)
+                            .map((row, idx) => ({
+                                menu_item_id: row.menu_item_id,
+                                quantity: Number(row.quantity || 0),
+                                unit_price: row.unit_price === null || row.unit_price === '' ? null : Number(row.unit_price || 0),
+                                discount_amount: Number(row.discount_amount || 0),
+                                sort_order: idx,
+                            }));
+                    },
+                    submit() {
+                        const payload = this.itemsPayload();
+                        const discount = Number(this.orderDiscount || 0);
+                        if (this.isDailyDish) {
+                            this.callLivewire('save');
+                            return;
+                        }
+                        this.callLivewire('saveWithItems', payload, discount);
+                    },
+                    callLivewire(method, ...args) {
+                        if (this.$wire) {
+                            if (typeof this.$wire.call === 'function') {
+                                return this.$wire.call(method, ...args);
+                            }
+                            if (typeof this.$wire[method] === 'function') {
+                                return this.$wire[method](...args);
+                            }
+                        }
+                        const root = this.$root?.closest('[wire\\:id]');
+                        const id = root?.getAttribute('wire:id');
+                        if (window.Livewire && id) {
+                            const component = window.Livewire.find(id);
+                            if (component && typeof component.call === 'function') {
+                                return component.call(method, ...args);
+                            }
+                        }
+                        console.warn('Livewire method unavailable:', method);
+                    },
+                }));
+                };
+            }
+
+            if (window.Alpine) {
+                window.registerMenuItemLookup();
+                window.registerOrderItemsEditor();
+            } else {
+                document.addEventListener('alpine:init', () => {
+                    window.registerMenuItemLookup();
+                    window.registerOrderItemsEditor();
+                });
+            }
+        </script>
+    @endonce
 
     <div class="flex justify-end gap-3">
         <flux:button :href="route('orders.index')" wire:navigate variant="ghost">{{ __('Cancel') }}</flux:button>

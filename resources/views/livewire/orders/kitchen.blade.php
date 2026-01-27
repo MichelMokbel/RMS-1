@@ -135,9 +135,24 @@ new #[Layout('components.layouts.app')] class extends Component {
 }; ?>
 
 <div class="w-full max-w-7xl mx-auto px-4 space-y-6" wire:poll.15s>
+    @php
+        $printParams = [
+            'date' => $date,
+            'branch_id' => $branchId,
+            'show_subscription' => $showSubscriptionOrders ? 1 : 0,
+            'show_manual' => $showManualOrders ? 1 : 0,
+            'include_draft' => $includeDraft ? 1 : 0,
+            'include_ready' => $includeReady ? 1 : 0,
+            'include_cancelled' => $includeCancelled ? 1 : 0,
+            'include_delivered' => $includeDelivered ? 1 : 0,
+            'search' => $search,
+        ];
+    @endphp
+
     <div class="flex items-center justify-between">
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Kitchen Board') }}</h1>
         <div class="flex gap-2">
+            <flux:button :href="route('orders.kitchen.print', $printParams)" target="_blank" variant="ghost">{{ __('Print') }}</flux:button>
             <flux:button :href="route('orders.kitchen.cards')" wire:navigate variant="ghost">{{ __('Cards View') }}</flux:button>
             <flux:button :href="route('orders.index')" wire:navigate variant="ghost">{{ __('Orders') }}</flux:button>
         </div>
@@ -282,4 +297,3 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endforeach
     </div>
 </div>
-

@@ -96,11 +96,24 @@ new #[Layout('components.layouts.app')] class extends Component {
 }; ?>
 
 <div class="w-full max-w-7xl mx-auto px-4 space-y-6">
+    @php
+        $printParams = array_filter([
+            'status' => $status,
+            'source' => $source,
+            'branch_id' => $branch_id,
+            'daily_dish_filter' => $daily_dish_filter,
+            'scheduled_date' => $scheduled_date,
+            'search' => $search,
+        ], fn ($v) => $v !== null && $v !== '');
+    @endphp
+
     <div class="flex items-center justify-between">
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Orders') }}</h1>
         <div class="flex gap-2">
             <flux:button :href="route('orders.create')" wire:navigate variant="primary">{{ __('New Order') }}</flux:button>
             <flux:button :href="route('orders.kitchen')" wire:navigate variant="ghost">{{ __('Kitchen View') }}</flux:button>
+            <flux:button :href="route('orders.print', $printParams)" target="_blank" variant="ghost">{{ __('Print Report') }}</flux:button>
+            <flux:button :href="route('orders.print.invoices', $printParams)" target="_blank" variant="ghost">{{ __('Print Invoices') }}</flux:button>
             <!-- <flux:button :href="route('orders.daily-dish')" wire:navigate variant="ghost">{{ __('Daily Dish') }}</flux:button>
             <flux:button :href="route('daily-dish.menus.index')" wire:navigate variant="ghost">{{ __('Daily Dish Menus') }}</flux:button>
             <flux:button :href="route('subscriptions.generate')" wire:navigate variant="ghost">{{ __('Generate Subscriptions') }}</flux:button> -->
