@@ -72,6 +72,11 @@
                             {{ __('Menu Items') }}
                         </flux:navlist.item>
                         @if ($isManager)
+                            <flux:navlist.item icon="building-storefront" :href="route('menu-items.availability')" :current="request()->routeIs('menu-items.availability')" wire:navigate>
+                                {{ __('Menu Item Availability') }}
+                            </flux:navlist.item>
+                        @endif
+                        @if ($isManager)
                             <flux:navlist.item icon="beaker" :href="route('recipes.index')" :current="request()->routeIs('recipes.*')" wire:navigate>
                                 {{ __('Recipes') }}
                             </flux:navlist.item>

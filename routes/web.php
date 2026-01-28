@@ -148,6 +148,7 @@ Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
 Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->group(function () {
     Route::get('orders/menu-items/search', function (Request $request) {
         $term = trim((string) $request->query('q', ''));
+        $branchId = (int) $request->query('branch_id');
         if ($term === '' || strlen($term) < 2) {
             return response()->json([]);
         }
@@ -155,6 +156,7 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
         $prefix = $term.'%';
         $items = MenuItem::query()
             ->active()
+            ->availableInBranch($branchId)
             ->where(function ($q) use ($prefix) {
                 $q->where('code', 'like', $prefix)
                     ->orWhere('name', 'like', $prefix)
@@ -449,6 +451,7 @@ Route::middleware(['auth', 'active', 'role:admin|manager|cashier'])->group(funct
 });
 
 Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+    Volt::route('menu-items/availability', 'menu-items.availability')->name('menu-items.availability');
     Volt::route('menu-items/create', 'menu-items.create')->name('menu-items.create');
     Volt::route('menu-items/{menuItem}/edit', 'menu-items.edit')->name('menu-items.edit');
 

@@ -74,6 +74,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'customers' => $customers,
             'menus' => $menus,
             'categories' => Schema::hasTable('categories') ? Category::orderBy('name')->get() : collect(),
+            'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
         ];
     }
 
@@ -462,7 +463,18 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <flux:input wire:model="branch_id" type="number" :label="__('Branch ID')" />
+            @if ($branches->count())
+                <div>
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Branch') }}</label>
+                    <select wire:model="branch_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                        @foreach ($branches as $branch)
+                            <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            @else
+                <flux:input wire:model="branch_id" type="number" :label="__('Branch ID')" />
+            @endif
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Source') }}</label>
                 <select wire:model="source" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
@@ -600,7 +612,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                                             index: {{ $idx }},
                                             initial: @js($item_search[$idx] ?? ''),
                                             selectedId: @js($row['menu_item_id'] ?? null),
-                                            searchUrl: '{{ route('orders.menu-items.search') }}'
+                                            searchUrl: '{{ route('orders.menu-items.search') }}',
+                                            branchId: @entangle('branch_id')
                                         })"
                                         x-on:keydown.escape.stop="close()"
                                         x-on:click.outside="close()"
@@ -779,12 +792,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 window.__orderItemsBootstrapped = true;
 
                 window.registerMenuItemLookup = () => {
-                    Alpine.data('menuItemLookup', ({ index, initial, selectedId, searchUrl, onSelect, onClear }) => ({
+                    Alpine.data('menuItemLookup', ({ index, initial, selectedId, searchUrl, branchId, onSelect, onClear }) => ({
                     index,
                     query: initial || '',
                     selectedId: selectedId || null,
                     selectedLabel: initial || '',
                     searchUrl,
+                    branchId,
                     results: [],
                     loading: false,
                     open: false,
@@ -822,7 +836,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                             this.controller.abort();
                         }
                         this.controller = new AbortController();
-                        fetch(this.searchUrl + '?q=' + encodeURIComponent(term), {
+                        const params = new URLSearchParams({ q: term });
+                        if (this.branchId) {
+                            params.append('branch_id', this.branchId);
+                        }
+                        fetch(this.searchUrl + '?' + params.toString(), {
                             headers: { 'Accept': 'application/json' },
                             signal: this.controller.signal,
                             credentials: 'same-origin',

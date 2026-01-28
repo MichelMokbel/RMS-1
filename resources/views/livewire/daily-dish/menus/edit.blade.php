@@ -26,7 +26,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function with(): array
     {
         $menuItems = Schema::hasTable('menu_items')
-            ? MenuItem::where('is_active', 1)->orderBy('name')->get()
+            ? MenuItem::where('is_active', 1)->availableInBranch($this->branch)->orderBy('name')->get()
             : collect();
 
         return [
@@ -263,4 +263,3 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 </div>
-

@@ -17,26 +17,39 @@ new #[Layout('components.layouts.app')] class extends Component {
     public float $tax_rate = 0;
     public bool $is_active = true;
     public int $display_order = 0;
+    public array $branch_ids = [];
+
+    public function mount(): void
+    {
+        if (Schema::hasTable('branches')) {
+            $defaultBranch = (int) config('inventory.default_branch_id', 1);
+            $this->branch_ids = [$defaultBranch > 0 ? $defaultBranch : 1];
+        }
+    }
 
     public function with(): array
     {
         return [
             'categories' => Schema::hasTable('categories') ? Category::orderBy('name')->get() : collect(),
             'recipes' => Schema::hasTable('recipes') ? DB::table('recipes')->select('id', 'name')->orderBy('name')->get() : collect(),
+            'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
         ];
     }
 
     public function save(): void
     {
         $data = $this->validate($this->rules());
-        MenuItem::create($data);
+        $branchIds = $data['branch_ids'] ?? [];
+        unset($data['branch_ids']);
+        $menuItem = MenuItem::create($data);
+        $this->syncBranches($menuItem->id, $branchIds);
         session()->flash('status', __('Menu item created.'));
         $this->redirectRoute('menu-items.index', navigate: true);
     }
 
     private function rules(): array
     {
-        return [
+        $rules = [
             'code' => ['required', 'string', 'max:50', 'unique:menu_items,code'],
             'name' => ['required', 'string', 'max:255'],
             'arabic_name' => ['nullable', 'string', 'max:255'],
@@ -47,6 +60,41 @@ new #[Layout('components.layouts.app')] class extends Component {
             'is_active' => ['required', 'boolean'],
             'display_order' => ['required', 'integer', 'min:0'],
         ];
+
+        if (Schema::hasTable('branches') && Schema::hasTable('menu_item_branches')) {
+            $rules['branch_ids'] = ['required', 'array', 'min:1'];
+            $rules['branch_ids.*'] = ['integer', 'exists:branches,id'];
+        }
+
+        return $rules;
+    }
+
+    private function syncBranches(int $menuItemId, array $branchIds): void
+    {
+        if (! Schema::hasTable('menu_item_branches') || ! Schema::hasTable('branches')) {
+            return;
+        }
+
+        $branchIds = array_values(array_unique(array_filter(array_map('intval', $branchIds))));
+        if (empty($branchIds)) {
+            $defaultBranch = (int) config('inventory.default_branch_id', 1);
+            $branchIds = [$defaultBranch > 0 ? $defaultBranch : 1];
+        }
+
+        $validBranchIds = DB::table('branches')->whereIn('id', $branchIds)->pluck('id')->all();
+        DB::table('menu_item_branches')->where('menu_item_id', $menuItemId)->delete();
+
+        $now = now();
+        $rows = array_map(fn ($id) => [
+            'menu_item_id' => $menuItemId,
+            'branch_id' => $id,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ], $validBranchIds);
+
+        if (! empty($rows)) {
+            DB::table('menu_item_branches')->insert($rows);
+        }
     }
 }; ?>
 
@@ -103,6 +151,22 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <flux:checkbox wire:model="is_active" :label="__('Active')" />
             </div>
         </div>
+
+        @if ($branches->count())
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-neutral-800 dark:text-neutral-200">{{ __('Available Branches') }}</label>
+                <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    @foreach ($branches as $branch)
+                        <label class="inline-flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+                            <input type="checkbox" wire:model="branch_ids" value="{{ $branch->id }}" class="rounded border-neutral-300 text-primary-600 focus:ring-primary-500" />
+                            <span>{{ $branch->name }}</span>
+                        </label>
+                    @endforeach
+                </div>
+                @error('branch_ids') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
+                @error('branch_ids.*') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
+            </div>
+        @endif
 
         <div class="flex justify-end gap-3">
             <flux:button :href="route('menu-items.index')" wire:navigate variant="ghost">

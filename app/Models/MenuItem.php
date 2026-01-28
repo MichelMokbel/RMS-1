@@ -5,6 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class MenuItem extends Model
 {
@@ -66,6 +68,21 @@ class MenuItem extends Model
         });
     }
 
+    public function scopeAvailableInBranch(Builder $query, ?int $branchId): Builder
+    {
+        $branchId = (int) $branchId;
+        if ($branchId <= 0 || ! Schema::hasTable('menu_item_branches')) {
+            return $query;
+        }
+
+        return $query
+            ->join('menu_item_branches as mib', function ($join) use ($branchId) {
+                $join->on('menu_items.id', '=', 'mib.menu_item_id')
+                    ->where('mib.branch_id', '=', $branchId);
+            })
+            ->select('menu_items.*');
+    }
+
     public function isActive(): bool
     {
         return (bool) $this->is_active;
@@ -78,5 +95,33 @@ class MenuItem extends Model
         }
 
         return (float) $this->selling_price_per_unit * (1 + ((float) $this->tax_rate / 100));
+    }
+
+    protected static function booted(): void
+    {
+        static::created(function (MenuItem $item) {
+            if (! Schema::hasTable('menu_item_branches')) {
+                return;
+            }
+
+            $branchId = (int) config('inventory.default_branch_id', 1);
+            if ($branchId <= 0) {
+                $branchId = 1;
+            }
+
+            $exists = DB::table('menu_item_branches')
+                ->where('menu_item_id', $item->id)
+                ->where('branch_id', $branchId)
+                ->exists();
+
+            if (! $exists) {
+                DB::table('menu_item_branches')->insert([
+                    'menu_item_id' => $item->id,
+                    'branch_id' => $branchId,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        });
     }
 }

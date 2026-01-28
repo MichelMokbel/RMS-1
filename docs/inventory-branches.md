@@ -23,3 +23,16 @@
 - Stock is stored in package units (same unit as inventory transactions).
 - Transfers respect `inventory.allow_negative_stock`.
 - Destination availability is created automatically if missing.
+
+# Menu Item Branch Availability
+
+## Availability
+- Menu items are global in `menu_items`.
+- Branch availability is represented by `menu_item_branches`.
+- If a row exists in `menu_item_branches` for `(menu_item_id, branch_id)`, the item is available in that branch.
+- New menu items default to the configured default branch (`inventory.default_branch_id`).
+
+## Usage
+- Menu item search (orders) and daily dish menu selection filter by branch when a branch ID is provided.
+- Menu items index allows filtering by branch availability.
+- Bulk availability can be managed via the Menu Item Availability screen (Branch 1 and Branch 2).

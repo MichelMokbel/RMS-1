@@ -49,7 +49,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         return [
             'menus' => $menus,
             'menuItems' => Schema::hasTable('menu_items')
-                ? MenuItem::where('is_active', 1)->orderBy('name')->get()
+                ? MenuItem::where('is_active', 1)->availableInBranch($this->branch_id)->orderBy('name')->get()
                 : collect(),
         ];
     }

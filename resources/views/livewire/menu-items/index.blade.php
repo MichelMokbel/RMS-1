@@ -15,18 +15,21 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $search = '';
     public string $status = 'active';
     public ?int $category_id = null;
+    public ?int $branch_id = null;
 
     protected $paginationTheme = 'tailwind';
 
     public function updatingSearch(): void { $this->resetPage(); }
     public function updatingStatus(): void { $this->resetPage(); }
     public function updatingCategoryId(): void { $this->resetPage(); }
+    public function updatingBranchId(): void { $this->resetPage(); }
 
     public function with(): array
     {
         return [
             'items' => $this->query()->paginate(15),
             'categories' => Schema::hasTable('categories') ? Category::orderBy('name')->get() : collect(),
+            'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
         ];
     }
 
@@ -36,6 +39,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->search($this->search)
             ->when($this->status !== 'all', fn ($q) => $q->where('is_active', $this->status === 'active'))
             ->when($this->category_id, fn ($q) => $q->where('category_id', $this->category_id))
+            ->availableInBranch($this->branch_id)
             ->ordered();
     }
 
@@ -91,6 +95,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                 placeholder="{{ __('Search code, name, arabic name') }}"
                 class="w-full md:w-64"
             />
+            @if ($branches->count())
+                <div class="flex items-center gap-2">
+                    <label for="branch_id" class="text-sm text-neutral-800 dark:text-neutral-200">{{ __('Branch') }}</label>
+                    <select id="branch_id" wire:model.live="branch_id" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                        <option value="">{{ __('All') }}</option>
+                        @foreach ($branches as $branch)
+                            <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            @endif
             @if ($categories->count())
                 <div class="flex items-center gap-2">
                     <label for="category_id" class="text-sm text-neutral-800 dark:text-neutral-200">{{ __('Category') }}</label>

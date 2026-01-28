@@ -18,12 +18,14 @@ class MenuItemController extends Controller
         $search = $request->input('search');
         $categoryId = $request->input('category_id');
         $active = $request->has('active') ? $request->boolean('active') : true;
+        $branchId = $request->input('branch_id');
         $perPage = (int) $request->input('per_page', 20);
 
         $query = MenuItem::query()
             ->when($active !== null, fn ($q) => $active ? $q->where('is_active', 1) : $q)
             ->when($categoryId, fn ($q) => $q->where('category_id', $categoryId))
             ->search($search)
+            ->availableInBranch($branchId)
             ->ordered();
 
         if ($light) {
