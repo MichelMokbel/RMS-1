@@ -4,6 +4,7 @@ use App\Models\Category;
 use App\Models\InventoryItem;
 use App\Models\Supplier;
 use App\Services\Inventory\InventoryStockService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -17,27 +18,38 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?string $description = null;
     public ?int $category_id = null;
     public ?int $supplier_id = null;
-    public int $units_per_package = 1;
+    public ?int $branch_id = null;
+    public float $units_per_package = 1.0;
     public ?string $package_label = null;
     public ?string $unit_of_measure = null;
-    public int $minimum_stock = 0;
-    public int $current_stock = 0;
+    public float $minimum_stock = 0.0;
+    public float $current_stock = 0.0;
     public ?float $cost_per_unit = null;
     public ?string $location = null;
     public ?string $status = 'active';
     public ?string $image = null;
+
+    public function mount(): void
+    {
+        $this->branch_id = (int) config('inventory.default_branch_id', 1);
+    }
 
     public function with(): array
     {
         return [
             'categories' => Schema::hasTable('categories') ? Category::orderBy('name')->get() : collect(),
             'suppliers' => Schema::hasTable('suppliers') ? Supplier::orderBy('name')->get() : collect(),
+            'branches' => Schema::hasTable('branches')
+                ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
+                : collect(),
         ];
     }
 
     public function save(InventoryStockService $stockService): void
     {
         $data = $this->validate($this->rules());
+        $branchId = (int) ($data['branch_id'] ?? config('inventory.default_branch_id', 1));
+        unset($data['branch_id']);
 
         if ($this->image) {
             $data['image_path'] = $this->storeImage($this->image, $this->item_code);
@@ -53,7 +65,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $item = InventoryItem::create($data);
 
         if ($initialStock > 0) {
-            $stockService->adjustStock($item->fresh(), $initialStock, __('Initial stock'), auth()->id());
+            $stockService->adjustStock($item->fresh(), $initialStock, __('Initial stock'), Illuminate\Support\Facades\Auth::id(), $branchId);
         }
 
         session()->flash('status', __('Item created.'));
@@ -62,17 +74,23 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private function rules(): array
     {
+        $branchRule = ['nullable', 'integer', 'min:1'];
+        if (Schema::hasTable('branches')) {
+            $branchRule[] = 'exists:branches,id';
+        }
+
         return [
             'item_code' => ['required', 'string', 'max:50', 'unique:inventory_items,item_code'],
             'name' => ['required', 'string', 'max:200'],
             'description' => ['nullable', 'string'],
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],
             'supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
-            'units_per_package' => ['required', 'integer', 'min:1'],
+            'branch_id' => $branchRule,
+            'units_per_package' => ['required', 'numeric', 'min:0.001'],
             'package_label' => ['nullable', 'string', 'max:50'],
             'unit_of_measure' => ['nullable', 'string', 'max:50'],
-            'minimum_stock' => ['nullable', 'integer', 'min:0'],
-            'current_stock' => ['nullable', 'integer', 'min:0'],
+            'minimum_stock' => ['nullable', 'numeric', 'min:0'],
+            'current_stock' => ['nullable', 'numeric', 'min:0'],
             'cost_per_unit' => ['nullable', 'numeric', 'min:0'],
             'location' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', 'in:active,discontinued'],
@@ -134,12 +152,23 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </select>
                 </div>
             @endif
+
+            @if ($branches->count())
+                <div>
+                    <label class="block text-sm font-medium text-neutral-800 dark:text-neutral-200 mb-1">{{ __('Branch for Initial Stock') }}</label>
+                    <select wire:model="branch_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                        @foreach ($branches as $branch)
+                            <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            @endif
         </div>
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <flux:input wire:model="units_per_package" type="number" min="1" :label="__('Units per Package')" />
-            <flux:input wire:model="minimum_stock" type="number" min="0" :label="__('Minimum Stock')" />
-            <flux:input wire:model="current_stock" type="number" min="0" :label="__('Initial Stock')" />
+            <flux:input wire:model="units_per_package" type="number" min="0.001" step="0.001" :label="__('Units per Package')" />
+            <flux:input wire:model="minimum_stock" type="number" min="0" step="0.001" :label="__('Minimum Stock')" />
+            <flux:input wire:model="current_stock" type="number" min="0" step="0.001" :label="__('Initial Stock')" />
         </div>
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">

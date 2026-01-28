@@ -3,6 +3,7 @@
 namespace App\Services\Recipes;
 
 use App\Models\InventoryItem;
+use App\Models\InventoryStock;
 use App\Models\Recipe;
 use App\Models\RecipeProduction;
 use App\Services\Inventory\InventoryStockService;
@@ -32,8 +33,9 @@ class RecipeProductionService
         }
 
         $factor = $producedQty / (float) $recipe->yield_quantity;
+        $branchId = (int) ($payload['branch_id'] ?? config('inventory.default_branch_id', 1));
 
-        return DB::transaction(function () use ($recipe, $payload, $userId, $factor) {
+        return DB::transaction(function () use ($recipe, $payload, $userId, $factor, $branchId) {
             // Lock recipe to prevent concurrent updates
             $lockedRecipe = Recipe::whereKey($recipe->id)->lockForUpdate()->firstOrFail();
 
@@ -69,18 +71,11 @@ class RecipeProductionService
                     $deduction = $requiredQty / $unitsPerPackage;
                 }
 
-                $intDeduction = (int) round($deduction);
-                if (abs($deduction - $intDeduction) > 0.001) {
-                    throw ValidationException::withMessages([
-                        'quantity' => __("This recipe production would consume a fractional stock quantity for item :item. Adjust recipe quantities or units_per_package to align with stock tracking.", [
-                            'item' => $inv->name ?? $inv->item_code ?? $inv->id,
-                        ]),
-                    ]);
-                }
+                $deduction = round($deduction, 3);
 
                 $deductions[] = [
                     'inventory_item' => $inv,
-                    'int_deduction' => $intDeduction,
+                    'deduction' => $deduction,
                 ];
             }
 
@@ -88,9 +83,12 @@ class RecipeProductionService
             if ($strictStockCheck && ! config('inventory.allow_negative_stock', false)) {
                 foreach ($deductions as $row) {
                     $inv = $row['inventory_item'];
-                    $intDeduction = $row['int_deduction'];
-                    $newStock = ($inv->current_stock ?? 0) - $intDeduction;
-                    if ($newStock < 0) {
+                    $deduction = $row['deduction'];
+                    $currentStock = InventoryStock::where('inventory_item_id', $inv->id)
+                        ->where('branch_id', $branchId)
+                        ->value('current_stock');
+                    $newStock = (float) ($currentStock ?? 0) - $deduction;
+                    if ($newStock < -0.0005) {
                         throw ValidationException::withMessages([
                             'quantity' => __("Insufficient stock for item :item.", [
                                 'item' => $inv->name ?? $inv->item_code ?? $inv->id,
@@ -113,20 +111,21 @@ class RecipeProductionService
             // Deduct inventory
             foreach ($deductions as $row) {
                 $inv = $row['inventory_item'];
-                $intDeduction = $row['int_deduction'];
+                $deduction = $row['deduction'];
 
-                if ($intDeduction === 0) {
+                if ($deduction <= 0) {
                     continue;
                 }
 
                 $this->stockService->recordMovement(
                     $inv,
                     'out',
-                    $intDeduction,
+                    $deduction,
                     referenceType: 'recipe',
                     referenceId: $production->id,
                     notes: "Recipe {$lockedRecipe->name} production #{$production->id}",
-                    userId: $userId
+                    userId: $userId,
+                    branchId: $branchId
                 );
             }
 
@@ -134,4 +133,3 @@ class RecipeProductionService
         });
     }
 }
-

@@ -75,7 +75,7 @@ class MealSubscription extends Model
         }
         // Pause ranges
         foreach ($this->pauses as $pause) {
-            if ($date->betweenIncluded($pause->pause_start, $pause->pause_end)) {
+            if ($date->greaterThanOrEqualTo($pause->pause_start) && $date->lessThanOrEqualTo($pause->pause_end)) {
                 return false;
             }
         }
@@ -89,4 +89,3 @@ class MealSubscription extends Model
         return $this->days->contains('weekday', $weekday);
     }
 }
-

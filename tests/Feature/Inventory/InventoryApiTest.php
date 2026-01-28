@@ -36,5 +36,5 @@ it('adjust endpoint updates stock', function () {
     ]);
 
     $res->assertOk();
-    expect($item->fresh()->current_stock)->toBe(3);
+    expect((float) $item->fresh()->current_stock)->toBe(3.0);
 });

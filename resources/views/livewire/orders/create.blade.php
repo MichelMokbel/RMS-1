@@ -10,6 +10,7 @@ use App\Services\Orders\OrderNumberService;
 use App\Services\Orders\OrderTotalsService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\Auth;
@@ -324,8 +325,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function save(OrderNumberService $numberService, OrderTotalsService $totalsService): void
     {
+        $branchRule = ['required', 'integer'];
+        if (Schema::hasTable('branches')) {
+            $branchRule[] = Rule::exists('branches', 'id');
+        }
+
         $data = $this->validate([
-            'branch_id' => ['required', 'integer'],
+            'branch_id' => $branchRule,
             'source' => ['required', 'in:POS,Phone,WhatsApp,Subscription,Backoffice,Website'],
             'is_daily_dish' => ['boolean'],
             'type' => ['required', 'in:DineIn,Takeaway,Delivery,Pastry'],

@@ -1,38 +1,132 @@
 <?php
 
 use App\Models\InventoryItem;
+use App\Models\InventoryStock;
+use App\Services\Inventory\InventoryAvailabilityService;
 use App\Services\Inventory\InventoryStockService;
+use App\Services\Inventory\InventoryTransferService;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
     public InventoryItem $item;
     public string $direction = 'increase';
-    public int $quantity = 1;
+    public float $quantity = 1.0;
     public ?string $notes = null;
     public bool $showToggleConfirm = false;
+    public ?int $branch_id = null;
+    public ?int $transfer_from_branch_id = null;
+    public ?int $transfer_to_branch_id = null;
+    public float $transfer_quantity = 1.0;
+    public ?string $transfer_notes = null;
+
+    public function mount(InventoryItem $item): void
+    {
+        $this->item = $item;
+        $this->branch_id = (int) config('inventory.default_branch_id', 1);
+        $this->transfer_from_branch_id = $this->branch_id;
+    }
 
     public function with(): array
     {
+        $branchId = (int) ($this->branch_id ?? config('inventory.default_branch_id', 1));
+        $branchStock = null;
+        if (Schema::hasTable('inventory_stocks')) {
+            $branchStock = InventoryStock::where('inventory_item_id', $this->item->id)
+                ->where('branch_id', $branchId)
+                ->value('current_stock');
+        }
+        if ($branchStock === null && $branchId === (int) config('inventory.default_branch_id', 1)) {
+            $branchStock = $this->item->current_stock ?? 0;
+        }
+
+        $availability = Schema::hasTable('inventory_stocks')
+            ? InventoryStock::where('inventory_item_id', $this->item->id)->pluck('branch_id')->all()
+            : [];
+
         return [
-            'transactions' => $this->item->transactions()->limit(50)->get(),
+            'transactions' => $this->item->transactions()
+                ->when($branchId > 0, fn ($q) => $q->where('branch_id', $branchId))
+                ->limit(50)
+                ->get(),
+            'branches' => Schema::hasTable('branches')
+                ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
+                : collect(),
+            'branch_stock' => (float) ($branchStock ?? 0),
+            'is_low_stock' => (float) ($branchStock ?? 0) <= (float) ($this->item->minimum_stock ?? 0),
+            'availability' => $availability,
         ];
+    }
+
+    public function updatedBranchId(): void
+    {
+        $this->transfer_from_branch_id = $this->branch_id;
     }
 
     public function adjust(InventoryStockService $stockService): void
     {
+        $branchRule = ['required', 'integer', 'min:1'];
+        if (Schema::hasTable('branches')) {
+            $branchRule[] = 'exists:branches,id';
+        }
+
         $this->validate([
+            'branch_id' => $branchRule,
             'direction' => ['required', 'in:increase,decrease'],
-            'quantity' => ['required', 'integer', 'min:1'],
+            'quantity' => ['required', 'numeric', 'min:0.001'],
             'notes' => ['nullable', 'string'],
         ]);
 
-        $delta = $this->direction === 'increase' ? $this->quantity : -$this->quantity;
-        $stockService->adjustStock($this->item, $delta, $this->notes, auth()->id());
+        $delta = $this->direction === 'increase' ? (float) $this->quantity : -((float) $this->quantity);
+        $stockService->adjustStock($this->item, $delta, $this->notes, Illuminate\Support\Facades\Auth::id(), $this->branch_id);
 
         $this->reset(['quantity', 'notes']);
         $this->dispatch('$refresh');
         session()->flash('status', __('Stock adjusted.'));
+    }
+
+    public function addAvailability(InventoryAvailabilityService $availabilityService, int $branchId): void
+    {
+        $availabilityService->addToBranch($this->item, $branchId);
+        $this->dispatch('$refresh');
+        session()->flash('status', __('Availability added.'));
+    }
+
+    public function transfer(InventoryTransferService $transferService): void
+    {
+        $branchRule = ['required', 'integer', 'min:1'];
+        if (Schema::hasTable('branches')) {
+            $branchRule[] = 'exists:branches,id';
+        }
+
+        $data = $this->validate([
+            'transfer_from_branch_id' => $branchRule,
+            'transfer_to_branch_id' => $branchRule,
+            'transfer_quantity' => ['required', 'numeric', 'min:0.001'],
+            'transfer_notes' => ['nullable', 'string'],
+        ]);
+
+        if ((int) $data['transfer_from_branch_id'] === (int) $data['transfer_to_branch_id']) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'transfer_to_branch_id' => __('From and To branches must be different.'),
+            ]);
+        }
+
+        $transferService->createAndPost(
+            $this->item,
+            (int) $data['transfer_from_branch_id'],
+            (int) $data['transfer_to_branch_id'],
+            (float) $data['transfer_quantity'],
+            (int) (Illuminate\Support\Facades\Auth::id() ?? 0),
+            $data['transfer_notes'] ?? null
+        );
+
+        $this->reset(['transfer_to_branch_id', 'transfer_quantity', 'transfer_notes']);
+        $this->transfer_from_branch_id = $this->branch_id;
+        $this->dispatch('$refresh');
+        session()->flash('status', __('Transfer completed.'));
     }
 
     public function toggleStatus(): void
@@ -55,7 +149,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <flux:button :href="route('inventory.index')" wire:navigate variant="ghost">
                 {{ __('Back') }}
             </flux:button>
-            @if(auth()->user()->hasAnyRole(['admin','manager']))
+            @if(auth()->check() && auth()->user()->hasAnyRole(['admin','manager']))
                 <flux:button :href="route('inventory.edit', $item)" wire:navigate variant="primary">
                     {{ __('Edit') }}
                 </flux:button>
@@ -69,7 +163,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     @endif
 
-    @if(auth()->user()->hasAnyRole(['admin','manager']))
+    @if(auth()->check() && auth()->user()->hasAnyRole(['admin','manager']))
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 flex items-center justify-between">
             <div>
                 <h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-100 mb-1">{{ __('Item Status') }}</h2>
@@ -96,13 +190,26 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
             <h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-100 mb-2">{{ __('Stock & Cost') }}</h2>
             <dl class="space-y-1 text-sm text-neutral-700 dark:text-neutral-200">
+                @if ($branches->count())
+                    <div>
+                        <span class="font-semibold">{{ __('Branch') }}:</span>
+                        <select wire:model.live="branch_id" class="ml-2 rounded-md border border-neutral-200 bg-white px-2 py-1 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                            @foreach ($branches as $branch)
+                                <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                @else
+                    <div><span class="font-semibold">{{ __('Branch') }}:</span> {{ config('inventory.default_branch_id', 1) }}</div>
+                @endif
                 <div>
-                    <span class="font-semibold">{{ __('Current Stock') }}:</span>
-                    {{ $item->current_stock }}
-                    @if ($item->isLowStock())
+                    <span class="font-semibold">{{ __('Branch Stock') }}:</span>
+                    {{ $branch_stock }}
+                    @if ($is_low_stock)
                         <span class="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-900 dark:text-amber-100">{{ __('Low') }}</span>
                     @endif
                 </div>
+                <div><span class="font-semibold">{{ __('Global Stock') }}:</span> {{ $item->current_stock }}</div>
                 <div><span class="font-semibold">{{ __('Minimum Stock') }}:</span> {{ $item->minimum_stock }}</div>
                 <div><span class="font-semibold">{{ __('Package Cost') }}:</span> {{ $item->cost_per_unit }}</div>
                 <div><span class="font-semibold">{{ __('Per Unit Cost') }}:</span> {{ $item->perUnitCost() ?? '—' }}</div>
@@ -111,10 +218,22 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
-    @if(auth()->user()->hasAnyRole(['admin','manager']))
+    @if(auth()->check() && auth()->user()->hasAnyRole(['admin','manager']))
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
             <h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-100 mb-3">{{ __('Adjust Stock') }}</h2>
-            <form wire:submit="adjust" class="grid grid-cols-1 gap-3 md:grid-cols-4 md:items-end">
+            <form wire:submit="adjust" class="grid grid-cols-1 gap-3 md:grid-cols-5 md:items-end">
+                <div>
+                    <label class="block text-sm font-medium text-neutral-800 dark:text-neutral-200 mb-1">{{ __('Branch') }}</label>
+                    @if ($branches->count())
+                        <select wire:model.live="branch_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                            @foreach ($branches as $branch)
+                                <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                            @endforeach
+                        </select>
+                    @else
+                        <input type="text" class="w-full rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100" value="{{ config('inventory.default_branch_id', 1) }}" disabled />
+                    @endif
+                </div>
                 <div>
                     <label class="block text-sm font-medium text-neutral-800 dark:text-neutral-200 mb-1">{{ __('Direction') }}</label>
                     <select wire:model="direction" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
@@ -122,12 +241,69 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <option value="decrease">{{ __('Decrease') }}</option>
                     </select>
                 </div>
-                <flux:input wire:model="quantity" type="number" min="1" :label="__('Quantity')" />
+                <flux:input wire:model="quantity" type="number" min="0.001" step="0.001" :label="__('Quantity')" />
                 <flux:input wire:model="notes" :label="__('Notes')" />
                 <div class="flex gap-2">
                     <flux:button type="submit" variant="primary">{{ __('Apply') }}</flux:button>
                 </div>
             </form>
+        </div>
+    @endif
+
+    @if(auth()->check() && auth()->user()->hasAnyRole(['admin','manager']))
+        <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+            <h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-100 mb-3">{{ __('Item Availability') }}</h2>
+            @if ($branches->count())
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    @foreach ($branches as $branch)
+                        @php $isAvailable = in_array($branch->id, $availability, true); @endphp
+                        <div class="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-2 text-sm text-neutral-800 dark:border-neutral-700 dark:text-neutral-100">
+                            <div>{{ $branch->name }}</div>
+                            @if ($isAvailable)
+                                <span class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100">{{ __('Available') }}</span>
+                            @else
+                                <flux:button size="xs" variant="primary" wire:click="addAvailability({{ $branch->id }})">{{ __('Add') }}</flux:button>
+                            @endif
+                        </div>
+                    @endforeach
+                </div>
+            @else
+                <div class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Branches are not configured.') }}</div>
+            @endif
+        </div>
+
+        <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+            <h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-100 mb-3">{{ __('Transfer Stock') }}</h2>
+            @if ($branches->count())
+                <form wire:submit="transfer" class="grid grid-cols-1 gap-3 md:grid-cols-4 md:items-end">
+                    <div>
+                        <label class="block text-sm font-medium text-neutral-800 dark:text-neutral-200 mb-1">{{ __('From Branch') }}</label>
+                        <select wire:model="transfer_from_branch_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                            @foreach ($branches as $branch)
+                                <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-neutral-800 dark:text-neutral-200 mb-1">{{ __('To Branch') }}</label>
+                        <select wire:model="transfer_to_branch_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                            <option value="">{{ __('Select') }}</option>
+                            @foreach ($branches as $branch)
+                                <option value="{{ $branch->id }}" @if($transfer_from_branch_id == $branch->id) disabled @endif>{{ $branch->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <flux:input wire:model="transfer_quantity" type="number" min="0.001" step="0.001" :label="__('Quantity (packages)')" />
+                    <div class="flex gap-2">
+                        <flux:button type="submit" variant="primary">{{ __('Transfer') }}</flux:button>
+                    </div>
+                    <div class="md:col-span-4">
+                        <flux:input wire:model="transfer_notes" :label="__('Notes')" />
+                    </div>
+                </form>
+            @else
+                <div class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Branches are not configured.') }}</div>
+            @endif
         </div>
     @endif
 

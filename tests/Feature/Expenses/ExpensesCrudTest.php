@@ -4,11 +4,14 @@ use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
 it('creates an expense with computed total', function () {
     $user = User::factory()->create();
+    $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    $user->assignRole($role);
     $cat = ExpenseCategory::factory()->create();
 
     $this->actingAs($user);
@@ -29,6 +32,8 @@ it('creates an expense with computed total', function () {
 
 it('prevents delete when payments exist', function () {
     $user = User::factory()->create();
+    $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    $user->assignRole($role);
     $expense = Expense::factory()->create();
     $expense->payments()->create([
         'payment_date' => now()->toDateString(),
@@ -43,6 +48,8 @@ it('prevents delete when payments exist', function () {
 
 it('computes payment status unpaid/partial/paid', function () {
     $user = User::factory()->create();
+    $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    $user->assignRole($role);
     $expense = Expense::factory()->create([
         'amount' => 100,
         'tax_amount' => 0,

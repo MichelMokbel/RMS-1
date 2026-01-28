@@ -79,8 +79,6 @@ class CustomerImportService
                 }
 
                 $row = $this->mapRow($rowRaw, $headerMap);
-                $isFirstRow = ($result['created'] + $result['updated'] + $result['skipped'] + $result['failed']) === 0;
-
                 // Defensive defaults: CSVs may omit optional columns like credit_limit / credit_terms_days.
                 $row['is_active'] = array_key_exists('is_active', $row) ? (bool) $row['is_active'] : true;
 
@@ -89,35 +87,6 @@ class CustomerImportService
 
                 $termsRaw = $row['credit_terms_days'] ?? '';
                 $row['credit_terms_days'] = ($termsRaw === '' || $termsRaw === null) ? 0 : (int) $termsRaw;
-
-                // #region agent log
-                if ($isFirstRow) {
-                    try {
-                        file_put_contents(
-                            base_path('.cursor/debug.log'),
-                            json_encode([
-                                'sessionId' => 'debug-session',
-                                'runId' => 'post-fix',
-                                'hypothesisId' => 'H_CUST_IMPORT',
-                                'location' => 'app/Services/Customers/CustomerImportService.php:import',
-                                'message' => 'Customer import first row defaults applied',
-                                'data' => [
-                                    'has_credit_limit' => array_key_exists('credit_limit', $row),
-                                    'has_credit_terms_days' => array_key_exists('credit_terms_days', $row),
-                                    'credit_limit' => $row['credit_limit'],
-                                    'credit_terms_days' => $row['credit_terms_days'],
-                                    'has_is_active' => array_key_exists('is_active', $row),
-                                    'is_active' => $row['is_active'],
-                                ],
-                                'timestamp' => (int) (microtime(true) * 1000),
-                            ], JSON_UNESCAPED_SLASHES) . PHP_EOL,
-                            FILE_APPEND
-                        );
-                    } catch (\Throwable $e) {
-                        // ignore
-                    }
-                }
-                // #endregion
 
                 $validator = Validator::make($row, [
                     'customer_code' => ['nullable', 'string', 'max:50'],

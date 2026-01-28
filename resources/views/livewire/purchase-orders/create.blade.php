@@ -30,13 +30,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->po_number = $numberService->generate();
         $this->items = $this->inventoryItems();
         $this->lines = [
-            ['item_id' => null, 'quantity' => 1, 'unit_price' => 0],
+            ['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0],
         ];
     }
 
     public function addLine(): void
     {
-        $this->lines[] = ['item_id' => null, 'quantity' => 1, 'unit_price' => 0];
+        $this->lines[] = ['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0];
     }
 
     public function removeLine(int $index): void
@@ -87,7 +87,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function maybeAppendNewLine(int $index): void
     {
         if ($index === array_key_last($this->lines)) {
-            $this->lines[] = ['item_id' => null, 'quantity' => 1, 'unit_price' => 0];
+            $this->lines[] = ['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0];
         }
     }
 
@@ -157,7 +157,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         return collect($this->lines)
             ->filter(function ($line) {
                 return ! empty($line['item_id'])
-                    && isset($line['quantity']) && (int) $line['quantity'] > 0
+                    && isset($line['quantity']) && (float) $line['quantity'] > 0.0005
                     && isset($line['unit_price']) && $line['unit_price'] !== '';
             })
             ->values()
@@ -176,7 +176,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'payment_type' => ['nullable', 'string', 'max:100'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.item_id' => ['required', 'integer', 'exists:inventory_items,id'],
-            'lines.*.quantity' => ['required', 'integer', 'min:1'],
+            'lines.*.quantity' => ['required', 'numeric', 'min:0.001'],
             'lines.*.unit_price' => ['required', 'numeric', 'min:0'],
         ];
     }
@@ -319,7 +319,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     @error("lines.$index.item_id") <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                                 </td>
                                 <td class="px-3 py-3 text-sm">
-                                    <flux:input wire:model.live="lines.{{ $index }}.quantity" type="number" min="1" />
+                                    <flux:input wire:model.live="lines.{{ $index }}.quantity" type="number" min="0.001" step="0.001" />
                                     @error("lines.$index.quantity") <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                                 </td>
                                 <td class="px-3 py-3 text-sm">

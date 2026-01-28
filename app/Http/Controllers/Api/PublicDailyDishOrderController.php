@@ -12,46 +12,30 @@ use App\Mail\DailyDishOrderAdminMail;
 use App\Mail\DailyDishOrderCustomerMail;
 use App\Services\Orders\OrderNumberService;
 use App\Services\Orders\OrderTotalsService;
+use App\Services\Pricing\MealPlanPricingService;
 use App\Services\Security\RecaptchaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 
 class PublicDailyDishOrderController extends Controller
 {
-    private const BUNDLE_PRICES = [
-        'full' => 65.0,
-        'mainSalad' => 55.0,
-        'mainDessert' => 55.0,
-        'mainOnly' => 50.0,
-    ];
-    private const PORTION_PRICES = [
-        'plate' => 50.0,
-        'half' => 130.0,
-        'full' => 200.0,
-    ];
-    private const ADDON_PRICES = [
-        'salad' => 15.0,
-        'dessert' => 15.0,
-    ];
-    private const PLAN_PRICES = [
-        '20' => 40.0,
-        '26' => 42.30,
-    ];
-    private const PORTION_LABELS = [
-        'plate' => 'Plate',
-        'half' => 'Half Portion',
-        'full' => 'Full Portion',
-    ];
-
     public function store(
         Request $request,
         RecaptchaService $recaptcha,
         OrderNumberService $numberService,
-        OrderTotalsService $totalsService
+        OrderTotalsService $totalsService,
+        MealPlanPricingService $pricingService
     ) {
+        $branchRule = ['nullable', 'integer'];
+        if (Schema::hasTable('branches')) {
+            $branchRule[] = Rule::exists('branches', 'id');
+        }
+
         $payload = $request->validate([
-            'branch_id' => ['nullable', 'integer'],
+            'branch_id' => $branchRule,
             'customerName' => ['required', 'string', 'max:255'],
             'phone' => ['required', 'string', 'max:50'],
             'email' => ['required', 'string', 'max:255'],
@@ -83,7 +67,24 @@ class PublicDailyDishOrderController extends Controller
             ], 422);
         }
 
+        $systemUserId = (int) config('app.system_user_id');
+        if (! $systemUserId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'System user is not configured.',
+            ], 500);
+        }
+
         $branchId = (int) ($payload['branch_id'] ?? 1);
+        if (Schema::hasTable('branches')) {
+            $exists = DB::table('branches')->where('id', $branchId)->exists();
+            if (! $exists) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid branch.',
+                ], 422);
+            }
+        }
 
         $items = collect($payload['items'] ?? []);
         $usesNewShape = $items->contains(fn ($row) => isset($row['mains']) && is_array($row['mains']));
@@ -94,7 +95,7 @@ class PublicDailyDishOrderController extends Controller
         $createdOrderIds = [];
         $leadId = null;
 
-        DB::transaction(function () use ($groups, $payload, $branchId, $numberService, $totalsService, &$createdOrderIds, $usesNewShape) {
+        DB::transaction(function () use ($groups, $payload, $branchId, $numberService, $totalsService, $pricingService, &$createdOrderIds, $usesNewShape, $systemUserId) {
             foreach ($groups as $date => $items) {
                 $menu = DailyDishMenu::query()
                     ->where('branch_id', $branchId)
@@ -139,7 +140,7 @@ class PublicDailyDishOrderController extends Controller
                                 abort(422, "Main dish is required for {$date}.");
                             }
 
-                            if (! isset(self::PORTION_PRICES[$portion])) {
+                            if ($pricingService->portionPrice($portion) === null) {
                                 abort(422, "Unsupported portion '{$portion}' for {$date}.");
                             }
 
@@ -159,7 +160,7 @@ class PublicDailyDishOrderController extends Controller
                     $hasMealPlan = ! empty($payload['mealPlan']);
                     if ($hasMealPlan) {
                         $planKey = (string) $payload['mealPlan'];
-                        $planPrice = self::PLAN_PRICES[$planKey] ?? null;
+                        $planPrice = $pricingService->planPriceForKey($planKey);
                         if ($planPrice === null) {
                             abort(422, "Unsupported meal plan '{$planKey}'.");
                         }
@@ -213,8 +214,8 @@ class PublicDailyDishOrderController extends Controller
                                     $lineGroups[$k] = [
                                         'menu_item_id' => $menuItemId,
                                         'qty' => 0,
-                                        'unit_price' => self::PORTION_PRICES[$portion] ?? self::PORTION_PRICES['plate'],
-                                        'label' => self::PORTION_LABELS[$portion] ?? 'Plate',
+                                        'unit_price' => $pricingService->portionPrice($portion) ?? $pricingService->portionPrice('plate') ?? 0.0,
+                                        'label' => $pricingService->portionLabel($portion),
                                     ];
                                 }
                                 $lineGroups[$k]['qty'] += $sel['qty'];
@@ -228,7 +229,7 @@ class PublicDailyDishOrderController extends Controller
                                 $lineGroups['salad-addon|'.$saladMenuItemId] = [
                                     'menu_item_id' => $saladMenuItemId,
                                     'qty' => $saladQty,
-                                    'unit_price' => self::ADDON_PRICES['salad'],
+                                    'unit_price' => $pricingService->addonPrice('salad') ?? 0.0,
                                     'label' => 'Salad Add-on',
                                 ];
                             }
@@ -241,7 +242,7 @@ class PublicDailyDishOrderController extends Controller
                                 $lineGroups['dessert-addon|'.$dessertMenuItemId] = [
                                     'menu_item_id' => $dessertMenuItemId,
                                     'qty' => $dessertQty,
-                                    'unit_price' => self::ADDON_PRICES['dessert'],
+                                    'unit_price' => $pricingService->addonPrice('dessert') ?? 0.0,
                                     'label' => 'Dessert Add-on',
                                 ];
                             }
@@ -263,7 +264,7 @@ class PublicDailyDishOrderController extends Controller
                                 }
 
                                 $bundleType = (string) $bundle['type'];
-                                $bundlePrice = self::BUNDLE_PRICES[$bundleType] ?? null;
+                                $bundlePrice = $pricingService->bundlePrice($bundleType);
                                 if ($bundlePrice === null) {
                                     abort(422, "Unsupported mealType '{$bundleType}' for {$date}.");
                                 }
@@ -292,7 +293,7 @@ class PublicDailyDishOrderController extends Controller
                 } else {
                     foreach ($items as $row) {
                         $mealType = (string) ($row['mealType'] ?? '');
-                        $bundlePrice = self::BUNDLE_PRICES[$mealType] ?? null;
+                        $bundlePrice = $pricingService->bundlePrice($mealType);
                         if ($bundlePrice === null) {
                             abort(422, "Unsupported mealType '{$mealType}' for {$date}.");
                         }
@@ -345,7 +346,7 @@ class PublicDailyDishOrderController extends Controller
                     'total_before_tax' => 0,
                     'tax_amount' => 0,
                     'total_amount' => 0,
-                    'created_by' => null,
+                    'created_by' => $systemUserId,
                 ]);
 
                 $sort = 0;
@@ -386,6 +387,15 @@ class PublicDailyDishOrderController extends Controller
                 'order_ids' => $createdOrderIds,
             ]);
             $leadId = $lead->id;
+            if ($leadId && ! empty($createdOrderIds) && Schema::hasTable('meal_plan_request_orders')) {
+                $rows = array_map(fn ($orderId) => [
+                    'meal_plan_request_id' => $leadId,
+                    'order_id' => (int) $orderId,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ], $createdOrderIds);
+                DB::table('meal_plan_request_orders')->insert($rows);
+            }
         } catch (\Throwable $e) {
             // Don't block orders if lead insert fails.
         }
@@ -495,5 +505,3 @@ class PublicDailyDishOrderController extends Controller
         return $bundles;
     }
 }
-
-

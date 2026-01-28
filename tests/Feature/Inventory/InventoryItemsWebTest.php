@@ -18,8 +18,8 @@ it('admin can create item with unique code', function () {
     $user = adminInventoryUser();
     $item = InventoryItem::factory()->make();
 
+    Volt::actingAs($user);
     Volt::test('inventory.create')
-        ->actingAs($user)
         ->set('item_code', $item->item_code)
         ->set('name', $item->name)
         ->set('units_per_package', 1)
@@ -36,8 +36,8 @@ it('initial stock creates adjustment and updates current stock', function () {
     $user = adminInventoryUser();
     $item = InventoryItem::factory()->make();
 
+    Volt::actingAs($user);
     Volt::test('inventory.create')
-        ->actingAs($user)
         ->set('item_code', $item->item_code)
         ->set('name', $item->name)
         ->set('units_per_package', 1)
@@ -47,5 +47,5 @@ it('initial stock creates adjustment and updates current stock', function () {
         ->assertHasNoErrors();
 
     $created = InventoryItem::where('item_code', $item->item_code)->first();
-    expect($created->current_stock)->toBe(5);
+    expect((float) $created->current_stock)->toBe(5.0);
 });

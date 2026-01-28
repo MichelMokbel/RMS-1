@@ -49,7 +49,7 @@ class CustomerController extends Controller
         $data = $request->validated();
         $data = $this->applyCreditPolicy($data);
         if (\Illuminate\Support\Facades\Schema::hasColumn('customers', 'created_by')) {
-            $data['created_by'] = auth()->id();
+            $data['created_by'] = Illuminate\Support\Facades\Auth::id();
         }
 
         $customer = Customer::create($data);
@@ -62,7 +62,7 @@ class CustomerController extends Controller
         $data = $request->validated();
         $data = $this->applyCreditPolicy($data);
         if (\Illuminate\Support\Facades\Schema::hasColumn('customers', 'updated_by')) {
-            $data['updated_by'] = auth()->id();
+            $data['updated_by'] = Illuminate\Support\Facades\Auth::id();
         }
 
         $customer->update($data);

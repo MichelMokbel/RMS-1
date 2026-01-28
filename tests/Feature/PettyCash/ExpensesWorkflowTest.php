@@ -2,6 +2,7 @@
 
 use App\Models\PettyCashExpense;
 use App\Models\PettyCashWallet;
+use App\Models\User;
 use App\Services\PettyCash\PettyCashExpenseWorkflowService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
@@ -22,6 +23,7 @@ it('computes total as amount plus tax', function () {
 });
 
 it('approval reduces wallet balance, submission does not', function () {
+    $user = User::factory()->create(['status' => 'active']);
     $wallet = PettyCashWallet::factory()->create(['balance' => 20]);
     $expense = PettyCashExpense::factory()->create([
         'wallet_id' => $wallet->id,
@@ -34,11 +36,12 @@ it('approval reduces wallet balance, submission does not', function () {
     $workflow = app(PettyCashExpenseWorkflowService::class);
 
     // approve
-    $workflow->approve($expense, 1);
-    expect($wallet->refresh()->balance)->toBe(14.00);
+    $workflow->approve($expense, $user->id);
+    expect((float) $wallet->refresh()->balance)->toBe(14.0);
 });
 
 it('reject does not affect balance', function () {
+    $user = User::factory()->create(['status' => 'active']);
     $wallet = PettyCashWallet::factory()->create(['balance' => 15]);
     $expense = PettyCashExpense::factory()->create([
         'wallet_id' => $wallet->id,
@@ -47,14 +50,15 @@ it('reject does not affect balance', function () {
     ]);
 
     $workflow = app(PettyCashExpenseWorkflowService::class);
-    $workflow->reject($expense, 1);
+    $workflow->reject($expense, $user->id);
 
-    expect($wallet->refresh()->balance)->toBe(15.00);
+    expect((float) $wallet->refresh()->balance)->toBe(15.0);
 });
 
 it('prevents negative balance when disallowed', function () {
     config()->set('petty_cash.allow_negative_wallet_balance', false);
 
+    $user = User::factory()->create(['status' => 'active']);
     $wallet = PettyCashWallet::factory()->create(['balance' => 5]);
     $expense = PettyCashExpense::factory()->create([
         'wallet_id' => $wallet->id,
@@ -64,5 +68,5 @@ it('prevents negative balance when disallowed', function () {
 
     $workflow = app(PettyCashExpenseWorkflowService::class);
 
-    expect(fn () => $workflow->approve($expense, 1))->toThrow(ValidationException::class);
+    expect(fn () => $workflow->approve($expense, $user->id))->toThrow(ValidationException::class);
 });

@@ -14,8 +14,11 @@ class InventoryTransaction extends Model
 
     protected $fillable = [
         'item_id',
+        'branch_id',
         'transaction_type',
         'quantity',
+        'unit_cost',
+        'total_cost',
         'reference_type',
         'reference_id',
         'user_id',
@@ -24,7 +27,10 @@ class InventoryTransaction extends Model
     ];
 
     protected $casts = [
-        'quantity' => 'integer',
+        'branch_id' => 'integer',
+        'quantity' => 'decimal:3',
+        'unit_cost' => 'decimal:4',
+        'total_cost' => 'decimal:4',
         'transaction_date' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
@@ -40,9 +46,9 @@ class InventoryTransaction extends Model
         return class_exists(User::class) ? $this->belongsTo(User::class, 'user_id') : null;
     }
 
-    public function delta(): int
+    public function delta(): float
     {
-        $qty = (int) $this->quantity;
+        $qty = (float) $this->quantity;
 
         return match ($this->transaction_type) {
             'in' => abs($qty),

@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\MealSubscription;
 use App\Services\Subscriptions\MealSubscriptionService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 
 class MealSubscriptionController extends Controller
 {
@@ -69,9 +71,14 @@ class MealSubscriptionController extends Controller
 
     private function validatePayload(Request $request, ?int $id = null): array
     {
+        $branchRule = ['required', 'integer'];
+        if (Schema::hasTable('branches')) {
+            $branchRule[] = Rule::exists('branches', 'id');
+        }
+
         return $request->validate([
             'customer_id' => ['required', 'integer'],
-            'branch_id' => ['required', 'integer'],
+            'branch_id' => $branchRule,
             'status' => ['required', 'in:active,paused,cancelled,expired'],
             'start_date' => ['required', 'date'],
             'end_date' => ['nullable', 'date'],
@@ -88,4 +95,3 @@ class MealSubscriptionController extends Controller
         ]);
     }
 }
-

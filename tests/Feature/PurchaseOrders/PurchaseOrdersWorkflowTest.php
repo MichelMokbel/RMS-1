@@ -32,7 +32,10 @@ it('creates draft purchase order with lines', function () {
 
     $response->assertCreated();
     $this->assertDatabaseHas('purchase_orders', ['po_number' => 'PO-TEST', 'status' => 'draft']);
-    $this->assertDatabaseHas('purchase_order_items', ['purchase_order_id' => 1, 'quantity' => 2]);
+    $poId = $response->json('id');
+    expect($poId)->not->toBeNull();
+    $qty = \App\Models\PurchaseOrderItem::where('purchase_order_id', $poId)->value('quantity');
+    expect((float) $qty)->toBe(2.0);
 });
 
 it('approves and receives purchase order', function () {
@@ -60,5 +63,5 @@ it('approves and receives purchase order', function () {
     $po->refresh();
     expect($po->status)->toBe(PurchaseOrder::STATUS_APPROVED);
     $item->refresh();
-    expect($item->current_stock)->toBe(2);
+    expect((float) $item->current_stock)->toBe(2.0);
 });

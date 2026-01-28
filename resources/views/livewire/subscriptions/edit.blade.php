@@ -4,6 +4,7 @@ use App\Models\Customer;
 use App\Models\MealSubscription;
 use App\Services\Subscriptions\MealSubscriptionService;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -56,7 +57,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $data = $this->validate($this->rules());
         $data['weekdays'] = $this->weekdays;
 
-        $sub = $service->save($data, $this->subscription, auth()->id());
+        $sub = $service->save($data, $this->subscription, Illuminate\Support\Facades\Auth::id());
 
         session()->flash('status', __('Subscription updated.'));
         $this->redirectRoute('subscriptions.show', $sub, navigate: true);
@@ -64,9 +65,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private function rules(): array
     {
+        $branchRule = ['required', 'integer'];
+        if (Schema::hasTable('branches')) {
+            $branchRule[] = Rule::exists('branches', 'id');
+        }
+
         return [
             'customer_id' => ['required', 'integer'],
-            'branch_id' => ['required', 'integer'],
+            'branch_id' => $branchRule,
             'status' => ['required', 'in:active,paused,cancelled,expired'],
             'start_date' => ['required', 'date'],
             'end_date' => ['nullable', 'date'],
@@ -172,4 +178,3 @@ new #[Layout('components.layouts.app')] class extends Component {
         <flux:button type="button" wire:click="save" variant="primary">{{ __('Save') }}</flux:button>
     </div>
 </div>
-

@@ -66,7 +66,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
             {{ __('Menu Items') }}
         </h1>
-        @if(auth()->user()->hasAnyRole(['admin','manager']))
+        @if(auth()->check() && auth()->user()->hasAnyRole(['admin','manager']))
             <flux:button :href="route('menu-items.create')" wire:navigate variant="primary">
                 {{ __('Create Menu Item') }}
             </flux:button>
@@ -141,7 +141,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </td>
                         <td class="px-3 py-3 text-sm">
                             <div class="flex flex-wrap gap-2">
-                                @if(auth()->user()->hasAnyRole(['admin','manager']))
+                                @if(auth()->check() && auth()->user()->hasAnyRole(['admin','manager']))
                                     <flux:button size="xs" :href="route('menu-items.edit', $item)" wire:navigate>{{ __('Edit') }}</flux:button>
                                 @else
                                     <span class="text-xs text-neutral-500">{{ __('View only') }}</span>

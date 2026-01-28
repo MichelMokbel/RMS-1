@@ -4,10 +4,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\InventoryAdjustmentRequest;
+use App\Http\Requests\InventoryAvailabilityRequest;
 use App\Http\Requests\InventoryItemStoreRequest;
 use App\Http\Requests\InventoryItemUpdateRequest;
 use App\Models\InventoryItem;
+use App\Models\InventoryStock;
+use App\Services\Inventory\InventoryAvailabilityService;
 use App\Services\Inventory\InventoryStockService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 
 class InventoryController extends Controller
@@ -24,6 +28,7 @@ class InventoryController extends Controller
         $categoryId = $request->input('category_id');
         $supplierId = $request->input('supplier_id');
         $lowStock = $request->boolean('low_stock', false);
+        $branchId = (int) $request->input('branch_id');
 
         $query = InventoryItem::query()
             ->when($status !== 'all', fn ($q) => $q->where('status', $status))
@@ -36,19 +41,60 @@ class InventoryController extends Controller
                         ->orWhere('location', 'like', '%'.$search.'%');
                 });
             })
-            ->when($lowStock, fn ($q) => $q->whereColumn('current_stock', '<=', 'minimum_stock'))
             ->orderBy('name');
 
-        return $query->paginate($perPage)->through(function (InventoryItem $item) {
-            return $item->toArray() + ['per_unit_cost' => $item->perUnitCost()];
+        if ($branchId > 0) {
+            $query->leftJoin('inventory_stocks as inv_stock', function ($join) use ($branchId) {
+                $join->on('inventory_items.id', '=', 'inv_stock.inventory_item_id')
+                    ->where('inv_stock.branch_id', '=', $branchId);
+            })
+                ->select('inventory_items.*', DB::raw('COALESCE(inv_stock.current_stock, 0) as current_stock'));
+        }
+
+        if ($lowStock) {
+            if ($branchId > 0) {
+                $query->whereRaw('COALESCE(inv_stock.current_stock, 0) <= inventory_items.minimum_stock');
+            } else {
+                $query->whereColumn('current_stock', '<=', 'minimum_stock');
+            }
+        }
+
+        return $query->paginate($perPage)->through(function (InventoryItem $item) use ($branchId) {
+            $payload = $item->toArray() + ['per_unit_cost' => $item->perUnitCost()];
+            if ($branchId > 0) {
+                $payload['branch_id'] = $branchId;
+            }
+            return $payload;
         });
     }
 
-    public function show(InventoryItem $item)
+    public function show(Request $request, InventoryItem $item)
     {
-        $transactions = $item->transactions()->limit(50)->get();
+        $branchId = (int) $request->input('branch_id', config('inventory.default_branch_id', 1));
+        if ($branchId <= 0) {
+            $branchId = (int) config('inventory.default_branch_id', 1);
+        }
+
+        $transactions = $item->transactions()
+            ->when($branchId > 0, fn ($q) => $q->where('branch_id', $branchId))
+            ->limit(50)
+            ->get();
+
+        $branchStock = InventoryStock::where('inventory_item_id', $item->id)
+            ->where('branch_id', $branchId)
+            ->value('current_stock');
+
+        $itemData = $item->toArray();
+        if ($branchStock === null) {
+            $branchStock = $branchId === (int) config('inventory.default_branch_id', 1)
+                ? ($item->current_stock ?? 0)
+                : 0;
+        }
+        $itemData['current_stock'] = (float) $branchStock;
+        $itemData['branch_id'] = $branchId;
+
         return [
-            'item' => $item->toArray() + ['per_unit_cost' => $item->perUnitCost()],
+            'item' => $itemData + ['per_unit_cost' => $item->perUnitCost()],
             'transactions' => $transactions,
         ];
     }
@@ -56,8 +102,9 @@ class InventoryController extends Controller
     public function store(InventoryItemStoreRequest $request)
     {
         $data = $request->validated();
-        $initialStock = (int) ($data['initial_stock'] ?? 0);
-        unset($data['initial_stock']);
+        $initialStock = (float) ($data['initial_stock'] ?? 0);
+        $branchId = (int) ($data['branch_id'] ?? $request->input('branch_id'));
+        unset($data['initial_stock'], $data['branch_id']);
 
         if ($request->file('image')) {
             $data['image_path'] = $this->storeImage($request->file('image'), $data['item_code']);
@@ -72,7 +119,7 @@ class InventoryController extends Controller
         $item = InventoryItem::create($data);
 
         if ($initialStock > 0) {
-            $this->stockService->adjustStock($item->fresh(), $initialStock, __('Initial stock'), auth()->id());
+            $this->stockService->adjustStock($item->fresh(), $initialStock, __('Initial stock'), Illuminate\Support\Facades\Auth::id(), $branchId > 0 ? $branchId : null);
         }
 
         return response()->json($item->fresh(), 201);
@@ -82,7 +129,7 @@ class InventoryController extends Controller
     {
         $data = $request->validated();
         $costChanged = array_key_exists('cost_per_unit', $data) && $data['cost_per_unit'] !== null && (float) $data['cost_per_unit'] !== (float) $item->cost_per_unit;
-        $unitsChanged = array_key_exists('units_per_package', $data) && (int) $data['units_per_package'] !== (int) $item->units_per_package;
+        $unitsChanged = array_key_exists('units_per_package', $data) && (float) $data['units_per_package'] !== (float) $item->units_per_package;
 
         if ($request->file('image')) {
             if ($item->image_path) {
@@ -106,16 +153,28 @@ class InventoryController extends Controller
     public function adjust(InventoryAdjustmentRequest $request, InventoryItem $item)
     {
         $delta = $request->input('direction') === 'increase'
-            ? (int) $request->input('quantity')
-            : -(int) $request->input('quantity');
+            ? (float) $request->input('quantity')
+            : -(float) $request->input('quantity');
 
-        $tx = $this->stockService->adjustStock($item, $delta, $request->input('notes'), auth()->id());
+        $branchId = $request->integer('branch_id');
+        $tx = $this->stockService->adjustStock($item, $delta, $request->input('notes'), Illuminate\Support\Facades\Auth::id(), $branchId);
 
         return response()->json([
             'message' => __('Stock adjusted.'),
             'transaction' => $tx,
             'item' => $item->fresh(),
         ]);
+    }
+
+    public function addAvailability(InventoryAvailabilityRequest $request, InventoryItem $item, InventoryAvailabilityService $availabilityService)
+    {
+        $branchId = $request->integer('branch_id');
+        $stock = $availabilityService->addToBranch($item, $branchId);
+
+        return response()->json([
+            'message' => __('Availability added.'),
+            'stock' => $stock,
+        ], 201);
     }
 
     private function storeImage($file, string $itemCode): string

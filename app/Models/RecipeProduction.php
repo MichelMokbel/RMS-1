@@ -11,6 +11,9 @@ class RecipeProduction extends Model
     use HasFactory;
 
     protected $table = 'recipe_productions';
+    public $timestamps = false;
+    public const CREATED_AT = 'created_at';
+    public const UPDATED_AT = null;
 
     protected $fillable = [
         'recipe_id',
@@ -37,4 +40,3 @@ class RecipeProduction extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 }
-

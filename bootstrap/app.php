@@ -11,6 +11,7 @@ use App\Console\Commands\UsersHashPasswords;
 use App\Console\Commands\GenerateSubscriptionOrders;
 use App\Console\Commands\RestoreDatabaseFromDump;
 use App\Console\Commands\ImportDailyDishMenuFromForm;
+use App\Console\Commands\IntegrityAudit;
 use App\Services\Orders\SubscriptionOrderGenerationService;
 use Spatie\Permission\Middleware\RoleMiddleware;
 
@@ -26,15 +27,21 @@ return Application::configure(basePath: dirname(__DIR__))
         GenerateSubscriptionOrders::class,
         RestoreDatabaseFromDump::class,
         ImportDailyDishMenuFromForm::class,
+        IntegrityAudit::class,
     ])
     ->withSchedule(function (Schedule $schedule) {
         $time = config('subscriptions.generation_time', '06:00');
         $schedule->call(function () {
             $service = app(SubscriptionOrderGenerationService::class);
+            $actorId = (int) config('app.system_user_id');
+            if (! $actorId) {
+                logger()->warning('SYSTEM_USER_ID missing; subscription order generation skipped.');
+                return;
+            }
             $branches = DB::table('meal_subscriptions')->distinct()->pluck('branch_id');
             $date = now()->toDateString();
             foreach ($branches as $branchId) {
-                $service->generateForDate($date, (int) $branchId, 1, false);
+                $service->generateForDate($date, (int) $branchId, $actorId, false);
             }
         })->dailyAt($time);
     })

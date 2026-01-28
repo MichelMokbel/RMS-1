@@ -67,7 +67,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         try {
             /** @var Order $order */
             $order = Order::findOrFail($orderId);
-            app(OrderWorkflowService::class)->advanceOrder($order, $toStatus, (int) auth()->id());
+            app(OrderWorkflowService::class)->advanceOrder($order, $toStatus, (int) Illuminate\Support\Facades\Auth::id());
             $this->dispatch('toast', type: 'success', message: __('Order status updated.'));
         } catch (\Throwable $e) {
             $this->dispatch('toast', type: 'error', message: __('Could not update order.'));
@@ -83,7 +83,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         try {
             /** @var OrderItem $item */
             $item = OrderItem::findOrFail($itemId);
-            app(OrderWorkflowService::class)->setItemStatus($item, $toStatus, (int) auth()->id());
+            app(OrderWorkflowService::class)->setItemStatus($item, $toStatus, (int) Illuminate\Support\Facades\Auth::id());
             $this->dispatch('toast', type: 'success', message: __('Item status updated.'));
         } catch (\Throwable $e) {
             $this->dispatch('toast', type: 'error', message: __('Could not update item.'));

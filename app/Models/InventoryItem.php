@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 use App\Models\Category;
 use App\Models\Supplier;
 
@@ -32,14 +33,33 @@ class InventoryItem extends Model
     ];
 
     protected $casts = [
-        'units_per_package' => 'integer',
-        'minimum_stock' => 'integer',
-        'current_stock' => 'integer',
+        'units_per_package' => 'decimal:3',
+        'minimum_stock' => 'decimal:3',
+        'current_stock' => 'decimal:3',
         'cost_per_unit' => 'decimal:4',
         'last_cost_update' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::created(function (InventoryItem $item) {
+            if (! Schema::hasTable('inventory_stocks')) {
+                return;
+            }
+
+            $branchId = (int) config('inventory.default_branch_id', 1);
+            if ($branchId <= 0) {
+                $branchId = 1;
+            }
+
+            InventoryStock::firstOrCreate(
+                ['inventory_item_id' => $item->id, 'branch_id' => $branchId],
+                ['current_stock' => (float) ($item->current_stock ?? 0)]
+            );
+        });
+    }
 
     public function category()
     {
@@ -54,6 +74,11 @@ class InventoryItem extends Model
     public function transactions()
     {
         return $this->hasMany(InventoryTransaction::class, 'item_id')->latest('transaction_date');
+    }
+
+    public function stocks()
+    {
+        return $this->hasMany(InventoryStock::class, 'inventory_item_id');
     }
 
     public function perUnitCost(): ?float

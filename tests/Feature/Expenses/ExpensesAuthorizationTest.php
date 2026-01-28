@@ -3,6 +3,7 @@
 use App\Models\Expense;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
@@ -12,6 +13,8 @@ it('blocks guests from expenses', function () {
 
 it('allows admin to view expenses index', function () {
     $user = User::factory()->create();
+    $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    $user->assignRole($role);
     $this->actingAs($user);
     $this->get('/expenses')->assertStatus(200);
 });

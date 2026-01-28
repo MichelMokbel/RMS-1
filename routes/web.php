@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\InventoryItem;
 use App\Models\MenuItem;
 use App\Models\Order;
 use Illuminate\Support\Facades\Schema;
@@ -100,6 +101,50 @@ Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
     Volt::route('subscriptions/generate', 'subscriptions.generate')->name('subscriptions.generate');
 });
 
+Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+    Route::get('inventory/items/search', function (Request $request) {
+        $term = trim((string) $request->query('q', ''));
+        if ($term === '' || strlen($term) < 2) {
+            return response()->json([]);
+        }
+
+        $prefix = $term.'%';
+        $branchId = (int) $request->query('branch_id');
+        $query = InventoryItem::query()
+            ->where('status', 'active')
+            ->where(function ($q) use ($prefix) {
+                $q->where('item_code', 'like', $prefix)
+                    ->orWhere('name', 'like', $prefix);
+            });
+
+        if ($branchId > 0 && Schema::hasTable('inventory_stocks')) {
+            $query->join('inventory_stocks as inv_stock', function ($join) use ($branchId) {
+                $join->on('inventory_items.id', '=', 'inv_stock.inventory_item_id')
+                    ->where('inv_stock.branch_id', '=', $branchId);
+            });
+        }
+
+        $items = $query
+            ->orderBy('name')
+            ->select(['inventory_items.id', 'inventory_items.name', 'inventory_items.item_code'])
+            ->limit(15)
+            ->get()
+            ->map(function (InventoryItem $item) {
+                $label = trim(($item->item_code ?? '').' '.$item->name);
+
+                return [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'code' => $item->item_code,
+                    'label' => $label,
+                ];
+            })
+            ->values();
+
+        return response()->json($items);
+    })->name('inventory.items.search');
+});
+
 Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->group(function () {
     Route::get('orders/menu-items/search', function (Request $request) {
         $term = trim((string) $request->query('q', ''));
@@ -165,7 +210,16 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
                         ->orWhere('customer_phone_snapshot', 'like', $term);
                 });
             })
-            ->when(Schema::hasTable('meal_plan_requests'), function ($q) {
+            ->when(Schema::hasTable('meal_plan_request_orders'), function ($q) {
+                $q->whereNotExists(function ($sub) {
+                    $sub->selectRaw('1')
+                        ->from('meal_plan_request_orders as mpro')
+                        ->join('meal_plan_requests as mpr', 'mpr.id', '=', 'mpro.meal_plan_request_id')
+                        ->whereColumn('mpro.order_id', 'orders.id')
+                        ->whereNotIn('mpr.status', ['converted', 'closed']);
+                });
+            })
+            ->when(! Schema::hasTable('meal_plan_request_orders') && Schema::hasTable('meal_plan_requests'), function ($q) {
                 $q->whereRaw(
                     "NOT EXISTS (
                         SELECT 1
@@ -227,7 +281,16 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
                         ->orWhere('customer_phone_snapshot', 'like', $term);
                 });
             })
-            ->when(Schema::hasTable('meal_plan_requests'), function ($q) {
+            ->when(Schema::hasTable('meal_plan_request_orders'), function ($q) {
+                $q->whereNotExists(function ($sub) {
+                    $sub->selectRaw('1')
+                        ->from('meal_plan_request_orders as mpro')
+                        ->join('meal_plan_requests as mpr', 'mpr.id', '=', 'mpro.meal_plan_request_id')
+                        ->whereColumn('mpro.order_id', 'orders.id')
+                        ->whereNotIn('mpr.status', ['converted', 'closed']);
+                });
+            })
+            ->when(! Schema::hasTable('meal_plan_request_orders') && Schema::hasTable('meal_plan_requests'), function ($q) {
                 $q->whereRaw(
                     "NOT EXISTS (
                         SELECT 1
@@ -372,10 +435,11 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
 
 Route::middleware(['auth', 'active', 'role:admin|manager|cashier'])->group(function () {
     Volt::route('inventory', 'inventory.index')->name('inventory.index');
-    Volt::route('inventory/{item}', 'inventory.show')->name('inventory.show');
+    Volt::route('inventory/{item}', 'inventory.show')->name('inventory.show')->whereNumber('item');
 });
 
 Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+    Volt::route('inventory/transfers', 'inventory.transfers')->name('inventory.transfers');
     Volt::route('inventory/create', 'inventory.create')->name('inventory.create');
     Volt::route('inventory/{item}/edit', 'inventory.edit')->name('inventory.edit');
 });

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Models\Supplier;
 use App\Models\PurchaseOrder;
 use App\Models\User;
+use Illuminate\Validation\ValidationException;
 
 class ApInvoice extends Model
 {
@@ -28,6 +29,10 @@ class ApInvoice extends Model
         'tax_amount',
         'total_amount',
         'status',
+        'posted_at',
+        'posted_by',
+        'voided_at',
+        'voided_by',
         'notes',
         'created_by',
     ];
@@ -41,7 +46,46 @@ class ApInvoice extends Model
         'total_amount' => 'decimal:2',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'posted_at' => 'datetime',
+        'voided_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::updating(function (ApInvoice $invoice) {
+            if ($invoice->getOriginal('status') === 'draft') {
+                return;
+            }
+
+            $dirty = array_keys($invoice->getDirty());
+            if ($dirty === []) {
+                return;
+            }
+
+            $allowed = [
+                'status',
+                'posted_at',
+                'posted_by',
+                'voided_at',
+                'voided_by',
+                'updated_at',
+            ];
+
+            $allowedWhenVoiding = array_merge($allowed, ['notes']);
+
+            $isVoiding = ($invoice->status === 'void') || $invoice->isDirty('voided_at') || $invoice->isDirty('voided_by');
+
+            $permitted = $isVoiding ? $allowedWhenVoiding : $allowed;
+
+            foreach ($dirty as $field) {
+                if (! in_array($field, $permitted, true)) {
+                    throw ValidationException::withMessages([
+                        'invoice' => __('Posted invoices are immutable.'),
+                    ]);
+                }
+            }
+        });
+    }
 
     public function supplier(): BelongsTo
     {

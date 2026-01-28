@@ -3,6 +3,7 @@
 use App\Models\Category;
 use App\Models\InventoryItem;
 use App\Models\Supplier;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -15,6 +16,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $status = 'active';
     public ?int $category_id = null;
     public ?int $supplier_id = null;
+    public ?int $branch_id = null;
     public bool $low_stock_only = false;
 
     protected $paginationTheme = 'tailwind';
@@ -23,6 +25,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function updatingStatus(): void { $this->resetPage(); }
     public function updatingCategoryId(): void { $this->resetPage(); }
     public function updatingSupplierId(): void { $this->resetPage(); }
+    public function updatingBranchId(): void { $this->resetPage(); }
     public function updatingLowStockOnly(): void { $this->resetPage(); }
 
     public function with(): array
@@ -31,12 +34,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             'items' => $this->query()->paginate(15),
             'categories' => Schema::hasTable('categories') ? Category::orderBy('name')->get() : collect(),
             'suppliers' => Schema::hasTable('suppliers') ? Supplier::orderBy('name')->get() : collect(),
+            'branches' => Schema::hasTable('branches')
+                ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
+                : collect(),
         ];
     }
 
     private function query()
     {
-        return InventoryItem::query()
+        $query = InventoryItem::query()
             ->when($this->status !== 'all', fn ($q) => $q->where('status', $this->status))
             ->when($this->category_id, fn ($q) => $q->where('category_id', $this->category_id))
             ->when($this->supplier_id, fn ($q) => $q->where('supplier_id', $this->supplier_id))
@@ -47,8 +53,25 @@ new #[Layout('components.layouts.app')] class extends Component {
                         ->orWhere('location', 'like', '%'.$this->search.'%');
                 });
             })
-            ->when($this->low_stock_only, fn ($q) => $q->whereColumn('current_stock', '<=', 'minimum_stock'))
             ->orderBy('name');
+
+        if (Schema::hasTable('inventory_stocks') && $this->branch_id) {
+            $branchId = (int) $this->branch_id;
+            $query->join('inventory_stocks as inv_stock', function ($join) use ($branchId) {
+                $join->on('inventory_items.id', '=', 'inv_stock.inventory_item_id')
+                    ->where('inv_stock.branch_id', '=', $branchId);
+            })->select('inventory_items.*', DB::raw('COALESCE(inv_stock.current_stock, 0) as current_stock'));
+        }
+
+        if ($this->low_stock_only) {
+            if ($this->branch_id) {
+                $query->whereRaw('COALESCE(inv_stock.current_stock, 0) <= inventory_items.minimum_stock');
+            } else {
+                $query->whereColumn('current_stock', '<=', 'minimum_stock');
+            }
+        }
+
+        return $query;
     }
 
     public function toggleStatus(int $id): void
@@ -104,6 +127,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <option value="">{{ __('All') }}</option>
                         @foreach ($suppliers as $sup)
                             <option value="{{ $sup->id }}">{{ $sup->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            @endif
+
+            @if ($branches->count())
+                <div class="flex items-center gap-2">
+                    <label for="branch_id" class="text-sm text-neutral-800 dark:text-neutral-200">{{ __('Branch') }}</label>
+                    <select id="branch_id" wire:model.live="branch_id" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                        <option value="">{{ __('All') }}</option>
+                        @foreach ($branches as $branch)
+                            <option value="{{ $branch->id }}">{{ $branch->name }}</option>
                         @endforeach
                     </select>
                 </div>

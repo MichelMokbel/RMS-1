@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\PublicDailyDishOrderController;
 use App\Http\Controllers\Api\Expenses\ExpenseCategoryController;
 use App\Http\Controllers\Api\Expenses\ExpenseController as ApiExpenseController;
 use App\Http\Controllers\Api\InventoryController;
+use App\Http\Controllers\Api\InventoryTransferController;
 use App\Http\Controllers\Api\MealSubscriptionController;
 use App\Http\Controllers\Api\MenuItemController;
 use App\Http\Controllers\Api\PettyCash\ExpenseController as PettyCashExpenseController;
@@ -44,16 +45,17 @@ Route::middleware(['api', 'throttle:60,1'])->prefix('public')->group(function ()
     Route::post('daily-dish/orders', [PublicDailyDishOrderController::class, 'store'])->middleware('throttle:20,1');
 });
 
-Route::middleware('api')->group(function () {
-    Route::get('categories', [CategoryController::class, 'index']);
-    Route::post('categories', [CategoryController::class, 'store']);
-    Route::put('categories/{category}', [CategoryController::class, 'update']);
-    Route::delete('categories/{category}', [CategoryController::class, 'destroy']);
-});
-
 $apiAuthMiddleware =  'auth';
 
 Route::middleware(['api', $apiAuthMiddleware])->group(function () {
+    Route::get('categories', [CategoryController::class, 'index'])->name('api.categories.index');
+
+    Route::middleware(['role:admin|manager'])->group(function () {
+        Route::post('categories', [CategoryController::class, 'store'])->name('api.categories.store');
+        Route::put('categories/{category}', [CategoryController::class, 'update'])->name('api.categories.update');
+        Route::delete('categories/{category}', [CategoryController::class, 'destroy'])->name('api.categories.destroy');
+    });
+
     Route::get('suppliers', [SupplierController::class, 'index'])->name('api.suppliers.index');
 
     Route::middleware(['role:admin'])->group(function () {
@@ -73,6 +75,8 @@ Route::middleware(['api', $apiAuthMiddleware])->group(function () {
         Route::post('inventory', [InventoryController::class, 'store'])->name('api.inventory.store');
         Route::put('inventory/{item}', [InventoryController::class, 'update'])->name('api.inventory.update');
         Route::post('inventory/{item}/adjustments', [InventoryController::class, 'adjust'])->name('api.inventory.adjust');
+        Route::post('inventory/{item}/availability', [InventoryController::class, 'addAvailability'])->name('api.inventory.availability');
+        Route::post('inventory/transfers', [InventoryTransferController::class, 'store'])->name('api.inventory.transfers.store');
 
         Route::post('menu-items', [MenuItemController::class, 'store'])->name('api.menu-items.store');
         Route::put('menu-items/{menuItem}', [MenuItemController::class, 'update'])->name('api.menu-items.update');

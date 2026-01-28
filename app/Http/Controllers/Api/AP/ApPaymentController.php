@@ -41,7 +41,7 @@ class ApPaymentController extends Controller
         ApAllocationService $allocationService
     ): JsonResponse {
         $data = $request->validated();
-        $payment = $allocationService->createPaymentWithAllocations($data, auth()->id());
+        $payment = $allocationService->createPaymentWithAllocations($data, Illuminate\Support\Facades\Auth::id());
 
         return response()->json($payment, 201);
     }

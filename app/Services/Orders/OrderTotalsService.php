@@ -5,9 +5,14 @@ namespace App\Services\Orders;
 use App\Models\MealSubscription;
 use App\Models\MealSubscriptionOrder;
 use App\Models\Order;
+use App\Services\Pricing\MealPlanPricingService;
 
 class OrderTotalsService
 {
+    public function __construct(protected MealPlanPricingService $pricing)
+    {
+    }
+
     public function recalc(Order $order): Order
     {
         $sum = (float) $order->items()->sum('line_total');
@@ -21,7 +26,7 @@ class OrderTotalsService
             if ($subscriptionId) {
                 $subscription = MealSubscription::find($subscriptionId);
                 if ($subscription) {
-                    $sum = $this->subscriptionOrderPrice($subscription);
+                    $sum = $this->pricing->subscriptionPrice($subscription);
                 }
             }
         }
@@ -33,30 +38,4 @@ class OrderTotalsService
 
         return $order->fresh(['items']);
     }
-
-    private function subscriptionOrderPrice(MealSubscription $sub): float
-    {
-        $totalMeals = $sub->plan_meals_total;
-        if ($totalMeals !== null) {
-            if ((int) $totalMeals === 20) {
-                return 40.000;
-            }
-            if ((int) $totalMeals === 26) {
-                return 42.300;
-            }
-        }
-
-        $hasSalad = (bool) $sub->include_salad;
-        $hasDessert = (bool) $sub->include_dessert;
-
-        if ($hasSalad && $hasDessert) {
-            return 65.000;
-        }
-        if ($hasSalad || $hasDessert) {
-            return 55.000;
-        }
-
-        return 50.000;
-    }
 }
-

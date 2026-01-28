@@ -2,7 +2,9 @@
 
 use App\Models\Category;
 use App\Models\InventoryItem;
+use App\Models\InventoryStock;
 use App\Models\Supplier;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -18,10 +20,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?string $description = null;
     public ?int $category_id = null;
     public ?int $supplier_id = null;
-    public int $units_per_package = 1;
+    public ?int $branch_id = null;
+    public float $units_per_package = 1.0;
     public ?string $package_label = null;
     public ?string $unit_of_measure = null;
-    public int $minimum_stock = 0;
+    public float $minimum_stock = 0.0;
     public ?float $cost_per_unit = null;
     public ?string $location = null;
     public ?string $status = 'active';
@@ -44,14 +47,36 @@ new #[Layout('components.layouts.app')] class extends Component {
             'location',
             'status',
         ]));
+
+        $this->branch_id = (int) config('inventory.default_branch_id', 1);
     }
 
     public function with(): array
     {
+        $branchId = (int) ($this->branch_id ?? config('inventory.default_branch_id', 1));
+        $branchStock = null;
+        if (Schema::hasTable('inventory_stocks')) {
+            $branchStock = InventoryStock::where('inventory_item_id', $this->item->id)
+                ->where('branch_id', $branchId)
+                ->value('current_stock');
+        }
+        if ($branchStock === null && $branchId === (int) config('inventory.default_branch_id', 1)) {
+            $branchStock = $this->item->current_stock ?? 0;
+        }
+
         return [
             'categories' => Schema::hasTable('categories') ? Category::orderBy('name')->get() : collect(),
             'suppliers' => Schema::hasTable('suppliers') ? Supplier::orderBy('name')->get() : collect(),
+            'branches' => Schema::hasTable('branches')
+                ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
+                : collect(),
+            'branch_stock' => (float) ($branchStock ?? 0),
         ];
+    }
+
+    public function updatingBranchId(): void
+    {
+        $this->dispatch('$refresh');
     }
 
     public function save(): void
@@ -60,13 +85,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         if ($this->image) {
             if ($this->item->image_path) {
-                \Storage::disk('public')->delete($this->item->image_path);
+                Illuminate\Support\Facades\Storage::disk('public')->delete($this->item->image_path);
             }
             $data['image_path'] = $this->storeImage($this->image, $this->item_code);
         }
 
         $costChanged = array_key_exists('cost_per_unit', $data) && $data['cost_per_unit'] !== null && (float) $data['cost_per_unit'] !== (float) $this->item->cost_per_unit;
-        $unitsChanged = array_key_exists('units_per_package', $data) && (int) $data['units_per_package'] !== (int) $this->item->units_per_package;
+        $unitsChanged = array_key_exists('units_per_package', $data) && (float) $data['units_per_package'] !== (float) $this->item->units_per_package;
 
         if ($costChanged || $unitsChanged) {
             $data['last_cost_update'] = now();
@@ -88,10 +113,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             'description' => ['nullable', 'string'],
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],
             'supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
-            'units_per_package' => ['required', 'integer', 'min:1'],
+            'units_per_package' => ['required', 'numeric', 'min:0.001'],
             'package_label' => ['nullable', 'string', 'max:50'],
             'unit_of_measure' => ['nullable', 'string', 'max:50'],
-            'minimum_stock' => ['nullable', 'integer', 'min:0'],
+            'minimum_stock' => ['nullable', 'numeric', 'min:0'],
             'cost_per_unit' => ['nullable', 'numeric', 'min:0'],
             'location' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', 'in:active,discontinued'],
@@ -156,9 +181,25 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <flux:input wire:model="units_per_package" type="number" min="1" :label="__('Units per Package')" />
-            <flux:input wire:model="minimum_stock" type="number" min="0" :label="__('Minimum Stock')" />
-            <flux:input :value="$item->current_stock" :label="__('Current Stock (read-only)')" disabled />
+            <flux:input wire:model="units_per_package" type="number" min="0.001" step="0.001" :label="__('Units per Package')" />
+            <flux:input wire:model="minimum_stock" type="number" min="0" step="0.001" :label="__('Minimum Stock')" />
+            @if ($branches->count())
+                <div>
+                    <label class="block text-sm font-medium text-neutral-800 dark:text-neutral-200 mb-1">{{ __('Branch') }}</label>
+                    <select wire:model="branch_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                        @foreach ($branches as $branch)
+                            <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            @else
+                <flux:input :value="config('inventory.default_branch_id', 1)" :label="__('Branch')" disabled />
+            @endif
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <flux:input :value="$branch_stock" :label="__('Branch Stock (read-only)')" disabled />
+            <flux:input :value="$item->current_stock" :label="__('Global Stock (read-only)')" disabled />
         </div>
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">

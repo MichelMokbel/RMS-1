@@ -5,6 +5,7 @@ use App\Models\MenuItem;
 use App\Services\DailyDish\DailyDishMenuService;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\Auth;
@@ -232,10 +233,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function cloneMenu(DailyDishMenuService $service): void
     {
+        $branchRule = ['required', 'integer'];
+        if (Schema::hasTable('branches')) {
+            $branchRule[] = Rule::exists('branches', 'id');
+        }
+
         $data = $this->validate([
             'clone_from' => ['required', 'date'],
             'clone_to' => ['required', 'date'],
-            'clone_branch_id' => ['required', 'integer'],
+            'clone_branch_id' => $branchRule,
         ]);
 
         $from = DailyDishMenu::where('branch_id', $this->branch_id)
@@ -487,4 +493,3 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     @endif
 </div>
-

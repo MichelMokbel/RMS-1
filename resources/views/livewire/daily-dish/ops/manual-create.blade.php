@@ -180,7 +180,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'total_before_tax' => 0,
                 'tax_amount' => 0,
                 'total_amount' => 0,
-                'created_by' => auth()->id(),
+                'created_by' => Illuminate\Support\Facades\Auth::id(),
                 'created_at' => now(),
             ]);
 
@@ -216,7 +216,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'branch_id' => $order->branch_id,
                 'service_date' => $this->date,
                 'order_id' => $order->id,
-                'actor_user_id' => (int) auth()->id(),
+                'actor_user_id' => (int) Illuminate\Support\Facades\Auth::id(),
                 'metadata_json' => [
                     'is_daily_dish' => true,
                     'source' => $order->source,

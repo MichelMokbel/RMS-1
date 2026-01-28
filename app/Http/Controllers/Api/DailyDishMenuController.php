@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\DailyDishMenu;
 use App\Services\DailyDish\DailyDishMenuService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Rule;
 
 class DailyDishMenuController extends Controller
 {
@@ -28,6 +30,10 @@ class DailyDishMenuController extends Controller
 
     public function upsert(int $branchId, string $serviceDate, Request $request, DailyDishMenuService $service)
     {
+        if (Schema::hasTable('branches') && ! \DB::table('branches')->where('id', $branchId)->exists()) {
+            throw ValidationException::withMessages(['branch_id' => __('Invalid branch.')]);
+        }
+
         $payload = $request->validate([
             'notes' => ['nullable', 'string'],
             'items' => ['required', 'array', 'min:1'],
@@ -65,9 +71,14 @@ class DailyDishMenuController extends Controller
 
     public function clone(DailyDishMenu $menu, Request $request, DailyDishMenuService $service)
     {
+        $branchRule = ['required', 'integer'];
+        if (Schema::hasTable('branches')) {
+            $branchRule[] = Rule::exists('branches', 'id');
+        }
+
         $data = $request->validate([
             'to_date' => ['required', 'date'],
-            'branch_id' => ['required', 'integer'],
+            'branch_id' => $branchRule,
         ]);
 
         $cloned = $service->cloneMenu($menu, $data['to_date'], $data['branch_id'], $request->user()->id);
@@ -75,4 +86,3 @@ class DailyDishMenuController extends Controller
         return response()->json($cloned->load('items'));
     }
 }
-

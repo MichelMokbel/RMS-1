@@ -17,8 +17,8 @@ it('admin can create menu item', function () {
     $user = menuAdmin();
     $item = MenuItem::factory()->make();
 
+    Volt::actingAs($user);
     Volt::test('menu-items.create')
-        ->actingAs($user)
         ->set('code', $item->code)
         ->set('name', $item->name)
         ->set('selling_price_per_unit', $item->selling_price_per_unit)
@@ -35,8 +35,8 @@ it('search works on code and name', function () {
     $user = menuAdmin();
     $target = MenuItem::factory()->create(['name' => 'Special Pizza', 'code' => 'PZ-001']);
 
+    Volt::actingAs($user);
     Volt::test('menu-items.index')
-        ->actingAs($user)
         ->set('search', 'PZ-001')
         ->assertSee('Special Pizza');
 });

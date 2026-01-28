@@ -32,7 +32,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         if (\Illuminate\Support\Facades\Schema::hasColumn('customers', 'created_by')) {
-            $data['created_by'] = auth()->id();
+            $data['created_by'] = Illuminate\Support\Facades\Auth::id();
         }
 
         Customer::create($data);
@@ -77,7 +77,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return [];
         }
 
-        return \DB::table('payment_methods')->select('id', 'name')->orderBy('name')->get()->toArray();
+        return Illuminate\Support\Facades\DB::table('payment_methods')->select('id', 'name')->orderBy('name')->get()->toArray();
     }
 }; ?>
 

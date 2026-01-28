@@ -97,7 +97,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $invoice = $this->persist('draft', $totalsService, false);
         if ($invoice) {
-            $postingService->post($invoice, auth()->id());
+            $postingService->post($invoice, Illuminate\Support\Facades\Auth::id());
             session()->flash('status', __('Invoice posted.'));
             $this->redirectRoute('payables.invoices.show', $invoice, navigate: true);
         }
@@ -133,7 +133,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'total_amount' => 0,
                 'status' => $status,
                 'notes' => $data['notes'] ?? null,
-                'created_by' => auth()->id(),
+                'created_by' => Illuminate\Support\Facades\Auth::id(),
             ]);
 
             foreach ($data['lines'] as $item) {

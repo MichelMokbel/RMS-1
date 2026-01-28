@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Services\Subscriptions\MealSubscriptionService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -68,7 +69,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         // Use branch from first linked order if available
         $branchId = 1;
         $startDate = now()->toDateString();
-        $orderIds = is_array($req->order_ids) ? $req->order_ids : [];
+        $orderIds = $req->linkedOrderIds();
         if (! empty($orderIds)) {
             $firstOrder = Order::query()->whereIn('id', $orderIds)->orderBy('scheduled_date')->first();
             if ($firstOrder) {
@@ -183,7 +184,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             'convertCustomerAddress' => ['nullable', 'string'],
         ]);
 
-        $actorId = (int) (Auth::id() ?? 1);
+        $actorId = Auth::id();
+        if (! $actorId) {
+            throw ValidationException::withMessages(['auth' => __('Authentication required.')]);
+        }
 
         try {
             DB::transaction(function () use ($req, $subscriptionService, $actorId) {
@@ -248,7 +252,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $sub->save();
 
                 if ($this->convertAttachOrders) {
-                    $orderIds = is_array($req->order_ids) ? $req->order_ids : [];
+                    $orderIds = $req->linkedOrderIds();
                     $orders = Order::query()->whereIn('id', $orderIds)->get();
 
                     $used = 0;
@@ -332,7 +336,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private function confirmRequestOrders(MealPlanRequest $req): void
     {
-        $orderIds = is_array($req->order_ids) ? $req->order_ids : [];
+        $orderIds = $req->linkedOrderIds();
         $orderIds = array_values(array_filter($orderIds, fn ($id) => $id !== null && $id !== ''));
         if (empty($orderIds)) {
             return;
@@ -347,6 +351,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function with(): array
     {
         $query = MealPlanRequest::query()->orderByDesc('created_at');
+        if (Schema::hasTable('meal_plan_request_orders')) {
+            $query->withCount('orders');
+        }
         if ($this->status !== 'all') {
             $query->where('status', $this->status);
         }
@@ -444,7 +451,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </td>
                             <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $r->customer_phone }}</td>
                             <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $r->customer_email ?? '—' }}</td>
-                            <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ is_array($r->order_ids) ? count($r->order_ids) : 0 }}</td>
+                            <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $r->orders_count ?? (is_array($r->order_ids) ? count($r->order_ids) : 0) }}</td>
                             <td class="px-3 py-2 text-sm text-right">
                                 <div class="flex justify-end gap-2">
                                     <flux:button

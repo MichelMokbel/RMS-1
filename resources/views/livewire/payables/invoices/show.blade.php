@@ -17,13 +17,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function post(ApInvoicePostingService $postingService): void
     {
-        $this->invoice = $postingService->post($this->invoice, auth()->id());
+        $this->invoice = $postingService->post($this->invoice, Illuminate\Support\Facades\Auth::id());
         session()->flash('status', __('Invoice posted.'));
     }
 
     public function void(ApInvoiceVoidService $voidService): void
     {
-        $this->invoice = $voidService->void($this->invoice, auth()->id());
+        $this->invoice = $voidService->void($this->invoice, Illuminate\Support\Facades\Auth::id());
         session()->flash('status', __('Invoice voided.'));
     }
 }; ?>

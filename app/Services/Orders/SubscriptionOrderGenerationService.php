@@ -10,12 +10,17 @@ use App\Models\MenuItem;
 use App\Models\OpsEvent;
 use App\Models\SubscriptionOrderRun;
 use App\Models\SubscriptionOrderRunError;
+use App\Services\Pricing\MealPlanPricingService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class SubscriptionOrderGenerationService
 {
+    public function __construct(protected MealPlanPricingService $pricing)
+    {
+    }
+
     public function generateForDate(string $serviceDate, int $branchId, int $userId, bool $dryRun = false): array
     {
         $run = SubscriptionOrderRun::create([
@@ -181,7 +186,7 @@ class SubscriptionOrderGenerationService
         $orderNumber = $this->generateOrderNumber();
         $status = config('subscriptions.generated_order_status', 'Confirmed');
         $quantity = (float) config('subscriptions.generated_item_quantity', 1.0);
-        $planPrice = $this->subscriptionOrderPrice($sub);
+        $planPrice = $this->pricing->subscriptionPrice($sub);
 
         $orderId = DB::table('orders')->insertGetId([
             'order_number' => $orderNumber,
@@ -230,31 +235,6 @@ class SubscriptionOrderGenerationService
         return $orderId;
     }
 
-    private function subscriptionOrderPrice(MealSubscription $sub): float
-    {
-        $totalMeals = $sub->plan_meals_total;
-        if ($totalMeals !== null) {
-            if ((int) $totalMeals === 20) {
-                return 40.000;
-            }
-            if ((int) $totalMeals === 26) {
-                return 42.300;
-            }
-        }
-
-        $hasSalad = (bool) $sub->include_salad;
-        $hasDessert = (bool) $sub->include_dessert;
-
-        if ($hasSalad && $hasDessert) {
-            return 65.000;
-        }
-        if ($hasSalad || $hasDessert) {
-            return 55.000;
-        }
-
-        return 50.000;
-    }
-
     private function generateOrderNumber(): string
     {
         $year = now()->format('Y');
@@ -299,5 +279,4 @@ class SubscriptionOrderGenerationService
         ]);
     }
 }
-
 

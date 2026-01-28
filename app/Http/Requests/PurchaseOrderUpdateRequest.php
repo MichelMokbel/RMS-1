@@ -32,7 +32,7 @@ class PurchaseOrderUpdateRequest extends FormRequest
             'payment_type' => ['nullable', 'string', 'max:100'],
             'lines' => ['sometimes', 'array', 'min:1'],
             'lines.*.item_id' => ['required_with:lines', 'integer', 'exists:inventory_items,id'],
-            'lines.*.quantity' => ['required_with:lines', 'integer', 'min:1'],
+            'lines.*.quantity' => ['required_with:lines', 'numeric', 'min:0.001'],
             'lines.*.unit_price' => ['required_with:lines', 'numeric', 'min:0'],
         ];
     }

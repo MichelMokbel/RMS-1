@@ -4,6 +4,7 @@ namespace App\Services\PettyCash;
 
 use App\Models\PettyCashReconciliation;
 use App\Models\PettyCashWallet;
+use App\Services\Ledger\SubledgerService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -39,6 +40,7 @@ class PettyCashReconciliationService
             ]);
 
             $this->balanceService->applyReconciliation($wallet, $recon);
+            app(SubledgerService::class)->recordPettyCashReconciliation($recon, $userId);
 
             return $recon->fresh(['wallet']);
         });

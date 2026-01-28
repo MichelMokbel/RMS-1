@@ -48,7 +48,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'name' => ['required', 'string', 'max:100', Rule::unique('suppliers', 'name')->ignore($this->supplier->id)],
             'contact_person' => ['nullable', 'string', 'max:100'],
             'email' => ['nullable', 'email', 'max:100'],
-            'phone' => ['nullable', 'string', 'max:20', 'regex:/^[0-9+()\\-\\s]+$/'],
+            'phone' => ['nullable', 'string', 'max:20', 'regex:/^[0-9+()\\-\\s\\.xX]+$/'],
             'address' => ['nullable', 'string'],
             'qid_cr' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', Rule::in(['active', 'inactive'])],

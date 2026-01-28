@@ -5,13 +5,17 @@ namespace App\Services\AP;
 use App\Models\ApInvoice;
 use App\Models\ApPayment;
 use App\Models\ApPaymentAllocation;
+use App\Services\Ledger\SubledgerService;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class ApAllocationService
 {
-    public function __construct(protected ApInvoiceStatusService $statusService)
+    public function __construct(
+        protected ApInvoiceStatusService $statusService,
+        protected SubledgerService $subledgerService
+    )
     {
     }
 
@@ -36,6 +40,7 @@ class ApAllocationService
             }
 
             $this->applyAllocations($payment, $allocations);
+            $this->subledgerService->recordApPayment($payment, $userId);
 
             return $payment->fresh(['allocations.invoice']);
         });
@@ -43,9 +48,12 @@ class ApAllocationService
 
     public function allocateExistingPayment(ApPayment $payment, array $allocations, int $userId): ApPayment
     {
-        return DB::transaction(function () use ($payment, $allocations) {
+        return DB::transaction(function () use ($payment, $allocations, $userId) {
             $this->validateAllocations($allocations, $payment->supplier_id, $payment);
-            $this->applyAllocations($payment, $allocations);
+            $newAllocations = $this->applyAllocations($payment, $allocations);
+            foreach ($newAllocations as $allocation) {
+                $this->subledgerService->recordApPaymentAllocation($allocation, $userId);
+            }
             return $payment->fresh(['allocations.invoice']);
         });
     }
@@ -82,15 +90,16 @@ class ApAllocationService
         }
     }
 
-    private function applyAllocations(ApPayment $payment, array $allocations): void
+    private function applyAllocations(ApPayment $payment, array $allocations): array
     {
+        $created = [];
         $sum = 0;
         foreach ($allocations as $row) {
             $invoice = ApInvoice::where('id', $row['invoice_id'])->lockForUpdate()->firstOrFail();
             $allocAmount = (float) $row['allocated_amount'];
             $sum += $allocAmount;
 
-            ApPaymentAllocation::create([
+            $created[] = ApPaymentAllocation::create([
                 'payment_id' => $payment->id,
                 'invoice_id' => $invoice->id,
                 'allocated_amount' => $allocAmount,
@@ -102,5 +111,7 @@ class ApAllocationService
         if ($sum > (float) $payment->amount) {
             throw ValidationException::withMessages(['allocations' => __('Total allocations exceed payment amount.')]);
         }
+
+        return $created;
     }
 }

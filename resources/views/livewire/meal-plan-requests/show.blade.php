@@ -16,7 +16,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->orderByDesc('id')
             ->first();
 
-        $orderIds = is_array($this->mealPlanRequest->order_ids) ? $this->mealPlanRequest->order_ids : [];
+        $orderIds = $this->mealPlanRequest->linkedOrderIds();
         $orders = empty($orderIds)
             ? collect()
             : Order::query()
@@ -81,7 +81,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{ __('Plan') }}:
                 {{ $mpr->plan_meals > 0 ? $mpr->plan_meals.' '.__('meals') : __('No plan') }}
             </span>
-            <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Orders attached') }}: {{ is_array($mpr->order_ids) ? count($mpr->order_ids) : 0 }}</span>
+            <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Orders attached') }}: {{ $orders->count() }}</span>
         </div>
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -136,5 +136,4 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endif
     </div>
 </div>
-
 

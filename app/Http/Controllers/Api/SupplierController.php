@@ -30,7 +30,7 @@ class SupplierController extends Controller
             ->ordered();
 
         if ($light) {
-            return $query->get()->map(function (Supplier $supplier) {
+            return $query->limit($perPage)->get()->map(function (Supplier $supplier) {
                 $text = $supplier->name;
                 if ($supplier->qid_cr) {
                     $text .= ' (QID/CR: '.$supplier->qid_cr.')';
@@ -68,13 +68,19 @@ class SupplierController extends Controller
     {
         $forceArchive = $request->boolean('force_archive', false);
 
-        if ($forceArchive && method_exists($supplier, 'trashed')) {
+        if ($forceArchive) {
             if ($supplier->isInUse()) {
                 return response()->json(['message' => __('Supplier is referenced and cannot be archived. Deactivate instead.')], 422);
             }
 
-            $supplier->delete();
-            return response()->json(['message' => __('Supplier archived.')]);
+            if (method_exists($supplier, 'trashed')) {
+                $supplier->delete();
+                return response()->json(['message' => __('Supplier archived.')]);
+            }
+
+            $supplier->status = 'inactive';
+            $supplier->save();
+            return response()->json(['message' => __('Supplier deactivated.')]);
         }
 
         $supplier->status = 'inactive';

@@ -1,0 +1,331 @@
+
+   PASS  Tests\Unit\ExampleTest
+  ✓ that true is true                                                    0.01s  
+
+
+
+   PASS  Tests\Feature\AP\ApAgingReportTest
+  ✓ it calculates aging buckets                                          1.35s  
+
+   PASS  Tests\Feature\AP\ApApiTest
+  ✓ it lists invoices via api                                            0.05s  
+  ✓ it prevents duplicate invoice number for supplier                    0.03s  
+
+   PASS  Tests\Feature\AP\ApAuthorizationTest
+  ✓ it redirects guest from payables index                               0.01s  
+  ✓ it allows admin to hit api invoices                                  0.01s  
+
+   PASS  Tests\Feature\AP\ApInvoiceWorkflowTest
+  ✓ it posts draft invoice                                               0.03s  
+  ✓ it voids invoice without allocations                                 0.02s  
+
+   PASS  Tests\Feature\AP\ApPaymentAllocationTest
+  ✓ it blocks allocation beyond outstanding                              0.02s  
+  ✓ it allocates and updates status to partially paid                    0.03s  
+
+   PASS  Tests\Feature\Admin\PermissionsTest
+  ✓ non-admin cannot access users index                                  0.01s  
+
+   PASS  Tests\Feature\Admin\UserCrudTest
+  ✓ admin can create a user                                              1.58s  
+  ✓ admin can edit a user                                                0.05s  
+  ✓ admin can deactivate a user                                          0.03s  
+
+   PASS  Tests\Feature\Auth\AuthenticationTest
+  ✓ login screen can be rendered                                         0.03s  
+  ✓ users can authenticate using the login screen                        0.02s  
+  ✓ users can not authenticate with invalid password                     0.01s  
+  ✓ users with two factor enabled are redirected to two factor challeng… 0.02s  
+  ✓ users can logout                                                     0.01s  
+
+   PASS  Tests\Feature\Auth\EmailVerificationTest
+  ✓ email verification screen can be rendered                            0.02s  
+  ✓ email can be verified                                                0.02s  
+  ✓ email is not verified with invalid hash                              0.01s  
+  ✓ already verified user visiting verification link is redirected with… 0.01s  
+
+   PASS  Tests\Feature\Auth\LoginTest
+  ✓ users can log in with username                                       0.02s  
+  ✓ login fails with wrong password                                      0.01s  
+  ✓ inactive users cannot log in                                         0.01s  
+
+   PASS  Tests\Feature\Auth\PasswordConfirmationTest
+  ✓ confirm password screen can be rendered                              0.01s  
+
+   PASS  Tests\Feature\Auth\PasswordResetTest
+  ✓ reset password link screen can be rendered                           0.02s  
+  ✓ reset password link can be requested                                 0.22s  
+  ✓ reset password screen can be rendered                                0.23s  
+  ✓ password can be reset with valid token                               0.23s  
+
+   PASS  Tests\Feature\Auth\RegistrationTest
+  ✓ registration screen can be rendered                                  0.02s  
+  ✓ new users can register                                               0.02s  
+
+   PASS  Tests\Feature\Auth\TwoFactorChallengeTest
+  ✓ two factor challenge redirects to login when not authenticated       0.01s  
+  ✓ two factor challenge can be rendered                                 0.02s  
+
+   PASS  Tests\Feature\CategoriesTest
+  ✓ admin can create a category                                          0.04s  
+  ✓ admin can edit a category                                            0.04s  
+  ✓ prevent self parent selection                                        0.04s  
+  ✓ prevent cycle loops when selecting parent                            0.04s  
+  ✓ prevent duplicate names under same parent                            0.05s  
+  ✓ prevent deletion when category is in use                             0.06s  
+  ✓ soft delete behavior                                                 0.05s  
+  ✓ non admin cannot access categories index                             0.02s  
+
+   PASS  Tests\Feature\Customers\CustomersApiTest
+  ✓ it returns light customers list by default                           0.02s  
+  ✓ it returns single customer                                           0.02s  
+
+   PASS  Tests\Feature\Customers\CustomersAuthorizationTest
+  ✓ it redirects guests from customers index                             0.01s  
+  ✓ it forbids non-privileged users                                      0.02s  
+  ✓ it allows admin to view customers                                    0.07s  
+
+   PASS  Tests\Feature\Customers\CustomersImportTest
+  ✓ it imports customers from csv create mode                            0.03s  
+
+   PASS  Tests\Feature\Customers\CustomersWebTest
+  ✓ it admin can create retail customer with credit forced to zero       0.17s  
+  ✓ it search filter works                                               0.04s  
+
+   PASS  Tests\Feature\DailyDishMenus\DailyDishMenusAuthorizationTest
+  ✓ it redirects guests from planner                                     0.02s  
+  ✓ it allows admin to view planner                                      0.09s  
+  ✓ it forbids non-privileged user                                       0.02s  
+
+   PASS  Tests\Feature\DailyDishMenus\DailyDishMenusCrudTest
+  ✓ it enforces unique branch-date                                       0.03s  
+  ✓ it blocks editing when published                                     0.02s  
+  ✓ it publish requires at least one item                                0.02s  
+
+   PASS  Tests\Feature\DailyDishMenus\DailyDishMenusPublishTest
+  ✓ it clones menu into a draft target                                   0.03s  
+  ✓ it rejects publish if no items                                       0.02s  
+  ✓ it unpublishes back to draft                                         0.03s  
+
+   PASS  Tests\Feature\DailyDishOps\DailyDishOpsAuthorizationTest
+  ✓ it redirects guests from daily dish ops day                          0.03s  
+  ✓ it allows admin to view daily dish ops day                           0.06s  
+  ✓ it allows kitchen to view daily dish ops day                         0.07s  
+  ✓ it allows cashier to view daily dish ops day                         0.07s  
+  ✓ it forbids a non-privileged user from daily dish ops day             0.02s  
+  ✓ it allows cashier to view manual daily dish create page              0.05s  
+  ✓ it forbids kitchen from manual daily dish create page                0.03s  
+
+   PASS  Tests\Feature\DailyDishOps\PrepTotalsRulesTest
+  ✓ it prep totals include only Confirmed and InProduction orders        0.02s  
+  ✓ it prep totals can exclude subscription or manual orders             0.02s  
+
+   PASS  Tests\Feature\DailyDishOps\SubscriptionRunLoggingTest
+  ✓ it creates run logs and ops events for subscription generation (dry… 0.05s  
+  ✓ it logs failed run when menu is missing                              0.02s  
+
+   PASS  Tests\Feature\DashboardTest
+  ✓ guests are redirected to the login page                              0.01s  
+  ✓ authenticated users can visit the dashboard                          0.03s  
+
+   PASS  Tests\Feature\ExampleTest
+  ✓ returns a successful response                                        0.01s  
+
+   PASS  Tests\Feature\Expenses\ExpenseCategoriesTest
+  ✓ it blocks deleting category in use                                   0.03s  
+
+   PASS  Tests\Feature\Expenses\ExpensePaymentsTest
+  ✓ it adds a payment and updates status                                 0.03s  
+
+   PASS  Tests\Feature\Expenses\ExpensesAuthorizationTest
+  ✓ it blocks guests from expenses                                       0.01s  
+  ✓ it allows admin to view expenses index                               0.05s  
+
+   PASS  Tests\Feature\Expenses\ExpensesCrudTest
+  ✓ it creates an expense with computed total                            0.03s  
+  ✓ it prevents delete when payments exist                               0.02s  
+  ✓ it computes payment status unpaid/partial/paid                       0.03s  
+
+   PASS  Tests\Feature\Inventory\InventoryAdjustmentsTest
+  ✓ it increase adjustment updates stock and creates transaction         0.05s  
+  ✓ it prevent negative stock when disallowed                            0.02s  
+  ✓ it adjust via show component decreases stock                         0.17s  
+
+   PASS  Tests\Feature\Inventory\InventoryApiTest
+  ✓ it lists inventory items via api                                     0.02s  
+  ✓ it adjust endpoint updates stock                                     0.03s  
+
+   PASS  Tests\Feature\Inventory\InventoryAuthorizationTest
+  ✓ it redirects guests from inventory index                             0.01s  
+  ✓ it allows admin to view inventory                                    0.04s  
+
+   PASS  Tests\Feature\Inventory\InventoryItemsWebTest
+  ✓ it admin can create item with unique code                            0.14s  
+  ✓ it initial stock creates adjustment and updates current stock        0.12s  
+
+   PASS  Tests\Feature\KitchenOps\KitchenOpsAuthorizationTest
+  ✓ it redirects guests from kitchen ops                                 0.02s  
+  ✓ it allows kitchen to view kitchen ops                                0.05s  
+  ✓ it forbids non-privileged user from kitchen ops                      0.02s  
+
+   PASS  Tests\Feature\KitchenOps\OrderWorkflowServiceTest
+  ✓ it enforces valid order transitions and logs ops events              0.03s  
+  ✓ it enforces valid item transitions and logs ops events               0.03s  
+
+   PASS  Tests\Feature\MenuItems\MenuItemsApiTest
+  ✓ it returns light menu items list                                     0.04s  
+
+   PASS  Tests\Feature\MenuItems\MenuItemsAuthorizationTest
+  ✓ it redirects guests from menu items index                            0.01s  
+  ✓ it allows admin to view menu items                                   0.05s  
+
+   PASS  Tests\Feature\MenuItems\MenuItemsUsageTest
+  ✓ it blocks deactivation when order_items references the menu item     0.04s  
+
+   PASS  Tests\Feature\MenuItems\MenuItemsWebTest
+  ✓ it admin can create menu item                                        0.13s  
+  ✓ it search works on code and name                                     0.04s  
+
+   PASS  Tests\Feature\Orders\DailyDishSeparationTest
+  ✓ it separates subscription vs manual daily dish orders                0.01s  
+
+   PASS  Tests\Feature\Orders\ManualDailyDishRequiresMenuTest
+  ✓ it requires published menu when creating daily dish order            0.20s  
+  ✓ it allows create when published menu exists and items selected       0.22s  
+
+   PASS  Tests\Feature\Orders\SubscriptionReadOnlyItemsTest
+  ✓ it subscription orders cannot edit items via edit component          0.04s  
+
+   PASS  Tests\Feature\PettyCash\ExpensesWorkflowTest
+  ✓ it computes total as amount plus tax                                 0.02s  
+  ✓ it approval reduces wallet balance, submission does not              0.01s  
+  ✓ it reject does not affect balance                                    0.01s  
+  ✓ it prevents negative balance when disallowed                         0.08s  
+
+   PASS  Tests\Feature\PettyCash\IssuesTest
+  ✓ it blocks issue on inactive wallet                                   0.02s  
+  ✓ it increases wallet balance when issue is created                    0.02s  
+
+   PASS  Tests\Feature\PettyCash\PettyCashAuthorizationTest
+  ✓ it redirects guests from petty cash index                            0.01s  
+  ✓ it allows admin role to view petty cash index                        0.05s  
+
+   PASS  Tests\Feature\PettyCash\ReceiptsTest
+  ✓ it stores receipt and path on expense                                0.03s  
+  ✓ it rejects invalid mime type for receipt                             0.01s  
+
+   PASS  Tests\Feature\PettyCash\ReconciliationsTest
+  ✓ it captures expected balance and variance on reconciliation          0.02s  
+  ✓ it applies reconciliation to wallet balance when enabled             0.02s  
+  ✓ it does not apply reconciliation to wallet balance when disabled     0.01s  
+
+   PASS  Tests\Feature\PettyCash\WalletsTest
+  ✓ it creates wallet with creator via service                           0.02s  
+
+   PASS  Tests\Feature\PurchaseOrders\PurchaseOrdersAuthorizationTest
+  ✓ it redirects guest from purchase orders                              0.01s  
+  ✓ it allows admin to view purchase orders                              0.07s  
+
+   PASS  Tests\Feature\PurchaseOrders\PurchaseOrdersWorkflowTest
+  ✓ it creates draft purchase order with lines                           0.03s  
+  ✓ it approves and receives purchase order                              0.04s  
+
+   PASS  Tests\Feature\Recipes\RecipeCostingTest
+  ✓ it computes costing with package and unit quantities and overhead n… 0.02s  
+
+   PASS  Tests\Feature\Recipes\RecipeProductionTest
+  ✓ it produces recipe and deducts stock with integer constraint         0.04s  
+  ✓ it allows fractional deduction                                       0.04s  
+  ✓ it blocks insufficient stock when negative stock disallowed          0.02s  
+
+   PASS  Tests\Feature\Recipes\RecipesAuthorizationTest
+  ✓ it redirects guests from recipes index                               0.02s  
+  ✓ it allows admin role to view recipes index                           0.09s  
+  ✓ it forbids non-manager/admin roles                                   0.04s  
+  ✓ it shows recipe show page for admin                                  0.07s  
+
+   PASS  Tests\Feature\Recipes\RecipesCrudTest
+  ✓ it creates recipe with items transactionally                         0.02s  
+  ✓ it updates recipe by re-syncing items                                0.02s  
+
+   PASS  Tests\Feature\Settings\PasswordUpdateTest
+  ✓ password can be updated                                              0.05s  
+  ✓ correct password must be provided to update password                 0.05s  
+
+   PASS  Tests\Feature\Settings\ProfileUpdateTest
+  ✓ profile page is displayed                                            0.04s  
+  ✓ profile information can be updated                                   0.04s  
+  ✓ email verification status is unchanged when email address is unchan… 0.04s  
+  ✓ user can delete their account                                        0.03s  
+  ✓ correct password must be provided to delete account                  0.03s  
+
+   PASS  Tests\Feature\Settings\TwoFactorAuthenticationTest
+  ✓ two factor settings page can be rendered                             0.04s  
+  ✓ two factor settings page requires password confirmation when enable… 0.01s  
+  ✓ two factor settings page returns forbidden response when two factor… 0.02s  
+  ✓ two factor authentication disabled when confirmation abandoned betw… 0.02s  
+
+   PASS  Tests\Feature\SubscriptionGeneration\GenerationCreatesOrdersTest
+  ✓ it creates order and mapping for active subscription                 0.04s  
+  ✓ it is idempotent and skips existing mapping                          0.03s  
+  ✓ it respects salad/dessert toggles                                    0.05s  
+
+   PASS  Tests\Feature\SubscriptionGeneration\GenerationMenuSelectionTest
+  ✓ it skips when no published menu                                      0.02s  
+
+   PASS  Tests\Feature\Subscriptions\SubscriptionsAuthorizationTest
+  ✓ it redirects guests from subscriptions index                         0.01s  
+  ✓ it allows admin to view subscriptions index                          0.05s  
+  ✓ it forbids non-privileged user                                       0.02s  
+
+   PASS  Tests\Feature\Subscriptions\SubscriptionsCrudTest
+  ✓ it creates subscription with weekdays and generates code             0.02s  
+  ✓ it requires at least one weekday                                     0.01s  
+  ✓ it enforces end date after start date                                0.01s  
+
+   PASS  Tests\Feature\Subscriptions\SubscriptionsLifecycleTest
+  ✓ it is active on a valid weekday within range                         0.02s  
+  ✓ it is not active outside date range                                  0.02s  
+  ✓ it is not active when paused status                                  0.02s  
+  ✓ it is not active during pause range                                  0.02s  
+  ✓ it weekdayEnabled respects configured days                           0.02s  
+
+   PASS  Tests\Feature\Suppliers\SuppliersApiTest
+  ✓ it returns only active suppliers by default (light)                  0.02s  
+  ✓ it status=all returns active and inactive                            0.05s  
+  ✓ it prevents archive when referenced                                  0.05s  
+
+   PASS  Tests\Feature\Suppliers\SuppliersAuthorizationTest
+  ✓ it redirects guests from suppliers index                             1.23s  
+  ✓ it forbids non-admin users from suppliers index                      0.02s  
+  ✓ it allows admin users to access suppliers index                      0.04s  
+
+   FAIL  Tests\Feature\Suppliers\SuppliersWebTest
+  ✓ it allows admin to create supplier                                   0.11s  
+  ✓ it enforces unique supplier name                                     0.04s  
+  ✓ it validates email format                                            0.05s  
+  ✓ it persists qid_cr and allows search                                 0.05s  
+  ⨯ it allows admin to deactivate and activate supplier                  0.06s  
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Suppliers\SuppliersWebTest > it allows admin to dea…   
+  Component has errors: "phone"
+Failed asserting that false is true.
+
+  at vendor/livewire/livewire/src/Features/SupportValidation/TestsValidation.php:109
+    105▕     {
+    106▕         $errors = $this->errors();
+    107▕ 
+    108▕         if (empty($keys)) {
+  ➜ 109▕             PHPUnit::assertTrue($errors->isEmpty(), 'Component has errors: "'.implode('", "', $errors->keys()).'"');
+    110▕ 
+    111▕             return $this;
+    112▕         }
+    113▕
+
+      [2m+1 vendor frames [22m
+  2   tests/Feature/Suppliers/SuppliersWebTest.php:87
+
+
+  Tests:    1 failed, 169 passed (341 assertions)
+  Duration: 10.86s
+

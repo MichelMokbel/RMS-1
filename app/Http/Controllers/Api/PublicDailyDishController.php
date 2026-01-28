@@ -6,13 +6,20 @@ use App\Http\Controllers\Controller;
 use App\Models\DailyDishMenu;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 
 class PublicDailyDishController extends Controller
 {
     public function menus(Request $request)
     {
+        $branchRule = ['nullable', 'integer'];
+        if (Schema::hasTable('branches')) {
+            $branchRule[] = Rule::exists('branches', 'id');
+        }
+
         $data = $request->validate([
-            'branch_id' => ['nullable', 'integer'],
+            'branch_id' => $branchRule,
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
         ]);
@@ -75,5 +82,4 @@ class PublicDailyDishController extends Controller
         ]);
     }
 }
-
 

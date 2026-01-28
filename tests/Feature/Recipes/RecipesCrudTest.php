@@ -18,7 +18,8 @@ if (! function_exists('adminUser')) {
     function adminUser(): User
     {
         $u = User::factory()->create(['status' => 'active']);
-        $u->assignRole('admin');
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        $u->assignRole($role);
         return $u;
     }
 }
@@ -91,4 +92,3 @@ it('updates recipe by re-syncing items', function () {
     expect($recipe->items()->count())->toBe(1);
     expect($recipe->items()->first()->inventory_item_id)->toBe($inv2->id);
 });
-

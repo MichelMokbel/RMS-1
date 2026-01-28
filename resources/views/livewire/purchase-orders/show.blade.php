@@ -63,7 +63,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $costs = collect($this->receive_costs)->map(fn ($cost) => $cost === '' ? null : (float) $cost)->toArray();
 
         try {
-            $po = $receivingService->receive($this->purchaseOrder, $receipts, auth()->id(), $this->receive_notes, $costs);
+            $po = $receivingService->receive($this->purchaseOrder, $receipts, Illuminate\Support\Facades\Auth::id(), $this->receive_notes, $costs);
             $this->purchaseOrder = $po;
             $this->receive_notes = null;
             foreach ($this->purchaseOrder->items as $item) {

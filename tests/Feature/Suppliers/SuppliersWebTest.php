@@ -23,8 +23,8 @@ it('allows admin to create supplier', function () {
 
     $payload = Supplier::factory()->make()->toArray();
 
+    Volt::actingAs($user);
     Volt::test('suppliers.create')
-        ->actingAs($user)
         ->set('name', $payload['name'])
         ->set('contact_person', $payload['contact_person'])
         ->set('email', $payload['email'])
@@ -44,8 +44,8 @@ it('enforces unique supplier name', function () {
 
     $payload = Supplier::factory()->make(['name' => $existing->name])->toArray();
 
+    Volt::actingAs($user);
     Volt::test('suppliers.create')
-        ->actingAs($user)
         ->set('name', $payload['name'])
         ->call('create')
         ->assertHasErrors(['name']);
@@ -55,8 +55,8 @@ it('validates email format', function () {
     $user = adminUser();
     $payload = Supplier::factory()->make(['email' => 'not-an-email'])->toArray();
 
+    Volt::actingAs($user);
     Volt::test('suppliers.create')
-        ->actingAs($user)
         ->set('name', $payload['name'])
         ->set('email', 'not-an-email')
         ->call('create')
@@ -67,8 +67,8 @@ it('persists qid_cr and allows search', function () {
     $user = adminUser();
     $supplier = Supplier::factory()->create(['qid_cr' => 'QID-9999']);
 
+    Volt::actingAs($user);
     $component = Volt::test('suppliers.index')
-        ->actingAs($user)
         ->set('search', 'QID-9999')
         ->assertSee('QID-9999');
 
@@ -79,8 +79,8 @@ it('allows admin to deactivate and activate supplier', function () {
     $user = adminUser();
     $supplier = Supplier::factory()->create(['status' => 'active']);
 
+    Volt::actingAs($user);
     Volt::test('suppliers.edit', ['supplier' => $supplier])
-        ->actingAs($user)
         ->set('name', $supplier->name)
         ->set('status', 'inactive')
         ->call('save')

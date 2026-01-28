@@ -108,7 +108,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'notes' => $data['notes'] ?? null,
                     'items' => $data['items'],
                 ],
-                auth()->id()
+                Illuminate\Support\Facades\Auth::id()
             );
 
             $this->menu = $menu;
@@ -127,7 +127,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
         try {
-            $menu = $service->publish($this->menu, auth()->id());
+            $menu = $service->publish($this->menu, Illuminate\Support\Facades\Auth::id());
             $this->menu = $menu;
             $this->status = $menu->status;
             session()->flash('status', __('Menu published.'));
@@ -144,7 +144,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
         try {
-            $menu = $service->unpublish($this->menu, auth()->id());
+            $menu = $service->unpublish($this->menu, Illuminate\Support\Facades\Auth::id());
             $this->menu = $menu;
             $this->status = $menu->status;
             session()->flash('status', __('Menu reverted to draft.'));

@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use App\Models\ApInvoice;
+use Illuminate\Validation\ValidationException;
 
 class ApInvoiceItem extends Model
 {
@@ -28,6 +29,21 @@ class ApInvoiceItem extends Model
         'line_total' => 'decimal:2',
         'created_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        $guard = function (ApInvoiceItem $item): void {
+            $invoice = $item->invoice()->first();
+            if ($invoice && $invoice->status !== 'draft') {
+                throw ValidationException::withMessages([
+                    'invoice' => __('Cannot modify items on a posted invoice.'),
+                ]);
+            }
+        };
+
+        static::updating($guard);
+        static::deleting($guard);
+    }
 
     public function invoice(): BelongsTo
     {

@@ -86,6 +86,9 @@
                             {{ __('Inventory') }}
                         </flux:navlist.item>
                         @if ($isManager)
+                            <flux:navlist.item icon="arrows-right-left" :href="route('inventory.transfers')" :current="request()->routeIs('inventory.transfers')" wire:navigate>
+                                {{ __('Transfers') }}
+                            </flux:navlist.item>
                             <flux:navlist.item icon="clipboard-document-check" :href="route('purchase-orders.index')" :current="request()->routeIs('purchase-orders.*')" wire:navigate>
                                 {{ __('Purchase Orders') }}
                             </flux:navlist.item>

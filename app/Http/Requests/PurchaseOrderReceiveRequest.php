@@ -15,7 +15,7 @@ class PurchaseOrderReceiveRequest extends FormRequest
     {
         return [
             'receipts' => ['required', 'array'],
-            'receipts.*' => ['integer', 'min:0'],
+            'receipts.*' => ['numeric', 'min:0'],
             'costs' => ['sometimes', 'array'],
             'costs.*' => ['nullable', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string'],

@@ -61,7 +61,7 @@ class PurchaseOrderController extends Controller
                 'payment_terms' => $data['payment_terms'] ?? null,
                 'payment_type' => $data['payment_type'] ?? null,
                 'status' => $data['status'],
-                'created_by' => auth()->id(),
+                'created_by' => Illuminate\Support\Facades\Auth::id(),
             ]);
 
             $total = 0;
@@ -176,7 +176,7 @@ class PurchaseOrderController extends Controller
         $costs = $validated['costs'] ?? [];
         $notes = $validated['notes'] ?? null;
 
-        $po = $receivingService->receive($purchaseOrder, $receipts, auth()->id(), $notes, $costs);
+        $po = $receivingService->receive($purchaseOrder, $receipts, Illuminate\Support\Facades\Auth::id(), $notes, $costs);
 
         return response()->json($po);
     }

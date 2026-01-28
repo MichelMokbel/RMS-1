@@ -56,7 +56,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         if (\Illuminate\Support\Facades\Schema::hasColumn('customers', 'updated_by')) {
-            $data['updated_by'] = auth()->id();
+            $data['updated_by'] = Illuminate\Support\Facades\Auth::id();
         }
 
         $this->customer->update($data);
@@ -101,7 +101,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return [];
         }
 
-        return \DB::table('payment_methods')->select('id', 'name')->orderBy('name')->get()->toArray();
+        return Illuminate\Support\Facades\DB::table('payment_methods')->select('id', 'name')->orderBy('name')->get()->toArray();
     }
 }; ?>
 

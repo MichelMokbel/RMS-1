@@ -3,11 +3,13 @@
 namespace App\Services\Purchasing;
 
 use App\Models\InventoryItem;
+use App\Models\InventoryStock;
 use App\Models\InventoryTransaction;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\ApInvoice;
 use App\Models\ApInvoiceItem;
+use App\Services\Ledger\SubledgerService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
@@ -33,26 +35,26 @@ class PurchaseOrderReceivingService
                     continue;
                 }
 
-                $receiveQty = (int) $receiveQty;
+                $receiveQty = round((float) $receiveQty, 3);
                 if ($receiveQty < 0) {
                     throw ValidationException::withMessages([
                         'receive' => __('Receive quantity must be zero or greater.'),
                     ]);
                 }
 
-                if ($receiveQty === 0) {
+                if ($receiveQty === 0.0) {
                     continue;
                 }
 
                 $remaining = $line->remainingToReceive();
-                if ($receiveQty > $remaining) {
+                if ($receiveQty - $remaining > 0.0005) {
                     throw ValidationException::withMessages([
                         'receive' => __('Cannot receive more than remaining quantity for line :line', ['line' => $lineId]),
                     ]);
                 }
 
                 $anyReceived = true;
-                $line->received_quantity = ($line->received_quantity ?? 0) + $receiveQty;
+                $line->received_quantity = (float) ($line->received_quantity ?? 0) + $receiveQty;
                 $line->save();
 
                 if ($line->item_id) {
@@ -74,20 +76,50 @@ class PurchaseOrderReceivingService
             }
             $po->save();
 
-            $this->maybeCreateApInvoice($po, $userId, $costOverrides);
+            if ($po->isFullyReceived()) {
+                $this->maybeCreateApInvoice($po, $userId, $costOverrides);
+            }
 
             return $po->fresh(['items']);
         });
     }
 
-    private function updateInventory(PurchaseOrderItem $line, int $delta, int $userId, PurchaseOrder $po, ?string $notes = null, $overrideCost = null): void
+    private function updateInventory(PurchaseOrderItem $line, float $delta, int $userId, PurchaseOrder $po, ?string $notes = null, $overrideCost = null): void
     {
         $item = InventoryItem::where('id', $line->item_id)->lockForUpdate()->first();
         if (! $item) {
             return;
         }
 
-        $oldStock = (int) ($item->current_stock ?? 0);
+        $branchId = $this->resolveBranchId($po);
+        $stock = InventoryStock::where('inventory_item_id', $item->id)
+            ->where('branch_id', $branchId)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $stock) {
+            $initial = 0.0;
+            if ($branchId === (int) config('inventory.default_branch_id', 1)) {
+                $hasAny = InventoryStock::where('inventory_item_id', $item->id)->exists();
+                if (! $hasAny) {
+                    $initial = (float) ($item->current_stock ?? 0);
+                }
+            }
+
+            InventoryStock::create([
+                'inventory_item_id' => $item->id,
+                'branch_id' => $branchId,
+                'current_stock' => $initial,
+            ]);
+
+            $stock = InventoryStock::where('inventory_item_id', $item->id)
+                ->where('branch_id', $branchId)
+                ->lockForUpdate()
+                ->first();
+        }
+
+        $oldStock = (float) ($item->current_stock ?? 0);
+        $branchStock = (float) ($stock->current_stock ?? 0);
         $oldCost = (float) ($item->cost_per_unit ?? 0);
         $unitPrice = $overrideCost !== null ? (float) $overrideCost : (float) ($line->unit_price ?? 0);
 
@@ -95,21 +127,39 @@ class PurchaseOrderReceivingService
             ? (($oldStock * $oldCost) + ($delta * $unitPrice)) / ($oldStock + $delta)
             : $unitPrice;
 
-        $item->current_stock = $oldStock + $delta;
+        $stock->current_stock = round($branchStock + $delta, 3);
+        $stock->save();
+
+        $item->current_stock = round($oldStock + $delta, 3);
         $item->cost_per_unit = round($newCost, 4);
         $item->last_cost_update = now();
         $item->save();
 
-        InventoryTransaction::create([
+        $transaction = InventoryTransaction::create([
             'item_id' => $item->id,
+            'branch_id' => $branchId,
             'transaction_type' => 'in',
             'quantity' => $delta,
+            'unit_cost' => $unitPrice,
+            'total_cost' => round($unitPrice * $delta, 4),
             'reference_type' => 'purchase_order',
             'reference_id' => $po->id,
             'user_id' => $userId,
             'notes' => trim('PO '.$po->po_number.' '.($notes ?? '')),
             'transaction_date' => now(),
         ]);
+
+        app(SubledgerService::class)->recordInventoryTransaction($transaction, $userId);
+    }
+
+    private function resolveBranchId(PurchaseOrder $po): int
+    {
+        $branchId = (int) ($po->branch_id ?? 0);
+        if ($branchId <= 0) {
+            $branchId = (int) config('inventory.default_branch_id', 1);
+        }
+
+        return $branchId > 0 ? $branchId : 1;
     }
 
     private function maybeCreateApInvoice(PurchaseOrder $po, int $userId, array $costOverrides = []): void
@@ -148,14 +198,19 @@ class PurchaseOrderReceivingService
         ]);
 
         $subtotal = 0;
+        $po->loadMissing('items');
         foreach ($po->items as $poItem) {
+            $lineQty = (float) ($poItem->received_quantity ?? $poItem->quantity);
+            if ($lineQty <= 0.0005) {
+                continue;
+            }
             $unit = isset($costOverrides[$poItem->id]) ? (float) $costOverrides[$poItem->id] : (float) $poItem->unit_price;
-            $lineTotal = round((float) $poItem->quantity * $unit, 2);
+            $lineTotal = round($lineQty * $unit, 2);
             $subtotal += $lineTotal;
             ApInvoiceItem::create([
                 'invoice_id' => $invoice->id,
                 'description' => 'PO '.$po->po_number.' item '.$poItem->item_id,
-                'quantity' => $poItem->quantity,
+                'quantity' => $lineQty,
                 'unit_price' => $unit,
                 'line_total' => $lineTotal,
             ]);

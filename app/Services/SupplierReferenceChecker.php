@@ -28,6 +28,9 @@ class SupplierReferenceChecker
             if (! Schema::hasTable($reference['table'])) {
                 continue;
             }
+            if (! Schema::hasColumn($reference['table'], $reference['column'])) {
+                continue;
+            }
 
             if (DB::table($reference['table'])->where($reference['column'], $supplierId)->exists()) {
                 return true;

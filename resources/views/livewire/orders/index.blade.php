@@ -47,7 +47,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            $actorId = (int) (Auth::id() ?? 1);
+            $actorId = Auth::id();
+            if (! $actorId) {
+                throw ValidationException::withMessages(['auth' => __('Authentication required.')]);
+            }
             app(OrderWorkflowService::class)->advanceOrder($order, 'Confirmed', $actorId);
             session()->flash('status_message', __('Order confirmed.'));
         } catch (ValidationException $e) {
@@ -80,7 +83,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                        ->orWhere('customer_phone_snapshot', 'like', $term);
                 });
             })
-            ->when(Schema::hasTable('meal_plan_requests'), function ($q) {
+            ->when(Schema::hasTable('meal_plan_request_orders'), function ($q) {
+                $q->whereNotExists(function ($sub) {
+                    $sub->selectRaw('1')
+                        ->from('meal_plan_request_orders as mpro')
+                        ->join('meal_plan_requests as mpr', 'mpr.id', '=', 'mpro.meal_plan_request_id')
+                        ->whereColumn('mpro.order_id', 'orders.id')
+                        ->whereNotIn('mpr.status', ['converted', 'closed']);
+                });
+            })
+            ->when(! Schema::hasTable('meal_plan_request_orders') && Schema::hasTable('meal_plan_requests'), function ($q) {
                 $q->whereRaw(
                     "NOT EXISTS (
                         SELECT 1

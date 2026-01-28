@@ -47,7 +47,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'payment_method' => $this->pay_method,
             'reference' => $this->pay_reference,
             'notes' => $this->pay_notes,
-        ], auth()->id());
+        ], Illuminate\Support\Facades\Auth::id());
 
         $this->expense->refresh()->loadSum('payments as paid_sum', 'amount');
         $this->pay_amount = (float) $this->expense->outstandingAmount();
@@ -77,7 +77,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'attachment' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:'.config('expenses.max_attachment_kb', 4096)],
         ]);
 
-        $attachmentService->upload($this->expense, $this->attachment, auth()->id());
+        $attachmentService->upload($this->expense, $this->attachment, Illuminate\Support\Facades\Auth::id());
         $this->expense->refresh()->load('attachments');
         $this->attachment = null;
         session()->flash('status', __('Attachment uploaded.'));

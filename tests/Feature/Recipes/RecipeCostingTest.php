@@ -71,6 +71,5 @@ it('computes costing with package and unit quantities and overhead normalization
 
     // Margin per unit = 20 - 75.6 = -55.6
     expect($cost['margin_amount_per_unit'])->toBe(-55.6);
-    expect($cost['margin_pct'])->toBeCloseTo(-2.78, 2); // approximate
+    expect(round($cost['margin_pct'], 2))->toBe(-2.78);
 });
-

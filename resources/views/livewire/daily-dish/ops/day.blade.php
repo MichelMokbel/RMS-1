@@ -82,12 +82,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            $service->publish($menu, (int) auth()->id());
+            $service->publish($menu, (int) Illuminate\Support\Facades\Auth::id());
             OpsEvent::create([
                 'event_type' => 'menu_published',
                 'branch_id' => $this->branch,
                 'service_date' => $this->date,
-                'actor_user_id' => (int) auth()->id(),
+                'actor_user_id' => (int) Illuminate\Support\Facades\Auth::id(),
                 'metadata_json' => ['menu_id' => $menu->id],
                 'created_at' => now(),
             ]);
@@ -111,12 +111,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            $service->unpublish($menu, (int) auth()->id());
+            $service->unpublish($menu, (int) Illuminate\Support\Facades\Auth::id());
             OpsEvent::create([
                 'event_type' => 'menu_unpublished',
                 'branch_id' => $this->branch,
                 'service_date' => $this->date,
-                'actor_user_id' => (int) auth()->id(),
+                'actor_user_id' => (int) Illuminate\Support\Facades\Auth::id(),
                 'metadata_json' => ['menu_id' => $menu->id],
                 'created_at' => now(),
             ]);
@@ -136,7 +136,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         try {
             /** @var Order $order */
             $order = Order::findOrFail($orderId);
-            app(OrderWorkflowService::class)->advanceOrder($order, $toStatus, (int) auth()->id());
+            app(OrderWorkflowService::class)->advanceOrder($order, $toStatus, (int) Illuminate\Support\Facades\Auth::id());
             $this->dispatch('toast', type: 'success', message: __('Order status updated.'));
         } catch (\Throwable $e) {
             $this->dispatch('toast', type: 'error', message: __('Could not update order.'));
@@ -152,7 +152,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         try {
             /** @var OrderItem $item */
             $item = OrderItem::findOrFail($itemId);
-            app(OrderWorkflowService::class)->setItemStatus($item, $toStatus, (int) auth()->id());
+            app(OrderWorkflowService::class)->setItemStatus($item, $toStatus, (int) Illuminate\Support\Facades\Auth::id());
             $this->dispatch('toast', type: 'success', message: __('Item status updated.'));
         } catch (\Throwable $e) {
             $this->dispatch('toast', type: 'error', message: __('Could not update item.'));

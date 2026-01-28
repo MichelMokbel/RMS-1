@@ -47,7 +47,10 @@ class ExpenseController extends Controller
     public function store(ExpenseStoreRequest $request, ExpenseTotalsService $totalsService, ExpensePaymentService $paymentService)
     {
         $data = $request->validated();
-        $expense = DB::transaction(function () use ($data, $totalsService, $paymentService) {
+        $userId = $request->user()->id ?? null;
+        $recordPayment = $request->boolean('record_payment', false);
+
+        $expense = DB::transaction(function () use ($data, $totalsService, $paymentService, $userId, $recordPayment) {
             $expense = Expense::create([
                 'category_id' => $data['category_id'],
                 'supplier_id' => $data['supplier_id'] ?? null,
@@ -60,19 +63,19 @@ class ExpenseController extends Controller
                 'payment_method' => $data['payment_method'],
                 'reference' => $data['reference'] ?? null,
                 'notes' => $data['notes'] ?? null,
-                'created_by' => $request->user()->id ?? null,
+                'created_by' => $userId,
             ]);
 
             $totalsService->recalc($expense);
 
-            if ($request->boolean('record_payment', false) && $expense->total_amount > 0) {
+            if ($recordPayment && $expense->total_amount > 0) {
                 $paymentService->addPayment($expense, [
                     'payment_date' => $expense->expense_date,
                     'amount' => $expense->total_amount,
                     'payment_method' => $expense->payment_method,
                     'reference' => $expense->reference,
                     'notes' => $expense->notes,
-                ], $request->user()->id ?? null);
+                ], $userId);
             }
 
             return $expense->fresh();
@@ -85,6 +88,10 @@ class ExpenseController extends Controller
     {
         $data = $request->validated();
         $hasPayments = $expense->payments()->exists();
+
+        if ($hasPayments) {
+            throw ValidationException::withMessages(['expense' => __('Cannot edit an expense with payments.')]);
+        }
 
         $expense = DB::transaction(function () use ($expense, $data, $hasPayments, $totalsService, $statusService) {
             $expense->update([

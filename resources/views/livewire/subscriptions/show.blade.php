@@ -37,7 +37,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         ]);
 
         try {
-            $actorId = (int) (auth()->id() ?? 1);
+            $actorId = Illuminate\Support\Facades\Auth::id();
+            if (! $actorId) {
+                throw ValidationException::withMessages(['auth' => __('Authentication required.')]);
+            }
 
             $this->subscription = $service->pause($this->subscription, [
                 'pause_start' => $data['pause_start'],
@@ -248,4 +251,3 @@ new #[Layout('components.layouts.app')] class extends Component {
         </form>
     </flux:modal>
 </div>
-

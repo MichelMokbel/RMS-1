@@ -95,7 +95,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'payment_method' => $data['payment_method'],
                 'reference' => $data['reference'] ?? null,
                 'notes' => $data['notes'] ?? null,
-                'created_by' => auth()->id(),
+                'created_by' => Illuminate\Support\Facades\Auth::id(),
             ]);
 
             $totalsService->recalc($expense);
@@ -107,7 +107,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'payment_method' => $expense->payment_method,
                     'reference' => $expense->reference,
                     'notes' => $expense->notes,
-                ], auth()->id());
+                ], Illuminate\Support\Facades\Auth::id());
             }
 
             return $expense->fresh();

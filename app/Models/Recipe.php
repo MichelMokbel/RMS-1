@@ -25,7 +25,7 @@ class Recipe extends Model
 
     protected $casts = [
         'yield_quantity' => 'decimal:3',
-        'overhead_pct' => 'decimal:4',
+        'overhead_pct' => 'decimal:2',
         'selling_price_per_unit' => 'decimal:2',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
@@ -60,4 +60,3 @@ class Recipe extends Model
         return (float) ($this->yield_quantity ?? 0) > 0;
     }
 }
-

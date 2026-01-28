@@ -1,6 +1,8 @@
 <?php
 
 use App\Services\Orders\SubscriptionOrderGenerationService;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -17,9 +19,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function generate(SubscriptionOrderGenerationService $service): void
     {
+        $branchRule = ['nullable', 'integer', 'min:1'];
+        if (Schema::hasTable('branches')) {
+            $branchRule[] = Rule::exists('branches', 'id');
+        }
+
         $this->validate([
             'service_date' => ['required', 'date'],
-            'branch_id' => ['nullable', 'integer', 'min:1'],
+            'branch_id' => $branchRule,
             'dry_run' => ['boolean'],
         ]);
 
@@ -39,7 +46,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
 
         foreach ($branches as $branch) {
-            $res = $service->generateForDate($this->service_date, (int) $branch, auth()->id(), $this->dry_run);
+            $res = $service->generateForDate($this->service_date, (int) $branch, Illuminate\Support\Facades\Auth::id(), $this->dry_run);
             $summary['created'] += $res['created_count'];
             $summary['skipped_existing'] += $res['skipped_existing_count'];
             $summary['skipped_no_menu'] += $res['skipped_no_menu_count'];
@@ -98,4 +105,3 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     @endif
 </div>
-

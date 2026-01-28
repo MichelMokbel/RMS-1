@@ -25,8 +25,8 @@ class PurchaseOrderItem extends Model
     ];
 
     protected $casts = [
-        'quantity' => 'integer',
-        'received_quantity' => 'integer',
+        'quantity' => 'decimal:3',
+        'received_quantity' => 'decimal:3',
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
         'created_at' => 'datetime',
@@ -42,10 +42,10 @@ class PurchaseOrderItem extends Model
         return $this->belongsTo(InventoryItem::class, 'item_id');
     }
 
-    public function remainingToReceive(): int
+    public function remainingToReceive(): float
     {
-        $qty = (int) $this->quantity;
-        $received = (int) ($this->received_quantity ?? 0);
+        $qty = (float) $this->quantity;
+        $received = (float) ($this->received_quantity ?? 0);
 
         return max($qty - $received, 0);
     }

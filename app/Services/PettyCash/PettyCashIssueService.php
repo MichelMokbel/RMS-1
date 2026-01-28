@@ -4,6 +4,7 @@ namespace App\Services\PettyCash;
 
 use App\Models\PettyCashIssue;
 use App\Models\PettyCashWallet;
+use App\Services\Ledger\SubledgerService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -32,6 +33,7 @@ class PettyCashIssueService
             ]);
 
             $this->balanceService->applyIssue($wallet, $issue);
+            app(SubledgerService::class)->recordPettyCashIssue($issue, $userId);
 
             return $issue->fresh(['wallet']);
         });

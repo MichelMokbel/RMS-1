@@ -5,6 +5,7 @@ use App\Models\DailyDishMenu;
 use App\Models\DailyDishMenuItem;
 use App\Models\MealSubscriptionOrder;
 use App\Models\MenuItem;
+use App\Models\User;
 use App\Services\Orders\SubscriptionOrderGenerationService;
 use App\Services\Subscriptions\MealSubscriptionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -12,7 +13,7 @@ use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
-function setupMenuAndSubscription(string $date, bool $includeSalad = false, bool $includeDessert = false, string $role = 'main')
+function setupMenuAndSubscription(string $date, int $userId, bool $includeSalad = false, bool $includeDessert = false, string $role = 'main')
 {
     $customer = Customer::factory()->create();
     $menuItem = MenuItem::factory()->create(['selling_price_per_unit' => 10]);
@@ -65,17 +66,18 @@ function setupMenuAndSubscription(string $date, bool $includeSalad = false, bool
         'include_salad' => true,
         'include_dessert' => true,
         'weekdays' => [\Carbon\Carbon::parse($date)->format('N')],
-    ], null, 1);
+    ], null, $userId);
 
     return $sub;
 }
 
 it('creates order and mapping for active subscription', function () {
     $date = '2025-01-06'; // Monday
-    setupMenuAndSubscription($date);
+    $user = User::factory()->create(['status' => 'active']);
+    setupMenuAndSubscription($date, $user->id);
 
     $service = app(SubscriptionOrderGenerationService::class);
-    $res = $service->generateForDate($date, 1, 1, false);
+    $res = $service->generateForDate($date, 1, $user->id, false);
 
     expect($res['created_count'])->toBe(1);
     expect(DB::table('orders')->count())->toBe(1);
@@ -88,11 +90,12 @@ it('creates order and mapping for active subscription', function () {
 
 it('is idempotent and skips existing mapping', function () {
     $date = '2025-01-07';
-    setupMenuAndSubscription($date);
+    $user = User::factory()->create(['status' => 'active']);
+    setupMenuAndSubscription($date, $user->id);
     $service = app(SubscriptionOrderGenerationService::class);
 
-    $service->generateForDate($date, 1, 1, false);
-    $res = $service->generateForDate($date, 1, 1, false);
+    $service->generateForDate($date, 1, $user->id, false);
+    $res = $service->generateForDate($date, 1, $user->id, false);
 
     expect($res['skipped_existing_count'])->toBeGreaterThanOrEqual(1);
     expect(MealSubscriptionOrder::count())->toBe(1);
@@ -100,6 +103,7 @@ it('is idempotent and skips existing mapping', function () {
 
 it('respects salad/dessert toggles', function () {
     $date = '2025-01-08';
+    $user = User::factory()->create(['status' => 'active']);
     $customer = Customer::factory()->create();
     $menu = DailyDishMenu::create([
         'branch_id' => 1,
@@ -125,12 +129,11 @@ it('respects salad/dessert toggles', function () {
         'include_dessert' => true,
         'default_order_type' => 'Delivery',
         'weekdays' => [\Carbon\Carbon::parse($date)->format('N')],
-    ], null, 1);
+    ], null, $user->id);
 
     $service = app(SubscriptionOrderGenerationService::class);
-    $service->generateForDate($date, 1, 1, false);
+    $service->generateForDate($date, 1, $user->id, false);
 
     $orderItemCount = DB::table('order_items')->count();
     expect($orderItemCount)->toBe(2); // main + dessert only
 });
-

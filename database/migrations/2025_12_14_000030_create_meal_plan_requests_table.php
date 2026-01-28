@@ -8,6 +8,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasTable('meal_plan_requests')) {
+            return;
+        }
+
         Schema::create('meal_plan_requests', function (Blueprint $table) {
             $table->id();
             $table->string('customer_name', 255);
@@ -27,5 +31,4 @@ return new class extends Migration
         Schema::dropIfExists('meal_plan_requests');
     }
 };
-
 

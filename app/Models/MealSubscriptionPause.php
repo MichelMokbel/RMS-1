@@ -11,6 +11,7 @@ class MealSubscriptionPause extends Model
     use HasFactory;
 
     protected $table = 'meal_subscription_pauses';
+    const UPDATED_AT = null;
 
     protected $fillable = [
         'subscription_id',
@@ -31,4 +32,3 @@ class MealSubscriptionPause extends Model
         return $this->belongsTo(MealSubscription::class, 'subscription_id');
     }
 }
-

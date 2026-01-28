@@ -57,7 +57,7 @@ class ApInvoiceController extends Controller
                 'total_amount' => 0,
                 'status' => 'draft',
                 'notes' => $data['notes'] ?? null,
-                'created_by' => auth()->id(),
+                'created_by' => Illuminate\Support\Facades\Auth::id(),
             ]);
 
             foreach ($data['items'] as $item) {
@@ -86,11 +86,8 @@ class ApInvoiceController extends Controller
     ): JsonResponse {
         $data = $request->validated();
 
-        if (in_array($invoice->status, ['partially_paid', 'paid', 'void'], true)) {
-            throw ValidationException::withMessages(['status' => __('Cannot edit a finalized invoice.')]);
-        }
-        if ($invoice->status === 'posted' && $invoice->allocations()->exists()) {
-            throw ValidationException::withMessages(['status' => __('Cannot edit a posted invoice with allocations.')]);
+        if ($invoice->status !== 'draft') {
+            throw ValidationException::withMessages(['status' => __('Only draft invoices can be edited.')]);
         }
 
         $invoice = DB::transaction(function () use ($invoice, $data, $totalsService) {
@@ -131,7 +128,7 @@ class ApInvoiceController extends Controller
         ApInvoice $invoice,
         ApInvoicePostingService $postingService
     ): JsonResponse {
-        $invoice = $postingService->post($invoice, auth()->id());
+        $invoice = $postingService->post($invoice, Illuminate\Support\Facades\Auth::id());
 
         return response()->json($invoice);
     }
@@ -141,7 +138,7 @@ class ApInvoiceController extends Controller
         ApInvoice $invoice,
         ApInvoiceVoidService $voidService
     ): JsonResponse {
-        $invoice = $voidService->void($invoice, auth()->id());
+        $invoice = $voidService->void($invoice, Illuminate\Support\Facades\Auth::id());
 
         return response()->json($invoice);
     }

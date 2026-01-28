@@ -1,9 +1,11 @@
 <?php
 
 use App\Models\InventoryItem;
+use App\Models\InventoryStock;
 use App\Models\Recipe;
 use App\Models\RecipeItem;
 use App\Models\RecipeProduction;
+use App\Models\User;
 use App\Services\Recipes\RecipeProductionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
@@ -38,28 +40,35 @@ function baseRecipeForProduction(): Recipe
 it('produces recipe and deducts stock with integer constraint', function () {
     $recipe = baseRecipeForProduction();
     $service = app(RecipeProductionService::class);
+    $user = User::factory()->create(['status' => 'active']);
 
     $production = $service->produce($recipe, [
         'produced_quantity' => 5, // factor 1
         'reference' => 'BATCH-1',
-    ], userId: 1);
+    ], userId: $user->id);
 
     expect($production)->toBeInstanceOf(RecipeProduction::class);
     $recipe->refresh();
     $inv = $recipe->items()->first()->inventoryItem->fresh();
 
     // quantity_type unit -> 5 units / units_per_package 5 => 1 package
-    expect($inv->current_stock)->toBe(9);
+    expect((float) $inv->current_stock)->toBe(9.0);
 });
 
-it('blocks fractional deduction', function () {
+it('allows fractional deduction', function () {
     $recipe = baseRecipeForProduction();
     $service = app(RecipeProductionService::class);
+    $user = User::factory()->create(['status' => 'active']);
 
     // produced_quantity 2.5 => factor 0.5 => required 2.5 units => 2.5/5 = 0.5 packages (fractional)
-    expect(fn () => $service->produce($recipe, [
+    $production = $service->produce($recipe, [
         'produced_quantity' => 2.5,
-    ], userId: 1))->toThrow(ValidationException::class);
+    ], userId: $user->id);
+
+    expect($production)->toBeInstanceOf(RecipeProduction::class);
+    $recipe->refresh();
+    $inv = $recipe->items()->first()->inventoryItem->fresh();
+    expect((float) $inv->current_stock)->toBe(9.5);
 });
 
 it('blocks insufficient stock when negative stock disallowed', function () {
@@ -67,13 +76,16 @@ it('blocks insufficient stock when negative stock disallowed', function () {
 
     $recipe = baseRecipeForProduction();
     $service = app(RecipeProductionService::class);
+    $user = User::factory()->create(['status' => 'active']);
 
     // This would require 2 packages (10 units), stock is 10 packages? no 10 units => 2 packages deduction -> stock becomes 8 packages? Wait
     // actually stock is 10 (packages), we set as units? current_stock is 10 (packages). Deduction 2 packages ok. Make more
-    $recipe->items()->first()->inventoryItem->update(['current_stock' => 1]);
+    $inv = $recipe->items()->first()->inventoryItem;
+    $inv->update(['current_stock' => 1]);
+    $branchId = (int) config('inventory.default_branch_id', 1);
+    InventoryStock::where('inventory_item_id', $inv->id)->where('branch_id', $branchId)->update(['current_stock' => 1]);
 
     expect(fn () => $service->produce($recipe, [
         'produced_quantity' => 10, // factor 2 => required 10 units => 2 packages, but stock set to 1 package
-    ], userId: 1))->toThrow(ValidationException::class);
+    ], userId: $user->id))->toThrow(ValidationException::class);
 });
-

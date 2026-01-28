@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Facades\Schema;
 
 class MealPlanRequest extends Model
 {
@@ -28,6 +30,22 @@ class MealPlanRequest extends Model
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
-}
 
+    public function orders(): BelongsToMany
+    {
+        return $this->belongsToMany(Order::class, 'meal_plan_request_orders', 'meal_plan_request_id', 'order_id');
+    }
+
+    public function linkedOrderIds(): array
+    {
+        if (Schema::hasTable('meal_plan_request_orders')) {
+            $ids = $this->orders()->pluck('orders.id')->all();
+            if (! empty($ids)) {
+                return $ids;
+            }
+        }
+
+        return is_array($this->order_ids) ? $this->order_ids : [];
+    }
+}
 

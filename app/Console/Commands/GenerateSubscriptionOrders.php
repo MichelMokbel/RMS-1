@@ -17,6 +17,12 @@ class GenerateSubscriptionOrders extends Command
         $date = $this->argument('date') ?? now()->toDateString();
         $branchOpt = $this->option('branch');
         $dry = (bool) $this->option('dry-run');
+        $actorId = Illuminate\Support\Facades\Auth::id() ?: (int) config('app.system_user_id');
+
+        if (! $actorId) {
+            $this->error('Missing system user id. Set SYSTEM_USER_ID in .env or run with an authenticated session.');
+            return Command::FAILURE;
+        }
 
         $branches = $branchOpt
             ? collect([(int) $branchOpt])
@@ -31,7 +37,7 @@ class GenerateSubscriptionOrders extends Command
         ];
 
         foreach ($branches as $branchId) {
-            $res = $service->generateForDate($date, (int) $branchId, auth()->id() ?? 1, $dry);
+            $res = $service->generateForDate($date, (int) $branchId, $actorId, $dry);
             $summary['created'] += $res['created_count'];
             $summary['skipped_existing'] += $res['skipped_existing_count'];
             $summary['skipped_no_menu'] += $res['skipped_no_menu_count'];
@@ -55,4 +61,3 @@ class GenerateSubscriptionOrders extends Command
         return Command::SUCCESS;
     }
 }
-

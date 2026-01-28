@@ -87,7 +87,7 @@ class PurchaseOrder extends Model
         }
 
         return $this->items->every(function (PurchaseOrderItem $item) {
-            return (int) $item->received_quantity >= (int) $item->quantity;
+            return (float) $item->received_quantity >= ((float) $item->quantity - 0.0005);
         });
     }
 

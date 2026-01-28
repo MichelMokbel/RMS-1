@@ -3,6 +3,7 @@
 namespace App\Services\PettyCash;
 
 use App\Models\PettyCashExpense;
+use App\Services\Ledger\SubledgerService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -52,6 +53,7 @@ class PettyCashExpenseWorkflowService
             $expense->save();
 
             $this->balanceService->applyApprovedExpense($expense->wallet, $expense);
+            app(SubledgerService::class)->recordPettyCashExpense($expense, $approverId);
 
             return $expense->fresh(['wallet']);
         });

@@ -22,7 +22,7 @@ it('increase adjustment updates stock and creates transaction', function () {
     $service->adjustStock($item, 3, 'test', $user->id);
 
     $item->refresh();
-    expect($item->current_stock)->toBe(3);
+    expect((float) $item->current_stock)->toBe(3.0);
     expect($item->transactions()->count())->toBe(1);
 });
 
@@ -41,12 +41,12 @@ it('adjust via show component decreases stock', function () {
     $user = inventoryAdmin();
     $item = InventoryItem::factory()->create(['current_stock' => 5]);
 
+    Volt::actingAs($user);
     Volt::test('inventory.show', ['item' => $item])
-        ->actingAs($user)
         ->set('direction', 'decrease')
         ->set('quantity', 2)
         ->call('adjust')
         ->assertHasNoErrors();
 
-    expect($item->fresh()->current_stock)->toBe(3);
+    expect((float) $item->fresh()->current_stock)->toBe(3.0);
 });
