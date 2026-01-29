@@ -1,12 +1,12 @@
 <?php
 
 use App\Models\InventoryItem;
-use App\Models\InventoryStock;
 use App\Services\Inventory\InventoryAvailabilityService;
 use App\Services\Inventory\InventoryStockService;
 use App\Services\Inventory\InventoryTransferService;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
+use App\Services\Inventory\InventoryItemShowQueryService;
+use App\Support\Inventory\InventoryItemShowRules;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -29,39 +29,17 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->transfer_from_branch_id = $this->branch_id;
     }
 
-    public function with(): array
+    public function with(InventoryItemShowQueryService $queryService): array
     {
-        $branchId = (int) ($this->branch_id ?? config('inventory.default_branch_id', 1));
-        $branchStock = null;
-        if (Schema::hasTable('inventory_stocks')) {
-            $branchStock = InventoryStock::where('inventory_item_id', $this->item->id)
-                ->where('branch_id', $branchId)
-                ->value('current_stock');
-        }
-        if ($branchStock === null) {
-            $branchStock = 0;
-        }
-
-        $globalStock = Schema::hasTable('inventory_stocks')
-            ? (float) InventoryStock::where('inventory_item_id', $this->item->id)->sum('current_stock')
-            : 0.0;
-
-        $availability = Schema::hasTable('inventory_stocks')
-            ? InventoryStock::where('inventory_item_id', $this->item->id)->pluck('branch_id')->all()
-            : [];
+        $data = $queryService->showData($this->item, $this->branch_id, 50);
 
         return [
-            'transactions' => $this->item->transactions()
-                ->when($branchId > 0, fn ($q) => $q->where('branch_id', $branchId))
-                ->limit(50)
-                ->get(),
-            'branches' => Schema::hasTable('branches')
-                ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
-                : collect(),
-            'branch_stock' => (float) ($branchStock ?? 0),
-            'is_low_stock' => (float) ($branchStock ?? 0) <= (float) ($this->item->minimum_stock ?? 0),
-            'global_stock' => $globalStock,
-            'availability' => $availability,
+            'transactions' => $data['transactions'],
+            'branches' => $data['branches'],
+            'branch_stock' => $data['branch_stock'],
+            'is_low_stock' => $data['is_low_stock'],
+            'global_stock' => $data['global_stock'],
+            'availability' => $data['availability'],
         ];
     }
 
@@ -70,22 +48,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->transfer_from_branch_id = $this->branch_id;
     }
 
-    public function adjust(InventoryStockService $stockService): void
+    public function adjust(InventoryStockService $stockService, InventoryItemShowRules $rules): void
     {
-        $branchRule = ['required', 'integer', 'min:1'];
-        if (Schema::hasTable('branches')) {
-            $branchRule[] = 'exists:branches,id';
-        }
-
-        $this->validate([
-            'branch_id' => $branchRule,
-            'direction' => ['required', 'in:increase,decrease'],
-            'quantity' => ['required', 'numeric', 'min:0.001'],
-            'notes' => ['nullable', 'string'],
-        ]);
+        $this->validate($rules->adjustRules());
 
         $delta = $this->direction === 'increase' ? (float) $this->quantity : -((float) $this->quantity);
-        $stockService->adjustStock($this->item, $delta, $this->notes, Illuminate\Support\Facades\Auth::id(), $this->branch_id);
+        $stockService->adjustStock($this->item, $delta, $this->notes, Auth::id(), $this->branch_id);
 
         $this->reset(['quantity', 'notes']);
         $this->dispatch('$refresh');
@@ -99,19 +67,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         session()->flash('status', __('Availability added.'));
     }
 
-    public function transfer(InventoryTransferService $transferService): void
+    public function transfer(InventoryTransferService $transferService, InventoryItemShowRules $rules): void
     {
-        $branchRule = ['required', 'integer', 'min:1'];
-        if (Schema::hasTable('branches')) {
-            $branchRule[] = 'exists:branches,id';
-        }
-
-        $data = $this->validate([
-            'transfer_from_branch_id' => $branchRule,
-            'transfer_to_branch_id' => $branchRule,
-            'transfer_quantity' => ['required', 'numeric', 'min:0.001'],
-            'transfer_notes' => ['nullable', 'string'],
-        ]);
+        $data = $this->validate($rules->transferRules());
 
         if ((int) $data['transfer_from_branch_id'] === (int) $data['transfer_to_branch_id']) {
             throw \Illuminate\Validation\ValidationException::withMessages([
@@ -124,7 +82,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             (int) $data['transfer_from_branch_id'],
             (int) $data['transfer_to_branch_id'],
             (float) $data['transfer_quantity'],
-            (int) (Illuminate\Support\Facades\Auth::id() ?? 0),
+            (int) (Auth::id() ?? 0),
             $data['transfer_notes'] ?? null
         );
 

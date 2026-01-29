@@ -1,11 +1,9 @@
 <?php
 
-use App\Models\Category;
-use App\Models\InventoryItem;
-use App\Models\Supplier;
-use App\Services\Inventory\InventoryStockService;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
+use App\Services\Inventory\InventoryItemFormQueryService;
+use App\Services\Inventory\InventoryItemPersistService;
+use App\Support\Inventory\InventoryItemRules;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithFileUploads;
@@ -34,77 +32,22 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->branch_id = (int) config('inventory.default_branch_id', 1);
     }
 
-    public function with(): array
+    public function with(InventoryItemFormQueryService $formQuery): array
     {
         return [
-            'categories' => Schema::hasTable('categories') ? Category::orderBy('name')->get() : collect(),
-            'suppliers' => Schema::hasTable('suppliers') ? Supplier::orderBy('name')->get() : collect(),
-            'branches' => Schema::hasTable('branches')
-                ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
-                : collect(),
+            'categories' => $formQuery->categories(),
+            'suppliers' => $formQuery->suppliers(),
+            'branches' => $formQuery->branches(),
         ];
     }
 
-    public function save(InventoryStockService $stockService): void
+    public function save(InventoryItemPersistService $persist, InventoryItemRules $rules): void
     {
-        $data = $this->validate($this->rules());
-        $branchId = (int) ($data['branch_id'] ?? config('inventory.default_branch_id', 1));
-        unset($data['branch_id']);
-
-        if ($this->image) {
-            $data['image_path'] = $this->storeImage($this->image, $this->item_code);
-        }
-
-        if (! empty($data['cost_per_unit'])) {
-            $data['last_cost_update'] = now();
-        }
-
-        $initialStock = $data['current_stock'] ?? 0;
-        unset($data['current_stock']);
-
-        $item = InventoryItem::create($data);
-
-        if ($initialStock > 0) {
-            $stockService->adjustStock($item->fresh(), $initialStock, __('Initial stock'), Illuminate\Support\Facades\Auth::id(), $branchId);
-        }
+        $data = $this->validate($rules->createRules());
+        $persist->createFromForm($data, $this->image, Auth::id());
 
         session()->flash('status', __('Item created.'));
         $this->redirectRoute('inventory.index', navigate: true);
-    }
-
-    private function rules(): array
-    {
-        $branchRule = ['nullable', 'integer', 'min:1'];
-        if (Schema::hasTable('branches')) {
-            $branchRule[] = 'exists:branches,id';
-        }
-
-        return [
-            'item_code' => ['required', 'string', 'max:50', 'unique:inventory_items,item_code'],
-            'name' => ['required', 'string', 'max:200'],
-            'description' => ['nullable', 'string'],
-            'category_id' => ['nullable', 'integer', 'exists:categories,id'],
-            'supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
-            'branch_id' => $branchRule,
-            'units_per_package' => ['required', 'numeric', 'min:0.001'],
-            'package_label' => ['nullable', 'string', 'max:50'],
-            'unit_of_measure' => ['nullable', 'string', 'max:50'],
-            'minimum_stock' => ['nullable', 'numeric', 'min:0'],
-            'current_stock' => ['nullable', 'numeric', 'min:0'],
-            'cost_per_unit' => ['nullable', 'numeric', 'min:0'],
-            'location' => ['nullable', 'string', 'max:100'],
-            'status' => ['nullable', 'in:active,discontinued'],
-            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:'.config('inventory.max_image_kb', 2048)],
-        ];
-    }
-
-    private function storeImage($file, string $itemCode): string
-    {
-        return $file->storeAs(
-            'inventory/items/'.$itemCode,
-            $file->hashName(),
-            'public'
-        );
     }
 }; ?>
 

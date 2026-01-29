@@ -1,10 +1,10 @@
 <?php
 
-use App\Models\InventoryStock;
 use App\Models\InventoryTransfer;
 use App\Services\Inventory\InventoryTransferService;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
+use App\Services\Inventory\InventoryTransferQueryService;
+use App\Support\Inventory\InventoryTransferRules;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
@@ -37,41 +37,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function updatingStatus(): void { $this->resetPage(); }
     public function updatingBranchFilter(): void { $this->resetPage(); }
 
-    public function with(): array
+    public function with(InventoryTransferQueryService $queryService): array
     {
-        $sourceStocks = collect();
-        if ($this->from_branch_id && Schema::hasTable('inventory_stocks')) {
-            $itemIds = collect($this->lines)->pluck('item_id')->filter()->unique()->values();
-            if ($itemIds->isNotEmpty()) {
-                $sourceStocks = InventoryStock::query()
-                    ->where('branch_id', $this->from_branch_id)
-                    ->whereIn('inventory_item_id', $itemIds)
-                    ->pluck('current_stock', 'inventory_item_id');
-            }
-        }
-
         return [
-            'transfers' => $this->query()->paginate(15),
-            'branches' => Schema::hasTable('branches')
-                ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
-                : collect(),
-            'sourceStocks' => $sourceStocks,
+            'transfers' => $queryService->transfers($this->status, $this->branch_filter, 15),
+            'branches' => $queryService->branches(),
+            'sourceStocks' => $queryService->sourceStocks($this->from_branch_id, $this->lines),
         ];
-    }
-
-    private function query()
-    {
-        return InventoryTransfer::query()
-            ->with('lines')
-            ->when($this->status !== 'all', fn ($q) => $q->where('status', $this->status))
-            ->when($this->branch_filter, function ($q) {
-                $q->where(function ($inner) {
-                    $inner->where('from_branch_id', $this->branch_filter)
-                        ->orWhere('to_branch_id', $this->branch_filter);
-                });
-            })
-            ->orderByDesc('transfer_date')
-            ->orderByDesc('id');
     }
 
     public function addLine(): void
@@ -108,34 +80,15 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->lineSearch[$index] = '';
     }
 
-    public function submit(InventoryTransferService $service): void
+    public function submit(InventoryTransferService $service, InventoryTransferRules $rules): void
     {
-        $branchRule = ['required', 'integer', 'min:1'];
-        if (Schema::hasTable('branches')) {
-            $branchRule[] = 'exists:branches,id';
-        }
-
-        $data = $this->validate([
-            'from_branch_id' => $branchRule,
-            'to_branch_id' => $branchRule,
-            'transfer_date' => ['required', 'date'],
-            'notes' => ['nullable', 'string'],
-            'lines' => ['required', 'array', 'min:1'],
-            'lines.*.item_id' => ['required', 'integer', 'exists:inventory_items,id', 'distinct'],
-            'lines.*.quantity' => ['required', 'numeric', 'min:0.001'],
-        ]);
-
-        if ((int) $data['from_branch_id'] === (int) $data['to_branch_id']) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
-                'to_branch_id' => __('From and To branches must be different.'),
-            ]);
-        }
+        $data = $this->validate($rules->rules());
 
         $service->createAndPostBulk(
             (int) $data['from_branch_id'],
             (int) $data['to_branch_id'],
             $data['lines'],
-            (int) (\Illuminate\Support\Facades\Auth::id() ?? 0),
+            (int) (Auth::id() ?? 0),
             $data['notes'] ?? null,
             $data['transfer_date'] ?? null
         );

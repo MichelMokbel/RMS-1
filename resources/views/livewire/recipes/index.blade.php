@@ -1,9 +1,10 @@
 <?php
 
-use App\Models\Category;
-use App\Models\Recipe;
 use App\Services\Recipes\RecipeProductionService;
-use Illuminate\Support\Facades\Schema;
+use App\Services\Recipes\RecipeFormQueryService;
+use App\Services\Recipes\RecipeIndexQueryService;
+use App\Services\Recipes\RecipeProductionQueryService;
+use App\Support\Recipes\RecipeProduceRules;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -41,17 +42,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->showProduceModal = true;
     }
 
-    public function produce(RecipeProductionService $service): void
+    public function produce(
+        RecipeProductionService $service,
+        RecipeProductionQueryService $recipeQuery,
+        RecipeProduceRules $rules
+    ): void
     {
-        $data = $this->validate([
-            'produce_recipe_id' => ['required', 'integer', 'exists:recipes,id'],
-            'produce_quantity' => ['required', 'numeric', 'min:0.001'],
-            'produce_date' => ['nullable', 'date'],
-            'produce_reference' => ['nullable', 'string', 'max:100'],
-            'produce_notes' => ['nullable', 'string'],
-        ]);
-
-        $recipe = Recipe::with(['items.inventoryItem'])->findOrFail($data['produce_recipe_id']);
+        $data = $this->validate($rules->rules());
+        $recipe = $recipeQuery->findForProduction((int) $data['produce_recipe_id']);
 
         try {
             $service->produce($recipe, [
@@ -72,22 +70,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
-    public function with(): array
+    public function with(RecipeIndexQueryService $queryService, RecipeFormQueryService $formQuery): array
     {
         return [
-            'recipes' => $this->query()->paginate(15),
-            'categories' => Schema::hasTable('categories')
-                ? Category::orderBy('name')->get()
-                : collect(),
+            'recipes' => $queryService->paginate($this->search, $this->category_id, 15),
+            'categories' => $formQuery->categories(),
         ];
-    }
-
-    private function query()
-    {
-        return Recipe::query()
-            ->when($this->search, fn ($q) => $q->where('name', 'like', '%'.$this->search.'%'))
-            ->when($this->category_id, fn ($q) => $q->where('category_id', $this->category_id))
-            ->orderBy('name');
     }
 }; ?>
 

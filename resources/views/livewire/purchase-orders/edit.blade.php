@@ -3,8 +3,11 @@
 use App\Models\InventoryItem;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use App\Services\Purchasing\PurchaseOrderFormQueryService;
+use App\Services\Purchasing\PurchaseOrderPersistService;
+use App\Support\Purchasing\PurchaseOrderRules;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -25,9 +28,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $readOnly = false;
     public array $items = [];
 
-    public function mount(PurchaseOrder $purchaseOrder): void
+    public function mount(PurchaseOrder $purchaseOrder, PurchaseOrderFormQueryService $queryService): void
     {
-        $this->items = $this->inventoryItems();
+        $this->items = $queryService->inventoryItemsArray();
         $this->purchaseOrder = $purchaseOrder->load('items');
         $this->readOnly = ! $this->purchaseOrder->canEditLines();
 
@@ -56,6 +59,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (empty($this->lines)) {
             $this->lines = [['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0]];
         }
+    }
+
+    public function with(PurchaseOrderFormQueryService $queryService): array
+    {
+        return [
+            'suppliers' => $queryService->suppliers(),
+        ];
     }
 
     public function addLine(): void
@@ -115,14 +125,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
-    public function saveDraft(): void
+    public function saveDraft(PurchaseOrderPersistService $persist, PurchaseOrderRules $rules): void
     {
-        $this->persist(PurchaseOrder::STATUS_DRAFT);
+        $this->persist(PurchaseOrder::STATUS_DRAFT, $persist, $rules);
     }
 
-    public function submitPending(): void
+    public function submitPending(PurchaseOrderPersistService $persist, PurchaseOrderRules $rules): void
     {
-        $this->persist(PurchaseOrder::STATUS_PENDING);
+        $this->persist(PurchaseOrder::STATUS_PENDING, $persist, $rules);
     }
 
     public function addPaymentTerm(): void
@@ -145,7 +155,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->new_payment_type = null;
     }
 
-    private function persist(string $status): void
+    private function persist(string $status, PurchaseOrderPersistService $persist, PurchaseOrderRules $rules): void
     {
         if ($this->readOnly) {
             return;
@@ -158,60 +168,26 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         $this->lines = $filtered;
 
-        $data = $this->validate($this->rules($status));
+        $data = $this->validate($rules->updateRules($this->purchaseOrder->id));
 
         if ($status === PurchaseOrder::STATUS_PENDING && ! $data['supplier_id']) {
             $this->addError('supplier_id', __('Supplier is required to submit.'));
             return;
         }
 
-        DB::transaction(function () use ($data, $status) {
-            $this->purchaseOrder->update([
-                'po_number' => $data['po_number'],
-                'supplier_id' => $data['supplier_id'] ?? null,
-                'order_date' => $data['order_date'] ?? null,
-                'expected_delivery_date' => $data['expected_delivery_date'] ?? null,
-                'notes' => $data['notes'] ?? null,
-                'payment_terms' => $data['payment_terms'] ?? null,
-                'payment_type' => $data['payment_type'] ?? null,
-                'status' => $status,
-            ]);
-
-            $this->purchaseOrder->items()->delete();
-            $total = 0;
-            foreach ($data['lines'] as $line) {
-                $line['total_price'] = (float) $line['quantity'] * (float) $line['unit_price'];
-                $total += $line['total_price'];
-                $this->purchaseOrder->items()->create([
-                    'item_id' => $line['item_id'],
-                    'quantity' => $line['quantity'],
-                    'unit_price' => $line['unit_price'],
-                    'total_price' => $line['total_price'],
-                    'received_quantity' => 0,
-                ]);
+        try {
+            $this->purchaseOrder = $persist->update($this->purchaseOrder, $data, $status);
+        } catch (ValidationException $e) {
+            foreach ($e->errors() as $key => $messages) {
+                foreach ($messages as $m) {
+                    $this->addError($key, $m);
+                }
             }
-            $this->purchaseOrder->update(['total_amount' => $total]);
-        });
+            return;
+        }
 
         session()->flash('status', __('Purchase order updated.'));
         $this->redirectRoute('purchase-orders.show', $this->purchaseOrder, navigate: true);
-    }
-
-    private function rules(string $status): array
-    {
-        return [
-            'po_number' => ['required', 'string', 'max:50', 'unique:purchase_orders,po_number,'.$this->purchaseOrder->id],
-            'supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
-            'order_date' => ['nullable', 'date'],
-            'expected_delivery_date' => ['nullable', 'date', 'after_or_equal:order_date'],
-            'notes' => ['nullable', 'string'],
-            'payment_terms' => ['nullable', 'string', 'max:255'],
-            'payment_type' => ['nullable', 'string', 'max:100'],
-            'lines' => ['required', 'array', 'min:1'],
-            'lines.*.item_id' => ['required', 'integer', 'exists:inventory_items,id'],
-            'lines.*.quantity' => ['required', 'numeric', 'min:0.001'],
-            'lines.*.unit_price' => ['required', 'numeric', 'min:0'],
-        ];
     }
 
     private function filteredLines(): array
@@ -226,32 +202,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->toArray();
     }
 
-    public function inventoryItems()
-    {
-        if (! Schema::hasTable('inventory_items')) {
-            return collect();
-        }
-
-        return InventoryItem::orderBy('name')
-            ->select('id', 'item_code', 'name', 'cost_per_unit')
-            ->get()
-            ->map(fn ($item) => [
-                'id' => $item->id,
-                'item_code' => $item->item_code,
-                'name' => $item->name,
-                'cost_per_unit' => $item->cost_per_unit,
-            ])
-            ->toArray();
-    }
-
-    public function suppliers()
-    {
-        if (! Schema::hasTable('suppliers')) {
-            return collect();
-        }
-
-        return Supplier::orderBy('name')->get();
-    }
 }; ?>
 
 <div class="w-full max-w-5xl mx-auto px-4 space-y-6">
@@ -272,7 +222,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <label class="block text-sm font-medium text-neutral-800 dark:text-neutral-200 mb-1">{{ __('Supplier') }}</label>
                     <select wire:model="supplier_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                         <option value="">{{ __('Select supplier') }}</option>
-                        @foreach ($this->suppliers() as $supplier)
+                        @foreach ($suppliers as $supplier)
                             <option value="{{ $supplier->id }}">{{ $supplier->name }}</option>
                         @endforeach
                     </select>

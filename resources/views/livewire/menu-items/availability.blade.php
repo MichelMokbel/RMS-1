@@ -1,8 +1,7 @@
 <?php
 
-use App\Models\MenuItem;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
+use App\Services\Menu\MenuItemAvailabilityQueryService;
+use App\Services\Menu\MenuItemBranchAvailabilityService;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
@@ -18,56 +17,17 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     protected $paginationTheme = 'tailwind';
 
-    public function mount(): void
+    public function mount(MenuItemAvailabilityQueryService $queryService): void
     {
-        if (! Schema::hasTable('menu_item_branches') || ! Schema::hasTable('menu_items')) {
-            return;
-        }
-
-        $items = DB::table('menu_items')->pluck('id')->all();
-        if (empty($items)) {
-            return;
-        }
-
-        $now = now();
-        $rows = array_map(fn ($id) => [
-            'menu_item_id' => $id,
-            'branch_id' => $this->branchOneId,
-            'created_at' => $now,
-            'updated_at' => $now,
-        ], $items);
-
-        DB::table('menu_item_branches')->insertOrIgnore($rows);
+        $queryService->ensureDefaultsForBranch($this->branchOneId);
     }
 
-    public function with(): array
+    public function with(MenuItemAvailabilityQueryService $queryService): array
     {
-        $items = MenuItem::query()
-            ->when($this->search !== '', fn ($q) => $q->where('name', 'like', '%'.$this->search.'%'))
-            ->orderBy('name', $this->sortDirection === 'desc' ? 'desc' : 'asc')
-            ->paginate($this->perPage, ['id', 'name']);
-
-        $availability = [];
-        if (Schema::hasTable('menu_item_branches')) {
-            $pageIds = $items->getCollection()->pluck('id')->all();
-            $rows = DB::table('menu_item_branches')
-                ->whereIn('branch_id', [$this->branchOneId, $this->branchTwoId])
-                ->when(! empty($pageIds), fn ($q) => $q->whereIn('menu_item_id', $pageIds))
-                ->get(['menu_item_id', 'branch_id']);
-
-            foreach ($rows as $row) {
-                $availability[$row->menu_item_id][$row->branch_id] = true;
-            }
-        }
-
-        $branches = Schema::hasTable('branches')
-            ? DB::table('branches')->whereIn('id', [$this->branchOneId, $this->branchTwoId])->orderBy('id')->get()
-            : collect();
-
-        $branchLabels = [
-            $this->branchOneId => $branches->firstWhere('id', $this->branchOneId)?->name ?? __('Branch 1'),
-            $this->branchTwoId => $branches->firstWhere('id', $this->branchTwoId)?->name ?? __('Branch 2'),
-        ];
+        $items = $queryService->paginateItems($this->search, $this->sortDirection, $this->perPage);
+        $pageIds = collect($items->items())->pluck('id')->all();
+        $availability = $queryService->availabilityMap($pageIds, [$this->branchOneId, $this->branchTwoId]);
+        $branchLabels = $queryService->branchLabels([$this->branchOneId, $this->branchTwoId]);
 
         return [
             'items' => $items,
@@ -92,23 +52,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
-    public function toggleAvailability(int $itemId, int $branchId, bool $checked): void
+    public function toggleAvailability(MenuItemBranchAvailabilityService $service, int $itemId, int $branchId, bool $checked): void
     {
-        if (! Schema::hasTable('menu_item_branches')) {
-            return;
-        }
-
-        if ($checked) {
-            DB::table('menu_item_branches')->updateOrInsert(
-                ['menu_item_id' => $itemId, 'branch_id' => $branchId],
-                ['created_at' => now(), 'updated_at' => now()]
-            );
-        } else {
-            DB::table('menu_item_branches')
-                ->where('menu_item_id', $itemId)
-                ->where('branch_id', $branchId)
-                ->delete();
-        }
+        $service->setAvailability($itemId, $branchId, $checked);
     }
 }; ?>
 

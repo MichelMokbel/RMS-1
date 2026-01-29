@@ -1,25 +1,16 @@
 <?php
 
 use App\Models\Recipe;
-use App\Services\Recipes\RecipeCostingService;
+use App\Services\Recipes\RecipeShowQueryService;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
     public Recipe $recipe;
 
-    public function with(): array
+    public function with(RecipeShowQueryService $queryService): array
     {
-        $this->recipe->loadMissing(['category', 'items.inventoryItem', 'productions.creator']);
-
-        $costing = app(RecipeCostingService::class)->compute($this->recipe);
-
-        return [
-            'recipe' => $this->recipe,
-            'items' => $this->recipe->items,
-            'productions' => $this->recipe->productions()->latest('production_date')->limit(20)->get(),
-            'costing' => $costing,
-        ];
+        return $queryService->showData($this->recipe);
     }
 
 }; ?>

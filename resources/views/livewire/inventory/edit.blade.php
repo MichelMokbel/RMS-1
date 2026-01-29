@@ -1,15 +1,13 @@
 <?php
 
-use App\Models\Category;
 use App\Models\InventoryItem;
-use App\Models\InventoryStock;
-use App\Models\Supplier;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
+use App\Services\Inventory\InventoryItemFormQueryService;
+use App\Services\Inventory\InventoryItemPersistService;
+use App\Services\Inventory\InventoryItemShowQueryService;
+use App\Support\Inventory\InventoryItemRules;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithFileUploads;
-use Illuminate\Validation\Rule;
 
 new #[Layout('components.layouts.app')] class extends Component {
     use WithFileUploads;
@@ -51,31 +49,16 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->branch_id = (int) config('inventory.default_branch_id', 1);
     }
 
-    public function with(): array
+    public function with(InventoryItemFormQueryService $formQuery, InventoryItemShowQueryService $showQuery): array
     {
-        $branchId = (int) ($this->branch_id ?? config('inventory.default_branch_id', 1));
-        $branchStock = null;
-        if (Schema::hasTable('inventory_stocks')) {
-            $branchStock = InventoryStock::where('inventory_item_id', $this->item->id)
-                ->where('branch_id', $branchId)
-                ->value('current_stock');
-        }
-        if ($branchStock === null) {
-            $branchStock = 0;
-        }
-
-        $globalStock = Schema::hasTable('inventory_stocks')
-            ? (float) InventoryStock::where('inventory_item_id', $this->item->id)->sum('current_stock')
-            : 0.0;
+        $summary = $showQuery->stockSummary($this->item, $this->branch_id);
 
         return [
-            'categories' => Schema::hasTable('categories') ? Category::orderBy('name')->get() : collect(),
-            'suppliers' => Schema::hasTable('suppliers') ? Supplier::orderBy('name')->get() : collect(),
-            'branches' => Schema::hasTable('branches')
-                ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
-                : collect(),
-            'branch_stock' => (float) ($branchStock ?? 0),
-            'global_stock' => $globalStock,
+            'categories' => $formQuery->categories(),
+            'suppliers' => $formQuery->suppliers(),
+            'branches' => $summary['branches'],
+            'branch_stock' => $summary['branch_stock'],
+            'global_stock' => $summary['global_stock'],
         ];
     }
 
@@ -84,58 +67,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dispatch('$refresh');
     }
 
-    public function save(): void
+    public function save(InventoryItemPersistService $persist, InventoryItemRules $rules): void
     {
-        $data = $this->validate($this->rules());
-
-        if ($this->image) {
-            if ($this->item->image_path) {
-                Illuminate\Support\Facades\Storage::disk('public')->delete($this->item->image_path);
-            }
-            $data['image_path'] = $this->storeImage($this->image, $this->item_code);
-        }
-
-        $costChanged = array_key_exists('cost_per_unit', $data) && $data['cost_per_unit'] !== null && (float) $data['cost_per_unit'] !== (float) $this->item->cost_per_unit;
-        $unitsChanged = array_key_exists('units_per_package', $data) && (float) $data['units_per_package'] !== (float) $this->item->units_per_package;
-
-        if ($costChanged || $unitsChanged) {
-            $data['last_cost_update'] = now();
-        }
-
-        unset($data['current_stock']);
-
-        $this->item->update($data);
+        $data = $this->validate($rules->updateRules($this->item->id));
+        $this->item = $persist->updateFromForm($this->item, $data, $this->image);
 
         session()->flash('status', __('Item updated.'));
         $this->redirectRoute('inventory.index', navigate: true);
-    }
-
-    private function rules(): array
-    {
-        return [
-            'item_code' => ['required', 'string', 'max:50', Rule::unique('inventory_items', 'item_code')->ignore($this->item->id)],
-            'name' => ['required', 'string', 'max:200'],
-            'description' => ['nullable', 'string'],
-            'category_id' => ['nullable', 'integer', 'exists:categories,id'],
-            'supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
-            'units_per_package' => ['required', 'numeric', 'min:0.001'],
-            'package_label' => ['nullable', 'string', 'max:50'],
-            'unit_of_measure' => ['nullable', 'string', 'max:50'],
-            'minimum_stock' => ['nullable', 'numeric', 'min:0'],
-            'cost_per_unit' => ['nullable', 'numeric', 'min:0'],
-            'location' => ['nullable', 'string', 'max:100'],
-            'status' => ['nullable', 'in:active,discontinued'],
-            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:'.config('inventory.max_image_kb', 2048)],
-        ];
-    }
-
-    private function storeImage($file, string $itemCode): string
-    {
-        return $file->storeAs(
-            'inventory/items/'.$itemCode,
-            $file->hashName(),
-            'public'
-        );
     }
 }; ?>
 

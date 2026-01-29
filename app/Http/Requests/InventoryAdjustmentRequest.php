@@ -15,10 +15,7 @@ class InventoryAdjustmentRequest extends FormRequest
 
     public function rules(): array
     {
-        $branchRule = Schema::hasTable('branches')
-            ? ['required', 'integer', 'min:1']
-            : ['nullable', 'integer', 'min:1'];
-
+        $branchRule = ['nullable', 'integer', 'min:1'];
         if (Schema::hasTable('branches')) {
             $exists = Rule::exists('branches', 'id');
             if (Schema::hasColumn('branches', 'is_active')) {

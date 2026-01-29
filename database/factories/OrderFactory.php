@@ -28,7 +28,7 @@ class OrderFactory extends Factory
             'total_before_tax' => 0,
             'tax_amount' => 0,
             'total_amount' => 0,
-            'created_by' => 1,
+            'created_by' => null,
             'created_at' => now(),
         ];
     }

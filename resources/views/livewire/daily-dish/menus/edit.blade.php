@@ -2,9 +2,10 @@
 
 use App\Models\DailyDishMenu;
 use App\Models\DailyDishMenuItem;
-use App\Models\MenuItem;
 use App\Services\DailyDish\DailyDishMenuService;
-use Illuminate\Support\Facades\Schema;
+use App\Services\DailyDish\DailyDishMenuEditQueryService;
+use App\Support\DailyDish\DailyDishMenuEditRules;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -23,23 +24,17 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->loadMenu();
     }
 
-    public function with(): array
+    public function with(DailyDishMenuEditQueryService $queryService): array
     {
-        $menuItems = Schema::hasTable('menu_items')
-            ? MenuItem::where('is_active', 1)->availableInBranch($this->branch)->orderBy('name')->get()
-            : collect();
-
         return [
-            'menuItems' => $menuItems,
+            'menuItems' => $queryService->menuItemsForBranch($this->branch),
         ];
     }
 
-    private function loadMenu(): void
+    private function loadMenu(?DailyDishMenuEditQueryService $queryService = null): void
     {
-        $existing = DailyDishMenu::where('branch_id', $this->branch)
-            ->whereDate('service_date', $this->serviceDate)
-            ->with('items')
-            ->first();
+        $existing = ($queryService ?? app(DailyDishMenuEditQueryService::class))
+            ->loadMenu($this->branch, $this->serviceDate);
 
         if ($existing) {
             $this->menu = $existing;
@@ -84,21 +79,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->items = array_values($this->items);
     }
 
-    public function save(DailyDishMenuService $service): void
+    public function save(DailyDishMenuService $service, DailyDishMenuEditRules $rules): void
     {
         if (! $this->isEditable()) {
             session()->flash('status', __('Menu is not editable.'));
             return;
         }
 
-        $data = $this->validate([
-            'notes' => ['nullable', 'string'],
-            'items' => ['required', 'array', 'min:1'],
-            'items.*.menu_item_id' => ['required', 'integer'],
-            'items.*.role' => ['required', 'in:main,diet,vegetarian,salad,dessert,addon'],
-            'items.*.sort_order' => ['nullable', 'integer'],
-            'items.*.is_required' => ['boolean'],
-        ]);
+        $data = $this->validate($rules->rules());
 
         try {
             $menu = $service->upsertMenu(
@@ -108,7 +96,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'notes' => $data['notes'] ?? null,
                     'items' => $data['items'],
                 ],
-                Illuminate\Support\Facades\Auth::id()
+                Auth::id()
             );
 
             $this->menu = $menu;
@@ -127,7 +115,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
         try {
-            $menu = $service->publish($this->menu, Illuminate\Support\Facades\Auth::id());
+            $menu = $service->publish($this->menu, Auth::id());
             $this->menu = $menu;
             $this->status = $menu->status;
             session()->flash('status', __('Menu published.'));
@@ -144,7 +132,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
         try {
-            $menu = $service->unpublish($this->menu, Illuminate\Support\Facades\Auth::id());
+            $menu = $service->unpublish($this->menu, Auth::id());
             $this->menu = $menu;
             $this->status = $menu->status;
             session()->flash('status', __('Menu reverted to draft.'));

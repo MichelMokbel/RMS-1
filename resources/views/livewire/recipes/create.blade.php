@@ -1,11 +1,8 @@
 <?php
 
-use App\Models\Category;
-use App\Models\InventoryItem;
-use App\Models\Recipe;
-use App\Models\RecipeItem;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
+use App\Services\Recipes\RecipeFormQueryService;
+use App\Services\Recipes\RecipePersistService;
+use App\Support\Recipes\RecipeRules;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -50,54 +47,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->items = array_values($this->items);
     }
 
-    public function with(): array
+    public function with(RecipeFormQueryService $formQuery): array
     {
         return [
-            'categories' => Schema::hasTable('categories') ? Category::orderBy('name')->get() : collect(),
-            'inventoryItems' => Schema::hasTable('inventory_items') ? InventoryItem::orderBy('name')->get() : collect(),
+            'categories' => $formQuery->categories(),
+            'inventoryItems' => $formQuery->inventoryItems(),
         ];
     }
 
-    public function save(): void
+    public function save(RecipePersistService $persist, RecipeRules $rules): void
     {
-        $data = $this->validate([
-            'name' => ['required', 'string', 'max:200'],
-            'yield_quantity' => ['required', 'numeric', 'min:0.001'],
-            'yield_unit' => ['required', 'string', 'max:50'],
-            'overhead_pct' => ['required', 'numeric', 'min:0'],
-            'selling_price_per_unit' => ['nullable', 'numeric', 'min:0'],
-            'items' => ['array', 'min:1'],
-            'items.*.inventory_item_id' => ['required', 'integer', 'exists:inventory_items,id'],
-            'items.*.quantity' => ['required', 'numeric', 'min:0.001'],
-            'items.*.unit' => ['required', 'string', 'max:50'],
-            'items.*.quantity_type' => ['required', 'in:unit,package'],
-            'items.*.cost_type' => ['required', 'in:ingredient,packaging,labour,transport,other'],
-        ]);
-
-        $recipe = DB::transaction(function () use ($data) {
-            $recipe = Recipe::create([
-                'name' => $data['name'],
-                'description' => $this->description,
-                'category_id' => $this->category_id,
-                'yield_quantity' => $data['yield_quantity'],
-                'yield_unit' => $data['yield_unit'],
-                'overhead_pct' => $data['overhead_pct'],
-                'selling_price_per_unit' => $this->selling_price_per_unit,
-            ]);
-
-            foreach ($data['items'] as $item) {
-                RecipeItem::create([
-                    'recipe_id' => $recipe->id,
-                    'inventory_item_id' => $item['inventory_item_id'],
-                    'quantity' => $item['quantity'],
-                    'unit' => $item['unit'],
-                    'quantity_type' => $item['quantity_type'],
-                    'cost_type' => $item['cost_type'],
-                ]);
-            }
-
-            return $recipe;
-        });
+        $data = $this->validate($rules->rules());
+        $recipe = $persist->create($data);
 
         session()->flash('status', __('Recipe created.'));
         $this->redirectRoute('recipes.show', $recipe, navigate: true);

@@ -6,11 +6,12 @@ use App\Models\DailyDishMenu;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderItem;
-use App\Services\Orders\OrderNumberService;
-use App\Services\Orders\OrderTotalsService;
+use App\Services\Orders\OrderCreateService;
+use App\Support\Orders\OrderCreateRules;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\Auth;
@@ -324,125 +325,23 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->addItemRow();
     }
 
-    public function save(OrderNumberService $numberService, OrderTotalsService $totalsService): void
+    public function save(OrderCreateService $service, OrderCreateRules $rules): void
     {
-        $branchRule = ['required', 'integer'];
-        if (Schema::hasTable('branches')) {
-            $branchRule[] = Rule::exists('branches', 'id');
-        }
+        $data = $this->validate($rules->rules());
+        $data['customer_name_snapshot'] = $this->customer_name_snapshot;
+        $data['customer_phone_snapshot'] = $this->customer_phone_snapshot;
+        $data['delivery_address_snapshot'] = $this->delivery_address_snapshot;
 
-        $data = $this->validate([
-            'branch_id' => $branchRule,
-            'source' => ['required', 'in:POS,Phone,WhatsApp,Subscription,Backoffice,Website'],
-            'is_daily_dish' => ['boolean'],
-            'type' => ['required', 'in:DineIn,Takeaway,Delivery,Pastry'],
-            'status' => ['required', 'in:Draft,Confirmed,InProduction,Ready,OutForDelivery,Delivered,Cancelled'],
-            'customer_id' => ['nullable', 'integer'],
-            'customer_name_snapshot' => ['nullable', 'string', 'max:255'],
-            'customer_phone_snapshot' => ['nullable', 'string', 'max:50'],
-            'delivery_address_snapshot' => ['nullable', 'string'],
-            'scheduled_date' => ['required', 'date'],
-            'scheduled_time' => ['nullable'],
-            'notes' => ['nullable', 'string'],
-            'order_discount_amount' => ['nullable', 'numeric', 'min:0'],
-            'menu_id' => ['nullable', 'integer'],
-            'selected_items' => ['array'],
-            'selected_items.*.menu_item_id' => ['nullable', 'integer'],
-            'selected_items.*.quantity' => ['nullable', 'numeric', 'min:0.001'],
-            'selected_items.*.unit_price' => ['nullable', 'numeric', 'min:0'],
-            'selected_items.*.discount_amount' => ['nullable', 'numeric', 'min:0'],
-            'selected_items.*.sort_order' => ['nullable', 'integer'],
-        ]);
-
-        if ($this->is_daily_dish) {
-            $menu = DailyDishMenu::with('items.menuItem')
-                ->where('id', $this->menu_id)
-                ->where('branch_id', $this->branch_id)
-                ->where('status', 'published')
-                ->first();
-            if (! $menu) {
-                $this->addError('menu_id', __('A published daily dish menu is required for daily dish orders.'));
-                return;
+        try {
+            $order = $service->create($data, Auth::id());
+        } catch (ValidationException $e) {
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $m) {
+                    $this->addError($field, $m);
+                }
             }
-        }
-
-        $items = collect($data['selected_items'] ?? [])
-            ->filter(fn ($row) => ! empty($row['menu_item_id']))
-            ->values();
-
-        if ($items->isEmpty()) {
-            $this->addError('selected_items', __('Select at least one menu item.'));
             return;
         }
-
-        $menuItems = MenuItem::query()
-            ->whereIn('id', $items->pluck('menu_item_id')->all())
-            ->get()
-            ->keyBy('id');
-
-        if ($menuItems->count() !== $items->count()) {
-            $this->addError('selected_items', __('Some menu items could not be found.'));
-            return;
-        }
-
-        $subtotal = $items->reduce(function (float $carry, array $row): float {
-            $qty = (float) ($row['quantity'] ?? 1);
-            $price = (float) ($row['unit_price'] ?? 0);
-            $discount = (float) ($row['discount_amount'] ?? 0);
-            return $carry + max(0, ($qty * $price) - $discount);
-        }, 0.0);
-        $orderDiscount = (float) ($data['order_discount_amount'] ?? 0);
-        if ($orderDiscount > $subtotal) {
-            $this->addError('order_discount_amount', __('Order discount cannot exceed subtotal.'));
-            return;
-        }
-
-        $order = DB::transaction(function () use ($data, $items, $menuItems, $numberService, $totalsService) {
-            $order = Order::create([
-                'order_number' => $numberService->generate(),
-                'branch_id' => $data['branch_id'],
-                'source' => $data['source'] === 'Subscription' ? 'Backoffice' : $data['source'],
-                'is_daily_dish' => $this->is_daily_dish,
-                'type' => $data['type'],
-                'status' => $data['status'],
-                'customer_id' => $data['customer_id'],
-                'customer_name_snapshot' => $this->customer_name_snapshot,
-                'customer_phone_snapshot' => $this->customer_phone_snapshot,
-                'delivery_address_snapshot' => $this->delivery_address_snapshot,
-                'scheduled_date' => $data['scheduled_date'],
-                'scheduled_time' => $data['scheduled_time'],
-                'notes' => $data['notes'],
-                'order_discount_amount' => (float) ($data['order_discount_amount'] ?? 0),
-                'total_before_tax' => 0,
-                'tax_amount' => 0,
-                'total_amount' => 0,
-                'created_by' => Auth::id(),
-                'created_at' => now(),
-            ]);
-
-            foreach ($items as $idx => $row) {
-                $menuItem = $menuItems->get($row['menu_item_id']);
-                $qty = (float) ($row['quantity'] ?? 1);
-                $price = isset($row['unit_price']) ? (float) $row['unit_price'] : (float) ($menuItem->selling_price_per_unit ?? 0);
-                $discount = (float) ($row['discount_amount'] ?? 0);
-                $lineTotal = max(0, ($qty * $price) - $discount);
-                OrderItem::create([
-                    'order_id' => $order->id,
-                    'menu_item_id' => $row['menu_item_id'],
-                    'description_snapshot' => trim(($menuItem->code ?? '').' '.$menuItem->name),
-                    'quantity' => $qty,
-                    'unit_price' => $price,
-                    'discount_amount' => $discount,
-                    'line_total' => round($lineTotal, 3),
-                    'status' => 'Pending',
-                    'sort_order' => $row['sort_order'] ?? $idx,
-                ]);
-            }
-
-            $totalsService->recalc($order);
-
-            return $order;
-        });
 
         session()->flash('status', __('Order created.'));
         $this->redirectRoute('orders.edit', $order, navigate: true);

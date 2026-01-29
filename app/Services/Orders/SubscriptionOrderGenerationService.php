@@ -17,7 +17,10 @@ use Illuminate\Validation\ValidationException;
 
 class SubscriptionOrderGenerationService
 {
-    public function __construct(protected MealPlanPricingService $pricing)
+    public function __construct(
+        protected MealPlanPricingService $pricing,
+        protected OrderNumberService $orderNumbers
+    )
     {
     }
 
@@ -183,7 +186,7 @@ class SubscriptionOrderGenerationService
 
     private function createOrder(MealSubscription $sub, Collection $items, string $serviceDate, int $branchId, int $userId): int
     {
-        $orderNumber = $this->generateOrderNumber();
+        $orderNumber = $this->orderNumbers->generate();
         $status = config('subscriptions.generated_order_status', 'Confirmed');
         $quantity = (float) config('subscriptions.generated_item_quantity', 1.0);
         $planPrice = $this->pricing->subscriptionPrice($sub);
@@ -233,18 +236,6 @@ class SubscriptionOrderGenerationService
             ]);
 
         return $orderId;
-    }
-
-    private function generateOrderNumber(): string
-    {
-        $year = now()->format('Y');
-        $prefix = 'ORD'.$year.'-';
-
-        do {
-            $number = $prefix.str_pad((string) random_int(1, 999999), 6, '0', STR_PAD_LEFT);
-        } while (DB::table('orders')->where('order_number', $number)->exists());
-
-        return $number;
     }
 
     private function finishRun(SubscriptionOrderRun $run, array $result, string $status): void

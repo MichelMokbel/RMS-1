@@ -3,12 +3,10 @@
 use App\Models\DailyDishMenu;
 use App\Models\MenuItem;
 use App\Models\OpsEvent;
-use App\Models\Order;
-use App\Models\OrderItem;
-use App\Services\Orders\OrderNumberService;
-use App\Services\Orders\OrderTotalsService;
-use Illuminate\Support\Facades\DB;
+use App\Services\Orders\OrderCreateService;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -70,7 +68,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private function authorizeCashier(): void
     {
-        if (! auth()->user()?->hasAnyRole(['admin', 'manager', 'cashier'])) {
+        /** @var \App\Models\User|null $user */
+        $user = Auth::user();
+
+        if (! $user?->hasAnyRole(['admin', 'manager', 'cashier'])) {
             abort(403);
         }
     }
@@ -111,7 +112,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->desserts = array_values($this->desserts);
     }
 
-    public function save(OrderNumberService $numberService, OrderTotalsService $totalsService): void
+    public function save(OrderCreateService $orderCreateService): void
     {
         $this->authorizeCashier();
 
@@ -161,71 +162,74 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
         }
 
-        /** @var Order $order */
-        $order = DB::transaction(function () use ($data, $numberService, $totalsService) {
-            $order = Order::create([
-                'order_number' => $numberService->generate(),
-                'branch_id' => $this->branch,
-                'source' => $data['source'],
-                'is_daily_dish' => 1,
-                'type' => $data['type'],
-                'status' => $data['status'],
-                'customer_id' => null,
-                'customer_name_snapshot' => $data['customer_name_snapshot'] ?? null,
-                'customer_phone_snapshot' => $data['customer_phone_snapshot'] ?? null,
-                'delivery_address_snapshot' => $data['delivery_address_snapshot'] ?? null,
-                'scheduled_date' => $this->date,
-                'scheduled_time' => $data['scheduled_time'] ?? null,
-                'notes' => $data['notes'] ?? null,
-                'total_before_tax' => 0,
-                'tax_amount' => 0,
-                'total_amount' => 0,
-                'created_by' => Illuminate\Support\Facades\Auth::id(),
-                'created_at' => now(),
-            ]);
+        $actorId = (int) (Auth::id() ?? 0);
+        if ($actorId <= 0) {
+            abort(403);
+        }
 
-            $rows = collect($this->mains)
-                ->map(fn ($r) => ['menu_item_id' => (int) $r['menu_item_id'], 'quantity' => (float) $r['quantity']])
-                ->merge(collect($this->salads)->map(fn ($r) => ['menu_item_id' => (int) $r['menu_item_id'], 'quantity' => (float) $r['quantity']]))
-                ->merge(collect($this->desserts)->map(fn ($r) => ['menu_item_id' => (int) $r['menu_item_id'], 'quantity' => (float) $r['quantity']]));
+        $rows = collect($this->mains)
+            ->map(fn ($r) => ['menu_item_id' => (int) $r['menu_item_id'], 'quantity' => (float) $r['quantity']])
+            ->merge(collect($this->salads)->map(fn ($r) => ['menu_item_id' => (int) $r['menu_item_id'], 'quantity' => (float) $r['quantity']]))
+            ->merge(collect($this->desserts)->map(fn ($r) => ['menu_item_id' => (int) $r['menu_item_id'], 'quantity' => (float) $r['quantity']]));
 
-            // Combine duplicate items
-            $combined = $rows->groupBy('menu_item_id')->map(fn ($g) => (float) $g->sum('quantity'));
+        // Combine duplicate items
+        $combined = $rows->groupBy('menu_item_id')->map(fn ($g) => (float) $g->sum('quantity'));
 
-            $idx = 0;
-            foreach ($combined as $menuItemId => $qty) {
-                $menuItem = MenuItem::find($menuItemId);
-                $price = (float) ($menuItem->selling_price_per_unit ?? 0);
-                OrderItem::create([
-                    'order_id' => $order->id,
-                    'menu_item_id' => $menuItemId,
-                    'description_snapshot' => trim(($menuItem->code ?? '').' '.$menuItem->name),
-                    'quantity' => $qty,
-                    'unit_price' => $price,
-                    'discount_amount' => 0,
-                    'line_total' => round($qty * $price, 3),
-                    'status' => 'Pending',
-                    'sort_order' => $idx++,
-                ]);
+        $selectedItems = [];
+        $idx = 0;
+        foreach ($combined as $menuItemId => $qty) {
+            $menuItem = MenuItem::find($menuItemId);
+            $price = (float) ($menuItem?->selling_price_per_unit ?? 0);
+            $selectedItems[] = [
+                'menu_item_id' => (int) $menuItemId,
+                'quantity' => (float) $qty,
+                'unit_price' => $price,
+                'discount_amount' => 0,
+                'sort_order' => $idx++,
+            ];
+        }
+
+        $payload = [
+            'branch_id' => $this->branch,
+            'source' => $data['source'],
+            'is_daily_dish' => true,
+            'type' => $data['type'],
+            'status' => $data['status'],
+            'customer_id' => null,
+            'customer_name_snapshot' => $data['customer_name_snapshot'] ?? null,
+            'customer_phone_snapshot' => $data['customer_phone_snapshot'] ?? null,
+            'delivery_address_snapshot' => $data['delivery_address_snapshot'] ?? null,
+            'scheduled_date' => $this->date,
+            'scheduled_time' => $data['scheduled_time'] ?? null,
+            'notes' => $data['notes'] ?? null,
+            'order_discount_amount' => 0,
+            'menu_id' => $menu->id,
+            'selected_items' => $selectedItems,
+        ];
+
+        try {
+            $order = $orderCreateService->create($payload, $actorId);
+        } catch (ValidationException $e) {
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $m) {
+                    $this->addError($field, $m);
+                }
             }
+            return;
+        }
 
-            $totalsService->recalc($order);
-
-            OpsEvent::create([
-                'event_type' => 'manual_order_created',
-                'branch_id' => $order->branch_id,
-                'service_date' => $this->date,
-                'order_id' => $order->id,
-                'actor_user_id' => (int) Illuminate\Support\Facades\Auth::id(),
-                'metadata_json' => [
-                    'is_daily_dish' => true,
-                    'source' => $order->source,
-                ],
-                'created_at' => now(),
-            ]);
-
-            return $order;
-        });
+        OpsEvent::create([
+            'event_type' => 'manual_order_created',
+            'branch_id' => $order->branch_id,
+            'service_date' => $this->date,
+            'order_id' => $order->id,
+            'actor_user_id' => $actorId,
+            'metadata_json' => [
+                'is_daily_dish' => true,
+                'source' => $order->source,
+            ],
+            'created_at' => now(),
+        ]);
 
         session()->flash('status', __('Manual daily dish order created.'));
         $this->redirectRoute('daily-dish.ops.day', [$this->branch, $this->date], navigate: true);

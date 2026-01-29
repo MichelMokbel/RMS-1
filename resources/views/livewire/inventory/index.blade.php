@@ -1,10 +1,9 @@
 <?php
 
-use App\Models\Category;
 use App\Models\InventoryItem;
-use App\Models\Supplier;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
+use App\Services\Inventory\InventoryItemFormQueryService;
+use App\Services\Inventory\InventoryItemIndexQueryService;
+use App\Services\Inventory\InventoryItemStatusService;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
@@ -28,64 +27,27 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function updatingBranchId(): void { $this->resetPage(); }
     public function updatingLowStockOnly(): void { $this->resetPage(); }
 
-    public function with(): array
+    public function with(InventoryItemIndexQueryService $queryService, InventoryItemFormQueryService $formQuery): array
     {
         return [
-            'items' => $this->query()->paginate(15),
-            'categories' => Schema::hasTable('categories') ? Category::orderBy('name')->get() : collect(),
-            'suppliers' => Schema::hasTable('suppliers') ? Supplier::orderBy('name')->get() : collect(),
-            'branches' => Schema::hasTable('branches')
-                ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
-                : collect(),
+            'items' => $queryService->paginate([
+                'status' => $this->status,
+                'category_id' => $this->category_id,
+                'supplier_id' => $this->supplier_id,
+                'branch_id' => $this->branch_id,
+                'search' => $this->search,
+                'low_stock_only' => $this->low_stock_only,
+            ], 15),
+            'categories' => $formQuery->categories(),
+            'suppliers' => $formQuery->suppliers(),
+            'branches' => $formQuery->branches(),
         ];
     }
 
-    private function query()
-    {
-        $query = InventoryItem::query()
-            ->when($this->status !== 'all', fn ($q) => $q->where('status', $this->status))
-            ->when($this->category_id, fn ($q) => $q->where('category_id', $this->category_id))
-            ->when($this->supplier_id, fn ($q) => $q->where('supplier_id', $this->supplier_id))
-            ->when($this->search, function ($q) {
-                $q->where(function ($inner) {
-                    $inner->where('item_code', 'like', '%'.$this->search.'%')
-                        ->orWhere('name', 'like', '%'.$this->search.'%')
-                        ->orWhere('location', 'like', '%'.$this->search.'%');
-                });
-            })
-            ->orderBy('name');
-
-        if (Schema::hasTable('inventory_stocks') && $this->branch_id) {
-            $branchId = (int) $this->branch_id;
-            $query->join('inventory_stocks as inv_stock', function ($join) use ($branchId) {
-                $join->on('inventory_items.id', '=', 'inv_stock.inventory_item_id')
-                    ->where('inv_stock.branch_id', '=', $branchId);
-            })->select('inventory_items.*', DB::raw('COALESCE(inv_stock.current_stock, 0) as current_stock'));
-        } elseif (Schema::hasTable('inventory_stocks')) {
-            $totals = DB::table('inventory_stocks')
-                ->select('inventory_item_id', DB::raw('SUM(current_stock) as total_stock'))
-                ->groupBy('inventory_item_id');
-
-            $query->leftJoinSub($totals, 'inv_total', function ($join) {
-                $join->on('inventory_items.id', '=', 'inv_total.inventory_item_id');
-            })->select('inventory_items.*', DB::raw('COALESCE(inv_total.total_stock, 0) as current_stock'));
-        }
-
-        if ($this->low_stock_only) {
-            if ($this->branch_id) {
-                $query->whereRaw('COALESCE(inv_stock.current_stock, 0) <= inventory_items.minimum_stock');
-            } elseif (Schema::hasTable('inventory_stocks')) {
-                $query->whereRaw('COALESCE(inv_total.total_stock, 0) <= inventory_items.minimum_stock');
-            }
-        }
-
-        return $query;
-    }
-
-    public function toggleStatus(int $id): void
+    public function toggleStatus(InventoryItemStatusService $statusService, int $id): void
     {
         $item = InventoryItem::findOrFail($id);
-        $item->update(['status' => $item->status === 'active' ? 'discontinued' : 'active']);
+        $statusService->toggle($item);
         session()->flash('status', __('Status updated.'));
     }
 }; ?>

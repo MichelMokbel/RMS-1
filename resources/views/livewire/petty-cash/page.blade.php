@@ -8,9 +8,14 @@ use App\Models\PettyCashWallet;
 use App\Services\PettyCash\PettyCashExpenseWorkflowService;
 use App\Services\PettyCash\PettyCashIssueService;
 use App\Services\PettyCash\PettyCashIssueVoidService;
+use App\Services\PettyCash\PettyCashQueryService;
 use App\Services\PettyCash\PettyCashReconciliationService;
 use App\Services\PettyCash\PettyCashReconciliationVoidService;
 use App\Services\PettyCash\PettyCashWalletService;
+use App\Support\PettyCash\PettyCashExpenseRules;
+use App\Support\PettyCash\PettyCashIssueRules;
+use App\Support\PettyCash\PettyCashReconciliationRules;
+use App\Support\PettyCash\PettyCashWalletRules;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
@@ -79,78 +84,15 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->reconForm['period_end'] = $today;
     }
 
-    public function with(): array
+    public function with(PettyCashQueryService $queryService): array
     {
         return [
-            'wallets' => $this->wallets(),
-            'issues' => $this->issues(),
-            'expenses' => $this->expenses(),
-            'reconciliations' => $this->reconciliations(),
-            'categories' => Schema::hasTable('expense_categories') ? ExpenseCategory::orderBy('name')->get() : collect(),
+            'wallets' => $queryService->wallets($this->wallet_active_filter, $this->wallet_search),
+            'issues' => $queryService->issues($this->issue_wallet_id, $this->issue_method, $this->issue_from, $this->issue_to),
+            'expenses' => $queryService->expenses($this->expense_wallet_id, $this->expense_status, $this->expense_category_id, $this->expense_from, $this->expense_to),
+            'reconciliations' => $queryService->reconciliations($this->recon_wallet_id),
+            'categories' => $queryService->categories(),
         ];
-    }
-
-    private function wallets()
-    {
-        if (! Schema::hasTable('petty_cash_wallets')) {
-            return collect();
-        }
-
-        return PettyCashWallet::query()
-            ->when($this->wallet_active_filter === 'active', fn ($q) => $q->where('active', 1))
-            ->when($this->wallet_active_filter === 'inactive', fn ($q) => $q->where('active', 0))
-            ->when($this->wallet_search, fn ($q) => $q->where(function ($sub) {
-                $sub->where('driver_name', 'like', '%'.$this->wallet_search.'%')
-                    ->orWhere('driver_id', 'like', '%'.$this->wallet_search.'%');
-            }))
-            ->orderBy('driver_name')
-            ->get();
-    }
-
-    private function issues()
-    {
-        if (! Schema::hasTable('petty_cash_issues')) {
-            return collect();
-        }
-
-        return PettyCashIssue::with(['wallet', 'voidedBy'])
-            ->when($this->issue_wallet_id, fn ($q) => $q->where('wallet_id', $this->issue_wallet_id))
-            ->when($this->issue_method !== 'all', fn ($q) => $q->where('method', $this->issue_method))
-            ->when($this->issue_from, fn ($q) => $q->whereDate('issue_date', '>=', $this->issue_from))
-            ->when($this->issue_to, fn ($q) => $q->whereDate('issue_date', '<=', $this->issue_to))
-            ->orderByDesc('issue_date')
-            ->limit(50)
-            ->get();
-    }
-
-    private function expenses()
-    {
-        if (! Schema::hasTable('petty_cash_expenses')) {
-            return collect();
-        }
-
-        return PettyCashExpense::with(['wallet', 'category', 'submitter', 'approver'])
-            ->when($this->expense_wallet_id, fn ($q) => $q->where('wallet_id', $this->expense_wallet_id))
-            ->when($this->expense_category_id, fn ($q) => $q->where('category_id', $this->expense_category_id))
-            ->when($this->expense_status !== 'all', fn ($q) => $q->where('status', $this->expense_status))
-            ->when($this->expense_from, fn ($q) => $q->whereDate('expense_date', '>=', $this->expense_from))
-            ->when($this->expense_to, fn ($q) => $q->whereDate('expense_date', '<=', $this->expense_to))
-            ->orderByDesc('expense_date')
-            ->limit(50)
-            ->get();
-    }
-
-    private function reconciliations()
-    {
-        if (! Schema::hasTable('petty_cash_reconciliations')) {
-            return collect();
-        }
-
-        return PettyCashReconciliation::with(['wallet', 'reconciler', 'voidedBy'])
-            ->when($this->recon_wallet_id, fn ($q) => $q->where('wallet_id', $this->recon_wallet_id))
-            ->orderByDesc('reconciled_at')
-            ->limit(50)
-            ->get();
     }
 
     public function openWalletModal(?int $id = null): void
@@ -183,15 +125,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
     }
 
-    public function saveWallet(PettyCashWalletService $service): void
+    public function saveWallet(PettyCashWalletService $service, PettyCashWalletRules $rules): void
     {
-        $data = $this->validate([
-            'walletForm.driver_id' => ['nullable', 'integer'],
-            'walletForm.driver_name' => ['nullable', 'string', 'max:150'],
-            'walletForm.target_float' => ['required', 'numeric', 'min:0'],
-            'walletForm.balance' => ['required', 'numeric'],
-            'walletForm.active' => ['boolean'],
-        ])['walletForm'];
+        $data = $this->validate($rules->rules())['walletForm'];
 
         $id = $this->walletForm['id'] ?? null;
 
@@ -226,15 +162,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->showIssueModal = true;
     }
 
-    public function createIssue(PettyCashIssueService $service): void
+    public function createIssue(PettyCashIssueService $service, PettyCashIssueRules $rules): void
     {
-        $data = $this->validate([
-            'issueForm.wallet_id' => ['required', 'integer', 'exists:petty_cash_wallets,id'],
-            'issueForm.issue_date' => ['required', 'date'],
-            'issueForm.amount' => ['required', 'numeric', 'min:0.01'],
-            'issueForm.method' => ['required', 'in:cash,card,bank_transfer,cheque,other'],
-            'issueForm.reference' => ['nullable', 'string', 'max:100'],
-        ])['issueForm'];
+        $data = $this->validate($rules->rules())['issueForm'];
 
         $service->createIssue($data['wallet_id'], $data, Auth::id());
 
@@ -249,16 +179,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->showExpenseModal = true;
     }
 
-    public function saveExpense(string $mode = 'submitted'): void
+    public function saveExpense(string $mode = 'submitted', PettyCashExpenseRules $rules): void
     {
-        $data = $this->validate([
-            'expenseForm.wallet_id' => ['required', 'integer', 'exists:petty_cash_wallets,id'],
-            'expenseForm.category_id' => ['required', 'integer', 'exists:expense_categories,id'],
-            'expenseForm.expense_date' => ['required', 'date'],
-            'expenseForm.description' => ['required', 'string', 'max:255'],
-            'expenseForm.amount' => ['required', 'numeric', 'min:0'],
-            'expenseForm.tax_amount' => ['required', 'numeric', 'min:0'],
-        ])['expenseForm'];
+        $data = $this->validate($rules->rules())['expenseForm'];
 
         $status = $mode === 'draft' ? 'draft' : 'submitted';
 
@@ -322,15 +245,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->showReconModal = true;
     }
 
-    public function reconcile(PettyCashReconciliationService $service): void
+    public function reconcile(PettyCashReconciliationService $service, PettyCashReconciliationRules $rules): void
     {
-        $data = $this->validate([
-            'reconForm.wallet_id' => ['required', 'integer', 'exists:petty_cash_wallets,id'],
-            'reconForm.period_start' => ['required', 'date'],
-            'reconForm.period_end' => ['required', 'date'],
-            'reconForm.counted_balance' => ['required', 'numeric'],
-            'reconForm.note' => ['nullable', 'string'],
-        ])['reconForm'];
+        $data = $this->validate($rules->rules())['reconForm'];
 
         $service->reconcile($data['wallet_id'], $data, Auth::id());
         $this->showReconModal = false;

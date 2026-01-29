@@ -3,6 +3,9 @@
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Services\Purchasing\PurchaseOrderReceivingService;
+use App\Services\Purchasing\PurchaseOrderWorkflowService;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -21,35 +24,26 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
-    public function approve(): void
+    public function approve(PurchaseOrderWorkflowService $workflow): void
     {
-        if (! $this->purchaseOrder->isPending()) {
-            $this->addError('status', __('Only pending purchase orders can be approved.'));
-            return;
+        try {
+            $this->purchaseOrder = $workflow->approve($this->purchaseOrder);
+            session()->flash('status', __('Purchase order approved.'));
+        } catch (ValidationException $e) {
+            $message = collect($e->errors())->flatten()->first() ?? __('Approve failed.');
+            $this->addError('status', $message);
         }
-        if (! $this->purchaseOrder->supplier_id || $this->purchaseOrder->items()->count() === 0) {
-            $this->addError('status', __('Supplier and at least one line are required.'));
-            return;
-        }
-        $this->purchaseOrder->update(['status' => PurchaseOrder::STATUS_APPROVED]);
-        $this->refreshPo();
-        session()->flash('status', __('Purchase order approved.'));
     }
 
-    public function cancel(): void
+    public function cancel(PurchaseOrderWorkflowService $workflow): void
     {
-        $po = $this->purchaseOrder->load('items');
-        if ($po->isReceived()) {
-            $this->addError('status', __('Cannot cancel a received PO.'));
-            return;
+        try {
+            $this->purchaseOrder = $workflow->cancel($this->purchaseOrder);
+            session()->flash('status', __('Purchase order cancelled.'));
+        } catch (ValidationException $e) {
+            $message = collect($e->errors())->flatten()->first() ?? __('Cancel failed.');
+            $this->addError('status', $message);
         }
-        if ($po->isApproved() && $po->items->sum('received_quantity') > 0) {
-            $this->addError('status', __('Cannot cancel after receiving items.'));
-            return;
-        }
-        $po->update(['status' => PurchaseOrder::STATUS_CANCELLED]);
-        $this->refreshPo();
-        session()->flash('status', __('Purchase order cancelled.'));
     }
 
     public function receive(PurchaseOrderReceivingService $receivingService): void
@@ -63,7 +57,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $costs = collect($this->receive_costs)->map(fn ($cost) => $cost === '' ? null : (float) $cost)->toArray();
 
         try {
-            $po = $receivingService->receive($this->purchaseOrder, $receipts, Illuminate\Support\Facades\Auth::id(), $this->receive_notes, $costs);
+            $po = $receivingService->receive($this->purchaseOrder, $receipts, Auth::id(), $this->receive_notes, $costs);
             $this->purchaseOrder = $po;
             $this->receive_notes = null;
             foreach ($this->purchaseOrder->items as $item) {
