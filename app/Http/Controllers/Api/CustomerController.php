@@ -7,6 +7,7 @@ use App\Http\Requests\CustomerStoreRequest;
 use App\Http\Requests\CustomerUpdateRequest;
 use App\Models\Customer;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class CustomerController extends Controller
 {
@@ -49,7 +50,7 @@ class CustomerController extends Controller
         $data = $request->validated();
         $data = $this->applyCreditPolicy($data);
         if (\Illuminate\Support\Facades\Schema::hasColumn('customers', 'created_by')) {
-            $data['created_by'] = Illuminate\Support\Facades\Auth::id();
+            $data['created_by'] = Auth::id();
         }
 
         $customer = Customer::create($data);
@@ -62,7 +63,7 @@ class CustomerController extends Controller
         $data = $request->validated();
         $data = $this->applyCreditPolicy($data);
         if (\Illuminate\Support\Facades\Schema::hasColumn('customers', 'updated_by')) {
-            $data['updated_by'] = Illuminate\Support\Facades\Auth::id();
+            $data['updated_by'] = Auth::id();
         }
 
         $customer->update($data);

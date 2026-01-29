@@ -451,7 +451,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </td>
                             <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $r->customer_phone }}</td>
                             <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $r->customer_email ?? '—' }}</td>
-                            <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $r->orders_count ?? (is_array($r->order_ids) ? count($r->order_ids) : 0) }}</td>
+                            <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $r->orders_count ?? 0 }}</td>
                             <td class="px-3 py-2 text-sm text-right">
                                 <div class="flex justify-end gap-2">
                                     <flux:button

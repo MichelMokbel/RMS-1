@@ -27,6 +27,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function mount(Expense $expense): void
     {
         $this->expense = $expense->loadSum('payments as paid_sum', 'amount');
+        if ($expense->payment_status !== 'unpaid') {
+            session()->flash('status', __('Paid or partially paid expenses cannot be edited.'));
+            $this->redirectRoute('expenses.show', $expense, navigate: true);
+            return;
+        }
         $this->category_id = $expense->category_id;
         $this->supplier_id = $expense->supplier_id;
         $this->expense_date = optional($expense->expense_date)->toDateString();

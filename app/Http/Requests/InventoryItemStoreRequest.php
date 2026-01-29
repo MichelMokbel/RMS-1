@@ -17,7 +17,11 @@ class InventoryItemStoreRequest extends FormRequest
     {
         $branchRule = ['nullable', 'integer', 'min:1'];
         if (Schema::hasTable('branches')) {
-            $branchRule[] = Rule::exists('branches', 'id');
+            $exists = Rule::exists('branches', 'id');
+            if (Schema::hasColumn('branches', 'is_active')) {
+                $exists = $exists->where('is_active', 1);
+            }
+            $branchRule[] = $exists;
         }
 
         return [

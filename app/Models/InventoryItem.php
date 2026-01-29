@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use App\Models\Category;
 use App\Models\Supplier;
@@ -24,7 +25,6 @@ class InventoryItem extends Model
         'package_label',
         'unit_of_measure',
         'minimum_stock',
-        'current_stock',
         'cost_per_unit',
         'last_cost_update',
         'location',
@@ -35,7 +35,6 @@ class InventoryItem extends Model
     protected $casts = [
         'units_per_package' => 'decimal:3',
         'minimum_stock' => 'decimal:3',
-        'current_stock' => 'decimal:3',
         'cost_per_unit' => 'decimal:4',
         'last_cost_update' => 'datetime',
         'created_at' => 'datetime',
@@ -56,7 +55,7 @@ class InventoryItem extends Model
 
             InventoryStock::firstOrCreate(
                 ['inventory_item_id' => $item->id, 'branch_id' => $branchId],
-                ['current_stock' => (float) ($item->current_stock ?? 0)]
+                ['current_stock' => 0]
             );
         });
     }
@@ -79,6 +78,21 @@ class InventoryItem extends Model
     public function stocks()
     {
         return $this->hasMany(InventoryStock::class, 'inventory_item_id');
+    }
+
+    public function getCurrentStockAttribute($value): float
+    {
+        if ($value !== null) {
+            return (float) $value;
+        }
+
+        if (! Schema::hasTable('inventory_stocks')) {
+            return 0.0;
+        }
+
+        return (float) DB::table('inventory_stocks')
+            ->where('inventory_item_id', $this->id)
+            ->sum('current_stock');
     }
 
     public function perUnitCost(): ?float

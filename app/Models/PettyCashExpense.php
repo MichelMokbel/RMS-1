@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Validation\ValidationException;
 
 class PettyCashExpense extends Model
 {
@@ -37,6 +38,24 @@ class PettyCashExpense extends Model
         'approved_at' => 'datetime',
         'created_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::updating(function (PettyCashExpense $expense) {
+            $originalStatus = $expense->getOriginal('status');
+            if (in_array($originalStatus, ['draft', 'submitted'], true)) {
+                return;
+            }
+
+            if ($expense->getDirty() === []) {
+                return;
+            }
+
+            throw ValidationException::withMessages([
+                'expense' => __('Approved petty cash expenses are immutable.'),
+            ]);
+        });
+    }
 
     public function wallet(): BelongsTo
     {

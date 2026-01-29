@@ -5,7 +5,6 @@ namespace App\Services\Expenses;
 use App\Models\Expense;
 use App\Models\ExpensePayment;
 use App\Services\Ledger\SubledgerService;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -36,6 +35,8 @@ class ExpensePaymentService
                 'reference' => $data['reference'] ?? null,
                 'notes' => $data['notes'] ?? null,
                 'created_by' => $userId,
+                'posted_at' => now(),
+                'posted_by' => $userId,
             ]);
 
             $this->statusService->recalc($expense->fresh());

@@ -7,11 +7,15 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\DB;
 use App\Http\Middleware\CheckActiveUser;
 use App\Http\Middleware\EnsureAdmin;
+use App\Http\Middleware\EnsureActiveBranch;
 use App\Console\Commands\UsersHashPasswords;
 use App\Console\Commands\GenerateSubscriptionOrders;
 use App\Console\Commands\RestoreDatabaseFromDump;
 use App\Console\Commands\ImportDailyDishMenuFromForm;
 use App\Console\Commands\IntegrityAudit;
+use App\Console\Commands\ReapplySafeForeignKeys;
+use App\Console\Commands\FinanceLockDate;
+use App\Console\Commands\BackfillMenuItemBranches;
 use App\Services\Orders\SubscriptionOrderGenerationService;
 use Spatie\Permission\Middleware\RoleMiddleware;
 
@@ -28,6 +32,9 @@ return Application::configure(basePath: dirname(__DIR__))
         RestoreDatabaseFromDump::class,
         ImportDailyDishMenuFromForm::class,
         IntegrityAudit::class,
+        ReapplySafeForeignKeys::class,
+        FinanceLockDate::class,
+        BackfillMenuItemBranches::class,
     ])
     ->withSchedule(function (Schedule $schedule) {
         $time = config('subscriptions.generation_time', '06:00');
@@ -49,6 +56,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'active' => CheckActiveUser::class,
             'ensure.admin' => EnsureAdmin::class,
+            'ensure.active-branch' => EnsureActiveBranch::class,
             'role' => RoleMiddleware::class,
         ]);
     })

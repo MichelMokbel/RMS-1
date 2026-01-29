@@ -15,10 +15,12 @@ uses(RefreshDatabase::class);
 function baseRecipeForProduction(): Recipe
 {
     $inv = InventoryItem::factory()->create([
-        'current_stock' => 10,
         'units_per_package' => 5,
         'cost_per_unit' => 20,
     ]);
+    InventoryStock::where('inventory_item_id', $inv->id)
+        ->where('branch_id', (int) config('inventory.default_branch_id', 1))
+        ->update(['current_stock' => 10]);
 
     $recipe = Recipe::factory()->create([
         'yield_quantity' => 5, // yields 5 units
@@ -81,7 +83,6 @@ it('blocks insufficient stock when negative stock disallowed', function () {
     // This would require 2 packages (10 units), stock is 10 packages? no 10 units => 2 packages deduction -> stock becomes 8 packages? Wait
     // actually stock is 10 (packages), we set as units? current_stock is 10 (packages). Deduction 2 packages ok. Make more
     $inv = $recipe->items()->first()->inventoryItem;
-    $inv->update(['current_stock' => 1]);
     $branchId = (int) config('inventory.default_branch_id', 1);
     InventoryStock::where('inventory_item_id', $inv->id)->where('branch_id', $branchId)->update(['current_stock' => 1]);
 

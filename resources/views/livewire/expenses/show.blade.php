@@ -3,6 +3,7 @@
 use App\Models\Expense;
 use App\Services\Expenses\ExpenseAttachmentService;
 use App\Services\Expenses\ExpensePaymentService;
+use App\Services\Expenses\ExpensePaymentVoidService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
@@ -22,7 +23,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(Expense $expense): void
     {
-        $this->expense = $expense->load(['supplier', 'category', 'payments', 'attachments']);
+        $this->expense = $expense->load(['supplier', 'category', 'payments', 'allPayments', 'attachments']);
         $this->pay_date = now()->toDateString();
         $this->pay_amount = (float) $this->expense->outstandingAmount();
     }
@@ -49,9 +50,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             'notes' => $this->pay_notes,
         ], Illuminate\Support\Facades\Auth::id());
 
-        $this->expense->refresh()->loadSum('payments as paid_sum', 'amount');
+        $this->expense = $this->expense->fresh()->load(['supplier', 'category', 'payments', 'allPayments', 'attachments']);
         $this->pay_amount = (float) $this->expense->outstandingAmount();
         session()->flash('status', __('Payment added.'));
+    }
+
+    public function voidPayment(int $paymentId, ExpensePaymentVoidService $voidService): void
+    {
+        $payment = $this->expense->allPayments()->whereKey($paymentId)->firstOrFail();
+        $voidService->void($payment, Illuminate\Support\Facades\Auth::id());
+
+        $this->expense = $this->expense->fresh()->load(['supplier', 'category', 'payments', 'allPayments', 'attachments']);
+        $this->pay_amount = (float) $this->expense->outstandingAmount();
+        session()->flash('status', __('Payment voided.'));
     }
 
     public function deleteExpense(): void
@@ -197,10 +208,32 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
             @endif
             <div class="border-t border-neutral-200 dark:border-neutral-700 pt-3 space-y-2">
-                @forelse($expense->payments as $payment)
-                    <div class="flex justify-between text-sm text-neutral-800 dark:text-neutral-100">
-                        <span>{{ $payment->payment_date?->format('Y-m-d') }} • {{ ucfirst($payment->payment_method) }}</span>
-                        <span>{{ number_format((float)$payment->amount, 2) }}</span>
+                @forelse($expense->allPayments as $payment)
+                    <div class="flex items-center justify-between text-sm text-neutral-800 dark:text-neutral-100">
+                        <div class="flex flex-col">
+                            <span>
+                                {{ $payment->payment_date?->format('Y-m-d') }}
+                                • {{ ucfirst($payment->payment_method) }}
+                                @if($payment->voided_at)
+                                    <span class="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-900 dark:text-amber-100">
+                                        {{ __('Void') }}
+                                    </span>
+                                @endif
+                            </span>
+                            @if($payment->voided_at)
+                                <span class="text-xs text-neutral-500 dark:text-neutral-400">
+                                    {{ __('Voided at') }} {{ $payment->voided_at?->format('Y-m-d H:i') }}
+                                </span>
+                            @endif
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span>{{ number_format((float)$payment->amount, 2) }}</span>
+                            @if(! $payment->voided_at)
+                                <flux:button size="xs" variant="ghost" wire:click="voidPayment({{ $payment->id }})">
+                                    {{ __('Void') }}
+                                </flux:button>
+                            @endif
+                        </div>
                     </div>
                 @empty
                     <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('No payments yet.') }}</p>

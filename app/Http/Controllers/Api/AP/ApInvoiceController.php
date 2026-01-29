@@ -15,6 +15,7 @@ use App\Services\AP\ApInvoiceVoidService;
 use App\Services\AP\ApInvoiceStatusService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -57,7 +58,7 @@ class ApInvoiceController extends Controller
                 'total_amount' => 0,
                 'status' => 'draft',
                 'notes' => $data['notes'] ?? null,
-                'created_by' => Illuminate\Support\Facades\Auth::id(),
+                'created_by' => Auth::id(),
             ]);
 
             foreach ($data['items'] as $item) {
@@ -128,7 +129,7 @@ class ApInvoiceController extends Controller
         ApInvoice $invoice,
         ApInvoicePostingService $postingService
     ): JsonResponse {
-        $invoice = $postingService->post($invoice, Illuminate\Support\Facades\Auth::id());
+        $invoice = $postingService->post($invoice, Auth::id());
 
         return response()->json($invoice);
     }
@@ -138,7 +139,7 @@ class ApInvoiceController extends Controller
         ApInvoice $invoice,
         ApInvoiceVoidService $voidService
     ): JsonResponse {
-        $invoice = $voidService->void($invoice, Illuminate\Support\Facades\Auth::id());
+        $invoice = $voidService->void($invoice, Auth::id());
 
         return response()->json($invoice);
     }

@@ -77,7 +77,11 @@ class PublicDailyDishOrderController extends Controller
 
         $branchId = (int) ($payload['branch_id'] ?? 1);
         if (Schema::hasTable('branches')) {
-            $exists = DB::table('branches')->where('id', $branchId)->exists();
+            $q = DB::table('branches')->where('id', $branchId);
+            if (Schema::hasColumn('branches', 'is_active')) {
+                $q->where('is_active', 1);
+            }
+            $exists = $q->exists();
             if (! $exists) {
                 return response()->json([
                     'success' => false,
@@ -384,7 +388,6 @@ class PublicDailyDishOrderController extends Controller
                 'notes' => $payload['notes'] ?? null,
                 'plan_meals' => (int) ($payload['mealPlan'] ?? 0),
                 'status' => 'new',
-                'order_ids' => $createdOrderIds,
             ]);
             $leadId = $lead->id;
             if ($leadId && ! empty($createdOrderIds) && Schema::hasTable('meal_plan_request_orders')) {

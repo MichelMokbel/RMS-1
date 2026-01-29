@@ -21,12 +21,10 @@ class MealPlanRequest extends Model
         'notes',
         'plan_meals',
         'status',
-        'order_ids',
     ];
 
     protected $casts = [
         'plan_meals' => 'integer',
-        'order_ids' => 'array',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -38,14 +36,10 @@ class MealPlanRequest extends Model
 
     public function linkedOrderIds(): array
     {
-        if (Schema::hasTable('meal_plan_request_orders')) {
-            $ids = $this->orders()->pluck('orders.id')->all();
-            if (! empty($ids)) {
-                return $ids;
-            }
+        if (! Schema::hasTable('meal_plan_request_orders')) {
+            return [];
         }
 
-        return is_array($this->order_ids) ? $this->order_ids : [];
+        return $this->orders()->pluck('orders.id')->all();
     }
 }
-

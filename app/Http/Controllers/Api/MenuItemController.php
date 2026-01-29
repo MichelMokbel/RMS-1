@@ -9,6 +9,8 @@ use App\Models\Category;
 use App\Models\MenuItem;
 use App\Services\Menu\MenuItemUsageService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class MenuItemController extends Controller
 {
@@ -20,6 +22,19 @@ class MenuItemController extends Controller
         $active = $request->has('active') ? $request->boolean('active') : true;
         $branchId = $request->input('branch_id');
         $perPage = (int) $request->input('per_page', 20);
+
+        if ($branchId !== null && Schema::hasTable('branches')) {
+            $id = (int) $branchId;
+            if ($id > 0) {
+                $q = DB::table('branches')->where('id', $id);
+                if (Schema::hasColumn('branches', 'is_active')) {
+                    $q->where('is_active', 1);
+                }
+                if (! $q->exists()) {
+                    return response()->json(['message' => __('Invalid branch.')], 422);
+                }
+            }
+        }
 
         $query = MenuItem::query()
             ->when($active !== null, fn ($q) => $active ? $q->where('is_active', 1) : $q)

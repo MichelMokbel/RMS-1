@@ -44,13 +44,14 @@ class ExpenseController extends Controller
         return $expense->load(['supplier', 'category', 'payments', 'attachments']);
     }
 
-    public function store(ExpenseStoreRequest $request, ExpenseTotalsService $totalsService, ExpensePaymentService $paymentService)
+    public function store(ExpenseStoreRequest $request, ExpensePaymentService $paymentService)
     {
         $data = $request->validated();
         $userId = $request->user()->id ?? null;
         $recordPayment = $request->boolean('record_payment', false);
+        $totalAmount = round((float) $data['amount'] + (float) $data['tax_amount'], 2);
 
-        $expense = DB::transaction(function () use ($data, $totalsService, $paymentService, $userId, $recordPayment) {
+        $expense = DB::transaction(function () use ($data, $paymentService, $userId, $recordPayment, $totalAmount) {
             $expense = Expense::create([
                 'category_id' => $data['category_id'],
                 'supplier_id' => $data['supplier_id'] ?? null,
@@ -58,15 +59,13 @@ class ExpenseController extends Controller
                 'description' => $data['description'],
                 'amount' => $data['amount'],
                 'tax_amount' => $data['tax_amount'],
-                'total_amount' => 0,
+                'total_amount' => $totalAmount,
                 'payment_status' => $data['payment_status'],
                 'payment_method' => $data['payment_method'],
                 'reference' => $data['reference'] ?? null,
                 'notes' => $data['notes'] ?? null,
                 'created_by' => $userId,
             ]);
-
-            $totalsService->recalc($expense);
 
             if ($recordPayment && $expense->total_amount > 0) {
                 $paymentService->addPayment($expense, [

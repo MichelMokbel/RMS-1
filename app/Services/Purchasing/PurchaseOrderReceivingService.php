@@ -98,18 +98,10 @@ class PurchaseOrderReceivingService
             ->first();
 
         if (! $stock) {
-            $initial = 0.0;
-            if ($branchId === (int) config('inventory.default_branch_id', 1)) {
-                $hasAny = InventoryStock::where('inventory_item_id', $item->id)->exists();
-                if (! $hasAny) {
-                    $initial = (float) ($item->current_stock ?? 0);
-                }
-            }
-
             InventoryStock::create([
                 'inventory_item_id' => $item->id,
                 'branch_id' => $branchId,
-                'current_stock' => $initial,
+                'current_stock' => 0,
             ]);
 
             $stock = InventoryStock::where('inventory_item_id', $item->id)
@@ -118,7 +110,7 @@ class PurchaseOrderReceivingService
                 ->first();
         }
 
-        $oldStock = (float) ($item->current_stock ?? 0);
+        $oldStock = (float) InventoryStock::where('inventory_item_id', $item->id)->lockForUpdate()->sum('current_stock');
         $branchStock = (float) ($stock->current_stock ?? 0);
         $oldCost = (float) ($item->cost_per_unit ?? 0);
         $unitPrice = $overrideCost !== null ? (float) $overrideCost : (float) ($line->unit_price ?? 0);
@@ -130,7 +122,6 @@ class PurchaseOrderReceivingService
         $stock->current_stock = round($branchStock + $delta, 3);
         $stock->save();
 
-        $item->current_stock = round($oldStock + $delta, 3);
         $item->cost_per_unit = round($newCost, 4);
         $item->last_cost_update = now();
         $item->save();

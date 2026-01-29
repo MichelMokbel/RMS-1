@@ -6,13 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\InventoryTransferRequest;
 use App\Models\InventoryItem;
 use App\Services\Inventory\InventoryTransferService;
+use Illuminate\Support\Facades\Auth;
 
 class InventoryTransferController extends Controller
 {
     public function store(InventoryTransferRequest $request, InventoryTransferService $service)
     {
         $data = $request->validated();
-        $userId = (int) (\Illuminate\Support\Facades\Auth::id() ?? 0);
+        $userId = (int) (Auth::id() ?? 0);
 
         if (! empty($data['lines'])) {
             $transfer = $service->createAndPostBulk(

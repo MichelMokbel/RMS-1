@@ -18,7 +18,7 @@ beforeEach(function () {
 
 it('creates draft purchase order with lines', function () {
     $supplier = Supplier::factory()->create();
-    $item = InventoryItem::factory()->create(['current_stock' => 0, 'units_per_package' => 1, 'cost_per_unit' => 0]);
+    $item = InventoryItem::factory()->create(['units_per_package' => 1, 'cost_per_unit' => 0]);
 
     $response = $this->actingAs($this->admin)->post('/api/purchase-orders', [
         'po_number' => 'PO-TEST',
@@ -40,7 +40,7 @@ it('creates draft purchase order with lines', function () {
 
 it('approves and receives purchase order', function () {
     $supplier = Supplier::factory()->create();
-    $item = InventoryItem::factory()->create(['current_stock' => 0, 'units_per_package' => 1, 'cost_per_unit' => 0]);
+    $item = InventoryItem::factory()->create(['units_per_package' => 1, 'cost_per_unit' => 0]);
 
     $po = PurchaseOrder::factory()->pending()->create([
         'po_number' => 'PO-REC',

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Validation\ValidationException;
 
 class PettyCashReconciliation extends Model
 {
@@ -23,6 +24,8 @@ class PettyCashReconciliation extends Model
         'note',
         'reconciled_by',
         'reconciled_at',
+        'voided_at',
+        'voided_by',
     ];
 
     protected $casts = [
@@ -32,7 +35,26 @@ class PettyCashReconciliation extends Model
         'counted_balance' => 'decimal:2',
         'variance' => 'decimal:2',
         'reconciled_at' => 'datetime',
+        'voided_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::updating(function (PettyCashReconciliation $recon) {
+            if ($recon->getDirty() === []) {
+                return;
+            }
+
+            $allowed = ['voided_at', 'voided_by'];
+            foreach (array_keys($recon->getDirty()) as $field) {
+                if (! in_array($field, $allowed, true)) {
+                    throw ValidationException::withMessages([
+                        'reconciliation' => __('Petty cash reconciliations are immutable after posting.'),
+                    ]);
+                }
+            }
+        });
+    }
 
     public function wallet(): BelongsTo
     {
@@ -42,5 +64,10 @@ class PettyCashReconciliation extends Model
     public function reconciler(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reconciled_by');
+    }
+
+    public function voidedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'voided_by');
     }
 }

@@ -11,8 +11,11 @@ use App\Models\InventoryItem;
 use App\Models\InventoryStock;
 use App\Services\Inventory\InventoryAvailabilityService;
 use App\Services\Inventory\InventoryStockService;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 
 class InventoryController extends Controller
 {
@@ -29,6 +32,16 @@ class InventoryController extends Controller
         $supplierId = $request->input('supplier_id');
         $lowStock = $request->boolean('low_stock', false);
         $branchId = (int) $request->input('branch_id');
+
+        if ($branchId > 0 && Schema::hasTable('branches')) {
+            $q = DB::table('branches')->where('id', $branchId);
+            if (Schema::hasColumn('branches', 'is_active')) {
+                $q->where('is_active', 1);
+            }
+            if (! $q->exists()) {
+                return response()->json(['message' => __('Invalid branch.')], 422);
+            }
+        }
 
         $query = InventoryItem::query()
             ->when($status !== 'all', fn ($q) => $q->where('status', $status))
@@ -49,13 +62,21 @@ class InventoryController extends Controller
                     ->where('inv_stock.branch_id', '=', $branchId);
             })
                 ->select('inventory_items.*', DB::raw('COALESCE(inv_stock.current_stock, 0) as current_stock'));
+        } elseif (Schema::hasTable('inventory_stocks')) {
+            $totals = DB::table('inventory_stocks')
+                ->select('inventory_item_id', DB::raw('SUM(current_stock) as total_stock'))
+                ->groupBy('inventory_item_id');
+
+            $query->leftJoinSub($totals, 'inv_total', function ($join) {
+                $join->on('inventory_items.id', '=', 'inv_total.inventory_item_id');
+            })->select('inventory_items.*', DB::raw('COALESCE(inv_total.total_stock, 0) as current_stock'));
         }
 
         if ($lowStock) {
             if ($branchId > 0) {
                 $query->whereRaw('COALESCE(inv_stock.current_stock, 0) <= inventory_items.minimum_stock');
-            } else {
-                $query->whereColumn('current_stock', '<=', 'minimum_stock');
+            } elseif (Schema::hasTable('inventory_stocks')) {
+                $query->whereRaw('COALESCE(inv_total.total_stock, 0) <= inventory_items.minimum_stock');
             }
         }
 
@@ -75,6 +96,16 @@ class InventoryController extends Controller
             $branchId = (int) config('inventory.default_branch_id', 1);
         }
 
+        if ($branchId > 0 && Schema::hasTable('branches')) {
+            $q = DB::table('branches')->where('id', $branchId);
+            if (Schema::hasColumn('branches', 'is_active')) {
+                $q->where('is_active', 1);
+            }
+            if (! $q->exists()) {
+                return response()->json(['message' => __('Invalid branch.')], 422);
+            }
+        }
+
         $transactions = $item->transactions()
             ->when($branchId > 0, fn ($q) => $q->where('branch_id', $branchId))
             ->limit(50)
@@ -86,12 +117,14 @@ class InventoryController extends Controller
 
         $itemData = $item->toArray();
         if ($branchStock === null) {
-            $branchStock = $branchId === (int) config('inventory.default_branch_id', 1)
-                ? ($item->current_stock ?? 0)
-                : 0;
+            $branchStock = 0;
         }
+        $globalStock = Schema::hasTable('inventory_stocks')
+            ? (float) InventoryStock::where('inventory_item_id', $item->id)->sum('current_stock')
+            : 0.0;
         $itemData['current_stock'] = (float) $branchStock;
         $itemData['branch_id'] = $branchId;
+        $itemData['global_stock'] = $globalStock;
 
         return [
             'item' => $itemData + ['per_unit_cost' => $item->perUnitCost()],
@@ -114,12 +147,10 @@ class InventoryController extends Controller
             $data['last_cost_update'] = now();
         }
 
-        // save with current_stock 0 then adjust
-        $data['current_stock'] = 0;
         $item = InventoryItem::create($data);
 
         if ($initialStock > 0) {
-            $this->stockService->adjustStock($item->fresh(), $initialStock, __('Initial stock'), Illuminate\Support\Facades\Auth::id(), $branchId > 0 ? $branchId : null);
+            $this->stockService->adjustStock($item->fresh(), $initialStock, __('Initial stock'), Auth::id(), $branchId > 0 ? $branchId : null);
         }
 
         return response()->json($item->fresh(), 201);
@@ -133,7 +164,7 @@ class InventoryController extends Controller
 
         if ($request->file('image')) {
             if ($item->image_path) {
-                \Storage::disk('public')->delete($item->image_path);
+                Storage::disk('public')->delete($item->image_path);
             }
             $data['image_path'] = $this->storeImage($request->file('image'), $item->item_code);
         }
@@ -157,7 +188,7 @@ class InventoryController extends Controller
             : -(float) $request->input('quantity');
 
         $branchId = $request->integer('branch_id');
-        $tx = $this->stockService->adjustStock($item, $delta, $request->input('notes'), Illuminate\Support\Facades\Auth::id(), $branchId);
+        $tx = $this->stockService->adjustStock($item, $delta, $request->input('notes'), Auth::id(), $branchId);
 
         return response()->json([
             'message' => __('Stock adjusted.'),

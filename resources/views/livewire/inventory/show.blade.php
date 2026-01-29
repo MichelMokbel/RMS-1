@@ -38,9 +38,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->where('branch_id', $branchId)
                 ->value('current_stock');
         }
-        if ($branchStock === null && $branchId === (int) config('inventory.default_branch_id', 1)) {
-            $branchStock = $this->item->current_stock ?? 0;
+        if ($branchStock === null) {
+            $branchStock = 0;
         }
+
+        $globalStock = Schema::hasTable('inventory_stocks')
+            ? (float) InventoryStock::where('inventory_item_id', $this->item->id)->sum('current_stock')
+            : 0.0;
 
         $availability = Schema::hasTable('inventory_stocks')
             ? InventoryStock::where('inventory_item_id', $this->item->id)->pluck('branch_id')->all()
@@ -56,6 +60,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 : collect(),
             'branch_stock' => (float) ($branchStock ?? 0),
             'is_low_stock' => (float) ($branchStock ?? 0) <= (float) ($this->item->minimum_stock ?? 0),
+            'global_stock' => $globalStock,
             'availability' => $availability,
         ];
     }
@@ -209,7 +214,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <span class="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-900 dark:text-amber-100">{{ __('Low') }}</span>
                     @endif
                 </div>
-                <div><span class="font-semibold">{{ __('Global Stock') }}:</span> {{ $item->current_stock }}</div>
+                <div><span class="font-semibold">{{ __('Global Stock') }}:</span> {{ $global_stock }}</div>
                 <div><span class="font-semibold">{{ __('Minimum Stock') }}:</span> {{ $item->minimum_stock }}</div>
                 <div><span class="font-semibold">{{ __('Package Cost') }}:</span> {{ $item->cost_per_unit }}</div>
                 <div><span class="font-semibold">{{ __('Per Unit Cost') }}:</span> {{ $item->perUnitCost() ?? '—' }}</div>

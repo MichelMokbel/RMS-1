@@ -92,17 +92,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                         ->whereNotIn('mpr.status', ['converted', 'closed']);
                 });
             })
-            ->when(! Schema::hasTable('meal_plan_request_orders') && Schema::hasTable('meal_plan_requests'), function ($q) {
-                $q->whereRaw(
-                    "NOT EXISTS (
-                        SELECT 1
-                        FROM meal_plan_requests mpr
-                        WHERE mpr.status NOT IN ('converted', 'closed')
-                          AND mpr.order_ids IS NOT NULL
-                          AND JSON_CONTAINS(mpr.order_ids, JSON_ARRAY(orders.id))
-                    )"
-                );
-            })
             ->orderByDesc('created_at');
     }
 }; ?>

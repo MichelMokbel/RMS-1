@@ -60,7 +60,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $initialStock = $data['current_stock'] ?? 0;
-        $data['current_stock'] = 0;
+        unset($data['current_stock']);
 
         $item = InventoryItem::create($data);
 

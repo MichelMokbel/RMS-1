@@ -104,6 +104,12 @@ class ApInvoice extends Model
 
     public function allocations(): HasMany
     {
+        return $this->hasMany(ApPaymentAllocation::class, 'invoice_id')
+            ->whereNull('voided_at');
+    }
+
+    public function allAllocations(): HasMany
+    {
         return $this->hasMany(ApPaymentAllocation::class, 'invoice_id');
     }
 

@@ -7,7 +7,9 @@ use App\Models\PettyCashReconciliation;
 use App\Models\PettyCashWallet;
 use App\Services\PettyCash\PettyCashExpenseWorkflowService;
 use App\Services\PettyCash\PettyCashIssueService;
+use App\Services\PettyCash\PettyCashIssueVoidService;
 use App\Services\PettyCash\PettyCashReconciliationService;
+use App\Services\PettyCash\PettyCashReconciliationVoidService;
 use App\Services\PettyCash\PettyCashWalletService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
@@ -111,7 +113,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return collect();
         }
 
-        return PettyCashIssue::with('wallet')
+        return PettyCashIssue::with(['wallet', 'voidedBy'])
             ->when($this->issue_wallet_id, fn ($q) => $q->where('wallet_id', $this->issue_wallet_id))
             ->when($this->issue_method !== 'all', fn ($q) => $q->where('method', $this->issue_method))
             ->when($this->issue_from, fn ($q) => $q->whereDate('issue_date', '>=', $this->issue_from))
@@ -144,7 +146,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return collect();
         }
 
-        return PettyCashReconciliation::with(['wallet', 'reconciler'])
+        return PettyCashReconciliation::with(['wallet', 'reconciler', 'voidedBy'])
             ->when($this->recon_wallet_id, fn ($q) => $q->where('wallet_id', $this->recon_wallet_id))
             ->orderByDesc('reconciled_at')
             ->limit(50)
@@ -333,6 +335,22 @@ new #[Layout('components.layouts.app')] class extends Component {
         $service->reconcile($data['wallet_id'], $data, Auth::id());
         $this->showReconModal = false;
         session()->flash('status', __('Reconciliation saved.'));
+    }
+
+    public function voidIssue(int $id, PettyCashIssueVoidService $service): void
+    {
+        $this->authorizeManager();
+        $issue = PettyCashIssue::findOrFail($id);
+        $service->void($issue, Auth::id());
+        session()->flash('status', __('Issue voided.'));
+    }
+
+    public function voidReconciliation(int $id, PettyCashReconciliationVoidService $service): void
+    {
+        $this->authorizeManager();
+        $recon = PettyCashReconciliation::findOrFail($id);
+        $service->void($recon, Auth::id());
+        session()->flash('status', __('Reconciliation voided.'));
     }
 
     private function authorizeManager(): void
@@ -559,6 +577,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">
                                 {{ __('Reference') }}
                             </th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">
+                                {{ __('Status') }}
+                            </th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">
+                                {{ __('Actions') }}
+                            </th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -579,10 +603,36 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
                                     {{ $issue->reference ?: '—' }}
                                 </td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
+                                    @if($issue->voided_at)
+                                        <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-900 dark:text-amber-100">
+                                            {{ __('Void') }}
+                                        </span>
+                                        <div class="text-xs text-neutral-500 dark:text-neutral-400">
+                                            {{ $issue->voided_at?->format('Y-m-d H:i') }}
+                                            @if($issue->voidedBy)
+                                                • {{ $issue->voidedBy->username ?? $issue->voidedBy->email }}
+                                            @endif
+                                        </div>
+                                    @else
+                                        <span class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100">
+                                            {{ __('Active') }}
+                                        </span>
+                                    @endif
+                                </td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
+                                    @if(! $issue->voided_at)
+                                        <flux:button size="xs" variant="ghost" wire:click="voidIssue({{ $issue->id }})">
+                                            {{ __('Void') }}
+                                        </flux:button>
+                                    @else
+                                        —
+                                    @endif
+                                </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">
+                                <td colspan="7" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">
                                     {{ __('No issues found for the selected filters.') }}
                                 </td>
                             </tr>
@@ -808,6 +858,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">
                                 {{ __('By') }}
                             </th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">
+                                {{ __('Status') }}
+                            </th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">
+                                {{ __('Actions') }}
+                            </th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -834,10 +890,36 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
                                     {{ $rec->reconciler?->username ?? $rec->reconciler?->email ?? '—' }}
                                 </td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
+                                    @if($rec->voided_at)
+                                        <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-900 dark:text-amber-100">
+                                            {{ __('Void') }}
+                                        </span>
+                                        <div class="text-xs text-neutral-500 dark:text-neutral-400">
+                                            {{ $rec->voided_at?->format('Y-m-d H:i') }}
+                                            @if($rec->voidedBy)
+                                                • {{ $rec->voidedBy->username ?? $rec->voidedBy->email }}
+                                            @endif
+                                        </div>
+                                    @else
+                                        <span class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100">
+                                            {{ __('Active') }}
+                                        </span>
+                                    @endif
+                                </td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
+                                    @if(! $rec->voided_at)
+                                        <flux:button size="xs" variant="ghost" wire:click="voidReconciliation({{ $rec->id }})">
+                                            {{ __('Void') }}
+                                        </flux:button>
+                                    @else
+                                        —
+                                    @endif
+                                </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">
+                                <td colspan="9" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">
                                     {{ __('No reconciliations found.') }}
                                 </td>
                             </tr>

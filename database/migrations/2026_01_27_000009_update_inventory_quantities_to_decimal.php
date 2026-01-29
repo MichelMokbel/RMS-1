@@ -15,7 +15,9 @@ return new class extends Migration
         if (Schema::hasTable('inventory_items')) {
             DB::statement('ALTER TABLE inventory_items MODIFY units_per_package DECIMAL(12,3) NOT NULL DEFAULT 1.000');
             DB::statement('ALTER TABLE inventory_items MODIFY minimum_stock DECIMAL(12,3) DEFAULT 0.000');
-            DB::statement('ALTER TABLE inventory_items MODIFY current_stock DECIMAL(12,3) DEFAULT 0.000');
+            if (Schema::hasColumn('inventory_items', 'current_stock')) {
+                DB::statement('ALTER TABLE inventory_items MODIFY current_stock DECIMAL(12,3) DEFAULT 0.000');
+            }
         }
 
         if (Schema::hasTable('inventory_transactions')) {
@@ -37,7 +39,9 @@ return new class extends Migration
         if (Schema::hasTable('inventory_items')) {
             DB::statement('ALTER TABLE inventory_items MODIFY units_per_package INT(11) NOT NULL DEFAULT 1');
             DB::statement('ALTER TABLE inventory_items MODIFY minimum_stock INT(11) DEFAULT 0');
-            DB::statement('ALTER TABLE inventory_items MODIFY current_stock INT(11) DEFAULT 0');
+            if (Schema::hasColumn('inventory_items', 'current_stock')) {
+                DB::statement('ALTER TABLE inventory_items MODIFY current_stock INT(11) DEFAULT 0');
+            }
         }
 
         if (Schema::hasTable('inventory_transactions')) {

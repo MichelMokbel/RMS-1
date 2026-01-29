@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Validation\ValidationException;
 
 class Expense extends Model
 {
@@ -38,6 +39,30 @@ class Expense extends Model
         'created_at' => 'datetime',
     ];
 
+    protected static function booted(): void
+    {
+        static::updating(function (Expense $expense) {
+            $originalStatus = $expense->getOriginal('payment_status');
+            if ($originalStatus === 'unpaid') {
+                return;
+            }
+
+            $dirty = array_keys($expense->getDirty());
+            if ($dirty === []) {
+                return;
+            }
+
+            $allowed = ['payment_status'];
+            foreach ($dirty as $field) {
+                if (! in_array($field, $allowed, true)) {
+                    throw ValidationException::withMessages([
+                        'expense' => __('Paid or partially paid expenses are immutable.'),
+                    ]);
+                }
+            }
+        });
+    }
+
     public function category(): BelongsTo
     {
         return $this->belongsTo(ExpenseCategory::class, 'category_id');
@@ -54,6 +79,12 @@ class Expense extends Model
     }
 
     public function payments(): HasMany
+    {
+        return $this->hasMany(ExpensePayment::class, 'expense_id')
+            ->whereNull('voided_at');
+    }
+
+    public function allPayments(): HasMany
     {
         return $this->hasMany(ExpensePayment::class, 'expense_id');
     }

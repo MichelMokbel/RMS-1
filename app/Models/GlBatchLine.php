@@ -15,11 +15,13 @@ class GlBatchLine extends Model
     protected $fillable = [
         'batch_id',
         'account_id',
+        'branch_id',
         'debit_total',
         'credit_total',
     ];
 
     protected $casts = [
+        'branch_id' => 'integer',
         'debit_total' => 'decimal:4',
         'credit_total' => 'decimal:4',
         'created_at' => 'datetime',

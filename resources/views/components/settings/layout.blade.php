@@ -7,6 +7,9 @@
                 <flux:navlist.item :href="route('two-factor.show')" wire:navigate>{{ __('Two-Factor Auth') }}</flux:navlist.item>
             @endif
             <flux:navlist.item :href="route('appearance.edit')" wire:navigate>{{ __('Appearance') }}</flux:navlist.item>
+            @if(auth()->check() && auth()->user()->hasAnyRole(['admin','manager']))
+                <flux:navlist.item :href="route('finance.settings')" wire:navigate>{{ __('Finance') }}</flux:navlist.item>
+            @endif
         </flux:navlist>
     </div>
 

@@ -32,6 +32,8 @@ class ApAllocationService
                 'reference' => $payload['reference'] ?? null,
                 'notes' => $payload['notes'] ?? null,
                 'created_by' => $userId,
+                'posted_at' => now(),
+                'posted_by' => $userId,
             ]);
 
             $allocations = $payload['allocations'] ?? [];

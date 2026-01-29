@@ -12,6 +12,7 @@ use App\Services\Purchasing\PurchaseOrderNumberService;
 use App\Services\Purchasing\PurchaseOrderReceivingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -61,7 +62,7 @@ class PurchaseOrderController extends Controller
                 'payment_terms' => $data['payment_terms'] ?? null,
                 'payment_type' => $data['payment_type'] ?? null,
                 'status' => $data['status'],
-                'created_by' => Illuminate\Support\Facades\Auth::id(),
+                'created_by' => Auth::id(),
             ]);
 
             $total = 0;
@@ -176,7 +177,7 @@ class PurchaseOrderController extends Controller
         $costs = $validated['costs'] ?? [];
         $notes = $validated['notes'] ?? null;
 
-        $po = $receivingService->receive($purchaseOrder, $receipts, Illuminate\Support\Facades\Auth::id(), $notes, $costs);
+        $po = $receivingService->receive($purchaseOrder, $receipts, Auth::id(), $notes, $costs);
 
         return response()->json($po);
     }

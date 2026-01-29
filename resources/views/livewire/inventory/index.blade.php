@@ -61,13 +61,21 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $join->on('inventory_items.id', '=', 'inv_stock.inventory_item_id')
                     ->where('inv_stock.branch_id', '=', $branchId);
             })->select('inventory_items.*', DB::raw('COALESCE(inv_stock.current_stock, 0) as current_stock'));
+        } elseif (Schema::hasTable('inventory_stocks')) {
+            $totals = DB::table('inventory_stocks')
+                ->select('inventory_item_id', DB::raw('SUM(current_stock) as total_stock'))
+                ->groupBy('inventory_item_id');
+
+            $query->leftJoinSub($totals, 'inv_total', function ($join) {
+                $join->on('inventory_items.id', '=', 'inv_total.inventory_item_id');
+            })->select('inventory_items.*', DB::raw('COALESCE(inv_total.total_stock, 0) as current_stock'));
         }
 
         if ($this->low_stock_only) {
             if ($this->branch_id) {
                 $query->whereRaw('COALESCE(inv_stock.current_stock, 0) <= inventory_items.minimum_stock');
-            } else {
-                $query->whereColumn('current_stock', '<=', 'minimum_stock');
+            } elseif (Schema::hasTable('inventory_stocks')) {
+                $query->whereRaw('COALESCE(inv_total.total_stock, 0) <= inventory_items.minimum_stock');
             }
         }
 

@@ -5,6 +5,7 @@ use App\Models\MenuItem;
 use App\Models\Order;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Volt\Volt;
@@ -54,6 +55,14 @@ Route::middleware(['auth', 'active', 'role:admin', 'ensure.admin'])->group(funct
     Volt::route('suppliers/{supplier}/edit', 'suppliers.edit')->name('suppliers.edit');
 });
 
+Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+    Volt::route('settings/finance', 'finance.settings')->name('finance.settings');
+    Route::redirect('finance/settings', 'settings/finance');
+
+    Volt::route('ledger/batches', 'ledger.batches.index')->name('ledger.batches.index');
+    Volt::route('ledger/batches/{batch}', 'ledger.batches.show')->name('ledger.batches.show');
+});
+
 Route::middleware(['auth', 'active', 'role:admin|manager|cashier'])->group(function () {
     Volt::route('customers', 'customers.index')->name('customers.index');
 });
@@ -76,7 +85,9 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen'])->group(funct
 });
 
 Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
-    Volt::route('daily-dish/menus/{branch}/{serviceDate}', 'daily-dish.menus.edit')->name('daily-dish.menus.edit');
+    Volt::route('daily-dish/menus/{branch}/{serviceDate}', 'daily-dish.menus.edit')
+        ->middleware('ensure.active-branch')
+        ->name('daily-dish.menus.edit');
 });
 
 Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
@@ -85,12 +96,18 @@ Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
 });
 
 Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->group(function () {
-    Volt::route('daily-dish/ops/{branch}/{date}', 'daily-dish.ops.day')->name('daily-dish.ops.day');
-    Volt::route('kitchen/ops/{branch}/{date}', 'kitchen.ops')->name('kitchen.ops');
+    Volt::route('daily-dish/ops/{branch}/{date}', 'daily-dish.ops.day')
+        ->middleware('ensure.active-branch')
+        ->name('daily-dish.ops.day');
+    Volt::route('kitchen/ops/{branch}/{date}', 'kitchen.ops')
+        ->middleware('ensure.active-branch')
+        ->name('kitchen.ops');
 });
 
 Route::middleware(['auth', 'active', 'role:admin|manager|cashier'])->group(function () {
-    Volt::route('daily-dish/ops/{branch}/{date}/manual/create', 'daily-dish.ops.manual-create')->name('daily-dish.ops.manual.create');
+    Volt::route('daily-dish/ops/{branch}/{date}/manual/create', 'daily-dish.ops.manual-create')
+        ->middleware('ensure.active-branch')
+        ->name('daily-dish.ops.manual.create');
 });
 
 Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
@@ -110,6 +127,19 @@ Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
 
         $prefix = $term.'%';
         $branchId = (int) $request->query('branch_id');
+        if (Schema::hasTable('branches') && $branchId <= 0) {
+            return response()->json(['message' => __('branch_id is required.')], 422);
+        }
+        if ($branchId > 0 && Schema::hasTable('branches')) {
+            $q = DB::table('branches')->where('id', $branchId);
+            if (Schema::hasColumn('branches', 'is_active')) {
+                $q->where('is_active', 1);
+            }
+            if (! $q->exists()) {
+                return response()->json(['message' => __('Invalid branch.')], 422);
+            }
+        }
+
         $query = InventoryItem::query()
             ->where('status', 'active')
             ->where(function ($q) use ($prefix) {
@@ -153,6 +183,19 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
             return response()->json([]);
         }
 
+        if (Schema::hasTable('branches') && $branchId <= 0) {
+            return response()->json(['message' => __('branch_id is required.')], 422);
+        }
+        if ($branchId > 0 && Schema::hasTable('branches')) {
+            $q = DB::table('branches')->where('id', $branchId);
+            if (Schema::hasColumn('branches', 'is_active')) {
+                $q->where('is_active', 1);
+            }
+            if (! $q->exists()) {
+                return response()->json(['message' => __('Invalid branch.')], 422);
+            }
+        }
+
         $prefix = $term.'%';
         $items = MenuItem::query()
             ->active()
@@ -187,10 +230,20 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
     Route::get('orders/print', function (Request $request) {
         $status = (string) $request->query('status', 'all');
         $source = $request->query('source');
-        $branchId = $request->query('branch_id');
+        $branchId = (int) $request->query('branch_id');
         $dailyDishFilter = (string) $request->query('daily_dish_filter', 'all');
         $scheduledDate = $request->query('scheduled_date');
         $search = $request->query('search');
+
+        if ($branchId > 0 && Schema::hasTable('branches')) {
+            $q = DB::table('branches')->where('id', $branchId);
+            if (Schema::hasColumn('branches', 'is_active')) {
+                $q->where('is_active', 1);
+            }
+            if (! $q->exists()) {
+                abort(404);
+            }
+        }
 
         $orders = Order::query()
             ->when($status !== 'all', fn ($q) => $q->where('status', $status))
@@ -221,17 +274,6 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
                         ->whereNotIn('mpr.status', ['converted', 'closed']);
                 });
             })
-            ->when(! Schema::hasTable('meal_plan_request_orders') && Schema::hasTable('meal_plan_requests'), function ($q) {
-                $q->whereRaw(
-                    "NOT EXISTS (
-                        SELECT 1
-                        FROM meal_plan_requests mpr
-                        WHERE mpr.status NOT IN ('converted', 'closed')
-                          AND mpr.order_ids IS NOT NULL
-                          AND JSON_CONTAINS(mpr.order_ids, JSON_ARRAY(orders.id))
-                    )"
-                );
-            })
             ->orderByDesc('created_at')
             ->limit(500)
             ->get();
@@ -253,10 +295,20 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
     Route::get('orders/print/invoices', function (Request $request) {
         $status = (string) $request->query('status', 'all');
         $source = $request->query('source');
-        $branchId = $request->query('branch_id');
+        $branchId = (int) $request->query('branch_id');
         $dailyDishFilter = (string) $request->query('daily_dish_filter', 'all');
         $scheduledDate = $request->query('scheduled_date');
         $search = $request->query('search');
+
+        if ($branchId > 0 && Schema::hasTable('branches')) {
+            $q = DB::table('branches')->where('id', $branchId);
+            if (Schema::hasColumn('branches', 'is_active')) {
+                $q->where('is_active', 1);
+            }
+            if (! $q->exists()) {
+                abort(404);
+            }
+        }
 
         $orders = Order::query()
             ->with(['items' => function ($q) {
@@ -292,17 +344,6 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
                         ->whereNotIn('mpr.status', ['converted', 'closed']);
                 });
             })
-            ->when(! Schema::hasTable('meal_plan_request_orders') && Schema::hasTable('meal_plan_requests'), function ($q) {
-                $q->whereRaw(
-                    "NOT EXISTS (
-                        SELECT 1
-                        FROM meal_plan_requests mpr
-                        WHERE mpr.status NOT IN ('converted', 'closed')
-                          AND mpr.order_ids IS NOT NULL
-                          AND JSON_CONTAINS(mpr.order_ids, JSON_ARRAY(orders.id))
-                    )"
-                );
-            })
             ->orderBy('customer_name_snapshot')
             ->orderBy('order_number')
             ->limit(300)
@@ -324,7 +365,7 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
 
     Route::get('orders/kitchen/print', function (Request $request) {
         $date = $request->query('date', now()->toDateString());
-        $branchId = $request->query('branch_id');
+        $branchId = (int) $request->query('branch_id');
         $showSubscription = $request->boolean('show_subscription', true);
         $showManual = $request->boolean('show_manual', true);
         $includeDraft = $request->boolean('include_draft', false);
@@ -332,6 +373,16 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
         $includeCancelled = $request->boolean('include_cancelled', false);
         $includeDelivered = $request->boolean('include_delivered', false);
         $search = $request->query('search');
+
+        if ($branchId > 0 && Schema::hasTable('branches')) {
+            $q = DB::table('branches')->where('id', $branchId);
+            if (Schema::hasColumn('branches', 'is_active')) {
+                $q->where('is_active', 1);
+            }
+            if (! $q->exists()) {
+                abort(404);
+            }
+        }
 
         $statuses = ['Confirmed', 'InProduction'];
         if ($includeReady) {

@@ -60,9 +60,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->where('branch_id', $branchId)
                 ->value('current_stock');
         }
-        if ($branchStock === null && $branchId === (int) config('inventory.default_branch_id', 1)) {
-            $branchStock = $this->item->current_stock ?? 0;
+        if ($branchStock === null) {
+            $branchStock = 0;
         }
+
+        $globalStock = Schema::hasTable('inventory_stocks')
+            ? (float) InventoryStock::where('inventory_item_id', $this->item->id)->sum('current_stock')
+            : 0.0;
 
         return [
             'categories' => Schema::hasTable('categories') ? Category::orderBy('name')->get() : collect(),
@@ -71,6 +75,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
                 : collect(),
             'branch_stock' => (float) ($branchStock ?? 0),
+            'global_stock' => $globalStock,
         ];
     }
 
@@ -199,7 +204,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
             <flux:input :value="$branch_stock" :label="__('Branch Stock (read-only)')" disabled />
-            <flux:input :value="$item->current_stock" :label="__('Global Stock (read-only)')" disabled />
+            <flux:input :value="$global_stock" :label="__('Global Stock (read-only)')" disabled />
         </div>
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">

@@ -600,6 +600,79 @@ class SubledgerService
         return $entry->load('lines');
     }
 
+    public function recordReversalForEntry(
+        SubledgerEntry $entry,
+        string $event,
+        ?string $description,
+        ?string $entryDate = null,
+        ?int $userId = null
+    ): ?SubledgerEntry {
+        if (! $this->canPost()) {
+            return null;
+        }
+
+        $entryDate = $entryDate ?? now()->toDateString();
+        $this->assertOpenPeriod($entryDate);
+
+        $exists = SubledgerEntry::where('source_type', $entry->source_type)
+            ->where('source_id', $entry->source_id)
+            ->where('event', $event)
+            ->exists();
+
+        if ($exists) {
+            return null;
+        }
+
+        $lines = $entry->lines()->get();
+        if ($lines->isEmpty()) {
+            return null;
+        }
+
+        $debits = 0;
+        $credits = 0;
+        $reversed = [];
+        foreach ($lines as $line) {
+            $debit = round((float) $line->credit, 4);
+            $credit = round((float) $line->debit, 4);
+            if ($debit <= 0 && $credit <= 0) {
+                continue;
+            }
+
+            $reversed[] = [
+                'account_id' => $line->account_id,
+                'debit' => $debit,
+                'credit' => $credit,
+                'memo' => $line->memo ? 'Reversal: '.$line->memo : 'Reversal',
+            ];
+
+            $debits += $debit;
+            $credits += $credit;
+        }
+
+        if (abs($debits - $credits) > 0.0001) {
+            throw ValidationException::withMessages(['ledger' => __('Ledger entry is unbalanced.')]);
+        }
+
+        $reversal = SubledgerEntry::create([
+            'source_type' => $entry->source_type,
+            'source_id' => $entry->source_id,
+            'event' => $event,
+            'entry_date' => $entryDate,
+            'description' => $description,
+            'branch_id' => $entry->branch_id,
+            'status' => 'posted',
+            'posted_at' => now(),
+            'posted_by' => $userId,
+        ]);
+
+        foreach ($reversed as $row) {
+            $row['entry_id'] = $reversal->id;
+            SubledgerLine::create($row);
+        }
+
+        return $reversal->load('lines');
+    }
+
     private function resolveAccountId(?string $key): ?int
     {
         if (! $key) {

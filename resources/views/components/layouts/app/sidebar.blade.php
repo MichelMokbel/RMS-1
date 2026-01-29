@@ -26,7 +26,10 @@
                 $inCatalog = request()->routeIs('menu-items.*') || request()->routeIs('recipes.*');
                 $inOps = request()->routeIs('inventory.*') || request()->routeIs('purchase-orders.*');
                 $inDailyDish = request()->routeIs('daily-dish.*');
-                $inFinance = request()->routeIs('payables.*') || request()->routeIs('expenses.*') || request()->routeIs('petty-cash.*');
+                $inFinance = request()->routeIs('payables.*')
+                    || request()->routeIs('expenses.*')
+                    || request()->routeIs('petty-cash.*')
+                    || request()->routeIs('ledger.*');
             @endphp
 
             <flux:navlist variant="outline">
@@ -109,6 +112,9 @@
                             </flux:navlist.item>
                             <flux:navlist.item icon="credit-card" :href="route('expenses.index')" :current="request()->routeIs('expenses.*')" wire:navigate>
                                 {{ __('Expenses') }}
+                            </flux:navlist.item>
+                            <flux:navlist.item icon="calculator" :href="route('ledger.batches.index')" :current="request()->routeIs('ledger.*')" wire:navigate>
+                                {{ __('Ledger Batches') }}
                             </flux:navlist.item>
                         @endif
                         @if ($isStaff)

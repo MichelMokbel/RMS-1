@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\InventoryItem;
+use App\Models\InventoryStock;
 use App\Models\User;
 use App\Services\Inventory\InventoryStockService;
 use Livewire\Volt\Volt;
@@ -16,7 +17,7 @@ function inventoryAdmin(): User
 
 it('increase adjustment updates stock and creates transaction', function () {
     $user = inventoryAdmin();
-    $item = InventoryItem::factory()->create(['current_stock' => 0]);
+    $item = InventoryItem::factory()->create();
 
     $service = app(InventoryStockService::class);
     $service->adjustStock($item, 3, 'test', $user->id);
@@ -30,7 +31,10 @@ it('prevent negative stock when disallowed', function () {
     config()->set('inventory.allow_negative_stock', false);
 
     $user = inventoryAdmin();
-    $item = InventoryItem::factory()->create(['current_stock' => 1]);
+    $item = InventoryItem::factory()->create();
+    InventoryStock::where('inventory_item_id', $item->id)
+        ->where('branch_id', (int) config('inventory.default_branch_id', 1))
+        ->update(['current_stock' => 1]);
     $service = app(InventoryStockService::class);
 
     $this->expectException(\Illuminate\Validation\ValidationException::class);
@@ -39,7 +43,10 @@ it('prevent negative stock when disallowed', function () {
 
 it('adjust via show component decreases stock', function () {
     $user = inventoryAdmin();
-    $item = InventoryItem::factory()->create(['current_stock' => 5]);
+    $item = InventoryItem::factory()->create();
+    InventoryStock::where('inventory_item_id', $item->id)
+        ->where('branch_id', (int) config('inventory.default_branch_id', 1))
+        ->update(['current_stock' => 5]);
 
     Volt::actingAs($user);
     Volt::test('inventory.show', ['item' => $item])

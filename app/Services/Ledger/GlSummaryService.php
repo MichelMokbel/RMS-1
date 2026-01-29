@@ -35,15 +35,17 @@ class GlSummaryService
                 ->where('subledger_entries.status', 'posted')
                 ->whereBetween('subledger_entries.entry_date', [$periodStart->toDateString(), $periodEnd->toDateString()])
                 ->select('subledger_lines.account_id')
+                ->selectRaw('COALESCE(subledger_entries.branch_id, 0) as branch_id')
                 ->selectRaw('SUM(subledger_lines.debit) as debit_total')
                 ->selectRaw('SUM(subledger_lines.credit) as credit_total')
-                ->groupBy('subledger_lines.account_id')
+                ->groupBy('subledger_lines.account_id', DB::raw('COALESCE(subledger_entries.branch_id, 0)'))
                 ->get();
 
             foreach ($rows as $row) {
                 GlBatchLine::create([
                     'batch_id' => $batch->id,
                     'account_id' => $row->account_id,
+                    'branch_id' => (int) ($row->branch_id ?? 0),
                     'debit_total' => round((float) $row->debit_total, 4),
                     'credit_total' => round((float) $row->credit_total, 4),
                 ]);

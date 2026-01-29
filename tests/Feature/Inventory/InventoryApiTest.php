@@ -1,8 +1,8 @@
 <?php
 
 use App\Models\InventoryItem;
+use App\Models\InventoryStock;
 use App\Models\User;
-use App\Services\Inventory\InventoryStockService;
 use Spatie\Permission\Models\Role;
 
 use function Pest\Laravel\actingAs;
@@ -28,7 +28,10 @@ it('lists inventory items via api', function () {
 
 it('adjust endpoint updates stock', function () {
     $user = inventoryApiAdmin();
-    $item = InventoryItem::factory()->create(['current_stock' => 1]);
+    $item = InventoryItem::factory()->create();
+    InventoryStock::where('inventory_item_id', $item->id)
+        ->where('branch_id', (int) config('inventory.default_branch_id', 1))
+        ->update(['current_stock' => 1]);
 
     $res = actingAs($user)->postJson("/api/inventory/{$item->id}/adjustments", [
         'direction' => 'increase',

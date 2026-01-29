@@ -23,6 +23,7 @@
 - Stock is stored in package units (same unit as inventory transactions).
 - Transfers respect `inventory.allow_negative_stock`.
 - Destination availability is created automatically if missing.
+- Global stock is computed as the sum of `inventory_stocks.current_stock` (no `inventory_items.current_stock` column).
 
 # Menu Item Branch Availability
 

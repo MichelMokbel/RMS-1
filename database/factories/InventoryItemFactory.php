@@ -21,7 +21,6 @@ class InventoryItemFactory extends Factory
             'package_label' => 'pkg',
             'unit_of_measure' => 'unit',
             'minimum_stock' => 0,
-            'current_stock' => 0,
             'cost_per_unit' => 10.0000,
             'last_cost_update' => now(),
             'location' => 'A1',

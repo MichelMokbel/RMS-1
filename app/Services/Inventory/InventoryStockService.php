@@ -33,8 +33,6 @@ class InventoryStockService
             $stock->current_stock = $newStock;
             $stock->save();
 
-            $locked->current_stock = round((float) ($locked->current_stock ?? 0) + $delta, 3);
-            $locked->save();
 
             $unitCost = $locked->cost_per_unit !== null ? (float) $locked->cost_per_unit : null;
             $totalCost = $unitCost !== null ? round($unitCost * $delta, 4) : null;
@@ -96,8 +94,6 @@ class InventoryStockService
             $stock->current_stock = $newStock;
             $stock->save();
 
-            $locked->current_stock = round((float) ($locked->current_stock ?? 0) + $delta, 3);
-            $locked->save();
 
             $effectiveUnitCost = $unitCost ?? ($locked->cost_per_unit !== null ? (float) $locked->cost_per_unit : null);
             $direction = $type === 'out' ? -1 : 1;
@@ -138,18 +134,10 @@ class InventoryStockService
             ->first();
 
         if (! $stock) {
-            $initial = 0.0;
-            if ($branchId === (int) config('inventory.default_branch_id', 1)) {
-                $hasAny = InventoryStock::where('inventory_item_id', $item->id)->exists();
-                if (! $hasAny) {
-                    $initial = (float) ($item->current_stock ?? 0);
-                }
-            }
-
             InventoryStock::create([
                 'inventory_item_id' => $item->id,
                 'branch_id' => $branchId,
-                'current_stock' => $initial,
+                'current_stock' => 0,
             ]);
 
             $stock = InventoryStock::where('inventory_item_id', $item->id)

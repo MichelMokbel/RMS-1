@@ -25,9 +25,11 @@ it('transfers stock between branches and records ledger', function () {
     $user = User::factory()->create(['status' => 'active']);
 
     $item = InventoryItem::factory()->create([
-        'current_stock' => 10,
         'cost_per_unit' => 5.00,
     ]);
+    InventoryStock::where('inventory_item_id', $item->id)
+        ->where('branch_id', 1)
+        ->update(['current_stock' => 10]);
 
     $availability = app(InventoryAvailabilityService::class);
     $availability->addToBranch($item, 2);
@@ -68,13 +70,17 @@ it('supports bulk transfers with multiple items', function () {
     $user = User::factory()->create(['status' => 'active']);
 
     $itemA = InventoryItem::factory()->create([
-        'current_stock' => 10,
         'cost_per_unit' => 4.50,
     ]);
     $itemB = InventoryItem::factory()->create([
-        'current_stock' => 5,
         'cost_per_unit' => 2.00,
     ]);
+    InventoryStock::where('inventory_item_id', $itemA->id)
+        ->where('branch_id', 1)
+        ->update(['current_stock' => 10]);
+    InventoryStock::where('inventory_item_id', $itemB->id)
+        ->where('branch_id', 1)
+        ->update(['current_stock' => 5]);
 
     $service = app(InventoryTransferService::class);
     $transfer = $service->createAndPostBulk(1, 2, [

@@ -18,7 +18,7 @@ it('adds item availability to another branch', function () {
         'updated_at' => now(),
     ]);
 
-    $item = InventoryItem::factory()->create(['current_stock' => 0]);
+    $item = InventoryItem::factory()->create();
 
     $service = app(InventoryAvailabilityService::class);
     $stock = $service->addToBranch($item, 2);
