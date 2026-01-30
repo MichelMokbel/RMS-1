@@ -57,6 +57,7 @@ Route::middleware(['auth', 'active', 'role:admin', 'ensure.admin'])->group(funct
 
 Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
     Volt::route('settings/finance', 'finance.settings')->name('finance.settings');
+    Volt::route('settings/payment-terms', 'settings.payment-terms')->name('settings.payment-terms');
     Route::redirect('finance/settings', 'settings/finance');
 
     Volt::route('ledger/batches', 'ledger.batches.index')->name('ledger.batches.index');
@@ -530,4 +531,74 @@ Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
 Route::middleware(['auth', 'active', 'role:admin|manager|staff'])->group(function () {
     // Use the richer petty cash Volt page component
     Volt::route('petty-cash', 'petty-cash.page')->name('petty-cash.index');
+});
+
+// POS (front-of-house) disabled on web
+Route::middleware(['auth', 'active'])->group(function () {
+    Route::get('pos', fn () => abort(404))->name('pos.index');
+    Route::get('pos/shift', fn () => abort(404))->name('pos.shift');
+    Route::get('pos/branch', fn () => abort(404))->name('pos.branch-select');
+});
+
+// Sales tickets (POS receipts)
+Route::middleware(['auth', 'active', 'role:admin|manager|cashier'])->group(function () {
+    Volt::route('sales', 'sales.index')->name('sales.index');
+    Volt::route('sales/{sale}', 'sales.show')->name('sales.show');
+    Route::get('sales/{sale}/receipt', function (\App\Models\Sale $sale) {
+        $sale->load(['items', 'paymentAllocations.payment']);
+        return view('sales.receipt', ['sale' => $sale]);
+    })->name('sales.receipt');
+    Route::get('sales/{sale}/kot', function (\App\Models\Sale $sale) {
+        $sale->load(['items']);
+        return view('sales.kot', ['sale' => $sale]);
+    })->name('sales.kot');
+});
+
+// AR (receivables)
+Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+    Volt::route('invoices', 'receivables.invoices.index')->name('invoices.index');
+    Volt::route('invoices/create', 'receivables.invoices.create')->name('invoices.create');
+    Volt::route('invoices/{invoice}', 'receivables.invoices.show')->name('invoices.show');
+    Route::get('invoices/{invoice}/print', function (\App\Models\ArInvoice $invoice) {
+        $invoice->load(['items', 'customer', 'paymentAllocations.payment']);
+        return view('receivables.invoice-print', ['invoice' => $invoice]);
+    })->name('invoices.print');
+});
+
+// Reports (manager/staff)
+Route::middleware(['auth', 'active', 'role:admin|manager|staff'])->prefix('reports')->name('reports.')->group(function () {
+    Volt::route('/', 'reports.index')->name('index');
+    Volt::route('orders', 'reports.orders')->name('orders');
+    Volt::route('purchase-orders', 'reports.purchase-orders')->name('purchase-orders');
+    Volt::route('expenses', 'reports.expenses')->name('expenses');
+    Volt::route('costing', 'reports.costing')->name('costing');
+    Volt::route('sales', 'reports.sales')->name('sales');
+    Volt::route('inventory', 'reports.inventory')->name('inventory');
+    Volt::route('payables', 'reports.payables')->name('payables');
+    Volt::route('receivables', 'reports.receivables')->name('receivables');
+
+    Route::get('orders/print', [\App\Http\Controllers\Reports\OrdersReportController::class, 'print'])->name('orders.print');
+    Route::get('orders/csv', [\App\Http\Controllers\Reports\OrdersReportController::class, 'csv'])->name('orders.csv');
+    Route::get('orders/pdf', [\App\Http\Controllers\Reports\OrdersReportController::class, 'pdf'])->name('orders.pdf');
+    Route::get('purchase-orders/print', [\App\Http\Controllers\Reports\PurchaseOrdersReportController::class, 'print'])->name('purchase-orders.print');
+    Route::get('purchase-orders/csv', [\App\Http\Controllers\Reports\PurchaseOrdersReportController::class, 'csv'])->name('purchase-orders.csv');
+    Route::get('purchase-orders/pdf', [\App\Http\Controllers\Reports\PurchaseOrdersReportController::class, 'pdf'])->name('purchase-orders.pdf');
+    Route::get('expenses/print', [\App\Http\Controllers\Reports\ExpensesReportController::class, 'print'])->name('expenses.print');
+    Route::get('expenses/csv', [\App\Http\Controllers\Reports\ExpensesReportController::class, 'csv'])->name('expenses.csv');
+    Route::get('expenses/pdf', [\App\Http\Controllers\Reports\ExpensesReportController::class, 'pdf'])->name('expenses.pdf');
+    Route::get('costing/print', [\App\Http\Controllers\Reports\CostingReportController::class, 'print'])->name('costing.print');
+    Route::get('costing/csv', [\App\Http\Controllers\Reports\CostingReportController::class, 'csv'])->name('costing.csv');
+    Route::get('costing/pdf', [\App\Http\Controllers\Reports\CostingReportController::class, 'pdf'])->name('costing.pdf');
+    Route::get('sales/print', [\App\Http\Controllers\Reports\SalesReportController::class, 'print'])->name('sales.print');
+    Route::get('sales/csv', [\App\Http\Controllers\Reports\SalesReportController::class, 'csv'])->name('sales.csv');
+    Route::get('sales/pdf', [\App\Http\Controllers\Reports\SalesReportController::class, 'pdf'])->name('sales.pdf');
+    Route::get('inventory/print', [\App\Http\Controllers\Reports\InventoryReportController::class, 'print'])->name('inventory.print');
+    Route::get('inventory/csv', [\App\Http\Controllers\Reports\InventoryReportController::class, 'csv'])->name('inventory.csv');
+    Route::get('inventory/pdf', [\App\Http\Controllers\Reports\InventoryReportController::class, 'pdf'])->name('inventory.pdf');
+    Route::get('payables/print', [\App\Http\Controllers\Reports\PayablesReportController::class, 'print'])->name('payables.print');
+    Route::get('payables/csv', [\App\Http\Controllers\Reports\PayablesReportController::class, 'csv'])->name('payables.csv');
+    Route::get('payables/pdf', [\App\Http\Controllers\Reports\PayablesReportController::class, 'pdf'])->name('payables.pdf');
+    Route::get('receivables/print', [\App\Http\Controllers\Reports\ReceivablesReportController::class, 'print'])->name('receivables.print');
+    Route::get('receivables/csv', [\App\Http\Controllers\Reports\ReceivablesReportController::class, 'csv'])->name('receivables.csv');
+    Route::get('receivables/pdf', [\App\Http\Controllers\Reports\ReceivablesReportController::class, 'pdf'])->name('receivables.pdf');
 });

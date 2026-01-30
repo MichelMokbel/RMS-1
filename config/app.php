@@ -125,4 +125,20 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Application Service Providers
+    |--------------------------------------------------------------------------
+    |
+    | Base list of framework providers so view, translator, etc. are always
+    | available (e.g. when config is cached). Merged at runtime with
+    | bootstrap/providers.php by RegisterProviders.
+    |
+    */
+
+    'providers' => array_merge(
+        \Illuminate\Support\ServiceProvider::defaultProviders()->toArray(),
+        require __DIR__.'/../bootstrap/providers.php',
+    ),
+
 ];

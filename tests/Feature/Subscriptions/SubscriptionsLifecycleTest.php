@@ -3,6 +3,8 @@
 use App\Models\MealSubscription;
 use App\Models\MealSubscriptionPause;
 use App\Models\MealSubscriptionDay;
+use App\Models\Customer;
+use App\Models\User;
 use App\Services\Subscriptions\MealSubscriptionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -11,8 +13,10 @@ uses(RefreshDatabase::class);
 function makeActiveSub(): MealSubscription
 {
     $service = app(MealSubscriptionService::class);
+    $customer = Customer::factory()->create();
+    $user = User::factory()->create();
     return $service->save([
-        'customer_id' => 1,
+        'customer_id' => $customer->id,
         'branch_id' => 1,
         'status' => 'active',
         'start_date' => '2025-01-01',
@@ -20,7 +24,7 @@ function makeActiveSub(): MealSubscription
         'preferred_role' => 'main',
         'default_order_type' => 'Delivery',
         'weekdays' => [1,2,3,4,5],
-    ], null, 1);
+    ], null, $user->id);
 }
 
 it('is active on a valid weekday within range', function () {

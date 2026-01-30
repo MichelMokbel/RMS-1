@@ -9,6 +9,7 @@
             <flux:navlist.item :href="route('appearance.edit')" wire:navigate>{{ __('Appearance') }}</flux:navlist.item>
             @if(auth()->check() && auth()->user()->hasAnyRole(['admin','manager']))
                 <flux:navlist.item :href="route('finance.settings')" wire:navigate>{{ __('Finance') }}</flux:navlist.item>
+                <flux:navlist.item :href="route('settings.payment-terms')" wire:navigate>{{ __('Payment Terms') }}</flux:navlist.item>
             @endif
         </flux:navlist>
     </div>

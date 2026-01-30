@@ -23,13 +23,16 @@
                 $inPlatform = request()->routeIs('dashboard');
                 $inAdmin = request()->routeIs('categories.*') || request()->routeIs('suppliers.*') || request()->routeIs('customers.*');
                 $inOrders = request()->routeIs('orders.*') || request()->routeIs('meal-plan-requests.*') || request()->routeIs('subscriptions.*');
+                $inSales = request()->routeIs('sales.*');
                 $inCatalog = request()->routeIs('menu-items.*') || request()->routeIs('recipes.*');
                 $inOps = request()->routeIs('inventory.*') || request()->routeIs('purchase-orders.*');
                 $inDailyDish = request()->routeIs('daily-dish.*');
                 $inFinance = request()->routeIs('payables.*')
+                    || request()->routeIs('invoices.*')
                     || request()->routeIs('expenses.*')
                     || request()->routeIs('petty-cash.*')
                     || request()->routeIs('ledger.*');
+                $inReports = request()->routeIs('reports.*');
             @endphp
 
             <flux:navlist variant="outline">
@@ -56,6 +59,12 @@
                 @endif
 
                 @if ($isCashier)
+                    <flux:navlist.group expandable :expanded="$inSales" :heading="__('Sales')">
+                        <flux:navlist.item icon="receipt-percent" :href="route('sales.index')" :current="request()->routeIs('sales.*')" wire:navigate>
+                            {{ __('Sales') }}
+                        </flux:navlist.item>
+                    </flux:navlist.group>
+
                     <flux:navlist.group expandable :expanded="$inOrders" :heading="__('Orders')">
                         <flux:navlist.item icon="clipboard-document" :href="route('orders.index')" :current="request()->routeIs('orders.*')" wire:navigate>
                             {{ __('Orders') }}
@@ -110,6 +119,9 @@
                             <flux:navlist.item icon="banknotes" :href="route('payables.index')" :current="request()->routeIs('payables.*')" wire:navigate>
                                 {{ __('Payables') }}
                             </flux:navlist.item>
+                            <flux:navlist.item icon="document-text" :href="route('invoices.index')" :current="request()->routeIs('invoices.*')" wire:navigate>
+                                {{ __('Invoices (AR)') }}
+                            </flux:navlist.item>
                             <flux:navlist.item icon="credit-card" :href="route('expenses.index')" :current="request()->routeIs('expenses.*')" wire:navigate>
                                 {{ __('Expenses') }}
                             </flux:navlist.item>
@@ -122,6 +134,12 @@
                                 {{ __('Petty Cash') }}
                             </flux:navlist.item>
                         @endif
+                    </flux:navlist.group>
+
+                    <flux:navlist.group expandable :expanded="$inReports" :heading="__('Reports')">
+                        <flux:navlist.item icon="chart-bar" :href="route('reports.index')" :current="request()->routeIs('reports.index')" wire:navigate>
+                            {{ __('All Reports') }}
+                        </flux:navlist.item>
                     </flux:navlist.group>
                 @endif
             </flux:navlist>
