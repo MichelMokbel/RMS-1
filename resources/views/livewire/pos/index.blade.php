@@ -83,7 +83,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $sale = $service->create([
             'branch_id' => $this->branch_id,
             'customer_id' => $this->customer_id,
-            'currency' => config('pos.currency', 'QAR'),
+            'currency' => config('pos.currency'),
             'order_type' => $this->order_type,
             'reference' => $this->reference ?: null,
             'pos_date' => $this->pos_date ?: now()->toDateString(),
@@ -235,7 +235,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $sale = $service->create([
             'branch_id' => $this->branch_id,
             'customer_id' => $this->customer_id,
-            'currency' => config('pos.currency', 'QAR'),
+            'currency' => config('pos.currency'),
             'order_type' => $this->order_type,
             'reference' => $this->reference ?: null,
             'pos_date' => $this->pos_date ?: now()->toDateString(),
@@ -798,14 +798,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <div class="mt-3 rounded-md pos-cart-summary p-3 text-white">
                         <div class="flex items-center justify-between text-sm">
                             <span>{{ $order_type === 'takeaway' ? 'Take Away' : 'Dine In' }}</span>
-                            <span>Total QAR {{ $this->formatMoney($sale->total_cents ?? 0) }}</span>
+                            <span>Total {{ config('pos.currency') }} {{ $this->formatMoney($sale->total_cents ?? 0) }}</span>
                         </div>
                         <div class="mt-2 flex items-center gap-2">
                             <input class="w-full rounded border border-white/20 bg-white/10 px-2 py-1 text-xs text-white"
                                 wire:model.live="reference" placeholder="Ref:" />
                         </div>
                         <div class="mt-3 flex items-center gap-3">
-                            <div class="rounded bg-white/10 px-3 py-2 text-sm">QAR</div>
+                            <div class="rounded bg-white/10 px-3 py-2 text-sm">{{ config('pos.currency') }}</div>
                             <div class="text-3xl font-semibold">{{ $this->formatMoney($sale->total_cents ?? 0) }}</div>
                             <div class="text-sm text-white/70">{{ $sale->items->count() }} items</div>
                         </div>

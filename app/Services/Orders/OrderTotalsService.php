@@ -5,12 +5,15 @@ namespace App\Services\Orders;
 use App\Models\MealSubscription;
 use App\Models\MealSubscriptionOrder;
 use App\Models\Order;
+use App\Services\Pricing\DailyDishPricingService;
 use App\Services\Pricing\MealPlanPricingService;
 
 class OrderTotalsService
 {
-    public function __construct(protected MealPlanPricingService $pricing)
-    {
+    public function __construct(
+        protected MealPlanPricingService $pricing,
+        protected DailyDishPricingService $dailyDishPricing
+    ) {
     }
 
     public function recalc(Order $order): Order
@@ -29,6 +32,9 @@ class OrderTotalsService
                     $sum = $this->pricing->subscriptionPrice($subscription);
                 }
             }
+        } elseif ($order->is_daily_dish) {
+            $sum = $this->dailyDishPricing->computeOneOffTotal($order);
+            $sum = max(0, round($sum - $discount, 3));
         }
 
         $order->total_before_tax = $sum;

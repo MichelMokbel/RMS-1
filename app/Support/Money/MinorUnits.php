@@ -135,7 +135,7 @@ final class MinorUnits
         return self::parse($amount, self::posScale());
     }
 
-    private static function scaleDigits(int $scale): int
+    public static function scaleDigits(int $scale): int
     {
         $digits = 0;
         while ($scale > 1) {

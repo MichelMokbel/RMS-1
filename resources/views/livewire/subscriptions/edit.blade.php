@@ -25,6 +25,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $include_dessert = true;
     public ?string $notes = null;
     public array $weekdays = [];
+    public ?int $plan_meals_total = null;
 
     public function mount(): void
     {
@@ -43,6 +44,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->include_dessert = (bool) $sub->include_dessert;
         $this->notes = $sub->notes;
         $this->weekdays = $sub->days->pluck('weekday')->values()->toArray();
+        $this->plan_meals_total = $sub->plan_meals_total;
     }
 
     public function with(): array
@@ -56,6 +58,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $data = $this->validate($this->rules());
         $data['weekdays'] = $this->weekdays;
+        $data['plan_meals_total'] = $this->plan_meals_total;
 
         $sub = $service->save($data, $this->subscription, Illuminate\Support\Facades\Auth::id());
 
@@ -86,6 +89,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'notes' => ['nullable', 'string'],
             'weekdays' => ['array', 'min:1'],
             'weekdays.*' => ['integer', 'min:1', 'max:7'],
+            'plan_meals_total' => ['nullable', 'integer', 'in:20,26'],
         ];
     }
 }; ?>
@@ -116,9 +120,17 @@ new #[Layout('components.layouts.app')] class extends Component {
             <flux:input wire:model="branch_id" type="number" :label="__('Branch ID')" />
         </div>
 
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
             <flux:input wire:model="start_date" type="date" :label="__('Start Date')" />
             <flux:input wire:model="end_date" type="date" :label="__('End Date')" />
+            <div>
+                <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Plan size') }}</label>
+                <select wire:model="plan_meals_total" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                    <option value="">{{ __('Unlimited') }}</option>
+                    <option value="20">{{ __('20 meals') }}</option>
+                    <option value="26">{{ __('26 meals') }}</option>
+                </select>
+            </div>
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Status') }}</label>
                 <select wire:model="status" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">

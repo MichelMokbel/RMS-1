@@ -13,15 +13,15 @@ use Livewire\Volt\Component;
 new #[Layout('components.layouts.app')] class extends Component {
     public int $branch_id = 1;
 
-    public string $opening_cash = '0.000';
-    public string $counted_cash = '0.000';
+    public string $opening_cash = '0.00';
+    public string $counted_cash = '0.00';
     public ?string $notes = null;
 
     public function mount(): void
     {
         $this->branch_id = (int) config('inventory.default_branch_id', 1) ?: 1;
-        $this->opening_cash = '0.00';
-        $this->counted_cash = '0.00';
+        $this->opening_cash = $this->moneyZero();
+        $this->counted_cash = $this->moneyZero();
     }
 
     public function with(PosShiftService $service): array
@@ -47,7 +47,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            $opening = MinorUnits::parse($this->opening_cash);
+            $opening = MinorUnits::parsePos($this->opening_cash);
         } catch (\InvalidArgumentException $e) {
             $this->addError('opening_cash', __('Invalid opening cash amount.'));
             return;
@@ -106,6 +106,21 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function formatMoney(?int $cents): string
     {
         return \App\Support\Money\MinorUnits::format((int) ($cents ?? 0), null, true);
+    }
+
+    public function moneyScaleDigits(): int
+    {
+        return MinorUnits::scaleDigits(MinorUnits::posScale());
+    }
+
+    public function moneyZero(): string
+    {
+        $digits = $this->moneyScaleDigits();
+        if ($digits <= 0) {
+            return '0';
+        }
+
+        return '0.'.str_repeat('0', $digits);
     }
 }; ?>
 

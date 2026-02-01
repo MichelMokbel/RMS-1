@@ -3,6 +3,8 @@
 
     @php
         $first = $orders->first();
+        $moneyDigits = \App\Support\Money\MinorUnits::scaleDigits(\App\Support\Money\MinorUnits::posScale());
+        $currency = config('pos.currency');
     @endphp
 
     <p>
@@ -17,7 +19,7 @@
     @foreach($orders as $order)
         <hr>
         <h3>Order {{ $order->order_number }} ({{ $order->scheduled_date?->format('Y-m-d') }})</h3>
-        <p><strong>Total:</strong> QAR {{ number_format((float) $order->total_amount, 3) }}</p>
+        <p><strong>Total:</strong> {{ $currency }} {{ number_format((float) $order->total_amount, $moneyDigits) }}</p>
         <ul>
             @foreach($order->items as $it)
                 <li>

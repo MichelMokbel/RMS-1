@@ -24,6 +24,7 @@ class OrderItem extends Model
         'line_total',
         'status',
         'sort_order',
+        'role',
     ];
 
     protected $casts = [

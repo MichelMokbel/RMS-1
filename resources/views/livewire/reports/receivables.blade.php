@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ArInvoice;
+use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
@@ -65,12 +66,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function formatCents(?int $cents): string
     {
-        $cents = (int) ($cents ?? 0);
-        $sign = $cents < 0 ? '-' : '';
-        $cents = abs($cents);
-        $whole = intdiv($cents, 1000);
-        $frac = $cents % 1000;
-        return $sign.$whole.'.'.str_pad((string) $frac, 3, '0', STR_PAD_LEFT);
+        return MinorUnits::format((int) ($cents ?? 0));
     }
 }; ?>
 

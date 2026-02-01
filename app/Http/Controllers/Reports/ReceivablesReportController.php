@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ArInvoice;
 use App\Support\Reports\CsvExport;
 use App\Support\Reports\PdfExport;
+use App\Support\Money\MinorUnits;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -13,12 +14,7 @@ class ReceivablesReportController extends Controller
 {
     private function formatCents(?int $cents): string
     {
-        $cents = (int) ($cents ?? 0);
-        $sign = $cents < 0 ? '-' : '';
-        $cents = abs($cents);
-        $whole = intdiv($cents, 1000);
-        $frac = $cents % 1000;
-        return $sign.$whole.'.'.str_pad((string) $frac, 3, '0', STR_PAD_LEFT);
+        return MinorUnits::format((int) ($cents ?? 0));
     }
 
     private function query(Request $request, int $limit = 500)

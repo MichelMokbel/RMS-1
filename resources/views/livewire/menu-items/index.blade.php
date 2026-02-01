@@ -136,6 +136,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Name') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Arabic Name') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Category') }}</th>
+                    <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Unit') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Price') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Active') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Actions') }}</th>
@@ -148,6 +149,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="px-3 py-3 text-sm text-neutral-900 dark:text-neutral-100">{{ $item->name }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $item->arabic_name }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $item->category?->name }}</td>
+                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ \App\Models\MenuItem::unitOptions()[$item->unit ?? 'each'] ?? $item->unit ?? '—' }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ number_format((float) $item->selling_price_per_unit, 3) }}</td>
                         <td class="px-3 py-3 text-sm">
                             <span class="inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold {{ $item->is_active ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100' : 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100' }}">
@@ -166,7 +168,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="10" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">
+                        <td colspan="8" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">
                             {{ __('No menu items found.') }}
                         </td>
                     </tr>

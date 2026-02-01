@@ -18,7 +18,7 @@ class PaymentFactory extends Factory
             'source' => 'pos',
             'method' => 'cash',
             'amount_cents' => 1000,
-            'currency' => 'KWD',
+            'currency' => (string) config('pos.currency'),
             'received_at' => now(),
             'reference' => null,
             'notes' => null,

@@ -18,6 +18,7 @@ class MenuItemFactory extends Factory
             'category_id' => null,
             'recipe_id' => null,
             'selling_price_per_unit' => $this->faker->randomFloat(3, 0, 100),
+            'unit' => $this->faker->randomElement(['each', 'dozen', 'kg']),
             'tax_rate' => $this->faker->randomFloat(2, 0, 15),
             'is_active' => true,
             'display_order' => $this->faker->numberBetween(0, 100),

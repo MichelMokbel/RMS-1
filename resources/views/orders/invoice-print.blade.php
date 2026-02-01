@@ -66,8 +66,11 @@
 </head>
 <body>
 @php
-    $fmt = function ($value): string {
-        return number_format((float) ($value ?? 0), 3, '.', '');
+    $scale = \App\Support\Money\MinorUnits::posScale();
+    $digits = \App\Support\Money\MinorUnits::scaleDigits($scale);
+    $currency = (string) config('pos.currency');
+    $fmt = function ($value) use ($scale): string {
+        return \App\Support\Money\MinorUnits::format((int) ($value ?? 0), $scale);
     };
     $numberToWords = function (int $number) use (&$numberToWords): string {
         $ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
@@ -105,13 +108,16 @@
 
         return trim($words);
     };
-    $amountToWords = function ($amount) use ($fmt, $numberToWords): string {
+    $amountToWords = function ($amount) use ($fmt, $numberToWords, $scale, $digits): string {
         $formatted = $fmt($amount);
-        [$whole, $fraction] = array_pad(explode('.', $formatted), 2, '000');
+        [$whole, $fraction] = array_pad(explode('.', $formatted), 2, '');
         $wholeWords = $numberToWords((int) $whole);
-        $fraction = str_pad($fraction, 3, '0', STR_PAD_RIGHT);
+        if ($digits <= 0) {
+            return $wholeWords.' Only.';
+        }
+        $fraction = str_pad($fraction, $digits, '0', STR_PAD_RIGHT);
 
-        return $wholeWords.' And '.$fraction.'/1000 Only.';
+        return $wholeWords.' And '.$fraction.'/'.$scale.' Only.';
     };
 @endphp
 
@@ -264,7 +270,7 @@
 
         <div class="totals-bar">
             <div class="totals-words">
-                <span class="label">QAR :</span>
+                <span class="label">{{ $currency }} :</span>
                 {{ $amountToWords($order->total_amount) }}
             </div>
             <div class="grand-total">

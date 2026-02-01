@@ -5,6 +5,9 @@ namespace App\Services\Ledger;
 use App\Models\ApInvoice;
 use App\Models\ApPayment;
 use App\Models\ApPaymentAllocation;
+use App\Models\ArInvoice;
+use App\Models\Payment;
+use App\Models\PaymentAllocation;
 use App\Models\ExpensePayment;
 use App\Models\InventoryTransaction;
 use App\Models\InventoryTransfer;
@@ -333,6 +336,188 @@ class SubledgerService
             description: 'Apply supplier advance',
             lines: $lines,
             userId: $userId
+        );
+    }
+
+    public function recordArInvoiceIssued(ArInvoice $invoice, int $userId): ?SubledgerEntry
+    {
+        if (! $this->canPost()) {
+            return null;
+        }
+
+        $totalCents = (int) ($invoice->total_cents ?? 0);
+        if ($totalCents === 0) {
+            return null;
+        }
+
+        $taxCents = (int) ($invoice->tax_total_cents ?? 0);
+        $netCents = $totalCents - $taxCents;
+
+        $total = $this->moneyFromCents(abs($totalCents));
+        $tax = $this->moneyFromCents(abs($taxCents));
+        $net = $this->moneyFromCents(abs($netCents));
+
+        $lines = [];
+        if ($totalCents > 0) {
+            $lines[] = [
+                'account' => $this->mapKey('ar_invoice_ar'),
+                'debit' => $total,
+                'credit' => 0,
+                'memo' => 'Accounts receivable',
+            ];
+            if ($net > 0) {
+                $lines[] = [
+                    'account' => $this->mapKey('ar_invoice_revenue'),
+                    'debit' => 0,
+                    'credit' => $net,
+                    'memo' => 'Sales revenue',
+                ];
+            }
+            if ($tax > 0) {
+                $lines[] = [
+                    'account' => $this->mapKey('ar_invoice_tax'),
+                    'debit' => 0,
+                    'credit' => $tax,
+                    'memo' => 'Output tax',
+                ];
+            }
+        } else {
+            $lines[] = [
+                'account' => $this->mapKey('ar_invoice_ar'),
+                'debit' => 0,
+                'credit' => $total,
+                'memo' => 'Accounts receivable reversal',
+            ];
+            if ($net > 0) {
+                $lines[] = [
+                    'account' => $this->mapKey('ar_invoice_revenue'),
+                    'debit' => $net,
+                    'credit' => 0,
+                    'memo' => 'Sales revenue reversal',
+                ];
+            }
+            if ($tax > 0) {
+                $lines[] = [
+                    'account' => $this->mapKey('ar_invoice_tax'),
+                    'debit' => $tax,
+                    'credit' => 0,
+                    'memo' => 'Output tax reversal',
+                ];
+            }
+        }
+
+        $date = optional($invoice->issue_date)->toDateString() ?? now()->toDateString();
+
+        return $this->recordEntry(
+            sourceType: 'ar_invoice',
+            sourceId: $invoice->id,
+            event: 'issue',
+            entryDate: $date,
+            description: 'AR Invoice '.$invoice->invoice_number,
+            lines: $lines,
+            userId: $userId,
+            branchId: $invoice->branch_id
+        );
+    }
+
+    public function recordArPaymentReceived(Payment $payment, int $appliedCents, int $unappliedCents, int $userId): ?SubledgerEntry
+    {
+        if (! $this->canPost()) {
+            return null;
+        }
+
+        $amountCents = (int) ($payment->amount_cents ?? 0);
+        if ($amountCents <= 0) {
+            return null;
+        }
+
+        $applied = $this->moneyFromCents(max($appliedCents, 0));
+        $unapplied = $this->moneyFromCents(max($unappliedCents, 0));
+        $total = $this->moneyFromCents($amountCents);
+
+        $lines = [
+            [
+                'account' => $this->mapKey('ar_payment_cash'),
+                'debit' => $total,
+                'credit' => 0,
+                'memo' => 'Cash received',
+            ],
+        ];
+
+        if ($applied > 0) {
+            $lines[] = [
+                'account' => $this->mapKey('ar_invoice_ar'),
+                'debit' => 0,
+                'credit' => $applied,
+                'memo' => 'Apply to receivables',
+            ];
+        }
+
+        if ($unapplied > 0) {
+            $lines[] = [
+                'account' => $this->mapKey('ar_payment_advance'),
+                'debit' => 0,
+                'credit' => $unapplied,
+                'memo' => 'Customer advance',
+            ];
+        }
+
+        $date = optional($payment->received_at)->toDateString() ?? now()->toDateString();
+
+        return $this->recordEntry(
+            sourceType: 'ar_payment',
+            sourceId: $payment->id,
+            event: 'payment',
+            entryDate: $date,
+            description: 'AR Payment '.$payment->id,
+            lines: $lines,
+            userId: $userId,
+            branchId: $payment->branch_id
+        );
+    }
+
+    public function recordArAdvanceApplied(PaymentAllocation $allocation, int $userId): ?SubledgerEntry
+    {
+        if (! $this->canPost()) {
+            return null;
+        }
+
+        $amountCents = (int) ($allocation->amount_cents ?? 0);
+        if ($amountCents <= 0) {
+            return null;
+        }
+
+        $amount = $this->moneyFromCents($amountCents);
+
+        $allocation->loadMissing('payment');
+        $date = optional($allocation->created_at)->toDateString()
+            ?? optional($allocation->payment?->received_at)->toDateString()
+            ?? now()->toDateString();
+
+        $lines = [
+            [
+                'account' => $this->mapKey('ar_payment_advance'),
+                'debit' => $amount,
+                'credit' => 0,
+                'memo' => 'Reduce customer advance',
+            ],
+            [
+                'account' => $this->mapKey('ar_invoice_ar'),
+                'debit' => 0,
+                'credit' => $amount,
+                'memo' => 'Apply advance to receivables',
+            ],
+        ];
+
+        return $this->recordEntry(
+            sourceType: 'ar_payment_allocation',
+            sourceId: $allocation->id,
+            event: 'apply',
+            entryDate: $date,
+            description: 'Apply customer advance',
+            lines: $lines,
+            userId: $userId,
+            branchId: $allocation->payment?->branch_id
         );
     }
 
@@ -758,6 +943,16 @@ class SubledgerService
     {
         $map = Config::get('ledger.mappings', []);
         return $map[$key] ?? $key;
+    }
+
+    private function moneyFromCents(int $cents): float
+    {
+        $scale = (int) config('pos.money_scale', 100);
+        if ($scale <= 0) {
+            return 0.0;
+        }
+
+        return round(((float) $cents) / $scale, 4);
     }
 
     private function accountsConfig(): array

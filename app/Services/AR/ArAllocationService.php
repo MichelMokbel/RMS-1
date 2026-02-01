@@ -5,19 +5,25 @@ namespace App\Services\AR;
 use App\Models\ArInvoice;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
+use App\Services\Ledger\SubledgerService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class ArAllocationService
 {
-    public function __construct(protected ArInvoiceService $invoices)
+    public function __construct(
+        protected ArInvoiceService $invoices,
+        protected SubledgerService $subledgerService
+    )
     {
     }
 
     /**
      * Create an AR payment and allocate it to one invoice (partial/full).
+     *
+     * @return array{payment: Payment, allocated_cents: int, remainder_cents: int}
      */
-    public function createPaymentAndAllocate(array $payload, int $actorId): Payment
+    public function createPaymentAndAllocate(array $payload, int $actorId): array
     {
         $invoiceId = (int) ($payload['invoice_id'] ?? 0);
         $invoice = ArInvoice::whereKey($invoiceId)->first();
@@ -31,7 +37,7 @@ class ArAllocationService
         }
 
         $method = (string) ($payload['method'] ?? 'bank');
-        $currency = (string) ($payload['currency'] ?? ($invoice->currency ?: 'KWD'));
+        $currency = (string) ($payload['currency'] ?? ($invoice->currency ?: config('pos.currency')));
 
         return DB::transaction(function () use ($invoiceId, $amount, $method, $currency, $payload, $actorId) {
             $invoice = ArInvoice::whereKey($invoiceId)->lockForUpdate()->firstOrFail();
@@ -46,12 +52,11 @@ class ArAllocationService
             $invoice = $invoice->fresh();
 
             $outstanding = (int) $invoice->balance_cents;
-            if ($amount > $outstanding) {
-                throw ValidationException::withMessages(['amount_cents' => __('Payment exceeds invoice balance.')]);
-            }
             if ($amount <= 0) {
                 throw ValidationException::withMessages(['amount_cents' => __('Payment amount must be positive.')]);
             }
+
+            $allocated = min($amount, max(0, $outstanding));
 
             $payment = Payment::create([
                 'branch_id' => $invoice->branch_id,
@@ -66,17 +71,30 @@ class ArAllocationService
                 'created_by' => $actorId,
             ]);
 
-            PaymentAllocation::create([
-                'payment_id' => $payment->id,
-                'allocatable_type' => ArInvoice::class,
-                'allocatable_id' => $invoice->id,
-                'amount_cents' => $amount,
-            ]);
+            if ($allocated > 0) {
+                PaymentAllocation::create([
+                    'payment_id' => $payment->id,
+                    'allocatable_type' => ArInvoice::class,
+                    'allocatable_id' => $invoice->id,
+                    'amount_cents' => $allocated,
+                ]);
+            }
 
             $this->invoices->recalc($invoice);
             $this->recalcStatus($invoice);
 
-            return $payment->fresh(['allocations']);
+            $this->subledgerService->recordArPaymentReceived(
+                $payment->fresh(),
+                $allocated,
+                $amount - $allocated,
+                $actorId
+            );
+
+            return [
+                'payment' => $payment->fresh(['allocations']),
+                'allocated_cents' => $allocated,
+                'remainder_cents' => $amount - $allocated,
+            ];
         });
     }
 
@@ -126,7 +144,7 @@ class ArAllocationService
                 'source' => 'ar',
                 'method' => 'voucher',
                 'amount_cents' => 0,
-                'currency' => $target->currency ?: 'KWD',
+                'currency' => $target->currency ?: (string) config('pos.currency'),
                 'received_at' => now(),
                 'notes' => __('Credit note allocation #:id', ['id' => $credit->id]),
                 'created_by' => $actorId,
@@ -156,7 +174,7 @@ class ArAllocationService
         });
     }
 
-    private function recalcStatus(ArInvoice $invoice): void
+    public function recalcStatus(ArInvoice $invoice): void
     {
         $invoice = $invoice->fresh();
         if ($invoice->status === 'voided') {

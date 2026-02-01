@@ -62,15 +62,15 @@
 @php
     use App\Models\PaymentTerm;
     use App\Models\User;
+    use App\Support\Money\MinorUnits;
     use Illuminate\Support\Facades\DB;
     use Illuminate\Support\Facades\Schema;
 
-    $fmtCents = function (int $cents): string {
-        $sign = $cents < 0 ? '-' : '';
-        $cents = abs($cents);
-        $whole = intdiv($cents, 1000);
-        $frac = $cents % 1000;
-        return $sign.$whole.'.'.str_pad((string) $frac, 3, '0', STR_PAD_LEFT);
+    $scale = MinorUnits::posScale();
+    $digits = MinorUnits::scaleDigits($scale);
+    $currency = (string) config('pos.currency');
+    $fmtCents = function (int $cents) use ($scale): string {
+        return MinorUnits::format($cents, $scale);
     };
     $branchName = null;
     if (Schema::hasTable('branches')) {
@@ -122,13 +122,16 @@
 
         return trim($words);
     };
-    $amountToWords = function (int $cents) use ($fmtCents, $numberToWords): string {
+    $amountToWords = function (int $cents) use ($fmtCents, $numberToWords, $scale, $digits): string {
         $formatted = $fmtCents($cents);
-        [$whole, $fraction] = array_pad(explode('.', $formatted), 2, '000');
+        [$whole, $fraction] = array_pad(explode('.', $formatted), 2, '');
         $wholeWords = $numberToWords((int) $whole);
-        $fraction = str_pad($fraction, 3, '0', STR_PAD_RIGHT);
+        if ($digits <= 0) {
+            return $wholeWords.' Only.';
+        }
+        $fraction = str_pad($fraction, $digits, '0', STR_PAD_RIGHT);
 
-        return $wholeWords.' And '.$fraction.'/1000 Only.';
+        return $wholeWords.' And '.$fraction.'/'.$scale.' Only.';
     };
 @endphp
 
@@ -245,7 +248,7 @@
 
     <div class="totals-bar">
         <div class="totals-words">
-            <span class="label">QAR :</span>
+            <span class="label">{{ $currency }} :</span>
             {{ $amountToWords((int) $invoice->total_cents) }}
         </div>
         <div class="grand-total">

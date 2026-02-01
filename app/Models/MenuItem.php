@@ -14,6 +14,12 @@ class MenuItem extends Model
 
     protected $table = 'menu_items';
 
+    public const UNIT_EACH = 'each';
+
+    public const UNIT_DOZEN = 'dozen';
+
+    public const UNIT_KG = 'kg';
+
     protected $fillable = [
         'code',
         'name',
@@ -21,10 +27,23 @@ class MenuItem extends Model
         'category_id',
         'recipe_id',
         'selling_price_per_unit',
+        'unit',
         'tax_rate',
         'is_active',
         'display_order',
     ];
+
+    /**
+     * @return array<string, string>
+     */
+    public static function unitOptions(): array
+    {
+        return [
+            self::UNIT_EACH => __('Each'),
+            self::UNIT_DOZEN => __('Dozen'),
+            self::UNIT_KG => __('KG'),
+        ];
+    }
 
     protected $casts = [
         'selling_price_per_unit' => 'decimal:3',

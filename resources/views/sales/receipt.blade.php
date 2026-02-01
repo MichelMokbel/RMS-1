@@ -21,7 +21,7 @@
 </head>
 <body>
 @php
-    $scale = ($sale->currency ?? '') === 'QAR' ? \App\Support\Money\MinorUnits::posScale() : 1000;
+    $scale = \App\Support\Money\MinorUnits::posScale();
     $fmt = function (int $cents) use ($scale): string {
         return \App\Support\Money\MinorUnits::format($cents, $scale, false);
     };
@@ -29,7 +29,7 @@
 
 <h1>Layla Kitchen</h1>
 <div class="muted">
-    Receipt {{ $sale->sale_number ?: ('#'.$sale->id) }} • {{ $sale->created_at?->format('Y-m-d H:i') }} • Branch {{ $sale->branch_id }} • {{ $sale->currency ?? 'QAR' }}
+    Receipt {{ $sale->sale_number ?: ('#'.$sale->id) }} • {{ $sale->created_at?->format('Y-m-d H:i') }} • Branch {{ $sale->branch_id }} • {{ $sale->currency ?? config('pos.currency') }}
 </div>
 
 <table>

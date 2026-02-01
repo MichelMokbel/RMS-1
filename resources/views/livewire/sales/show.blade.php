@@ -2,6 +2,7 @@
 
 use App\Models\Sale;
 use App\Services\Sales\SaleService;
+use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
@@ -39,12 +40,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function formatMoney(?int $cents): string
     {
-        $cents = (int) ($cents ?? 0);
-        $sign = $cents < 0 ? '-' : '';
-        $cents = abs($cents);
-        $whole = intdiv($cents, 1000);
-        $frac = $cents % 1000;
-        return $sign.$whole.'.'.str_pad((string) $frac, 3, '0', STR_PAD_LEFT);
+        return MinorUnits::format((int) ($cents ?? 0));
     }
 }; ?>
 

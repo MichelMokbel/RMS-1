@@ -14,6 +14,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?int $category_id = null;
     public ?int $recipe_id = null;
     public float $selling_price_per_unit = 0;
+    public string $unit = 'each';
     public float $tax_rate = 0;
     public bool $is_active = true;
     public int $display_order = 0;
@@ -56,6 +57,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],
             'recipe_id' => ['nullable', 'integer', 'exists:recipes,id'],
             'selling_price_per_unit' => ['required', 'numeric', 'min:0'],
+            'unit' => ['required', 'string', 'in:each,dozen,kg'],
             'tax_rate' => ['required', 'numeric', 'min:0', 'max:100'],
             'is_active' => ['required', 'boolean'],
             'display_order' => ['required', 'integer', 'min:0'],
@@ -144,8 +146,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         </div>
 
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             <flux:input wire:model="selling_price_per_unit" type="number" step="0.001" min="0" :label="__('Selling Price')" />
+            <div>
+                <label class="block text-sm font-medium text-neutral-800 dark:text-neutral-200 mb-1">{{ __('Unit') }}</label>
+                <select wire:model="unit" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                    @foreach (App\Models\MenuItem::unitOptions() as $value => $label)
+                        <option value="{{ $value }}">{{ $label }}</option>
+                    @endforeach
+                </select>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             <flux:input wire:model="tax_rate" type="number" step="0.01" min="0" max="100" :label="__('Tax Rate (%)')" />
             <div class="flex items-center gap-3">
                 <flux:checkbox wire:model="is_active" :label="__('Active')" />

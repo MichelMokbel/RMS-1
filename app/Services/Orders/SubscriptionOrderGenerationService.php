@@ -181,6 +181,65 @@ class SubscriptionOrderGenerationService
             $items = $items->merge($menuItemsGrouped['addon']->filter(fn ($i) => $i->is_required));
         }
 
+        if (isset($menuItemsGrouped['appetizer'])) {
+            $items = $items->merge($menuItemsGrouped['appetizer']);
+        }
+
+        if (isset($menuItemsGrouped['water'])) {
+            $items = $items->merge($menuItemsGrouped['water']);
+        }
+
+        return $items->unique('menu_item_id');
+    }
+
+    /**
+     * Public entry point for backoffice subscription daily-dish order creation.
+     * Returns the same item set as selectItemsForSubscription.
+     */
+    public function getItemsForSubscription(MealSubscription $sub, Collection $menuItemsGrouped): Collection
+    {
+        return $this->selectItemsForSubscription($sub, $menuItemsGrouped);
+    }
+
+    /**
+     * Build items for a manually created subscription daily-dish order: user-selected main + salad/dessert/addon/appetizer/water per subscription.
+     * Used when creating from backoffice with a chosen main dish.
+     */
+    public function getItemsForSubscriptionWithSelectedMain(MealSubscription $sub, Collection $menuItemsGrouped, int $selectedMainMenuItemId): Collection
+    {
+        $mainRoles = ['main', 'diet', 'vegetarian'];
+        $selectedMain = null;
+        foreach ($mainRoles as $role) {
+            if (! isset($menuItemsGrouped[$role])) {
+                continue;
+            }
+            $selectedMain = $menuItemsGrouped[$role]->firstWhere('menu_item_id', $selectedMainMenuItemId);
+            if ($selectedMain) {
+                break;
+            }
+        }
+        if (! $selectedMain) {
+            return collect();
+        }
+
+        $items = collect([$selectedMain]);
+
+        if ($sub->include_salad && isset($menuItemsGrouped['salad'])) {
+            $items = $items->merge($menuItemsGrouped['salad']);
+        }
+        if ($sub->include_dessert && isset($menuItemsGrouped['dessert'])) {
+            $items = $items->merge($menuItemsGrouped['dessert']);
+        }
+        if (isset($menuItemsGrouped['addon'])) {
+            $items = $items->merge($menuItemsGrouped['addon']->filter(fn ($i) => $i->is_required));
+        }
+        if (isset($menuItemsGrouped['appetizer'])) {
+            $items = $items->merge($menuItemsGrouped['appetizer']);
+        }
+        if (isset($menuItemsGrouped['water'])) {
+            $items = $items->merge($menuItemsGrouped['water']);
+        }
+
         return $items->unique('menu_item_id');
     }
 
@@ -223,6 +282,7 @@ class SubscriptionOrderGenerationService
                 'line_total' => 0,
                 'status' => 'Pending',
                 'sort_order' => $menuItem->sort_order ?? $idx,
+                'role' => $menuItem->role ?? null,
             ]);
         }
 

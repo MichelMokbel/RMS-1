@@ -33,7 +33,7 @@ class SaleService
         }
 
         $shiftId = isset($data['pos_shift_id']) ? (int) $data['pos_shift_id'] : null;
-        $currency = (string) ($data['currency'] ?? 'KWD');
+        $currency = (string) ($data['currency'] ?? config('pos.currency'));
         $orderType = isset($data['order_type']) && in_array($data['order_type'], ['takeaway', 'dine_in'], true)
             ? $data['order_type'] : 'takeaway';
         $reference = isset($data['reference']) ? trim((string) $data['reference']) : null;
@@ -92,7 +92,7 @@ class SaleService
             throw ValidationException::withMessages(['qty' => __('Quantity must be positive.')]);
         }
 
-        $unitPriceCents = $unitPriceCents ?? MinorUnits::parse((string) ($item->selling_price_per_unit ?? '0'));
+        $unitPriceCents = $unitPriceCents ?? MinorUnits::parsePos((string) ($item->selling_price_per_unit ?? '0'));
         $discountCents = max(0, (int) $discountCents);
 
         $bps = $this->taxRateToBps((string) ($item->tax_rate ?? '0'));

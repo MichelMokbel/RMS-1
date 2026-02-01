@@ -26,7 +26,7 @@ class ArInvoiceFactory extends Factory
             'lpo_reference' => null,
             'issue_date' => null,
             'due_date' => null,
-            'currency' => 'KWD',
+            'currency' => (string) config('pos.currency'),
             'subtotal_cents' => 0,
             'discount_total_cents' => 0,
             'invoice_discount_type' => 'fixed',

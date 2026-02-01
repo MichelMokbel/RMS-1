@@ -2,6 +2,7 @@
 
 use App\Models\Customer;
 use App\Models\MenuItem;
+use App\Models\Order;
 use App\Models\PaymentTerm;
 use App\Models\User;
 use App\Services\AR\ArInvoiceService;
@@ -25,20 +26,166 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?int $sales_person_id = null;
     public ?string $lpo_reference = null;
     public string $invoice_discount_type = 'fixed';
-    public string $invoice_discount_value = '0.000';
+    public string $invoice_discount_value = '0.00';
 
     public ?string $notes = null;
 
     public array $selected_items = [];
     public array $item_search = [];
 
-    public function mount(): void
+    // Order prefill
+    public ?int $source_order_id = null;
+    public ?string $source_order_number = null;
+
+    public function mount(?int $order_id = null): void
     {
         $this->branch_id = (int) config('inventory.default_branch_id', 1) ?: 1;
         $this->invoice_date = now()->toDateString();
         $this->sales_person_id = Auth::id();
         $this->payment_term_id = $this->defaultPaymentTermId('credit');
-        $this->addItemRow();
+        $this->invoice_discount_value = $this->moneyZero();
+
+        // If order_id is provided, prefill from order
+        if ($order_id) {
+            $this->prefillFromOrder($order_id);
+        } else {
+            $this->addItemRow();
+        }
+    }
+
+    protected function prefillFromOrder(int $orderId): void
+    {
+        $order = Order::with(['items.menuItem', 'customer'])->find($orderId);
+        if (! $order) {
+            $this->addItemRow();
+            return;
+        }
+
+        if ($order->isInvoiced()) {
+            session()->flash('error', __('Order has already been invoiced.'));
+            $this->addItemRow();
+            return;
+        }
+
+        $this->source_order_id = $order->id;
+        $this->source_order_number = $order->order_number;
+        $this->branch_id = (int) $order->branch_id;
+        $this->invoice_date = $order->scheduled_date?->toDateString() ?? now()->toDateString();
+
+        if ($order->customer_id) {
+            $this->customer_id = $order->customer_id;
+            $customer = $order->customer;
+            $this->customer_search = $customer ? trim($customer->name . ' ' . ($customer->phone ?? '')) : '';
+
+            // Set payment term from customer if available
+            if ($customer && $customer->credit_terms_days) {
+                $term = PaymentTerm::query()
+                    ->where('is_credit', 1)
+                    ->where('days', (int) $customer->credit_terms_days)
+                    ->first();
+                $this->payment_term_id = $term?->id;
+            }
+        }
+
+        // Prefill items from order
+        $scale = MinorUnits::posScale();
+        $digits = MinorUnits::scaleDigits($scale);
+
+        // Check if this is a daily dish or subscription order (flat pricing)
+        $isDailyDishOrSubscription = $order->is_daily_dish || $order->source === 'Subscription';
+
+        if ($isDailyDishOrSubscription) {
+            // For daily dish/subscription orders, show the order total as a single line item
+            $totalAmount = (float) ($order->total_amount ?? 0);
+            $orderDiscount = (float) ($order->order_discount_amount ?? 0);
+
+            // Build description
+            $isSubscription = $order->source === 'Subscription';
+            if ($isSubscription) {
+                $description = __('Daily Dish Subscription - :date', [
+                    'date' => $order->scheduled_date?->format('d M Y') ?? '',
+                ]);
+            } else {
+                $portionType = $order->daily_dish_portion_type ?? 'plate';
+                $portionQty = $order->daily_dish_portion_quantity;
+                $portionLabel = match ($portionType) {
+                    'plate' => __('Plate'),
+                    'half_tray', 'half' => __('Half Tray'),
+                    'full_tray', 'full' => __('Full Tray'),
+                    default => ucfirst(str_replace('_', ' ', $portionType)),
+                };
+                $description = $portionQty && $portionQty > 1
+                    ? __('Daily Dish - :portion (x:qty)', ['portion' => $portionLabel, 'qty' => $portionQty])
+                    : __('Daily Dish - :portion', ['portion' => $portionLabel]);
+            }
+
+            // For subscription orders with zero total, try to get from subscription pricing
+            if ($isSubscription && $totalAmount == 0) {
+                $subscriptionOrder = \App\Models\MealSubscriptionOrder::where('order_id', $order->id)->first();
+                if ($subscriptionOrder) {
+                    $subscription = \App\Models\MealSubscription::find($subscriptionOrder->subscription_id);
+                    if ($subscription) {
+                        $planPricing = config('pricing.meal_plan.plan_prices', []);
+                        $planMealsTotal = $subscription->plan_meals_total;
+
+                        if ($planMealsTotal && isset($planPricing[(string) $planMealsTotal])) {
+                            $totalAmount = (float) $planPricing[(string) $planMealsTotal];
+                        } else {
+                            // Fallback to base pricing
+                            $basePricing = config('pricing.meal_plan.base_prices', []);
+                            $includeSalad = (bool) $subscription->include_salad;
+                            $includeDessert = (bool) $subscription->include_dessert;
+
+                            if ($includeSalad && $includeDessert) {
+                                $totalAmount = (float) ($basePricing['main_plus_both'] ?? 65.0);
+                            } elseif ($includeSalad || $includeDessert) {
+                                $totalAmount = (float) ($basePricing['main_plus_one'] ?? 55.0);
+                            } else {
+                                $totalAmount = (float) ($basePricing['main_only'] ?? 50.0);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Note: For this UI, we just show a placeholder item - the actual invoice
+            // will be created using the ArInvoiceService::createFromOrder which handles pricing correctly
+            $this->selected_items[] = [
+                'menu_item_id' => null,
+                'quantity' => '1',
+                'unit' => '',
+                'unit_price' => number_format($totalAmount + $orderDiscount, $digits, '.', ''),
+                'discount_amount' => number_format($orderDiscount, $digits, '.', ''),
+                'line_notes' => $description,
+                'sort_order' => 0,
+            ];
+            $this->item_search[] = $description;
+        } else {
+            // For regular orders, prefill individual items with their prices
+            foreach ($order->items as $item) {
+                $menuItem = $item->menuItem;
+                $unitPrice = (float) ($item->unit_price ?? 0);
+                $discount = (float) ($item->discount_amount ?? 0);
+
+                $this->selected_items[] = [
+                    'menu_item_id' => $menuItem?->id,
+                    'quantity' => (string) $item->quantity,
+                    'unit' => $menuItem?->unit ?? '',
+                    'unit_price' => number_format($unitPrice, $digits, '.', ''),
+                    'discount_amount' => number_format($discount, $digits, '.', ''),
+                    'line_notes' => null,
+                    'sort_order' => count($this->selected_items),
+                ];
+                $this->item_search[] = $menuItem?->name ?? $item->description_snapshot ?? '';
+            }
+        }
+
+        if (count($this->selected_items) === 0) {
+            $this->addItemRow();
+        }
+
+        // Add order reference to notes
+        $this->notes = __('Invoice from Order: :order', ['order' => $order->order_number]);
     }
 
     public function with(): array
@@ -208,13 +355,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             $menuItem = MenuItem::find($menuItemId);
             $desc = $menuItem ? trim(($menuItem->code ?? '').' '.$menuItem->name) : __('Item');
             $qty = (string) ($row['quantity'] ?? '1.000');
-            $unitStr = (string) ($row['unit_price'] ?? '0.000');
-            $discountStr = (string) ($row['discount_amount'] ?? '0.000');
+            $unitStr = (string) ($row['unit_price'] ?? $this->moneyZero());
+            $discountStr = (string) ($row['discount_amount'] ?? $this->moneyZero());
             $unit = (string) ($row['unit'] ?? '');
             $lineNotes = $row['line_notes'] ?? null;
 
             try {
-                $unitCents = MinorUnits::parse($unitStr);
+                $unitCents = MinorUnits::parsePos($unitStr);
             } catch (\InvalidArgumentException $e) {
                 $this->addError("selected_items.$idx.unit_price", __('Invalid unit price.'));
                 return;
@@ -227,7 +374,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
 
             try {
-                $discountCents = MinorUnits::parse($discountStr);
+                $discountCents = MinorUnits::parsePos($discountStr);
             } catch (\InvalidArgumentException $e) {
                 $this->addError("selected_items.$idx.discount_amount", __('Invalid discount.'));
                 return;
@@ -260,13 +407,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         try {
             $invoiceDiscountValue = $this->invoice_discount_type === 'percent'
                 ? $this->parsePercentToBps($this->invoice_discount_value)
-                : MinorUnits::parse($this->invoice_discount_value);
+                : MinorUnits::parsePos($this->invoice_discount_value);
             $invoice = $service->createDraft(
                 branchId: $this->branch_id,
                 customerId: $this->customer_id,
                 items: $items,
                 actorId: $userId,
-                currency: 'KWD',
+                currency: (string) config('pos.currency'),
                 sourceSaleId: null,
                 type: 'invoice',
                 issueDate: $this->invoice_date,
@@ -278,6 +425,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 invoiceDiscountType: $this->invoice_discount_type,
                 invoiceDiscountValue: $invoiceDiscountValue,
             );
+            // Link to source order if applicable
+            if ($this->source_order_id) {
+                $invoice->update(['source_order_id' => $this->source_order_id, 'updated_by' => $userId]);
+                // Mark order as invoiced
+                Order::where('id', $this->source_order_id)->update(['invoiced_at' => now()]);
+            }
+
             if ($this->notes) {
                 $invoice->update(['notes' => $this->notes, 'updated_by' => $userId]);
             }
@@ -299,12 +453,32 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function formatMoney(?int $cents): string
     {
-        $cents = (int) ($cents ?? 0);
-        $sign = $cents < 0 ? '-' : '';
-        $cents = abs($cents);
-        $whole = intdiv($cents, 1000);
-        $frac = $cents % 1000;
-        return $sign.$whole.'.'.str_pad((string) $frac, 3, '0', STR_PAD_LEFT);
+        return MinorUnits::format((int) ($cents ?? 0));
+    }
+
+    public function moneyScaleDigits(): int
+    {
+        return MinorUnits::scaleDigits(MinorUnits::posScale());
+    }
+
+    public function moneyStep(): string
+    {
+        $digits = $this->moneyScaleDigits();
+        if ($digits <= 0) {
+            return '1';
+        }
+
+        return '0.'.str_pad('1', $digits, '0', STR_PAD_LEFT);
+    }
+
+    public function moneyZero(): string
+    {
+        $digits = $this->moneyScaleDigits();
+        if ($digits <= 0) {
+            return '0';
+        }
+
+        return '0.'.str_repeat('0', $digits);
     }
 
     private function parsePercentToBps(string $percent): int
@@ -338,6 +512,21 @@ new #[Layout('components.layouts.app')] class extends Component {
     @if (session('status'))
         <div class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">
             {{ session('status') }}
+        </div>
+    @endif
+
+    @if (session('error'))
+        <div class="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-100">
+            {{ session('error') }}
+        </div>
+    @endif
+
+    @if ($source_order_number)
+        <div class="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-100">
+            <div class="flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <span>{{ __('Creating invoice from Order: :order', ['order' => $source_order_number]) }}</span>
+            </div>
         </div>
     @endif
 
@@ -435,7 +624,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <option value="fixed">{{ __('Fixed') }}</option>
                         <option value="percent">{{ __('%') }}</option>
                     </select>
-                    <flux:input wire:model.live="invoice_discount_value" />
+                    <flux:input wire:model.live="invoice_discount_value" type="number" step="{{ $this->moneyStep() }}" />
                 </div>
             </div>
         </div>
@@ -450,9 +639,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         @error('selected_items') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
 
         <div class="overflow-x-auto">
-            @php
-                $subtotal = 0;
-                $discountTotal = 0;
+        @php
+            $moneyDigits = $this->moneyScaleDigits();
+            $moneyStep = $this->moneyStep();
+            $subtotal = 0;
+            $discountTotal = 0;
                 foreach ($selected_items as $row) {
                     $qty = (float) ($row['quantity'] ?? 0);
                     $price = (float) ($row['unit_price'] ?? 0);
@@ -548,13 +739,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.unit" class="w-20" />
                             </td>
                             <td class="px-3 py-3 text-sm">
-                                <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.unit_price" type="number" step="0.001" class="w-24" />
+                                <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.unit_price" type="number" step="{{ $moneyStep }}" class="w-24" />
                             </td>
                             <td class="px-3 py-3 text-sm">
-                                <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.discount_amount" type="number" step="0.001" class="w-24" />
+                                <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.discount_amount" type="number" step="{{ $moneyStep }}" class="w-24" />
                             </td>
                             <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">
-                                {{ number_format($lineTotal, 3, '.', '') }}
+                                {{ number_format($lineTotal, $moneyDigits, '.', '') }}
                             </td>
                             <td class="px-3 py-3 text-sm">
                                 <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.line_notes" />
@@ -572,19 +763,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="w-full max-w-xs space-y-2 text-sm">
                 <div class="flex items-center justify-between text-neutral-600 dark:text-neutral-300">
                     <span>{{ __('Subtotal') }}</span>
-                    <span class="font-medium text-neutral-900 dark:text-neutral-100">{{ number_format($subtotal, 3, '.', '') }}</span>
+                    <span class="font-medium text-neutral-900 dark:text-neutral-100">{{ number_format($subtotal, $moneyDigits, '.', '') }}</span>
                 </div>
                 <div class="flex items-center justify-between text-neutral-600 dark:text-neutral-300">
                     <span>{{ __('Line Discounts') }}</span>
-                    <span class="font-medium text-neutral-900 dark:text-neutral-100">{{ number_format($discountTotal, 3, '.', '') }}</span>
+                    <span class="font-medium text-neutral-900 dark:text-neutral-100">{{ number_format($discountTotal, $moneyDigits, '.', '') }}</span>
                 </div>
                 <div class="flex items-center justify-between text-neutral-600 dark:text-neutral-300">
                     <span>{{ __('Invoice Discount') }}</span>
-                    <span class="font-medium text-neutral-900 dark:text-neutral-100">{{ number_format($invoiceDiscount, 3, '.', '') }}</span>
+                    <span class="font-medium text-neutral-900 dark:text-neutral-100">{{ number_format($invoiceDiscount, $moneyDigits, '.', '') }}</span>
                 </div>
                 <div class="flex items-center justify-between text-neutral-700 dark:text-neutral-200 font-semibold">
                     <span>{{ __('Total') }}</span>
-                    <span>{{ number_format($total, 3, '.', '') }}</span>
+                    <span>{{ number_format($total, $moneyDigits, '.', '') }}</span>
                 </div>
             </div>
         </div>

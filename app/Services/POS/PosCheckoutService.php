@@ -84,7 +84,7 @@ class PosCheckoutService
                 'updated_by' => $actorId,
             ]);
 
-            $currency = $lockedSale->currency ?: 'KWD';
+            $currency = $lockedSale->currency ?: (string) config('pos.currency');
             $due = (int) $lockedSale->due_total_cents;
 
             $remaining = $due;

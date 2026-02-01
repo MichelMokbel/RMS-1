@@ -18,6 +18,9 @@ class ArInvoice extends Model
         'branch_id',
         'customer_id',
         'source_sale_id',
+        'source_order_id',
+        'pos_reference',
+        'source',
         'type',
         'invoice_number',
         'status',
@@ -105,6 +108,11 @@ class ArInvoice extends Model
     public function sale(): BelongsTo
     {
         return $this->belongsTo(Sale::class, 'source_sale_id');
+    }
+
+    public function order(): BelongsTo
+    {
+        return $this->belongsTo(Order::class, 'source_order_id');
     }
 
     public function items(): HasMany

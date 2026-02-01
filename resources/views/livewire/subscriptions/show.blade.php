@@ -14,6 +14,8 @@ use Livewire\Volt\Component;
 new #[Layout('components.layouts.app')] class extends Component {
     public MealSubscription $subscription;
     public bool $showPauseModal = false;
+    public bool $showResumeModal = false;
+    public bool $showCancelModal = false;
     public ?string $pause_start = null;
     public ?string $pause_end = null;
     public ?string $pause_reason = null;
@@ -114,12 +116,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function resume(MealSubscriptionService $service): void
     {
         $service->resume($this->subscription);
+        $this->showResumeModal = false;
         session()->flash('status', __('Subscription resumed.'));
     }
 
     public function cancel(MealSubscriptionService $service): void
     {
         $service->cancel($this->subscription);
+        $this->showCancelModal = false;
         session()->flash('status', __('Subscription cancelled.'));
     }
 }; ?>
@@ -156,14 +160,26 @@ new #[Layout('components.layouts.app')] class extends Component {
             <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Order Type') }}: {{ $subscription->default_order_type }}</span>
             <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Preferred') }}: {{ ucfirst($subscription->preferred_role) }}</span>
             <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Salad/Dessert') }}: {{ $subscription->include_salad ? __('Yes') : __('No') }}/{{ $subscription->include_dessert ? __('Yes') : __('No') }}</span>
+            @if ($subscription->plan_meals_total !== null)
+                <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Plan') }}: {{ $subscription->plan_meals_total }} {{ __('meals') }}</span>
+                <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Meals used') }}: {{ $subscription->meals_used ?? 0 }} / {{ $subscription->plan_meals_total }}</span>
+            @else
+                <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Plan') }}: {{ __('Unlimited') }}</span>
+            @endif
         </div>
         <div class="text-sm text-neutral-800 dark:text-neutral-200">
             {{ $subscription->notes ?? __('No notes.') }}
         </div>
         <div class="flex gap-2">
-            <flux:button type="button" wire:click="$set('showPauseModal', true)">{{ __('Pause') }}</flux:button>
-            <flux:button type="button" wire:click="resume" variant="primary">{{ __('Resume') }}</flux:button>
-            <flux:button type="button" wire:click="cancel" variant="ghost">{{ __('Cancel') }}</flux:button>
+            @if ($subscription->status === 'active')
+                <flux:button type="button" wire:click="$set('showPauseModal', true)">{{ __('Pause') }}</flux:button>
+                <flux:button type="button" wire:click="$set('showCancelModal', true)" variant="ghost">{{ __('Cancel') }}</flux:button>
+            @elseif ($subscription->status === 'paused')
+                <flux:button type="button" wire:click="$set('showResumeModal', true)" variant="primary">{{ __('Resume') }}</flux:button>
+                <flux:button type="button" wire:click="$set('showCancelModal', true)" variant="ghost">{{ __('Cancel') }}</flux:button>
+            @elseif (in_array($subscription->status, ['cancelled', 'expired']))
+                <span class="text-sm text-neutral-600 dark:text-neutral-400">{{ __('No actions available') }}</span>
+            @endif
         </div>
     </div>
 
@@ -249,5 +265,49 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <flux:button type="submit" variant="primary">{{ __('Save Pause') }}</flux:button>
             </div>
         </form>
+    </flux:modal>
+
+    {{-- Resume confirmation modal --}}
+    <flux:modal
+        name="resume-subscription"
+        wire:model="showResumeModal"
+        focusable
+        class="max-w-md"
+    >
+        <div class="space-y-4">
+            <div class="space-y-1">
+                <flux:heading size="lg">{{ __('Resume Subscription') }}</flux:heading>
+                <flux:subheading>{{ __('Are you sure you want to resume this subscription? Orders will be generated again according to the schedule.') }}</flux:subheading>
+            </div>
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+                <flux:button type="button" wire:click="resume" variant="primary">{{ __('Resume') }}</flux:button>
+            </div>
+        </div>
+    </flux:modal>
+
+    {{-- Cancel confirmation modal --}}
+    <flux:modal
+        name="cancel-subscription"
+        wire:model="showCancelModal"
+        focusable
+        class="max-w-md"
+    >
+        <div class="space-y-4">
+            <div class="space-y-1">
+                <flux:heading size="lg">{{ __('Cancel Subscription') }}</flux:heading>
+                <flux:subheading>{{ __('Are you sure you want to cancel this subscription? This action will stop all future order generation. Existing orders will not be affected.') }}</flux:subheading>
+            </div>
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+                <flux:button type="button" wire:click="cancel" variant="danger">{{ __('Confirm Cancel') }}</flux:button>
+            </div>
+        </div>
     </flux:modal>
 </div>

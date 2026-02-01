@@ -19,7 +19,7 @@ Route::get('/', function () {
     return redirect()->route('login');
 })->name('home');
 
-Route::view('dashboard', 'dashboard')
+Volt::route('dashboard', 'dashboard')
     ->middleware(['auth', 'active'])
     ->name('dashboard');
 
@@ -211,14 +211,13 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
             ->limit(12)
             ->get()
             ->map(function (MenuItem $item) {
-                $label = trim(($item->code ?? '').' '.$item->name);
                 $price = $item->selling_price_per_unit !== null ? (float) $item->selling_price_per_unit : null;
 
                 return [
                     'id' => $item->id,
                     'name' => $item->name,
                     'code' => $item->code,
-                    'label' => $label,
+                    'label' => $item->name,
                     'price' => $price,
                     'price_formatted' => $price !== null ? number_format($price, 3, '.', '') : null,
                 ];
@@ -556,8 +555,19 @@ Route::middleware(['auth', 'active', 'role:admin|manager|cashier'])->group(funct
 
 // AR (receivables)
 Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+    Volt::route('receivables/payments', 'receivables.payments.index')->name('receivables.payments.index');
+    Volt::route('receivables/payments/create', 'receivables.payments.create')->name('receivables.payments.create');
+    Volt::route('receivables/payments/{payment}', 'receivables.payments.show')->name('receivables.payments.show');
+    Route::get('receivables/payments/{payment}/print', function (\App\Models\Payment $payment) {
+        $payment->load(['customer', 'allocations.allocatable']);
+        return view('receivables.payment-receipt', ['payment' => $payment]);
+    })->name('receivables.payments.print');
+
+    Volt::route('receivables/orders-to-invoice', 'receivables.orders-to-invoice')->name('receivables.orders-to-invoice');
+
     Volt::route('invoices', 'receivables.invoices.index')->name('invoices.index');
     Volt::route('invoices/create', 'receivables.invoices.create')->name('invoices.create');
+    Volt::route('invoices/create/{order_id}', 'receivables.invoices.create')->name('invoices.create-from-order');
     Volt::route('invoices/{invoice}', 'receivables.invoices.show')->name('invoices.show');
     Route::get('invoices/{invoice}/print', function (\App\Models\ArInvoice $invoice) {
         $invoice->load(['items', 'customer', 'paymentAllocations.payment']);
@@ -570,12 +580,31 @@ Route::middleware(['auth', 'active', 'role:admin|manager|staff'])->prefix('repor
     Volt::route('/', 'reports.index')->name('index');
     Volt::route('orders', 'reports.orders')->name('orders');
     Volt::route('purchase-orders', 'reports.purchase-orders')->name('purchase-orders');
+    Volt::route('purchase-order-detail', 'reports.purchase-order-detail')->name('purchase-order-detail');
     Volt::route('expenses', 'reports.expenses')->name('expenses');
     Volt::route('costing', 'reports.costing')->name('costing');
     Volt::route('sales', 'reports.sales')->name('sales');
     Volt::route('inventory', 'reports.inventory')->name('inventory');
     Volt::route('payables', 'reports.payables')->name('payables');
     Volt::route('receivables', 'reports.receivables')->name('receivables');
+    Volt::route('customer-advances', 'reports.customer-advances')->name('customer-advances');
+    Volt::route('sales-all', 'reports.sales-all')->name('sales-all');
+    Volt::route('session-branch-sales', 'reports.session-branch-sales')->name('session-branch-sales');
+    Volt::route('daily-sales', 'reports.daily-sales')->name('daily-sales');
+    Volt::route('sales-entry-daily', 'reports.sales-entry-daily')->name('sales-entry-daily');
+    Volt::route('sales-entry-monthly', 'reports.sales-entry-monthly')->name('sales-entry-monthly');
+    Volt::route('category-sales-summary', 'reports.category-sales-summary')->name('category-sales-summary');
+    Volt::route('receivables-summary', 'reports.receivables-summary')->name('receivables-summary');
+    Volt::route('customer-statement', 'reports.customer-statement')->name('customer-statement');
+    Volt::route('customers-statement', 'reports.customers-statement')->name('customers-statement');
+    Volt::route('statement-of-accounts', 'reports.statement-of-accounts')->name('statement-of-accounts');
+    Volt::route('supplier-statement', 'reports.supplier-statement')->name('supplier-statement');
+    Volt::route('suppliers-statement', 'reports.suppliers-statement')->name('suppliers-statement');
+    Volt::route('payables-summary', 'reports.payables-summary')->name('payables-summary');
+    Volt::route('monthly-branch-sales', 'reports.monthly-branch-sales')->name('monthly-branch-sales');
+    Volt::route('customer-aging-summary', 'reports.customer-aging-summary')->name('customer-aging-summary');
+    Volt::route('supplier-aging-summary', 'reports.supplier-aging-summary')->name('supplier-aging-summary');
+    Volt::route('subscription-details', 'reports.subscription-details')->name('subscription-details');
 
     Route::get('orders/print', [\App\Http\Controllers\Reports\OrdersReportController::class, 'print'])->name('orders.print');
     Route::get('orders/csv', [\App\Http\Controllers\Reports\OrdersReportController::class, 'csv'])->name('orders.csv');
@@ -583,6 +612,9 @@ Route::middleware(['auth', 'active', 'role:admin|manager|staff'])->prefix('repor
     Route::get('purchase-orders/print', [\App\Http\Controllers\Reports\PurchaseOrdersReportController::class, 'print'])->name('purchase-orders.print');
     Route::get('purchase-orders/csv', [\App\Http\Controllers\Reports\PurchaseOrdersReportController::class, 'csv'])->name('purchase-orders.csv');
     Route::get('purchase-orders/pdf', [\App\Http\Controllers\Reports\PurchaseOrdersReportController::class, 'pdf'])->name('purchase-orders.pdf');
+    Route::get('purchase-order-detail/print', [\App\Http\Controllers\Reports\PurchaseOrderDetailReportController::class, 'print'])->name('purchase-order-detail.print');
+    Route::get('purchase-order-detail/csv', [\App\Http\Controllers\Reports\PurchaseOrderDetailReportController::class, 'csv'])->name('purchase-order-detail.csv');
+    Route::get('purchase-order-detail/pdf', [\App\Http\Controllers\Reports\PurchaseOrderDetailReportController::class, 'pdf'])->name('purchase-order-detail.pdf');
     Route::get('expenses/print', [\App\Http\Controllers\Reports\ExpensesReportController::class, 'print'])->name('expenses.print');
     Route::get('expenses/csv', [\App\Http\Controllers\Reports\ExpensesReportController::class, 'csv'])->name('expenses.csv');
     Route::get('expenses/pdf', [\App\Http\Controllers\Reports\ExpensesReportController::class, 'pdf'])->name('expenses.pdf');
@@ -601,4 +633,57 @@ Route::middleware(['auth', 'active', 'role:admin|manager|staff'])->prefix('repor
     Route::get('receivables/print', [\App\Http\Controllers\Reports\ReceivablesReportController::class, 'print'])->name('receivables.print');
     Route::get('receivables/csv', [\App\Http\Controllers\Reports\ReceivablesReportController::class, 'csv'])->name('receivables.csv');
     Route::get('receivables/pdf', [\App\Http\Controllers\Reports\ReceivablesReportController::class, 'pdf'])->name('receivables.pdf');
+    Route::get('customer-advances/print', [\App\Http\Controllers\Reports\CustomerAdvancesReportController::class, 'print'])->name('customer-advances.print');
+    Route::get('customer-advances/csv', [\App\Http\Controllers\Reports\CustomerAdvancesReportController::class, 'csv'])->name('customer-advances.csv');
+    Route::get('customer-advances/pdf', [\App\Http\Controllers\Reports\CustomerAdvancesReportController::class, 'pdf'])->name('customer-advances.pdf');
+    Route::get('sales-all/print', [\App\Http\Controllers\Reports\SalesAllReportController::class, 'print'])->name('sales-all.print');
+    Route::get('sales-all/csv', [\App\Http\Controllers\Reports\SalesAllReportController::class, 'csv'])->name('sales-all.csv');
+    Route::get('sales-all/pdf', [\App\Http\Controllers\Reports\SalesAllReportController::class, 'pdf'])->name('sales-all.pdf');
+    Route::get('session-branch-sales/print', [\App\Http\Controllers\Reports\SessionBranchSalesReportController::class, 'print'])->name('session-branch-sales.print');
+    Route::get('session-branch-sales/csv', [\App\Http\Controllers\Reports\SessionBranchSalesReportController::class, 'csv'])->name('session-branch-sales.csv');
+    Route::get('session-branch-sales/pdf', [\App\Http\Controllers\Reports\SessionBranchSalesReportController::class, 'pdf'])->name('session-branch-sales.pdf');
+    Route::get('daily-sales/print', [\App\Http\Controllers\Reports\DailySalesReportController::class, 'print'])->name('daily-sales.print');
+    Route::get('daily-sales/csv', [\App\Http\Controllers\Reports\DailySalesReportController::class, 'csv'])->name('daily-sales.csv');
+    Route::get('daily-sales/pdf', [\App\Http\Controllers\Reports\DailySalesReportController::class, 'pdf'])->name('daily-sales.pdf');
+    Route::get('sales-entry-daily/print', [\App\Http\Controllers\Reports\SalesEntryDailyReportController::class, 'print'])->name('sales-entry-daily.print');
+    Route::get('sales-entry-daily/csv', [\App\Http\Controllers\Reports\SalesEntryDailyReportController::class, 'csv'])->name('sales-entry-daily.csv');
+    Route::get('sales-entry-daily/pdf', [\App\Http\Controllers\Reports\SalesEntryDailyReportController::class, 'pdf'])->name('sales-entry-daily.pdf');
+    Route::get('sales-entry-monthly/print', [\App\Http\Controllers\Reports\SalesEntryMonthlyReportController::class, 'print'])->name('sales-entry-monthly.print');
+    Route::get('sales-entry-monthly/csv', [\App\Http\Controllers\Reports\SalesEntryMonthlyReportController::class, 'csv'])->name('sales-entry-monthly.csv');
+    Route::get('sales-entry-monthly/pdf', [\App\Http\Controllers\Reports\SalesEntryMonthlyReportController::class, 'pdf'])->name('sales-entry-monthly.pdf');
+    Route::get('category-sales-summary/print', [\App\Http\Controllers\Reports\CategorySalesSummaryReportController::class, 'print'])->name('category-sales-summary.print');
+    Route::get('category-sales-summary/csv', [\App\Http\Controllers\Reports\CategorySalesSummaryReportController::class, 'csv'])->name('category-sales-summary.csv');
+    Route::get('category-sales-summary/pdf', [\App\Http\Controllers\Reports\CategorySalesSummaryReportController::class, 'pdf'])->name('category-sales-summary.pdf');
+    Route::get('receivables-summary/print', [\App\Http\Controllers\Reports\ReceivablesSummaryReportController::class, 'print'])->name('receivables-summary.print');
+    Route::get('receivables-summary/csv', [\App\Http\Controllers\Reports\ReceivablesSummaryReportController::class, 'csv'])->name('receivables-summary.csv');
+    Route::get('receivables-summary/pdf', [\App\Http\Controllers\Reports\ReceivablesSummaryReportController::class, 'pdf'])->name('receivables-summary.pdf');
+    Route::get('customer-statement/print', [\App\Http\Controllers\Reports\CustomerStatementReportController::class, 'print'])->name('customer-statement.print');
+    Route::get('customer-statement/csv', [\App\Http\Controllers\Reports\CustomerStatementReportController::class, 'csv'])->name('customer-statement.csv');
+    Route::get('customer-statement/pdf', [\App\Http\Controllers\Reports\CustomerStatementReportController::class, 'pdf'])->name('customer-statement.pdf');
+    Route::get('customers-statement/print', [\App\Http\Controllers\Reports\CustomersStatementReportController::class, 'print'])->name('customers-statement.print');
+    Route::get('customers-statement/csv', [\App\Http\Controllers\Reports\CustomersStatementReportController::class, 'csv'])->name('customers-statement.csv');
+    Route::get('customers-statement/pdf', [\App\Http\Controllers\Reports\CustomersStatementReportController::class, 'pdf'])->name('customers-statement.pdf');
+    Route::get('statement-of-accounts/print', [\App\Http\Controllers\Reports\StatementOfAccountsReportController::class, 'print'])->name('statement-of-accounts.print');
+    Route::get('statement-of-accounts/csv', [\App\Http\Controllers\Reports\StatementOfAccountsReportController::class, 'csv'])->name('statement-of-accounts.csv');
+    Route::get('statement-of-accounts/pdf', [\App\Http\Controllers\Reports\StatementOfAccountsReportController::class, 'pdf'])->name('statement-of-accounts.pdf');
+    Route::get('supplier-statement/print', [\App\Http\Controllers\Reports\SupplierStatementReportController::class, 'print'])->name('supplier-statement.print');
+    Route::get('supplier-statement/csv', [\App\Http\Controllers\Reports\SupplierStatementReportController::class, 'csv'])->name('supplier-statement.csv');
+    Route::get('supplier-statement/pdf', [\App\Http\Controllers\Reports\SupplierStatementReportController::class, 'pdf'])->name('supplier-statement.pdf');
+    Route::get('suppliers-statement/print', [\App\Http\Controllers\Reports\SuppliersStatementReportController::class, 'print'])->name('suppliers-statement.print');
+    Route::get('suppliers-statement/csv', [\App\Http\Controllers\Reports\SuppliersStatementReportController::class, 'csv'])->name('suppliers-statement.csv');
+    Route::get('suppliers-statement/pdf', [\App\Http\Controllers\Reports\SuppliersStatementReportController::class, 'pdf'])->name('suppliers-statement.pdf');
+    Route::get('payables-summary/print', [\App\Http\Controllers\Reports\PayablesSummaryReportController::class, 'print'])->name('payables-summary.print');
+    Route::get('payables-summary/csv', [\App\Http\Controllers\Reports\PayablesSummaryReportController::class, 'csv'])->name('payables-summary.csv');
+    Route::get('payables-summary/pdf', [\App\Http\Controllers\Reports\PayablesSummaryReportController::class, 'pdf'])->name('payables-summary.pdf');
+    Route::get('monthly-branch-sales/print', [\App\Http\Controllers\Reports\MonthlyBranchSalesReportController::class, 'print'])->name('monthly-branch-sales.print');
+    Route::get('monthly-branch-sales/csv', [\App\Http\Controllers\Reports\MonthlyBranchSalesReportController::class, 'csv'])->name('monthly-branch-sales.csv');
+    Route::get('monthly-branch-sales/pdf', [\App\Http\Controllers\Reports\MonthlyBranchSalesReportController::class, 'pdf'])->name('monthly-branch-sales.pdf');
+    Route::get('customer-aging-summary/print', [\App\Http\Controllers\Reports\CustomerAgingSummaryReportController::class, 'print'])->name('customer-aging-summary.print');
+    Route::get('customer-aging-summary/csv', [\App\Http\Controllers\Reports\CustomerAgingSummaryReportController::class, 'csv'])->name('customer-aging-summary.csv');
+    Route::get('customer-aging-summary/pdf', [\App\Http\Controllers\Reports\CustomerAgingSummaryReportController::class, 'pdf'])->name('customer-aging-summary.pdf');
+    Route::get('supplier-aging-summary/print', [\App\Http\Controllers\Reports\SupplierAgingSummaryReportController::class, 'print'])->name('supplier-aging-summary.print');
+    Route::get('supplier-aging-summary/csv', [\App\Http\Controllers\Reports\SupplierAgingSummaryReportController::class, 'csv'])->name('supplier-aging-summary.csv');
+    Route::get('supplier-aging-summary/pdf', [\App\Http\Controllers\Reports\SupplierAgingSummaryReportController::class, 'pdf'])->name('supplier-aging-summary.pdf');
+    Route::get('subscription-details/print', [\App\Http\Controllers\Reports\SubscriptionDetailsReportController::class, 'print'])->name('subscription-details.print');
+    Route::get('subscription-details/csv', [\App\Http\Controllers\Reports\SubscriptionDetailsReportController::class, 'csv'])->name('subscription-details.csv');
 });

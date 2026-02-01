@@ -3,6 +3,7 @@
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\DailyDishMenu;
+use App\Models\MealSubscription;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -20,6 +21,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public int $branch_id = 1;
     public string $source = 'Backoffice';
     public bool $is_daily_dish = true;
+    public bool $is_daily_dish_subscription = false;
+    public ?int $subscription_id = null;
+    public ?int $subscription_main_menu_item_id = null;
     public string $type = 'Delivery';
     public string $status = 'Confirmed';
     public ?int $customer_id = null;
@@ -53,6 +57,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function with(): array
     {
         $menus = collect();
+        $subscriptions = collect();
+        $subscriptionMainDishOptions = collect();
         if ($this->is_daily_dish) {
             $menus = DailyDishMenu::with('items.menuItem')
                 ->where('status', 'published')
@@ -60,6 +66,26 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->orderByDesc('service_date')
                 ->limit(30)
                 ->get();
+            if ($this->is_daily_dish_subscription && $this->scheduled_date) {
+                $subscriptions = MealSubscription::with(['days', 'pauses', 'customer'])
+                    ->where('branch_id', $this->branch_id)
+                    ->where('status', 'active')
+                    ->whereDate('start_date', '<=', $this->scheduled_date)
+                    ->where(function ($q) {
+                        $q->whereNull('end_date')->orWhereDate('end_date', '>=', $this->scheduled_date);
+                    })
+                    ->get()
+                    ->filter(fn ($s) => $s->isActiveOn($this->scheduled_date))
+                    ->values();
+                $subscriptionMenu = DailyDishMenu::with('items.menuItem')
+                    ->where('branch_id', $this->branch_id)
+                    ->whereDate('service_date', $this->scheduled_date)
+                    ->where('status', 'published')
+                    ->first();
+                $subscriptionMainDishOptions = $subscriptionMenu
+                    ? $subscriptionMenu->items->filter(fn ($i) => in_array($i->role ?? '', ['main', 'diet', 'vegetarian'], true))->values()
+                    : collect();
+            }
         }
 
         $customers = collect();
@@ -74,6 +100,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         return [
             'customers' => $customers,
             'menus' => $menus,
+            'subscriptions' => $subscriptions,
+            'subscription_main_dish_options' => $subscriptionMainDishOptions ?? collect(),
             'categories' => Schema::hasTable('categories') ? Category::orderBy('name')->get() : collect(),
             'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
         ];
@@ -94,6 +122,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->menu_id = null;
         $this->selected_items = [];
         $this->item_search = [];
+        $this->is_daily_dish_subscription = false;
+        $this->subscription_id = null;
+        $this->subscription_main_menu_item_id = null;
 
         if (! $this->is_daily_dish) {
             $this->addItemRow();
@@ -327,10 +358,24 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function save(OrderCreateService $service, OrderCreateRules $rules): void
     {
+        if ($this->is_daily_dish_subscription && ! $this->subscription_id) {
+            $this->addError('subscription_id', __('Select a subscription.'));
+            return;
+        }
+        if ($this->is_daily_dish_subscription && $this->subscription_id && ! $this->subscription_main_menu_item_id) {
+            $this->addError('subscription_main_menu_item_id', __('Select a main dish for this subscription order.'));
+            return;
+        }
         $data = $this->validate($rules->rules());
         $data['customer_name_snapshot'] = $this->customer_name_snapshot;
         $data['customer_phone_snapshot'] = $this->customer_phone_snapshot;
         $data['delivery_address_snapshot'] = $this->delivery_address_snapshot;
+        if ($this->is_daily_dish_subscription && $this->subscription_id) {
+            $data['source'] = 'Subscription';
+            $data['subscription_id'] = $this->subscription_id;
+            $data['subscription_main_menu_item_id'] = $this->subscription_main_menu_item_id;
+            $data['selected_items'] = [];
+        }
 
         try {
             $order = $service->create($data, Auth::id());
@@ -386,6 +431,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="flex items-center gap-3 pt-6">
                 <flux:checkbox wire:model.live="is_daily_dish" :label="__('Daily Dish')" />
             </div>
+            @if ($is_daily_dish)
+                <div class="flex items-center gap-3 pt-6">
+                    <flux:checkbox wire:model.live="is_daily_dish_subscription" :label="__('Daily dish subscription')" />
+                </div>
+            @endif
         </div>
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -611,6 +661,35 @@ new #[Layout('components.layouts.app')] class extends Component {
     @if ($is_daily_dish)
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
             <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Daily Dish Menu & Items') }}</h2>
+            @if ($is_daily_dish_subscription)
+                <div class="space-y-4">
+                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                            <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Subscription') }}</label>
+                            <select wire:model.live="subscription_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                                <option value="">{{ __('Select subscription') }}</option>
+                                @foreach($subscriptions as $sub)
+                                    <option value="{{ $sub->id }}">{{ $sub->subscription_code ?? $sub->id }} — {{ $sub->customer->name ?? __('Customer') }}</option>
+                                @endforeach
+                            </select>
+                            @error('subscription_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                        </div>
+                    </div>
+                    @if ($subscription_id)
+                        <div>
+                            <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Main dish') }}</label>
+                            <select wire:model="subscription_main_menu_item_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                                <option value="">{{ __('Select main dish') }}</option>
+                                @foreach($subscription_main_dish_options as $opt)
+                                    <option value="{{ $opt->menu_item_id }}">{{ $opt->menuItem->name ?? $opt->menu_item_id }}</option>
+                                @endforeach
+                            </select>
+                            @error('subscription_main_menu_item_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                            <p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{{ __('Salad, dessert, appetizer and water are added from the subscription.') }}</p>
+                        </div>
+                    @endif
+                </div>
+            @else
             <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                     <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Published Menu') }}</label>
@@ -641,6 +720,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </div>
                     @endforeach
                 </div>
+            @endif
             @endif
         </div>
     @endif

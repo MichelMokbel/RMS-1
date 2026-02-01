@@ -19,7 +19,7 @@ class SaleFactory extends Factory
             'sale_number' => null,
             'status' => 'open',
             'order_type' => 'takeaway',
-            'currency' => 'KWD',
+            'currency' => (string) config('pos.currency'),
             'subtotal_cents' => 0,
             'discount_total_cents' => 0,
             'global_discount_cents' => 0,

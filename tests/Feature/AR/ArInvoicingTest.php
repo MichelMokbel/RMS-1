@@ -2,11 +2,12 @@
 
 use App\Models\ArInvoice;
 use App\Models\Customer;
+use App\Models\Payment;
 use App\Models\User;
 use App\Services\AR\ArAllocationService;
 use App\Services\AR\ArInvoiceService;
+use App\Services\AR\ArPaymentService;
 use Illuminate\Support\Carbon;
-use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 
 beforeEach(function () {
@@ -26,14 +27,24 @@ it('issues invoices with sequential, concurrency-safe numbers per branch/year', 
     /** @var ArInvoiceService $svc */
     $svc = app(ArInvoiceService::class);
 
-    $a = $svc->createDraft(1, $customer->id, [
-        ['description' => 'Item A', 'qty' => '1.000', 'unit_price_cents' => 10000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 10000],
-    ], $user->id);
+    $a = $svc->createDraft(
+        branchId: 1,
+        customerId: $customer->id,
+        items: [
+            ['description' => 'Item A', 'qty' => '1.000', 'unit_price_cents' => 10000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 10000],
+        ],
+        actorId: $user->id,
+    );
     $a = $svc->issue($a, $user->id);
 
-    $b = $svc->createDraft(1, $customer->id, [
-        ['description' => 'Item B', 'qty' => '1.000', 'unit_price_cents' => 5000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 5000],
-    ], $user->id);
+    $b = $svc->createDraft(
+        branchId: 1,
+        customerId: $customer->id,
+        items: [
+            ['description' => 'Item B', 'qty' => '1.000', 'unit_price_cents' => 5000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 5000],
+        ],
+        actorId: $user->id,
+    );
     $b = $svc->issue($b, $user->id);
 
     expect($a->invoice_number)->toStartWith('INV2026-');
@@ -52,9 +63,14 @@ it('applies partial and full payments and updates invoice balance/status', funct
 
     /** @var ArInvoiceService $invoices */
     $invoices = app(ArInvoiceService::class);
-    $inv = $invoices->createDraft(1, $customer->id, [
-        ['description' => 'Service', 'qty' => '1.000', 'unit_price_cents' => 10000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 10000],
-    ], $user->id);
+    $inv = $invoices->createDraft(
+        branchId: 1,
+        customerId: $customer->id,
+        items: [
+            ['description' => 'Service', 'qty' => '1.000', 'unit_price_cents' => 10000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 10000],
+        ],
+        actorId: $user->id,
+    );
     $inv = $invoices->issue($inv, $user->id);
 
     /** @var ArAllocationService $alloc */
@@ -90,14 +106,25 @@ it('creates and applies a credit note to reduce invoice balance', function () {
     /** @var ArInvoiceService $invoices */
     $invoices = app(ArInvoiceService::class);
 
-    $inv = $invoices->createDraft(1, $customer->id, [
-        ['description' => 'Service', 'qty' => '1.000', 'unit_price_cents' => 10000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 10000],
-    ], $user->id);
+    $inv = $invoices->createDraft(
+        branchId: 1,
+        customerId: $customer->id,
+        items: [
+            ['description' => 'Service', 'qty' => '1.000', 'unit_price_cents' => 10000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 10000],
+        ],
+        actorId: $user->id,
+    );
     $inv = $invoices->issue($inv, $user->id);
 
-    $credit = $invoices->createDraft(1, $customer->id, [
-        ['description' => 'Return', 'qty' => '1.000', 'unit_price_cents' => -3000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => -3000],
-    ], $user->id, type: 'credit_note');
+    $credit = $invoices->createDraft(
+        branchId: 1,
+        customerId: $customer->id,
+        items: [
+            ['description' => 'Return', 'qty' => '1.000', 'unit_price_cents' => -3000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => -3000],
+        ],
+        actorId: $user->id,
+        type: 'credit_note'
+    );
     $credit = $invoices->issue($credit, $user->id);
 
     /** @var ArAllocationService $alloc */
@@ -111,7 +138,7 @@ it('creates and applies a credit note to reduce invoice balance', function () {
     expect($credit->balance_cents)->toBe(0);
 });
 
-it('rejects payments that exceed invoice balance', function () {
+it('allows overpayment and stores remainder as advance', function () {
     $user = User::factory()->create();
     $user->assignRole('manager');
 
@@ -119,18 +146,86 @@ it('rejects payments that exceed invoice balance', function () {
 
     /** @var ArInvoiceService $invoices */
     $invoices = app(ArInvoiceService::class);
-    $inv = $invoices->createDraft(1, $customer->id, [
-        ['description' => 'Service', 'qty' => '1.000', 'unit_price_cents' => 10000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 10000],
-    ], $user->id);
+    $inv = $invoices->createDraft(
+        branchId: 1,
+        customerId: $customer->id,
+        items: [
+            ['description' => 'Service', 'qty' => '1.000', 'unit_price_cents' => 10000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 10000],
+        ],
+        actorId: $user->id,
+    );
     $inv = $invoices->issue($inv, $user->id);
 
     /** @var ArAllocationService $alloc */
     $alloc = app(ArAllocationService::class);
 
-    expect(fn () => $alloc->createPaymentAndAllocate([
+    $result = $alloc->createPaymentAndAllocate([
         'invoice_id' => $inv->id,
-        'amount_cents' => 11000,
+        'amount_cents' => 12000,
         'method' => 'bank',
-    ], $user->id))->toThrow(ValidationException::class);
+    ], $user->id);
+
+    expect($result['allocated_cents'])->toBe(10000);
+    expect($result['remainder_cents'])->toBe(2000);
+
+    $inv = ArInvoice::findOrFail($inv->id);
+    expect($inv->status)->toBe('paid');
+    expect($inv->balance_cents)->toBe(0);
+
+    /** @var Payment $payment */
+    $payment = $result['payment'];
+    expect($payment->allocatedCents())->toBe(10000);
+    expect($payment->unallocatedCents())->toBe(2000);
+});
+
+it('creates advance payment and applies it later', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $customer = Customer::factory()->corporate()->create();
+
+    /** @var ArInvoiceService $invoices */
+    $invoices = app(ArInvoiceService::class);
+    $inv = $invoices->createDraft(
+        branchId: 1,
+        customerId: $customer->id,
+        items: [
+            ['description' => 'Service', 'qty' => '1.000', 'unit_price_cents' => 8000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 8000],
+        ],
+        actorId: $user->id,
+    );
+    $inv = $invoices->issue($inv, $user->id);
+
+    /** @var ArPaymentService $payments */
+    $payments = app(ArPaymentService::class);
+    $payment = $payments->createAdvancePayment(
+        customerId: $customer->id,
+        branchId: 1,
+        amountCents: 5000,
+        method: 'bank',
+        receivedAt: now()->toDateTimeString(),
+        reference: null,
+        notes: null,
+        actorId: $user->id
+    );
+
+    expect($payment->allocations()->count())->toBe(0);
+    expect($payment->unallocatedCents())->toBe(5000);
+
+    $payments->applyExistingPaymentToInvoice($payment->id, $inv->id, 3000, $user->id);
+
+    $inv = ArInvoice::findOrFail($inv->id);
+    expect($inv->balance_cents)->toBe(5000);
+
+    $payment = Payment::findOrFail($payment->id);
+    expect($payment->unallocatedCents())->toBe(2000);
+});
+
+it('uses QAR as default currency for payments and invoices', function () {
+    $invoice = ArInvoice::factory()->create();
+    $payment = Payment::factory()->create();
+
+    expect($invoice->currency)->toBe(config('pos.currency'));
+    expect($payment->currency)->toBe(config('pos.currency'));
 });
 

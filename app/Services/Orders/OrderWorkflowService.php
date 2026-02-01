@@ -33,7 +33,13 @@ class OrderWorkflowService
             $locked->status = $toStatus;
             $locked->save();
 
-            // Cascades for terminal states
+            // Cascade item status when order status changes (kitchen flow)
+            if ($toStatus === 'InProduction') {
+                $locked->items()->update(['status' => 'InProduction']);
+            }
+            if ($toStatus === 'Ready') {
+                $locked->items()->update(['status' => 'Completed']);
+            }
             if ($toStatus === 'Delivered') {
                 $locked->items()->update(['status' => 'Completed']);
             }

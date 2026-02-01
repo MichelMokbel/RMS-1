@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\POS\PosCheckoutService;
 use App\Services\POS\PosShiftService;
 use App\Services\Sales\SaleService;
+use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
@@ -35,7 +36,7 @@ it('cannot checkout without an active shift', function () {
     $checkout = app(PosCheckoutService::class);
 
     expect(fn () => $checkout->checkout($sale, [
-        ['method' => 'cash', 'amount_cents' => 10000],
+        ['method' => 'cash', 'amount_cents' => MinorUnits::parsePos('10.00')],
     ], $cashier->id))->toThrow(ValidationException::class);
 });
 
@@ -51,18 +52,18 @@ it('creates sale items and computes totals correctly', function () {
     /** @var SaleService $sales */
     $sales = app(SaleService::class);
     $sale = $sales->create(['branch_id' => 1, 'customer_id' => null], $cashier->id);
-    $sales->addMenuItem($sale, $item, qty: '2.000', discountCents: 1000);
+    $sales->addMenuItem($sale, $item, qty: '2.000', discountCents: MinorUnits::parsePos('1.00'));
 
     $sale = $sale->fresh();
 
-    // subtotal = 2 * 10.000 = 20.000 => 20000
-    // discount = 1.000 => 1000
-    // net = 19000; tax 10% => 1900; total => 20900
-    expect($sale->subtotal_cents)->toBe(20000);
-    expect($sale->discount_total_cents)->toBe(1000);
-    expect($sale->tax_total_cents)->toBe(1900);
-    expect($sale->total_cents)->toBe(20900);
-    expect($sale->due_total_cents)->toBe(20900);
+    // subtotal = 2 * 10.00 = 20.00
+    // discount = 1.00
+    // net = 19.00; tax 10% => 1.90; total => 20.90
+    expect($sale->subtotal_cents)->toBe(MinorUnits::parsePos('20.00'));
+    expect($sale->discount_total_cents)->toBe(MinorUnits::parsePos('1.00'));
+    expect($sale->tax_total_cents)->toBe(MinorUnits::parsePos('1.90'));
+    expect($sale->total_cents)->toBe(MinorUnits::parsePos('20.90'));
+    expect($sale->due_total_cents)->toBe(MinorUnits::parsePos('20.90'));
 });
 
 it('supports split payments and closes the sale', function () {
@@ -87,18 +88,18 @@ it('supports split payments and closes the sale', function () {
     $shifts->open(1, $cashier->id, 5000, $cashier->id);
 
     $sale = $sale->fresh();
-    expect($sale->total_cents)->toBe(10000);
+    expect($sale->total_cents)->toBe(MinorUnits::parsePos('10.00'));
 
     /** @var PosCheckoutService $checkout */
     $checkout = app(PosCheckoutService::class);
     $closed = $checkout->checkout($sale, [
-        ['method' => 'cash', 'amount_cents' => 3000],
-        ['method' => 'card', 'amount_cents' => 7000],
+        ['method' => 'cash', 'amount_cents' => MinorUnits::parsePos('3.00')],
+        ['method' => 'card', 'amount_cents' => MinorUnits::parsePos('7.00')],
     ], $cashier->id);
 
     expect($closed->status)->toBe('closed');
     expect($closed->due_total_cents)->toBe(0);
-    expect($closed->paid_total_cents)->toBe(10000);
+    expect($closed->paid_total_cents)->toBe(MinorUnits::parsePos('10.00'));
     expect($closed->sale_number)->not()->toBeNull();
 
     Event::assertDispatched(SaleClosed::class);
@@ -191,13 +192,13 @@ it('applies global discount to totals correctly', function () {
     $sales->addMenuItem($sale, $item, qty: '2.000');
 
     $sale = $sale->fresh();
-    expect($sale->total_cents)->toBe(20000);
+    expect($sale->total_cents)->toBe(MinorUnits::parsePos('20.00'));
 
-    $sales->setGlobalDiscount($sale, 3000); // 30.00 off
+    $sales->setGlobalDiscount($sale, MinorUnits::parsePos('3.00')); // 3.00 off
     $sale = $sale->fresh();
-    expect($sale->global_discount_cents)->toBe(3000);
-    expect($sale->total_cents)->toBe(17000);
-    expect($sale->due_total_cents)->toBe(17000);
+    expect($sale->global_discount_cents)->toBe(MinorUnits::parsePos('3.00'));
+    expect($sale->total_cents)->toBe(MinorUnits::parsePos('17.00'));
+    expect($sale->due_total_cents)->toBe(MinorUnits::parsePos('17.00'));
 });
 
 it('supports percent discounts on line and invoice', function () {
@@ -216,13 +217,13 @@ it('supports percent discounts on line and invoice', function () {
 
     $sales->updateItemDiscount($line, 'percent', '10');
     $sale = $sale->fresh();
-    expect($sale->discount_total_cents)->toBe(1000);
-    expect($sale->total_cents)->toBe(9000);
+    expect($sale->discount_total_cents)->toBe(MinorUnits::parsePos('1.00'));
+    expect($sale->total_cents)->toBe(MinorUnits::parsePos('9.00'));
 
     $sales->setGlobalDiscountValue($sale, 'percent', '10');
     $sale = $sale->fresh();
-    expect($sale->global_discount_cents)->toBe(900);
-    expect($sale->total_cents)->toBe(8100);
+    expect($sale->global_discount_cents)->toBe(MinorUnits::parsePos('0.90'));
+    expect($sale->total_cents)->toBe(MinorUnits::parsePos('8.10'));
 });
 
 it('quick pay cash closes sale with single payment', function () {
@@ -251,7 +252,7 @@ it('quick pay cash closes sale with single payment', function () {
 
     expect($closed->status)->toBe('closed');
     expect($closed->due_total_cents)->toBe(0);
-    expect($closed->paid_total_cents)->toBe(15000);
+    expect($closed->paid_total_cents)->toBe(MinorUnits::parsePos('15.00'));
     Event::assertDispatched(SaleClosed::class);
 });
 
@@ -270,7 +271,7 @@ it('hold and recall preserves cart and totals', function () {
     $sales->addMenuItem($sale, $item, qty: '3.000');
 
     $sale = $sale->fresh();
-    expect($sale->total_cents)->toBe(30000);
+    expect($sale->total_cents)->toBe(MinorUnits::parsePos('30.00'));
     expect($sale->items()->count())->toBe(1);
 
     $sales->hold($sale, $cashier->id);
@@ -281,7 +282,7 @@ it('hold and recall preserves cart and totals', function () {
     $recalled = $sales->recall($sale, $cashier->id);
     $recalled = $recalled->fresh(['items']);
     expect($recalled->held_at)->toBeNull();
-    expect($recalled->total_cents)->toBe(30000);
+    expect($recalled->total_cents)->toBe(MinorUnits::parsePos('30.00'));
     expect($recalled->items->count())->toBe(1);
 });
 

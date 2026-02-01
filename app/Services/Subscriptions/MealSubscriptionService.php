@@ -21,7 +21,8 @@ class MealSubscriptionService
             $this->validateWeekdays($payload);
 
             $sub = $subscription ?? new MealSubscription();
-            if (! $sub->exists) {
+            $isNew = ! $sub->exists;
+            if ($isNew) {
                 $sub->subscription_code = $this->codeService->generate();
             }
 
@@ -39,8 +40,16 @@ class MealSubscriptionService
                 'include_salad' => $payload['include_salad'] ?? true,
                 'include_dessert' => $payload['include_dessert'] ?? true,
                 'notes' => $payload['notes'] ?? null,
+                'plan_meals_total' => $payload['plan_meals_total'] ?? null,
             ]);
             $sub->created_by = $sub->created_by ?? $userId;
+            
+            // On create, initialize meals_used to 0
+            if ($isNew) {
+                $sub->meals_used = (int) ($payload['meals_used'] ?? 0);
+            }
+            // On update, do NOT overwrite meals_used (preserve existing usage)
+            
             $sub->save();
 
             // sync weekdays
