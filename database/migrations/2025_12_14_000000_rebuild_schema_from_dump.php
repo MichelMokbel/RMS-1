@@ -8,30 +8,6 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // #region agent log
-        try {
-            $logPath = dirname(__DIR__, 2).DIRECTORY_SEPARATOR.'.cursor'.DIRECTORY_SEPARATOR.'debug.log';
-            file_put_contents(
-                $logPath,
-                json_encode([
-                    'sessionId' => 'debug-session',
-                    'runId' => 'pre-fix',
-                    'hypothesisId' => 'H1',
-                    'location' => 'database/migrations/2025_12_14_000000_rebuild_schema_from_dump.php:9',
-                    'message' => 'rebuild_schema_from_dump migration starting',
-                    'data' => [
-                        'environment' => app()->environment(),
-                        'is_testing' => app()->environment('testing'),
-                        'allow_rebuild' => (bool) env('ALLOW_SCHEMA_REBUILD_FROM_DUMP', false),
-                    ],
-                    'timestamp' => (int) (microtime(true) * 1000),
-                ], JSON_UNESCAPED_SLASHES) . PHP_EOL,
-                FILE_APPEND
-            );
-        } catch (\Throwable $e) {
-            // ignore
-        }
-        // #endregion
         // Safety guard:
         // This migration drops & recreates the schema from a SQL dump and intentionally strips data inserts.
         // It should ONLY run in tests unless explicitly enabled.
@@ -42,9 +18,8 @@ return new class extends Migration
 
         $candidateDumpPaths = [
             // Prefer the most complete dump for test reliability (must include core Laravel tables like `migrations`, `users`).
-            base_path('Dump20260127.sql'),
-            base_path('store_db.sql'),
-            base_path('store_db_no_fk.sql'),
+            base_path('schema.sql'),
+          
         ];
 
         $dumpPath = null;
@@ -95,38 +70,6 @@ return new class extends Migration
                 $table->integer('batch');
             });
         }
-
-        // #region agent log
-        try {
-            $logPath = dirname(__DIR__, 2).DIRECTORY_SEPARATOR.'.cursor'.DIRECTORY_SEPARATOR.'debug.log';
-            $tables = DB::select("SHOW TABLES");
-            $tableNames = array_map(function($t) use ($dumpPath) {
-                $key = 'Tables_in_'.DB::connection()->getDatabaseName();
-                return $t->$key ?? null;
-            }, $tables);
-            $ordersColumns = Schema::hasTable('orders') ? array_column(DB::select("SHOW COLUMNS FROM orders"), 'Field') : [];
-            file_put_contents(
-                $logPath,
-                json_encode([
-                    'sessionId' => 'debug-session',
-                    'runId' => 'pre-fix',
-                    'hypothesisId' => 'H1',
-                    'location' => 'database/migrations/2025_12_14_000000_rebuild_schema_from_dump.php:74',
-                    'message' => 'rebuild_schema_from_dump completed - schema state',
-                    'data' => [
-                        'dump_path' => $dumpPath,
-                        'tables_created' => count($tableNames),
-                        'orders_has_order_discount_amount' => in_array('order_discount_amount', $ordersColumns),
-                        'orders_columns' => $ordersColumns,
-                    ],
-                    'timestamp' => (int) (microtime(true) * 1000),
-                ], JSON_UNESCAPED_SLASHES) . PHP_EOL,
-                FILE_APPEND
-            );
-        } catch (\Throwable $e) {
-            // ignore
-        }
-        // #endregion
     }
 
     public function down(): void

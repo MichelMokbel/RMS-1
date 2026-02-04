@@ -22,6 +22,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $source = 'Backoffice';
     public bool $is_daily_dish = true;
     public bool $is_daily_dish_subscription = false;
+    public string $daily_dish_portion_type = 'plate'; // plate|full|half
+    public ?int $daily_dish_portion_quantity = null;
     public ?int $subscription_id = null;
     public ?int $subscription_main_menu_item_id = null;
     public string $type = 'Delivery';

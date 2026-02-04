@@ -20,6 +20,10 @@ use App\Http\Controllers\Api\PettyCash\ReconciliationController as PettyCashReco
 use App\Http\Controllers\Api\PettyCash\WalletController as PettyCashWalletController;
 use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\SupplierController;
+use App\Http\Controllers\Api\Pos\AuthController as PosAuthController;
+use App\Http\Controllers\Api\Pos\BootstrapController as PosBootstrapController;
+use App\Http\Controllers\Api\Pos\SequenceController as PosSequenceController;
+use App\Http\Controllers\Api\Pos\SyncController as PosSyncController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum'])->group(function () {
@@ -149,5 +153,17 @@ Route::middleware(['api', $apiAuthMiddleware])->group(function () {
     Route::middleware(['role:admin|manager|staff'])->group(function () {
         Route::post('petty-cash/expenses', [PettyCashExpenseController::class, 'store'])->name('api.petty-cash.expenses.store');
         Route::post('petty-cash/expenses/{id}', [PettyCashExpenseController::class, 'update'])->name('api.petty-cash.expenses.update');
+    });
+});
+
+// POS (Flutter desktop) - offline-first endpoints.
+Route::prefix('pos')->group(function () {
+    Route::post('login', [PosAuthController::class, 'login']);
+
+    Route::middleware(['auth:sanctum', 'pos.token'])->group(function () {
+        Route::post('logout', [PosAuthController::class, 'logout']);
+        Route::get('bootstrap', PosBootstrapController::class);
+        Route::post('sequences/reserve', [PosSequenceController::class, 'reserve']);
+        Route::post('sync', PosSyncController::class);
     });
 });

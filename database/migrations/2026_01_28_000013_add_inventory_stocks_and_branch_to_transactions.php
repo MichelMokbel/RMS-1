@@ -23,7 +23,8 @@ return new class extends Migration
             });
         }
 
-        if (Schema::hasTable('inventory_items') && Schema::hasTable('inventory_stocks')) {
+        if (Schema::hasTable('inventory_items') && Schema::hasTable('inventory_stocks')
+            && Schema::hasColumn('inventory_items', 'current_stock')) {
             DB::statement(
                 'INSERT INTO inventory_stocks (inventory_item_id, branch_id, current_stock, created_at, updated_at) '
                 .'SELECT i.id, 1, i.current_stock, NOW(), NOW() '

@@ -58,6 +58,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'ensure.admin' => EnsureAdmin::class,
             'ensure.active-branch' => EnsureActiveBranch::class,
             'role' => RoleMiddleware::class,
+            'pos.token' => \App\Http\Middleware\EnsurePosToken::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

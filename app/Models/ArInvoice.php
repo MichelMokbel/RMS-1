@@ -16,11 +16,16 @@ class ArInvoice extends Model
 
     protected $fillable = [
         'branch_id',
+        'terminal_id',
+        'pos_shift_id',
         'customer_id',
         'source_sale_id',
         'source_order_id',
         'pos_reference',
         'source',
+        'client_uuid',
+        'restaurant_table_id',
+        'table_session_id',
         'type',
         'invoice_number',
         'status',
@@ -42,6 +47,7 @@ class ArInvoice extends Model
         'paid_total_cents',
         'balance_cents',
         'notes',
+        'meta',
         'created_by',
         'updated_by',
         'voided_at',
@@ -52,6 +58,10 @@ class ArInvoice extends Model
     protected $casts = [
         'issue_date' => 'date',
         'due_date' => 'date',
+        'terminal_id' => 'integer',
+        'pos_shift_id' => 'integer',
+        'restaurant_table_id' => 'integer',
+        'table_session_id' => 'integer',
         'payment_term_days' => 'integer',
         'payment_term_id' => 'integer',
         'subtotal_cents' => 'integer',
@@ -63,6 +73,7 @@ class ArInvoice extends Model
         'paid_total_cents' => 'integer',
         'balance_cents' => 'integer',
         'voided_at' => 'datetime',
+        'meta' => 'array',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -133,4 +144,3 @@ class ArInvoice extends Model
     public function isVoided(): bool { return $this->status === 'voided'; }
     public function isCreditNote(): bool { return $this->type === 'credit_note'; }
 }
-

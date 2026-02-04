@@ -15,6 +15,8 @@ class PosShift extends Model
 
     protected $fillable = [
         'branch_id',
+        'terminal_id',
+        'device_id',
         'user_id',
         'active',
         'status',
@@ -31,6 +33,7 @@ class PosShift extends Model
 
     protected $casts = [
         'active' => 'boolean',
+        'terminal_id' => 'integer',
         'opening_cash_cents' => 'integer',
         'closing_cash_cents' => 'integer',
         'expected_cash_cents' => 'integer',
@@ -66,4 +69,3 @@ class PosShift extends Model
         return (bool) $this->active && $this->status === 'open' && $this->closed_at === null;
     }
 }
-

@@ -99,7 +99,10 @@ return [
 
     'cipher' => 'AES-256-CBC',
 
-    'key' => env('APP_KEY'),
+    'key' => env('APP_KEY') ?: (function () {
+        $f = base_path('config/app_key.php');
+        return file_exists($f) ? require $f : null;
+    })(),
 
     'previous_keys' => [
         ...array_filter(

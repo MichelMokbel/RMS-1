@@ -16,6 +16,9 @@ class PettyCashExpense extends Model
     public const CREATED_AT = 'created_at';
 
     protected $fillable = [
+        'client_uuid',
+        'terminal_id',
+        'pos_shift_id',
         'wallet_id',
         'category_id',
         'expense_date',
@@ -32,6 +35,8 @@ class PettyCashExpense extends Model
 
     protected $casts = [
         'expense_date' => 'date',
+        'terminal_id' => 'integer',
+        'pos_shift_id' => 'integer',
         'amount' => 'decimal:2',
         'tax_amount' => 'decimal:2',
         'total_amount' => 'decimal:2',

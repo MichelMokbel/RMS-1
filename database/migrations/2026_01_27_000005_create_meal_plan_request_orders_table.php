@@ -42,7 +42,7 @@ return new class extends Migration
 
     private function backfillFromLegacyJson(): void
     {
-        if (! Schema::hasTable('meal_plan_requests')) {
+        if (! Schema::hasTable('meal_plan_requests') || ! Schema::hasColumn('meal_plan_requests', 'order_ids')) {
             return;
         }
 

@@ -17,6 +17,9 @@ class Payment extends Model
     protected $fillable = [
         'branch_id',
         'customer_id',
+        'client_uuid',
+        'terminal_id',
+        'pos_shift_id',
         'source',
         'method',
         'amount_cents',
@@ -31,6 +34,8 @@ class Payment extends Model
     ];
 
     protected $casts = [
+        'terminal_id' => 'integer',
+        'pos_shift_id' => 'integer',
         'amount_cents' => 'integer',
         'received_at' => 'datetime',
         'voided_at' => 'datetime',
@@ -82,4 +87,3 @@ class Payment extends Model
         return (int) $this->amount_cents - $this->allocatedCents();
     }
 }
-
