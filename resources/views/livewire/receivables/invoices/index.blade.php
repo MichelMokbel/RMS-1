@@ -93,6 +93,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <tr>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Invoice') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Customer') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('POS Ref') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Status') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Total') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Balance') }}</th>
@@ -107,6 +108,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
                             {{ $inv->customer?->name ?: '—' }}
+                        </td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
+                            {{ $inv->pos_reference ?: '—' }}
                         </td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
                             {{ $inv->status }}
@@ -128,7 +132,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">
+                        <td colspan="7" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">
                             {{ __('No invoices found.') }}
                         </td>
                     </tr>

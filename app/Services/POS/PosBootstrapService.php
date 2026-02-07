@@ -185,6 +185,6 @@ class PosBootstrapService
         if (! Schema::hasTable($table) || ! Schema::hasColumn($table, 'updated_at')) {
             return $query;
         }
-        return $query->where('updated_at', '>', $sinceAt);
+        return $query->where("{$table}.updated_at", '>', $sinceAt);
     }
 }

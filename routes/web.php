@@ -504,6 +504,7 @@ Route::middleware(['auth', 'active', 'role:admin|manager|cashier'])->group(funct
 
 Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
     Volt::route('menu-items/availability', 'menu-items.availability')->name('menu-items.availability');
+    Volt::route('menu-items/categorize', 'menu-items.categorize')->name('menu-items.categorize');
     Volt::route('menu-items/create', 'menu-items.create')->name('menu-items.create');
     Volt::route('menu-items/{menuItem}/edit', 'menu-items.edit')->name('menu-items.edit');
 
