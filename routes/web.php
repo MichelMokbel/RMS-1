@@ -58,6 +58,7 @@ Route::middleware(['auth', 'active', 'role:admin', 'ensure.admin'])->group(funct
 Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
     Volt::route('settings/finance', 'finance.settings')->name('finance.settings');
     Volt::route('settings/payment-terms', 'settings.payment-terms')->name('settings.payment-terms');
+    Volt::route('settings/pos-terminals', 'settings.pos-terminals')->name('settings.pos-terminals');
     Route::redirect('finance/settings', 'settings/finance');
 
     Volt::route('ledger/batches', 'ledger.batches.index')->name('ledger.batches.index');

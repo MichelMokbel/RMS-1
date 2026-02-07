@@ -1297,3 +1297,9 @@ This catalog lists observed (implemented) codes and required-but-missing codes.
   - Status: MISSING (server currently uses `SERVER_ERROR` for unexpected exceptions).
   - Recommended meaning: retryable failure category distinct from deterministic validation.
   - Minimal server change: map known transient exceptions to `TRANSIENT_ERROR` in sync service.
+
+## Device registration (Dashboard)
+
+Admins/Managers can register devices in the web dashboard:
+- `Settings → POS Devices`
+- Create/edit a terminal and set its `device_id` to match the Flutter device’s `device_id`.
