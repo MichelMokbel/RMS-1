@@ -11,6 +11,7 @@ use App\Models\PaymentAllocation;
 use App\Models\PettyCashExpense;
 use App\Models\PosShift;
 use App\Models\PosSyncEvent;
+use App\Models\RestaurantArea;
 use App\Models\RestaurantTable;
 use App\Models\RestaurantTableSession;
 use App\Services\POS\Exceptions\PosSyncException;
@@ -185,6 +186,8 @@ class PosSyncService
                     'invoice.finalize',
                     'petty_cash.expense.create',
                     'customer.upsert',
+                    'restaurant_area.upsert',
+                    'restaurant_table.upsert',
                 ];
 
                 if (! in_array($type, $supported, true)) {
@@ -222,6 +225,8 @@ class PosSyncService
                     'invoice.finalize' => $this->handleInvoiceFinalize($terminal, $user, $deviceId, $payload),
                     'petty_cash.expense.create' => $this->handlePettyCashExpenseCreate($terminal, $user, $payload),
                     'customer.upsert' => $this->handleCustomerUpsert($terminal, $user, $payload),
+                    'restaurant_area.upsert' => $this->handleAreaUpsert($terminal, $user, $payload),
+                    'restaurant_table.upsert' => $this->handleTableUpsert($terminal, $user, $payload),
                 };
 
                 $entityType = (string) ($result['entity_type'] ?? '');
@@ -465,6 +470,27 @@ class PosSyncService
                     'customer.phone' => ['sometimes', 'nullable', 'string', 'max:50'],
                     'customer.email' => ['sometimes', 'nullable', 'email', 'max:255'],
                     'customer.updated_at' => ['sometimes', 'nullable', 'date'],
+                ])->validate(),
+
+                'restaurant_area.upsert' => Validator::make($payload, [
+                    'area' => ['required', 'array'],
+                    'area.id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+                    'area.name' => ['required', 'string', 'max:100'],
+                    'area.display_order' => ['required', 'integer'],
+                    'area.active' => ['sometimes', 'nullable', 'boolean'],
+                    'area.updated_at' => ['sometimes', 'nullable', 'date'],
+                ])->validate(),
+
+                'restaurant_table.upsert' => Validator::make($payload, [
+                    'table' => ['required', 'array'],
+                    'table.id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+                    'table.area_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+                    'table.code' => ['required', 'string', 'max:50'],
+                    'table.name' => ['required', 'string', 'max:100'],
+                    'table.capacity' => ['sometimes', 'nullable', 'integer', 'min:1'],
+                    'table.display_order' => ['required', 'integer'],
+                    'table.active' => ['sometimes', 'nullable', 'boolean'],
+                    'table.updated_at' => ['sometimes', 'nullable', 'date'],
                 ])->validate(),
             };
 
@@ -883,7 +909,6 @@ class PosSyncService
         ]);
 
         $expense = $this->pettyCashWorkflow->submit($expense, (int) $user->id);
-        $expense = $this->pettyCashWorkflow->approve($expense, (int) $user->id);
 
         return ['entity_type' => 'petty_cash_expense', 'entity_id' => (int) $expense->id];
     }
@@ -928,5 +953,110 @@ class PosSyncService
         ]);
 
         return ['entity_type' => 'customer', 'entity_id' => (int) $customer->id];
+    }
+
+    private function handleAreaUpsert($terminal, $user, array $payload): array
+    {
+        $v = Validator::make($payload, [
+            'area' => ['required', 'array'],
+            'area.id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'area.name' => ['required', 'string', 'max:100'],
+            'area.display_order' => ['required', 'integer'],
+            'area.active' => ['sometimes', 'nullable', 'boolean'],
+            'area.updated_at' => ['sometimes', 'nullable', 'date'],
+        ])->validate();
+
+        $a = (array) $v['area'];
+        $incomingUpdatedAt = isset($a['updated_at']) ? Carbon::parse($a['updated_at']) : null;
+
+        if (! empty($a['id'])) {
+            $area = RestaurantArea::query()->whereKey((int) $a['id'])->lockForUpdate()->firstOrFail();
+
+            if ($incomingUpdatedAt && $area->updated_at && $area->updated_at->greaterThan($incomingUpdatedAt)) {
+                return ['entity_type' => 'restaurant_area', 'entity_id' => (int) $area->id];
+            }
+
+            $area->update([
+                'name' => (string) $a['name'],
+                'display_order' => (int) $a['display_order'],
+                'active' => (bool) ($a['active'] ?? true),
+            ]);
+
+            return ['entity_type' => 'restaurant_area', 'entity_id' => (int) $area->id];
+        }
+
+        $area = RestaurantArea::create([
+            'branch_id' => (int) $terminal->branch_id,
+            'name' => (string) $a['name'],
+            'display_order' => (int) $a['display_order'],
+            'active' => (bool) ($a['active'] ?? true),
+        ]);
+
+        return ['entity_type' => 'restaurant_area', 'entity_id' => (int) $area->id];
+    }
+
+    private function handleTableUpsert($terminal, $user, array $payload): array
+    {
+        $v = Validator::make($payload, [
+            'table' => ['required', 'array'],
+            'table.id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'table.area_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'table.code' => ['required', 'string', 'max:50'],
+            'table.name' => ['required', 'string', 'max:100'],
+            'table.capacity' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'table.display_order' => ['required', 'integer'],
+            'table.active' => ['sometimes', 'nullable', 'boolean'],
+            'table.updated_at' => ['sometimes', 'nullable', 'date'],
+        ])->validate();
+
+        $t = (array) $v['table'];
+        $incomingUpdatedAt = isset($t['updated_at']) ? Carbon::parse($t['updated_at']) : null;
+
+        // Validate area_id FK if provided.
+        if (! empty($t['area_id'])) {
+            if (! RestaurantArea::find((int) $t['area_id'])) {
+                throw ValidationException::withMessages(['area_id' => 'Area not found.']);
+            }
+        }
+
+        if (! empty($t['id'])) {
+            $table = RestaurantTable::query()->whereKey((int) $t['id'])->lockForUpdate()->firstOrFail();
+
+            if ($incomingUpdatedAt && $table->updated_at && $table->updated_at->greaterThan($incomingUpdatedAt)) {
+                return ['entity_type' => 'restaurant_table', 'entity_id' => (int) $table->id];
+            }
+
+            $table->update([
+                'area_id' => $t['area_id'] ?? null,
+                'code' => (string) $t['code'],
+                'name' => (string) $t['name'],
+                'capacity' => $t['capacity'] ?? null,
+                'display_order' => (int) $t['display_order'],
+                'active' => (bool) ($t['active'] ?? true),
+            ]);
+
+            return ['entity_type' => 'restaurant_table', 'entity_id' => (int) $table->id];
+        }
+
+        try {
+            $table = RestaurantTable::create([
+                'branch_id' => (int) $terminal->branch_id,
+                'area_id' => $t['area_id'] ?? null,
+                'code' => (string) $t['code'],
+                'name' => (string) $t['name'],
+                'capacity' => $t['capacity'] ?? null,
+                'display_order' => (int) $t['display_order'],
+                'active' => (bool) ($t['active'] ?? true),
+            ]);
+        } catch (QueryException $e) {
+            // Duplicate (branch_id, code) unique constraint violation.
+            if (str_contains((string) $e->getMessage(), 'Duplicate entry') || (int) $e->getCode() === 23000) {
+                throw ValidationException::withMessages(['code' => 'A table with this code already exists in this branch.']);
+            }
+
+            throw $e;
+        }
+
+        return ['entity_type' => 'restaurant_table', 'entity_id' => (int) $table->id];
     }
 }
