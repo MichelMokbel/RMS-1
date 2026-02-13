@@ -33,6 +33,7 @@ class PosBootstrapService
             ->map(fn (Category $c) => [
                 'id' => (int) $c->id,
                 'name' => (string) $c->name,
+                'description' => $c->description !== null ? (string) $c->description : null,
                 'parent_id' => $c->parent_id ? (int) $c->parent_id : null,
                 'updated_at' => optional($c->updated_at)?->toISOString(),
             ])

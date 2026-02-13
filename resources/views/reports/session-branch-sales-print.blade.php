@@ -32,6 +32,7 @@
                 <th>Cashier</th>
                 <th>Opened</th>
                 <th>Closed</th>
+                <th class="right">Card Closing</th>
                 <th class="right">Invoices</th>
                 <th class="right">Total</th>
             </tr>
@@ -44,11 +45,12 @@
                     <td>{{ $row->cashier_name ?? '—' }}</td>
                     <td>{{ optional($row->opened_at)->format('Y-m-d H:i') }}</td>
                     <td>{{ optional($row->closed_at)->format('Y-m-d H:i') }}</td>
+                    <td class="right">{{ $formatCents((int) ($row->closing_card_cents ?? 0)) }}</td>
                     <td class="right">{{ (int) ($row->invoice_count ?? 0) }}</td>
                     <td class="right">{{ $formatCents((int) ($row->total_cents ?? 0)) }}</td>
                 </tr>
             @empty
-                <tr><td colspan="7">No sessions found.</td></tr>
+                <tr><td colspan="8">No sessions found.</td></tr>
             @endforelse
         </tbody>
     </table>

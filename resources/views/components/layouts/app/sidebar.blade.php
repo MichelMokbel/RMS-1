@@ -150,6 +150,16 @@
                         @endif
                     </flux:navlist.group>
                 @endif
+
+                <flux:navlist.group :heading="__('Tools')">
+                    <flux:navlist.item
+                        href="https://laylacardssystem.streamlit.app/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        {{ __('Cards Generator') }}
+                    </flux:navlist.item>
+                </flux:navlist.group>
             </flux:navlist>
 
             <flux:spacer />

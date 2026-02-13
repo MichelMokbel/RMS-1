@@ -215,7 +215,7 @@ Response payload sections (200):
   },
   "terminal": { "id": "int", "code": "string", "branch_id": "int" },
   "categories": [
-    { "id": "int", "name": "string", "parent_id": "int|null", "updated_at": "string|null (ISO8601)" }
+    { "id": "int", "name": "string", "description": "string|null", "parent_id": "int|null", "updated_at": "string|null (ISO8601)" }
   ],
   "menu_items": [
     {
@@ -520,7 +520,8 @@ Payload JSON schema:
 {
   "shift_id": "int (required, min 1)",
   "closed_at": "string (required, date parseable; ISO8601 recommended)",
-  "closing_cash_cents": "int (required)",
+  "closing_cash_cents": "int (required, min 0)",
+  "closing_card_cents": "int (optional, min 0; defaults to 0 if omitted)",
   "expected_cash_cents": "int|null (optional)"
 }
 ```
@@ -530,10 +531,11 @@ Validation rules:
 - If shift is already closed (`!isOpen()`), handler returns success without changes (idempotent close).
 - If `expected_cash_cents` omitted, server computes:
   - `expected = opening_cash_cents + SUM(payments.amount_cents WHERE method='cash' AND pos_shift_id=? AND voided_at IS NULL)`
+- `closing_card_cents` defaults to 0 when omitted (backward-compatible with older clients).
 
 Server side effects:
 - Updates `pos_shifts`:
-  - `closing_cash_cents`, `expected_cash_cents`, `variance_cents`
+  - `closing_cash_cents`, `closing_card_cents`, `expected_cash_cents`, `variance_cents`
   - `closed_at`, `closed_by`
   - `status='closed'`, `active=NULL`
 
@@ -554,7 +556,8 @@ Example request event:
   "payload": {
     "shift_id": 123,
     "closed_at": "2026-02-04T18:00:00Z",
-    "closing_cash_cents": 12500
+    "closing_cash_cents": 12500,
+    "closing_card_cents": 342000
   }
 }
 ```
@@ -890,6 +893,232 @@ Common errors:
 Evidence:
 - Handler: `app/Services/POS/PosSyncService.php::handleCustomerUpsert()`
 
+### category.upsert
+
+When POS sends it:
+- When creating/updating a category from the POS admin UI.
+
+Payload JSON schema:
+```json
+{
+  "category": {
+    "id": "int|null (optional, min 1 when present)",
+    "name": "string (required, max 255)",
+    "description": "string|null (optional)",
+    "parent_id": "int|null (optional, min 1)",
+    "updated_at": "string|null (optional, date parseable)"
+  }
+}
+```
+
+Validation rules / business rules:
+- If `category.id` is provided:
+  - Locks the category row.
+  - If incoming `updated_at` is older than server `categories.updated_at`, server returns success without applying the update.
+  - Prevents parent cycles and self-parenting.
+- If `category.id` is omitted:
+  - Creates a new category record.
+
+Server side effects:
+- Updates `categories` (when `id` provided): `name`, `description`, `parent_id`
+- Inserts into `categories` (when no `id`): `name`, `description`, `parent_id`
+
+Idempotency keys:
+- Sync-level: `events[*].client_uuid`
+
+Common errors:
+- `VALIDATION_ERROR` on bad schema, missing parent, or parent cycle.
+
+Evidence:
+- Handler: `app/Services/POS/PosSyncService.php::handleCategoryUpsert()`
+
+### customer.payment.create
+
+When POS sends it:
+- When recording a customer payment against one or more invoices.
+
+Payload JSON schema:
+```json
+{
+  "payment": {
+    "client_uuid": "uuid (required)",
+    "customer_id": "int (required, min 1)",
+    "amount_cents": "int (required, min 1)",
+    "method": "string (required, cash|card|online|bank|voucher)",
+    "received_at": "string|null (optional, date parseable)",
+    "reference": "string|null (optional, max 120)",
+    "notes": "string|null (optional, max 500)",
+    "currency": "string|null (optional, max 10)",
+    "pos_shift_id": "int|null (optional, min 1)"
+  },
+  "allocations": [
+    { "invoice_id": "int (required)", "amount_cents": "int (required, min 1)" }
+  ]
+}
+```
+
+Validation rules / business rules:
+- `allocations` is required and must have at least one row.
+- If `pos_shift_id` provided, it must exist and match the terminal branch.
+- Allocations validate invoice/customer consistency via AR rules.
+
+Server side effects:
+- Inserts into `payments` with `source='ar'`, `client_uuid`, `terminal_id`, `pos_shift_id`.
+- Inserts into `payment_allocations` for each allocation row.
+- Recalculates invoice balances and status.
+
+Idempotency keys:
+- Sync-level: `events[*].client_uuid`
+- Domain-level: `payment.client_uuid` (unique on `payments.client_uuid`)
+
+Common errors:
+- `VALIDATION_ERROR` on bad schema, invalid invoice/customer, or allocation issues.
+
+Evidence:
+- Handler: `app/Services/POS/PosSyncService.php::handleCustomerPaymentCreate()`
+- AR payment service: `app/Services/AR/ArPaymentService.php::createPaymentWithAllocations()`
+
+### customer.advance.create
+
+When POS sends it:
+- When recording an advance (unallocated) payment from a customer.
+
+Payload JSON schema:
+```json
+{
+  "payment": {
+    "client_uuid": "uuid (required)",
+    "customer_id": "int (required, min 1)",
+    "amount_cents": "int (required, min 1)",
+    "method": "string (required, cash|card|online|bank|voucher)",
+    "received_at": "string|null (optional, date parseable)",
+    "reference": "string|null (optional, max 120)",
+    "notes": "string|null (optional, max 500)",
+    "currency": "string|null (optional, max 10)",
+    "pos_shift_id": "int|null (optional, min 1)"
+  }
+}
+```
+
+Validation rules / business rules:
+- If `pos_shift_id` provided, it must exist and match the terminal branch.
+
+Server side effects:
+- Inserts into `payments` with `source='ar'`, `client_uuid`, `terminal_id`, `pos_shift_id`.
+- No allocations are created.
+
+Idempotency keys:
+- Sync-level: `events[*].client_uuid`
+- Domain-level: `payment.client_uuid` (unique on `payments.client_uuid`)
+
+Common errors:
+- `VALIDATION_ERROR` on bad schema or missing customer.
+
+Evidence:
+- Handler: `app/Services/POS/PosSyncService.php::handleCustomerAdvanceCreate()`
+- AR payment service: `app/Services/AR/ArPaymentService.php::createAdvancePayment()`
+
+### customer.advance.apply
+
+When POS sends it:
+- When applying an existing advance payment to a specific invoice.
+
+Payload JSON schema:
+```json
+{
+  "payment_id": "int|null (required if payment_client_uuid missing)",
+  "payment_client_uuid": "uuid|null (required if payment_id missing)",
+  "invoice_id": "int (required, min 1)",
+  "amount_cents": "int (required, min 1)"
+}
+```
+
+Validation rules / business rules:
+- Requires either `payment_id` or `payment_client_uuid`.
+- Payment must be an AR payment and match the invoice customer.
+
+Server side effects:
+- Inserts into `payment_allocations` to apply the advance.
+- Recalculates invoice balances and status.
+
+Idempotency keys:
+- Sync-level: `events[*].client_uuid`
+
+Common errors:
+- `VALIDATION_ERROR` on bad schema or mismatched payment/invoice.
+
+Evidence:
+- Handler: `app/Services/POS/PosSyncService.php::handleCustomerAdvanceApply()`
+- AR payment service: `app/Services/AR/ArPaymentService.php::applyExistingPaymentToInvoice()`
+
+### supplier.payment.create
+
+When POS sends it:
+- When recording a vendor (AP) payment and optional allocations.
+
+Payload JSON schema:
+```json
+{
+  "supplier_id": "int (required, min 1)",
+  "payment_date": "string (required, date parseable)",
+  "amount_cents": "int (required, min 1)",
+  "payment_method": "string (required, cash|bank_transfer|card|cheque|other)",
+  "reference": "string|null (optional, max 100)",
+  "notes": "string|null (optional, max 500)",
+  "allocations": [
+    { "invoice_id": "int (required)", "amount_cents": "int (required, min 1)" }
+  ]
+}
+```
+
+Validation rules / business rules:
+- Allocations validate invoice/supplier consistency via AP rules.
+
+Server side effects:
+- Inserts into `ap_payments` and `ap_payment_allocations` (amounts converted to decimals).
+- Posts AP ledger entries.
+
+Idempotency keys:
+- Sync-level: `events[*].client_uuid`
+
+Common errors:
+- `VALIDATION_ERROR` on bad schema or allocation issues.
+
+Evidence:
+- Handler: `app/Services/POS/PosSyncService.php::handleSupplierPaymentCreate()`
+- AP allocation service: `app/Services/AP/ApAllocationService.php::createPaymentWithAllocations()`
+
+### shift.opening_cash.update
+
+When POS sends it:
+- When the cashier corrects the opening cash after a shift is already open.
+
+Payload JSON schema:
+```json
+{
+  "shift_id": "int (required, min 1)",
+  "opening_cash_cents": "int (required, min 0)",
+  "adjusted_at": "string|null (optional, date parseable)",
+  "reason": "string|null (optional, max 255)"
+}
+```
+
+Validation rules / business rules:
+- Shift must be open; closed shifts are rejected.
+
+Server side effects:
+- Updates `pos_shifts.opening_cash_cents` and audit fields:
+  - `opening_cash_adjusted_at`, `opening_cash_adjusted_by`, `opening_cash_adjustment_reason`
+
+Idempotency keys:
+- Sync-level: `events[*].client_uuid`
+
+Common errors:
+- `VALIDATION_ERROR` on bad schema or closed shift.
+
+Evidence:
+- Handler: `app/Services/POS/PosSyncService.php::handleShiftOpeningCashUpdate()`
+
 ### MISSING: table_session.transfer / split / merge
 
 Status: **MISSING / TO BE IMPLEMENTED**
@@ -1001,6 +1230,8 @@ Evidence:
 
 - `payment_type` (invoice.finalize): `cash | card | credit | mixed`
 - `payments[*].method` (invoice.finalize): `cash | card | online | bank | voucher`
+- `payment.method` (customer.payment.create / customer.advance.create): `cash | card | online | bank | voucher`
+- `payment_method` (supplier.payment.create): `cash | bank_transfer | card | cheque | other`
 - `pos_shifts.status`: `open | closed` (as used by POS sync handlers)
 - `restaurant_table_sessions.status`: `open | closed`
 
@@ -1094,7 +1325,44 @@ DB expectations:
 - `pos_shifts` row created with `status='open'`, `active=1`.
 - `pos_sync_events` row created with `status='applied'` and entity fields populated.
 
-### Step 5) Open table
+### Step 5) Update opening cash (optional adjustment)
+
+Request event:
+```json
+{
+  "event_id": "evt-sh-adjust-001",
+  "type": "shift.opening_cash.update",
+  "client_uuid": "11111111-1111-1111-1111-111111111112",
+  "payload": { "shift_id": 123, "opening_cash_cents": 5000, "adjusted_at": "2026-02-04T09:05:00Z", "reason": "Drawer count correction" }
+}
+```
+
+Expected ACK: `server_entity_type="pos_shift"` with same `shift_id`.
+
+DB expectations:
+- `pos_shifts.opening_cash_cents` updated.
+- `opening_cash_adjusted_at`, `opening_cash_adjusted_by`, `opening_cash_adjustment_reason` populated.
+
+### Step 6) Create category (admin)
+
+Request event:
+```json
+{
+  "event_id": "evt-cat-001",
+  "type": "category.upsert",
+  "client_uuid": "11111111-1111-1111-1111-111111111113",
+  "payload": {
+    "category": { "name": "Dine-In", "description": "Tables menu", "parent_id": null }
+  }
+}
+```
+
+Expected ACK: `server_entity_type="category"`, `server_entity_id>0`.
+
+DB expectations:
+- `categories` row created.
+
+### Step 7) Open table
 
 Request event:
 ```json
@@ -1111,7 +1379,7 @@ Expected ACK: `server_entity_type="restaurant_table_session"`.
 DB expectations:
 - `restaurant_table_sessions` row created with `active=1`, `status='open'`.
 
-### Step 6) Create cash invoice + payment
+### Step 8) Create cash invoice + payment
 
 Preparation:
 - Pick `seq=reserved_start` and format `pos_reference = "T01-20260204-000001"` (example).
@@ -1148,7 +1416,7 @@ DB expectations:
 - `payments` row(s) created with `source='pos'`, `client_uuid` set
 - `payment_allocations` rows created allocating to the invoice
 
-### Step 7) Create credit invoice (no payments)
+### Step 9) Create credit invoice (no payments)
 
 Request event:
 ```json
@@ -1175,7 +1443,112 @@ Expected ACK: success with invoice id.
 DB expectations:
 - `ar_invoices` created; **no** `payments` rows created for this event.
 
-### Step 8) Create petty cash expense
+### Step 10) Create customer advance (unallocated payment)
+
+Request event:
+```json
+{
+  "event_id": "evt-adv-001",
+  "type": "customer.advance.create",
+  "client_uuid": "77777777-7777-7777-7777-777777777777",
+  "payload": {
+    "payment": {
+      "client_uuid": "88888888-8888-8888-8888-888888888888",
+      "customer_id": 100,
+      "amount_cents": 5000,
+      "method": "cash",
+      "received_at": "2026-02-04T09:20:00Z",
+      "pos_shift_id": 123
+    }
+  }
+}
+```
+
+Expected ACK: `server_entity_type="payment"`, `server_entity_id>0`.
+
+DB expectations:
+- `payments` row created with `source='ar'`, unallocated balance remains.
+
+### Step 11) Apply advance to credit invoice
+
+Request event:
+```json
+{
+  "event_id": "evt-adv-apply-001",
+  "type": "customer.advance.apply",
+  "client_uuid": "99999999-9999-9999-9999-999999999999",
+  "payload": {
+    "payment_client_uuid": "88888888-8888-8888-8888-888888888888",
+    "invoice_id": 200,
+    "amount_cents": 2500
+  }
+}
+```
+
+Expected ACK: `server_entity_type="payment_allocation"`, `server_entity_id>0`.
+
+DB expectations:
+- `payment_allocations` row created allocating the advance to the invoice.
+- `ar_invoices` balance reduced.
+
+### Step 12) Create customer payment (with allocations)
+
+Request event:
+```json
+{
+  "event_id": "evt-pay-001",
+  "type": "customer.payment.create",
+  "client_uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  "payload": {
+    "payment": {
+      "client_uuid": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "customer_id": 100,
+      "amount_cents": 2500,
+      "method": "card",
+      "received_at": "2026-02-04T09:25:00Z",
+      "pos_shift_id": 123
+    },
+    "allocations": [
+      { "invoice_id": 200, "amount_cents": 2500 }
+    ]
+  }
+}
+```
+
+Expected ACK: `server_entity_type="payment"`, `server_entity_id>0`.
+
+DB expectations:
+- `payments` row created with `source='ar'`, `client_uuid`, `terminal_id`, `pos_shift_id`.
+- `payment_allocations` row created for the invoice.
+
+### Step 13) Create supplier payment
+
+Request event:
+```json
+{
+  "event_id": "evt-sup-pay-001",
+  "type": "supplier.payment.create",
+  "client_uuid": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+  "payload": {
+    "supplier_id": 50,
+    "payment_date": "2026-02-04",
+    "amount_cents": 10000,
+    "payment_method": "bank_transfer",
+    "reference": "BANK-REF-01",
+    "allocations": [
+      { "invoice_id": 500, "amount_cents": 10000 }
+    ]
+  }
+}
+```
+
+Expected ACK: `server_entity_type="ap_payment"`, `server_entity_id>0`.
+
+DB expectations:
+- `ap_payments` row created and posted.
+- `ap_payment_allocations` rows created.
+
+### Step 14) Create petty cash expense
 
 Request event:
 ```json
@@ -1199,7 +1572,7 @@ Expected ACK: `server_entity_type="petty_cash_expense"`.
 DB expectations:
 - `petty_cash_expenses` created and approved (status `approved`).
 
-### Step 9) Close table session
+### Step 15) Close table session
 
 Request event:
 ```json
@@ -1216,7 +1589,7 @@ Expected ACK: `server_entity_type="restaurant_table_session"` with same ID.
 DB expectations:
 - `restaurant_table_sessions.active=0`, `status='closed'`, `closed_at` set.
 
-### Step 10) Close shift
+### Step 16) Close shift
 
 Request event:
 ```json
@@ -1224,7 +1597,7 @@ Request event:
   "event_id": "evt-sh-close-001",
   "type": "shift.close",
   "client_uuid": "77777777-7777-7777-7777-777777777777",
-  "payload": { "shift_id": 123, "closed_at": "2026-02-04T18:00:00Z", "closing_cash_cents": 12500 }
+  "payload": { "shift_id": 123, "closed_at": "2026-02-04T18:00:00Z", "closing_cash_cents": 12500, "closing_card_cents": 342000 }
 }
 ```
 
@@ -1235,7 +1608,7 @@ DB expectations:
 
 ### Step 11) Repeat sync to prove idempotency (no duplicates)
 
-Repeat Step 6’s exact `invoice.finalize` event with the same `events[*].client_uuid` (the sync-event UUID).
+Repeat Step 8’s exact `invoice.finalize` event with the same `events[*].client_uuid` (the sync-event UUID).
 
 Expected:
 - ACK returns `ok=true` with the **same** `server_entity_id` and the **same** `applied_at`.

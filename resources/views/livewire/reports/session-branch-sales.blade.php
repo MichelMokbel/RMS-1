@@ -42,6 +42,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 's.opened_at',
                 's.closed_at',
                 's.status',
+                's.closing_card_cents',
                 DB::raw('COUNT(DISTINCT inv.id) as invoice_count'),
                 DB::raw('COALESCE(SUM(inv.total_cents), 0) as total_cents'),
             ])
@@ -49,7 +50,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->cashier_id, fn ($q) => $q->where('s.user_id', $this->cashier_id))
             ->when($this->date_from, fn ($q) => $q->whereDate('s.opened_at', '>=', $this->date_from))
             ->when($this->date_to, fn ($q) => $q->whereDate('s.opened_at', '<=', $this->date_to))
-            ->groupBy('s.id', 's.branch_id', 's.user_id', 'u.username', 's.opened_at', 's.closed_at', 's.status')
+            ->groupBy('s.id', 's.branch_id', 's.user_id', 'u.username', 's.opened_at', 's.closed_at', 's.status', 's.closing_card_cents')
             ->orderByDesc('s.opened_at')
             ->get();
     }
@@ -106,6 +107,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Cashier') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Opened') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Closed') }}</th>
+                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Card Closing') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Invoices') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Total') }}</th>
                 </tr>
@@ -118,11 +120,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row->cashier_name ?? '—' }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ optional($row->opened_at)->format('Y-m-d H:i') }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ optional($row->closed_at)->format('Y-m-d H:i') }}</td>
+                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney((int) ($row->closing_card_cents ?? 0)) }}</td>
                         <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ (int) ($row->invoice_count ?? 0) }}</td>
                         <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney((int) ($row->total_cents ?? 0)) }}</td>
                     </tr>
                 @empty
-                    <tr><td colspan="7" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No sessions found.') }}</td></tr>
+                    <tr><td colspan="8" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No sessions found.') }}</td></tr>
                 @endforelse
             </tbody>
         </table>

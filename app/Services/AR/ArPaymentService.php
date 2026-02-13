@@ -27,7 +27,11 @@ class ArPaymentService
         ?string $receivedAt,
         ?string $reference,
         ?string $notes,
-        int $actorId
+        int $actorId,
+        ?string $clientUuid = null,
+        ?int $terminalId = null,
+        ?int $posShiftId = null,
+        ?string $currency = null
     ): Payment {
         if ($amountCents <= 0) {
             throw ValidationException::withMessages(['amount_cents' => __('Payment amount must be positive.')]);
@@ -38,14 +42,17 @@ class ArPaymentService
             throw ValidationException::withMessages(['customer_id' => __('Customer not found.')]);
         }
 
-        return DB::transaction(function () use ($customer, $branchId, $amountCents, $method, $receivedAt, $reference, $notes, $actorId) {
+        return DB::transaction(function () use ($customer, $branchId, $amountCents, $method, $receivedAt, $reference, $notes, $actorId, $clientUuid, $terminalId, $posShiftId, $currency) {
             $payment = Payment::create([
                 'branch_id' => $branchId,
                 'customer_id' => $customer->id,
+                'client_uuid' => $clientUuid,
+                'terminal_id' => $terminalId,
+                'pos_shift_id' => $posShiftId,
                 'source' => 'ar',
                 'method' => $method,
                 'amount_cents' => $amountCents,
-                'currency' => (string) config('pos.currency'),
+                'currency' => $currency ?: (string) config('pos.currency'),
                 'received_at' => $receivedAt ?? now(),
                 'reference' => $reference ?: null,
                 'notes' => $notes ?: null,
@@ -86,15 +93,21 @@ class ArPaymentService
         $reference = $payload['reference'] ?? null;
         $notes = $payload['notes'] ?? null;
         $rows = $payload['allocations'] ?? [];
+        $clientUuid = $payload['client_uuid'] ?? null;
+        $terminalId = $payload['terminal_id'] ?? null;
+        $posShiftId = $payload['pos_shift_id'] ?? null;
 
         usort($rows, function ($a, $b) {
             return (int) ($a['invoice_id'] ?? 0) <=> (int) ($b['invoice_id'] ?? 0);
         });
 
-        return DB::transaction(function () use ($customer, $branchId, $amount, $method, $currency, $receivedAt, $reference, $notes, $rows, $actorId) {
+        return DB::transaction(function () use ($customer, $branchId, $amount, $method, $currency, $receivedAt, $reference, $notes, $rows, $actorId, $clientUuid, $terminalId, $posShiftId) {
             $payment = Payment::create([
                 'branch_id' => $branchId,
                 'customer_id' => $customer->id,
+                'client_uuid' => $clientUuid,
+                'terminal_id' => $terminalId,
+                'pos_shift_id' => $posShiftId,
                 'source' => 'ar',
                 'method' => $method,
                 'amount_cents' => $amount,
@@ -180,14 +193,31 @@ class ArPaymentService
         });
     }
 
-    public function applyExistingPaymentToInvoice(int $paymentId, int $invoiceId, int $amountCents, int $actorId): PaymentAllocation
+    public function applyExistingPaymentToInvoice(
+        int $paymentId,
+        int $invoiceId,
+        int $amountCents,
+        int $actorId,
+        ?string $paymentClientUuid = null
+    ): PaymentAllocation
     {
         if ($amountCents <= 0) {
             throw ValidationException::withMessages(['amount_cents' => __('Allocation amount must be positive.')]);
         }
 
-        return DB::transaction(function () use ($paymentId, $invoiceId, $amountCents, $actorId) {
-            $payment = Payment::whereKey($paymentId)->lockForUpdate()->firstOrFail();
+        return DB::transaction(function () use ($paymentId, $invoiceId, $amountCents, $actorId, $paymentClientUuid) {
+            if ($paymentId > 0) {
+                $payment = Payment::whereKey($paymentId)->lockForUpdate()->firstOrFail();
+                if ($paymentClientUuid && (string) $payment->client_uuid !== (string) $paymentClientUuid) {
+                    throw ValidationException::withMessages(['payment' => __('Payment identifier mismatch.')]);
+                }
+            } else {
+                $payment = Payment::query()
+                    ->where('client_uuid', $paymentClientUuid)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+            }
+
             $invoice = ArInvoice::whereKey($invoiceId)->lockForUpdate()->firstOrFail();
 
             if ($payment->source !== 'ar') {

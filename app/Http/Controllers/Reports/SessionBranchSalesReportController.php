@@ -35,6 +35,7 @@ class SessionBranchSalesReportController extends Controller
                 's.opened_at',
                 's.closed_at',
                 's.status',
+                's.closing_card_cents',
                 DB::raw('COUNT(DISTINCT inv.id) as invoice_count'),
                 DB::raw('COALESCE(SUM(inv.total_cents), 0) as total_cents'),
             ])
@@ -42,7 +43,7 @@ class SessionBranchSalesReportController extends Controller
             ->when($request->filled('cashier_id') && $request->integer('cashier_id') > 0, fn ($q) => $q->where('s.user_id', $request->integer('cashier_id')))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('s.opened_at', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('s.opened_at', '<=', $request->date_to))
-            ->groupBy('s.id', 's.branch_id', 's.user_id', 'u.username', 's.opened_at', 's.closed_at', 's.status')
+            ->groupBy('s.id', 's.branch_id', 's.user_id', 'u.username', 's.opened_at', 's.closed_at', 's.status', 's.closing_card_cents')
             ->orderByDesc('s.opened_at')
             ->limit($limit)
             ->get();
@@ -64,13 +65,14 @@ class SessionBranchSalesReportController extends Controller
     public function csv(Request $request): StreamedResponse
     {
         $rows = $this->query($request, 2000);
-        $headers = [__('Shift #'), __('Branch'), __('Cashier'), __('Opened'), __('Closed'), __('Invoices'), __('Total')];
+        $headers = [__('Shift #'), __('Branch'), __('Cashier'), __('Opened'), __('Closed'), __('Card Closing'), __('Invoices'), __('Total')];
         $data = $rows->map(fn ($row) => [
             $row->id,
             $row->branch_id,
             $row->cashier_name ?? '',
             optional($row->opened_at)->format('Y-m-d H:i'),
             optional($row->closed_at)->format('Y-m-d H:i'),
+            $this->formatCents((int) ($row->closing_card_cents ?? 0)),
             (int) ($row->invoice_count ?? 0),
             $this->formatCents((int) ($row->total_cents ?? 0)),
         ]);

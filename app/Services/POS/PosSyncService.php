@@ -4,6 +4,7 @@ namespace App\Services\POS;
 
 use App\Models\ArInvoice;
 use App\Models\ArInvoiceItem;
+use App\Models\Category;
 use App\Models\Customer;
 use App\Models\MenuItem;
 use App\Models\Payment;
@@ -15,8 +16,10 @@ use App\Models\RestaurantArea;
 use App\Models\RestaurantTable;
 use App\Models\RestaurantTableSession;
 use App\Services\POS\Exceptions\PosSyncException;
+use App\Services\AP\ApAllocationService;
 use App\Services\AR\ArAllocationService;
 use App\Services\AR\ArInvoiceService;
+use App\Services\AR\ArPaymentService;
 use App\Services\Ledger\SubledgerService;
 use App\Services\PettyCash\PettyCashExpenseWorkflowService;
 use App\Support\Money\MinorUnits;
@@ -42,6 +45,8 @@ class PosSyncService
     public function __construct(
         protected ArInvoiceService $invoices,
         protected ArAllocationService $allocations,
+        protected ArPaymentService $arPayments,
+        protected ApAllocationService $apAllocations,
         protected PettyCashExpenseWorkflowService $pettyCashWorkflow,
         protected SubledgerService $subledger,
         protected PosBootstrapService $bootstrap,
@@ -183,9 +188,15 @@ class PosSyncService
                     'shift.close',
                     'table_session.open',
                     'table_session.close',
+                    'shift.opening_cash.update',
                     'invoice.finalize',
                     'petty_cash.expense.create',
                     'customer.upsert',
+                    'category.upsert',
+                    'customer.payment.create',
+                    'customer.advance.create',
+                    'customer.advance.apply',
+                    'supplier.payment.create',
                     'restaurant_area.upsert',
                     'restaurant_table.upsert',
                 ];
@@ -222,9 +233,15 @@ class PosSyncService
                     'shift.close' => $this->handleShiftClose($terminal, $user, $payload),
                     'table_session.open' => $this->handleTableSessionOpen($terminal, $user, $deviceId, $payload),
                     'table_session.close' => $this->handleTableSessionClose($terminal, $user, $payload),
+                    'shift.opening_cash.update' => $this->handleShiftOpeningCashUpdate($terminal, $user, $payload),
                     'invoice.finalize' => $this->handleInvoiceFinalize($terminal, $user, $deviceId, $payload),
                     'petty_cash.expense.create' => $this->handlePettyCashExpenseCreate($terminal, $user, $payload),
                     'customer.upsert' => $this->handleCustomerUpsert($terminal, $user, $payload),
+                    'category.upsert' => $this->handleCategoryUpsert($terminal, $user, $payload),
+                    'customer.payment.create' => $this->handleCustomerPaymentCreate($terminal, $user, $deviceId, $payload),
+                    'customer.advance.create' => $this->handleCustomerAdvanceCreate($terminal, $user, $deviceId, $payload),
+                    'customer.advance.apply' => $this->handleCustomerAdvanceApply($terminal, $user, $payload),
+                    'supplier.payment.create' => $this->handleSupplierPaymentCreate($terminal, $user, $payload),
                     'restaurant_area.upsert' => $this->handleAreaUpsert($terminal, $user, $payload),
                     'restaurant_table.upsert' => $this->handleTableUpsert($terminal, $user, $payload),
                 };
@@ -409,8 +426,16 @@ class PosSyncService
                 'shift.close' => Validator::make($payload, [
                     'shift_id' => ['required', 'integer', 'min:1'],
                     'closed_at' => ['required', 'date'],
-                    'closing_cash_cents' => ['required', 'integer'],
+                    'closing_cash_cents' => ['required', 'integer', 'min:0'],
+                    'closing_card_cents' => ['sometimes', 'integer', 'min:0'],
                     'expected_cash_cents' => ['sometimes', 'nullable', 'integer'],
+                ])->validate(),
+
+                'shift.opening_cash.update' => Validator::make($payload, [
+                    'shift_id' => ['required', 'integer', 'min:1'],
+                    'opening_cash_cents' => ['required', 'integer', 'min:0'],
+                    'adjusted_at' => ['sometimes', 'nullable', 'date'],
+                    'reason' => ['sometimes', 'nullable', 'string', 'max:255'],
                 ])->validate(),
 
                 'table_session.open' => Validator::make($payload, [
@@ -470,6 +495,63 @@ class PosSyncService
                     'customer.phone' => ['sometimes', 'nullable', 'string', 'max:50'],
                     'customer.email' => ['sometimes', 'nullable', 'email', 'max:255'],
                     'customer.updated_at' => ['sometimes', 'nullable', 'date'],
+                ])->validate(),
+
+                'category.upsert' => Validator::make($payload, [
+                    'category' => ['required', 'array'],
+                    'category.id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+                    'category.name' => ['required', 'string', 'max:255'],
+                    'category.description' => ['sometimes', 'nullable', 'string'],
+                    'category.parent_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+                    'category.updated_at' => ['sometimes', 'nullable', 'date'],
+                ])->validate(),
+
+                'customer.payment.create' => Validator::make($payload, [
+                    'payment' => ['required', 'array'],
+                    'payment.client_uuid' => ['required', 'uuid'],
+                    'payment.customer_id' => ['required', 'integer', 'min:1'],
+                    'payment.amount_cents' => ['required', 'integer', 'min:1'],
+                    'payment.method' => ['required', 'string', 'in:cash,card,online,bank,voucher'],
+                    'payment.received_at' => ['sometimes', 'nullable', 'date'],
+                    'payment.reference' => ['sometimes', 'nullable', 'string', 'max:120'],
+                    'payment.notes' => ['sometimes', 'nullable', 'string', 'max:500'],
+                    'payment.currency' => ['sometimes', 'nullable', 'string', 'max:10'],
+                    'payment.pos_shift_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+                    'allocations' => ['required', 'array', 'min:1'],
+                    'allocations.*.invoice_id' => ['required_with:allocations', 'integer', 'min:1'],
+                    'allocations.*.amount_cents' => ['required_with:allocations', 'integer', 'min:1'],
+                ])->validate(),
+
+                'customer.advance.create' => Validator::make($payload, [
+                    'payment' => ['required', 'array'],
+                    'payment.client_uuid' => ['required', 'uuid'],
+                    'payment.customer_id' => ['required', 'integer', 'min:1'],
+                    'payment.amount_cents' => ['required', 'integer', 'min:1'],
+                    'payment.method' => ['required', 'string', 'in:cash,card,online,bank,voucher'],
+                    'payment.received_at' => ['sometimes', 'nullable', 'date'],
+                    'payment.reference' => ['sometimes', 'nullable', 'string', 'max:120'],
+                    'payment.notes' => ['sometimes', 'nullable', 'string', 'max:500'],
+                    'payment.currency' => ['sometimes', 'nullable', 'string', 'max:10'],
+                    'payment.pos_shift_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+                ])->validate(),
+
+                'customer.advance.apply' => Validator::make($payload, [
+                    'payment_id' => ['required_without:payment_client_uuid', 'integer', 'min:1'],
+                    'payment_client_uuid' => ['required_without:payment_id', 'uuid'],
+                    'invoice_id' => ['required', 'integer', 'min:1'],
+                    'amount_cents' => ['required', 'integer', 'min:1'],
+                ])->validate(),
+
+                'supplier.payment.create' => Validator::make($payload, [
+                    'supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
+                    'payment_date' => ['required', 'date'],
+                    'amount_cents' => ['required', 'integer', 'min:1'],
+                    'payment_method' => ['required', 'string', 'in:cash,bank_transfer,card,cheque,other'],
+                    'reference' => ['sometimes', 'nullable', 'string', 'max:100'],
+                    'notes' => ['sometimes', 'nullable', 'string', 'max:500'],
+                    'allocations' => ['sometimes', 'array'],
+                    'allocations.*.invoice_id' => ['required_with:allocations', 'integer', 'min:1'],
+                    'allocations.*.amount_cents' => ['required_with:allocations', 'integer', 'min:1'],
                 ])->validate(),
 
                 'restaurant_area.upsert' => Validator::make($payload, [
@@ -538,7 +620,8 @@ class PosSyncService
         $v = Validator::make($payload, [
             'shift_id' => ['required', 'integer', 'min:1'],
             'closed_at' => ['required', 'date'],
-            'closing_cash_cents' => ['required', 'integer'],
+            'closing_cash_cents' => ['required', 'integer', 'min:0'],
+            'closing_card_cents' => ['sometimes', 'integer', 'min:0'],
             'expected_cash_cents' => ['sometimes', 'nullable', 'integer'],
         ])->validate();
 
@@ -557,16 +640,43 @@ class PosSyncService
 
         $expected = (int) ($v['expected_cash_cents'] ?? ((int) $shift->opening_cash_cents + $cashPayments));
         $counted = (int) $v['closing_cash_cents'];
+        $cardCounted = (int) ($v['closing_card_cents'] ?? 0);
         $variance = $counted - $expected;
 
         $shift->update([
             'closing_cash_cents' => $counted,
+            'closing_card_cents' => $cardCounted,
             'expected_cash_cents' => $expected,
             'variance_cents' => $variance,
             'closed_at' => Carbon::parse($v['closed_at']),
             'closed_by' => (int) $user->id,
             'status' => 'closed',
             'active' => null,
+        ]);
+
+        return ['entity_type' => 'pos_shift', 'entity_id' => (int) $shift->id];
+    }
+
+    private function handleShiftOpeningCashUpdate($terminal, $user, array $payload): array
+    {
+        $v = Validator::make($payload, [
+            'shift_id' => ['required', 'integer', 'min:1'],
+            'opening_cash_cents' => ['required', 'integer', 'min:0'],
+            'adjusted_at' => ['sometimes', 'nullable', 'date'],
+            'reason' => ['sometimes', 'nullable', 'string', 'max:255'],
+        ])->validate();
+
+        /** @var PosShift $shift */
+        $shift = PosShift::query()->whereKey((int) $v['shift_id'])->lockForUpdate()->firstOrFail();
+        if (! $shift->isOpen()) {
+            throw ValidationException::withMessages(['shift' => 'Shift is not open.']);
+        }
+
+        $shift->update([
+            'opening_cash_cents' => (int) $v['opening_cash_cents'],
+            'opening_cash_adjusted_at' => isset($v['adjusted_at']) ? Carbon::parse($v['adjusted_at']) : now(),
+            'opening_cash_adjusted_by' => (int) $user->id,
+            'opening_cash_adjustment_reason' => $v['reason'] ?? null,
         ]);
 
         return ['entity_type' => 'pos_shift', 'entity_id' => (int) $shift->id];
@@ -953,6 +1063,227 @@ class PosSyncService
         ]);
 
         return ['entity_type' => 'customer', 'entity_id' => (int) $customer->id];
+    }
+
+    private function handleCategoryUpsert($terminal, $user, array $payload): array
+    {
+        $v = Validator::make($payload, [
+            'category' => ['required', 'array'],
+            'category.id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'category.name' => ['required', 'string', 'max:255'],
+            'category.description' => ['sometimes', 'nullable', 'string'],
+            'category.parent_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'category.updated_at' => ['sometimes', 'nullable', 'date'],
+        ])->validate();
+
+        $c = (array) $v['category'];
+        $incomingUpdatedAt = isset($c['updated_at']) ? Carbon::parse($c['updated_at']) : null;
+        $parentId = isset($c['parent_id']) ? (int) $c['parent_id'] : null;
+
+        if ($parentId && ! Category::find($parentId)) {
+            throw ValidationException::withMessages(['parent_id' => 'Parent category not found.']);
+        }
+
+        if (! empty($c['id'])) {
+            $category = Category::query()->whereKey((int) $c['id'])->lockForUpdate()->firstOrFail();
+            if ($incomingUpdatedAt && $category->updated_at && $category->updated_at->greaterThan($incomingUpdatedAt)) {
+                return ['entity_type' => 'category', 'entity_id' => (int) $category->id];
+            }
+
+            if ($parentId) {
+                if ($parentId === (int) $category->id) {
+                    throw ValidationException::withMessages(['parent_id' => 'A category cannot be its own parent.']);
+                }
+                if ($category->wouldCreateCycle($parentId)) {
+                    throw ValidationException::withMessages(['parent_id' => 'Parent selection creates a cycle.']);
+                }
+            }
+
+            $category->update([
+                'name' => (string) $c['name'],
+                'description' => $c['description'] ?? null,
+                'parent_id' => $parentId ?: null,
+            ]);
+
+            return ['entity_type' => 'category', 'entity_id' => (int) $category->id];
+        }
+
+        $category = Category::create([
+            'name' => (string) $c['name'],
+            'description' => $c['description'] ?? null,
+            'parent_id' => $parentId ?: null,
+        ]);
+
+        return ['entity_type' => 'category', 'entity_id' => (int) $category->id];
+    }
+
+    private function handleCustomerPaymentCreate($terminal, $user, string $deviceId, array $payload): array
+    {
+        $v = Validator::make($payload, [
+            'payment' => ['required', 'array'],
+            'payment.client_uuid' => ['required', 'uuid'],
+            'payment.customer_id' => ['required', 'integer', 'min:1'],
+            'payment.amount_cents' => ['required', 'integer', 'min:1'],
+            'payment.method' => ['required', 'string', 'in:cash,card,online,bank,voucher'],
+            'payment.received_at' => ['sometimes', 'nullable', 'date'],
+            'payment.reference' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'payment.notes' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'payment.currency' => ['sometimes', 'nullable', 'string', 'max:10'],
+            'payment.pos_shift_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'allocations' => ['required', 'array', 'min:1'],
+            'allocations.*.invoice_id' => ['required_with:allocations', 'integer', 'min:1'],
+            'allocations.*.amount_cents' => ['required_with:allocations', 'integer', 'min:1'],
+        ])->validate();
+
+        $p = (array) $v['payment'];
+        $paymentUuid = (string) $p['client_uuid'];
+
+        $existing = Payment::query()->where('client_uuid', $paymentUuid)->first();
+        if ($existing) {
+            return ['entity_type' => 'payment', 'entity_id' => (int) $existing->id];
+        }
+
+        $posShiftId = isset($p['pos_shift_id']) ? (int) $p['pos_shift_id'] : null;
+        if ($posShiftId) {
+            $shift = PosShift::query()->whereKey($posShiftId)->first();
+            if (! $shift) {
+                throw ValidationException::withMessages(['payment.pos_shift_id' => 'Shift not found.']);
+            }
+            if ((int) $shift->branch_id !== (int) $terminal->branch_id) {
+                throw ValidationException::withMessages(['payment.pos_shift_id' => 'Shift branch mismatch.']);
+            }
+        }
+
+        $payment = $this->arPayments->createPaymentWithAllocations([
+            'client_uuid' => $paymentUuid,
+            'terminal_id' => (int) $terminal->id,
+            'pos_shift_id' => $posShiftId,
+            'customer_id' => (int) $p['customer_id'],
+            'branch_id' => (int) $terminal->branch_id,
+            'amount_cents' => (int) $p['amount_cents'],
+            'method' => (string) $p['method'],
+            'currency' => $p['currency'] ?? null,
+            'received_at' => $p['received_at'] ?? null,
+            'reference' => $p['reference'] ?? null,
+            'notes' => $p['notes'] ?? null,
+            'allocations' => $v['allocations'] ?? [],
+        ], (int) $user->id);
+
+        return ['entity_type' => 'payment', 'entity_id' => (int) $payment->id];
+    }
+
+    private function handleCustomerAdvanceCreate($terminal, $user, string $deviceId, array $payload): array
+    {
+        $v = Validator::make($payload, [
+            'payment' => ['required', 'array'],
+            'payment.client_uuid' => ['required', 'uuid'],
+            'payment.customer_id' => ['required', 'integer', 'min:1'],
+            'payment.amount_cents' => ['required', 'integer', 'min:1'],
+            'payment.method' => ['required', 'string', 'in:cash,card,online,bank,voucher'],
+            'payment.received_at' => ['sometimes', 'nullable', 'date'],
+            'payment.reference' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'payment.notes' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'payment.currency' => ['sometimes', 'nullable', 'string', 'max:10'],
+            'payment.pos_shift_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+        ])->validate();
+
+        $p = (array) $v['payment'];
+        $paymentUuid = (string) $p['client_uuid'];
+
+        $existing = Payment::query()->where('client_uuid', $paymentUuid)->first();
+        if ($existing) {
+            return ['entity_type' => 'payment', 'entity_id' => (int) $existing->id];
+        }
+
+        $posShiftId = isset($p['pos_shift_id']) ? (int) $p['pos_shift_id'] : null;
+        if ($posShiftId) {
+            $shift = PosShift::query()->whereKey($posShiftId)->first();
+            if (! $shift) {
+                throw ValidationException::withMessages(['payment.pos_shift_id' => 'Shift not found.']);
+            }
+            if ((int) $shift->branch_id !== (int) $terminal->branch_id) {
+                throw ValidationException::withMessages(['payment.pos_shift_id' => 'Shift branch mismatch.']);
+            }
+        }
+
+        $payment = $this->arPayments->createAdvancePayment(
+            customerId: (int) $p['customer_id'],
+            branchId: (int) $terminal->branch_id,
+            amountCents: (int) $p['amount_cents'],
+            method: (string) $p['method'],
+            receivedAt: $p['received_at'] ?? null,
+            reference: $p['reference'] ?? null,
+            notes: $p['notes'] ?? null,
+            actorId: (int) $user->id,
+            clientUuid: $paymentUuid,
+            terminalId: (int) $terminal->id,
+            posShiftId: $posShiftId,
+            currency: $p['currency'] ?? null,
+        );
+
+        return ['entity_type' => 'payment', 'entity_id' => (int) $payment->id];
+    }
+
+    private function handleCustomerAdvanceApply($terminal, $user, array $payload): array
+    {
+        $v = Validator::make($payload, [
+            'payment_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'payment_client_uuid' => ['sometimes', 'nullable', 'uuid'],
+            'invoice_id' => ['required', 'integer', 'min:1'],
+            'amount_cents' => ['required', 'integer', 'min:1'],
+        ])->validate();
+
+        $paymentId = isset($v['payment_id']) ? (int) $v['payment_id'] : 0;
+        $paymentClientUuid = isset($v['payment_client_uuid']) ? (string) $v['payment_client_uuid'] : null;
+        if ($paymentId <= 0 && ! $paymentClientUuid) {
+            throw ValidationException::withMessages(['payment_id' => 'Payment identifier is required.']);
+        }
+
+        $allocation = $this->arPayments->applyExistingPaymentToInvoice(
+            paymentId: $paymentId,
+            invoiceId: (int) $v['invoice_id'],
+            amountCents: (int) $v['amount_cents'],
+            actorId: (int) $user->id,
+            paymentClientUuid: $paymentClientUuid,
+        );
+
+        return ['entity_type' => 'payment_allocation', 'entity_id' => (int) $allocation->id];
+    }
+
+    private function handleSupplierPaymentCreate($terminal, $user, array $payload): array
+    {
+        $v = Validator::make($payload, [
+            'supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
+            'payment_date' => ['required', 'date'],
+            'amount_cents' => ['required', 'integer', 'min:1'],
+            'payment_method' => ['required', 'string', 'in:cash,bank_transfer,card,cheque,other'],
+            'reference' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'notes' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'allocations' => ['sometimes', 'array'],
+            'allocations.*.invoice_id' => ['required_with:allocations', 'integer', 'min:1'],
+            'allocations.*.amount_cents' => ['required_with:allocations', 'integer', 'min:1'],
+        ])->validate();
+
+        $amount = MinorUnits::format((int) $v['amount_cents'], MinorUnits::posScale(), false);
+        $allocations = [];
+        foreach (($v['allocations'] ?? []) as $row) {
+            $allocations[] = [
+                'invoice_id' => (int) $row['invoice_id'],
+                'allocated_amount' => MinorUnits::format((int) $row['amount_cents'], MinorUnits::posScale(), false),
+            ];
+        }
+
+        $payment = $this->apAllocations->createPaymentWithAllocations([
+            'supplier_id' => (int) $v['supplier_id'],
+            'payment_date' => Carbon::parse($v['payment_date'])->toDateString(),
+            'amount' => $amount,
+            'payment_method' => (string) $v['payment_method'],
+            'reference' => $v['reference'] ?? null,
+            'notes' => $v['notes'] ?? null,
+            'allocations' => $allocations,
+        ], (int) $user->id);
+
+        return ['entity_type' => 'ap_payment', 'entity_id' => (int) $payment->id];
     }
 
     private function handleAreaUpsert($terminal, $user, array $payload): array
