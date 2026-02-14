@@ -13,6 +13,7 @@ use App\Models\RestaurantTable;
 use App\Models\RestaurantTableSession;
 use App\Models\User;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
 
 function seedPosTerminal(string $deviceId, string $code = 'T01', int $branchId = 1): PosTerminal
 {
@@ -303,4 +304,91 @@ test('pos login requires device_id bound to a terminal', function () {
         'password' => 'password',
         'device_id' => 'UNKNOWN-DEVICE',
     ])->assertStatus(403);
+});
+
+test('pos login works with username', function () {
+    $user = User::factory()->create([
+        'username' => 'cashier.user',
+        'email' => 'cashier@example.com',
+        'status' => 'active',
+    ]);
+    seedPosTerminal('DEV-A', 'T01', 1);
+
+    $response = $this->postJson('/api/pos/login', [
+        'username' => 'cashier.user',
+        'password' => 'password',
+        'device_id' => 'DEV-A',
+    ])->assertOk()->json();
+
+    expect((string) ($response['user']['email'] ?? ''))->toBe('cashier@example.com');
+    expect((string) ($response['token'] ?? ''))->not->toBe('');
+});
+
+test('pos setup branches returns active branches for valid credentials', function () {
+    $user = User::factory()->create([
+        'username' => 'setup.user',
+        'email' => 'setup@example.com',
+        'status' => 'active',
+    ]);
+
+    DB::table('branches')->insertOrIgnore([
+        'id' => 2001,
+        'name' => 'Main Branch',
+        'code' => 'MAIN',
+        'is_active' => 1,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    DB::table('branches')->insertOrIgnore([
+        'id' => 2002,
+        'name' => 'Closed Branch',
+        'code' => 'CLOSED',
+        'is_active' => 0,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $response = $this->postJson('/api/pos/setup/branches', [
+        'username' => 'setup.user',
+        'password' => 'password',
+    ])->assertOk()->json();
+
+    $ids = collect($response['branches'] ?? [])->pluck('id')->all();
+    expect($ids)->toContain(2001);
+    expect($ids)->not->toContain(2002);
+});
+
+test('pos setup terminal registration creates active terminal', function () {
+    $user = User::factory()->create([
+        'username' => 'register.user',
+        'email' => 'register@example.com',
+        'status' => 'active',
+    ]);
+
+    DB::table('branches')->insertOrIgnore([
+        'id' => 2003,
+        'name' => 'Register Branch',
+        'code' => 'REG',
+        'is_active' => 1,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $response = $this->postJson('/api/pos/setup/terminals/register', [
+        'email' => 'register@example.com',
+        'password' => 'password',
+        'branch_id' => 2003,
+        'code' => 'T99',
+        'name' => 'Front Desk POS',
+        'device_id' => 'REG-DEVICE-001',
+    ])->assertOk()->json();
+
+    expect((bool) ($response['terminal']['active'] ?? false))->toBeTrue();
+    expect((string) ($response['terminal']['code'] ?? ''))->toBe('T99');
+    expect((int) ($response['terminal']['branch_id'] ?? 0))->toBe(2003);
+
+    $terminal = PosTerminal::query()->where('device_id', 'REG-DEVICE-001')->first();
+    expect($terminal)->not->toBeNull();
+    expect((bool) $terminal->active)->toBeTrue();
 });

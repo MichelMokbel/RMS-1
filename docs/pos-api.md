@@ -126,7 +126,8 @@ Evidence:
 Request JSON schema:
 ```json
 {
-  "email": "string (required, email, max 255)",
+  "email": "string (required_without:username, accepts email OR username, max 255)",
+  "username": "string (required_without:email, max 255)",
   "password": "string (required, max 255)",
   "device_id": "string (required, max 80, regex ^[A-Za-z0-9._-]+$)"
 }
@@ -1257,7 +1258,7 @@ Request:
 ```json
 POST /api/pos/login
 {
-  "email": "cashier@example.com",
+  "username": "cashier.user",
   "password": "password",
   "device_id": "DEV-A"
 }

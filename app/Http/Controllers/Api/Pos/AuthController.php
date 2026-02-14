@@ -4,26 +4,114 @@ namespace App\Http\Controllers\Api\Pos;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Pos\LoginRequest;
+use App\Http\Requests\Api\Pos\RegisterTerminalRequest;
+use App\Http\Requests\Api\Pos\SetupBranchesRequest;
 use App\Models\PosTerminal;
 use App\Models\User;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class AuthController extends Controller
 {
+    public function branches(SetupBranchesRequest $request): JsonResponse
+    {
+        $data = $request->validated();
+        $auth = $this->resolvePosUser($data);
+        if ($auth instanceof JsonResponse) {
+            return $auth;
+        }
+
+        $branches = DB::table('branches')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get(['id', 'name', 'code'])
+            ->map(fn ($branch) => [
+                'id' => (int) $branch->id,
+                'name' => (string) $branch->name,
+                'code' => $branch->code !== null ? (string) $branch->code : null,
+            ])
+            ->values();
+
+        return response()->json([
+            'branches' => $branches,
+        ]);
+    }
+
+    public function registerTerminal(RegisterTerminalRequest $request): JsonResponse
+    {
+        $data = $request->validated();
+        $auth = $this->resolvePosUser($data);
+        if ($auth instanceof JsonResponse) {
+            return $auth;
+        }
+
+        $branchIsActive = DB::table('branches')
+            ->where('id', (int) $data['branch_id'])
+            ->where('is_active', 1)
+            ->exists();
+
+        if (! $branchIsActive) {
+            return response()->json([
+                'message' => 'The given data was invalid.',
+                'errors' => [
+                    'branch_id' => ['Selected branch is not active.'],
+                ],
+            ], 422);
+        }
+
+        $existingByDevice = PosTerminal::query()
+            ->where('device_id', $data['device_id'])
+            ->first();
+
+        $codeConflict = PosTerminal::query()
+            ->where('branch_id', (int) $data['branch_id'])
+            ->where('code', (string) $data['code'])
+            ->when($existingByDevice, fn ($q) => $q->whereKeyNot($existingByDevice->id))
+            ->exists();
+
+        if ($codeConflict) {
+            return response()->json([
+                'message' => 'The given data was invalid.',
+                'errors' => [
+                    'code' => ['Terminal code is already used in this branch.'],
+                ],
+            ], 422);
+        }
+
+        $terminal = PosTerminal::query()->updateOrCreate(
+            ['device_id' => (string) $data['device_id']],
+            [
+                'branch_id' => (int) $data['branch_id'],
+                'code' => (string) $data['code'],
+                'name' => (string) $data['name'],
+                'active' => true,
+            ]
+        );
+
+        return response()->json([
+            'terminal' => [
+                'id' => (int) $terminal->id,
+                'branch_id' => (int) $terminal->branch_id,
+                'code' => (string) $terminal->code,
+                'name' => (string) $terminal->name,
+                'device_id' => (string) $terminal->device_id,
+                'active' => (bool) $terminal->active,
+            ],
+            'created' => $terminal->wasRecentlyCreated,
+        ]);
+    }
+
     public function login(LoginRequest $request)
     {
         $data = $request->validated();
-
-        /** @var User|null $user */
-        $user = User::query()->where('email', $data['email'])->first();
-        if (! $user || ! Hash::check($data['password'], (string) $user->password)) {
-            return response()->json(['message' => 'AUTH_ERROR'], 401);
+        $auth = $this->resolvePosUser($data);
+        if ($auth instanceof JsonResponse) {
+            return $auth;
         }
-
-        if (method_exists($user, 'isActive') && ! $user->isActive()) {
-            return response()->json(['message' => 'AUTH_ERROR'], 403);
-        }
+        /** @var User $user */
+        $user = $auth;
 
         $terminal = PosTerminal::query()
             ->where('device_id', $data['device_id'])
@@ -67,5 +155,30 @@ class AuthController extends Controller
         $request->user()?->currentAccessToken()?->delete();
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return User|JsonResponse
+     */
+    private function resolvePosUser(array $data): User|JsonResponse
+    {
+        $identifier = strtolower(trim((string) ($data['username'] ?? $data['email'] ?? '')));
+
+        /** @var User|null $user */
+        $user = User::query()
+            ->whereRaw('LOWER(email) = ?', [$identifier])
+            ->orWhereRaw('LOWER(username) = ?', [$identifier])
+            ->first();
+
+        if (! $user || ! Hash::check((string) $data['password'], (string) $user->password)) {
+            return response()->json(['message' => 'AUTH_ERROR'], 401);
+        }
+
+        if (method_exists($user, 'isActive') && ! $user->isActive()) {
+            return response()->json(['message' => 'AUTH_ERROR'], 403);
+        }
+
+        return $user;
     }
 }

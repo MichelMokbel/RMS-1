@@ -158,6 +158,8 @@ Route::middleware(['api', $apiAuthMiddleware])->group(function () {
 
 // POS (Flutter desktop) - offline-first endpoints.
 Route::prefix('pos')->group(function () {
+    Route::post('setup/branches', [PosAuthController::class, 'branches']);
+    Route::post('setup/terminals/register', [PosAuthController::class, 'registerTerminal']);
     Route::post('login', [PosAuthController::class, 'login']);
 
     Route::middleware(['auth:sanctum', 'pos.token'])->group(function () {
