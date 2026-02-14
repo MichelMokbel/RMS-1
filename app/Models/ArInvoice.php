@@ -116,6 +116,16 @@ class ArInvoice extends Model
         return $this->belongsTo(Customer::class, 'customer_id');
     }
 
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function salesPerson(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'sales_person_id');
+    }
+
     public function sale(): BelongsTo
     {
         return $this->belongsTo(Sale::class, 'source_sale_id');

@@ -277,7 +277,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         if (
             ! $user
-            || (! $user->hasRole('admin') && ! $user->hasRole('manager'))
+            || (! $user->hasRole('admin') && ! $user->hasRole('manager') && ! $user->can('finance.access'))
         ) {
             abort(403);
         }
@@ -1061,5 +1061,4 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     @endif
 </div>
-
 

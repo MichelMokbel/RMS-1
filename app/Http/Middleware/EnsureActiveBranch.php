@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\Security\BranchAccessService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -9,6 +10,11 @@ use Illuminate\Support\Facades\Schema;
 
 class EnsureActiveBranch
 {
+    public function __construct(
+        private readonly BranchAccessService $branchAccess,
+    ) {
+    }
+
     public function handle(Request $request, Closure $next, string $paramName = 'branch')
     {
         if (! Schema::hasTable('branches')) {
@@ -34,7 +40,11 @@ class EnsureActiveBranch
             abort(404);
         }
 
+        $user = $request->user();
+        if ($user && ! $user->isAdmin() && ! $this->branchAccess->canAccessBranch($user, $branchId)) {
+            abort(403);
+        }
+
         return $next($request);
     }
 }
-

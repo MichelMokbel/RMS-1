@@ -6,8 +6,10 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\DB;
 use App\Http\Middleware\CheckActiveUser;
+use App\Http\Middleware\EnsureBranchAccess;
 use App\Http\Middleware\EnsureAdmin;
 use App\Http\Middleware\EnsureActiveBranch;
+use App\Http\Middleware\ResolveAllowedBranches;
 use App\Console\Commands\UsersHashPasswords;
 use App\Console\Commands\GenerateSubscriptionOrders;
 use App\Console\Commands\RestoreDatabaseFromDump;
@@ -18,6 +20,7 @@ use App\Console\Commands\FinanceLockDate;
 use App\Console\Commands\BackfillMenuItemBranches;
 use App\Services\Orders\SubscriptionOrderGenerationService;
 use Spatie\Permission\Middleware\RoleMiddleware;
+use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -53,11 +56,22 @@ return Application::configure(basePath: dirname(__DIR__))
         })->dailyAt($time);
     })
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->web(append: [
+            ResolveAllowedBranches::class,
+            EnsureBranchAccess::class,
+        ]);
+
+        $middleware->api(append: [
+            ResolveAllowedBranches::class,
+            EnsureBranchAccess::class,
+        ]);
+
         $middleware->alias([
             'active' => CheckActiveUser::class,
             'ensure.admin' => EnsureAdmin::class,
             'ensure.active-branch' => EnsureActiveBranch::class,
             'role' => RoleMiddleware::class,
+            'role_or_permission' => RoleOrPermissionMiddleware::class,
             'pos.token' => \App\Http\Middleware\EnsurePosToken::class,
         ]);
     })

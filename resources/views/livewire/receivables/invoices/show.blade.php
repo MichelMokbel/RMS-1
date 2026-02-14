@@ -13,6 +13,7 @@ use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
     public ArInvoice $invoice;
+    public string $void_reason = '';
 
     public string $payment_method = 'bank';
     public string $payment_amount = '0.00';
@@ -51,6 +52,52 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         session()->flash('status', __('Invoice issued.'));
+    }
+
+    public function voidInvoice(ArInvoiceService $service): void
+    {
+        $this->resetErrorBag();
+        $userId = Auth::id();
+        if (! $userId) {
+            abort(403);
+        }
+
+        try {
+            $this->invoice = $service->void($this->invoice, $userId, $this->void_reason);
+        } catch (ValidationException $e) {
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $m) {
+                    $this->addError($field, $m);
+                }
+            }
+            return;
+        }
+
+        $this->void_reason = '';
+        session()->flash('status', __('Invoice voided.'));
+    }
+
+    public function voidAndDuplicate(ArInvoiceService $service): void
+    {
+        $this->resetErrorBag();
+        $userId = Auth::id();
+        if (! $userId) {
+            abort(403);
+        }
+
+        try {
+            $duplicate = $service->voidAndDuplicate($this->invoice, $userId, $this->void_reason);
+        } catch (ValidationException $e) {
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $m) {
+                    $this->addError($field, $m);
+                }
+            }
+            return;
+        }
+
+        session()->flash('status', __('Invoice voided and duplicated as draft.'));
+        $this->redirectRoute('invoices.edit', $duplicate, navigate: true);
     }
 
     public function receivePayment(ArAllocationService $alloc): void
@@ -268,6 +315,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
         <div class="flex items-center gap-2">
             <flux:button :href="route('invoices.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
+            @if ($invoice->status === 'draft')
+                <flux:button :href="route('invoices.edit', $invoice)" wire:navigate variant="ghost">{{ __('Edit') }}</flux:button>
+            @endif
             @if ($invoice->status !== 'draft')
                 <flux:button :href="route('invoices.print', $invoice)" target="_blank">{{ __('Print') }}</flux:button>
             @endif
@@ -299,6 +349,28 @@ new #[Layout('components.layouts.app')] class extends Component {
         @if ($invoice->status === 'draft')
             <div class="flex justify-end">
                 <flux:button type="button" wire:click="issue" variant="primary">{{ __('Issue Invoice') }}</flux:button>
+            </div>
+        @endif
+
+        @if (in_array($invoice->status, ['draft', 'issued', 'partially_paid', 'paid'], true))
+            <div class="border-t border-neutral-200 pt-4 dark:border-neutral-700 space-y-3">
+                <h2 class="text-lg font-semibold text-rose-700 dark:text-rose-200">{{ __('Void Invoice') }}</h2>
+                <flux:input wire:model="void_reason" :label="__('Reason (optional)')" />
+                @error('status') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
+                <div class="flex justify-end gap-2">
+                    <flux:button
+                        type="button"
+                        wire:click="voidInvoice"
+                        wire:confirm="{{ __('Void this invoice?') }}"
+                        variant="danger"
+                    >{{ __('Void') }}</flux:button>
+                    <flux:button
+                        type="button"
+                        wire:click="voidAndDuplicate"
+                        wire:confirm="{{ __('Void and create an editable duplicate draft?') }}"
+                        variant="primary"
+                    >{{ __('Void & Duplicate') }}</flux:button>
+                </div>
             </div>
         @endif
 
@@ -418,4 +490,3 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 </div>
-

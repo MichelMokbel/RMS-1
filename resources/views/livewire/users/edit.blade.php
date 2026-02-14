@@ -1,10 +1,13 @@
 <?php
 
+use App\Models\Branch;
 use App\Models\User;
+use App\Services\Security\IamUserService;
 use Illuminate\Validation\Rule;
 use Livewire\Volt\Component;
-use Illuminate\Support\Str;
 use Livewire\Volt\Layout;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 new #[Layout('components.layouts.app')] class extends Component {
     public User $user;
@@ -13,6 +16,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $status = 'active';
     public string $password = '';
     public string $password_confirmation = '';
+    public bool $pos_enabled = false;
+    /** @var array<int, string> */
+    public array $roles = [];
+    /** @var array<int, string> */
+    public array $permissions = [];
+    /** @var array<int, int> */
+    public array $branch_ids = [];
 
     public function mount(User $user): void
     {
@@ -20,6 +30,22 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->username = $user->username;
         $this->email = $user->email;
         $this->status = $user->status;
+        $this->pos_enabled = (bool) $user->pos_enabled;
+        $this->roles = $user->getRoleNames()->all();
+        $this->permissions = $user->getDirectPermissions()->pluck('name')->map(fn ($name) => (string) $name)->all();
+        $this->branch_ids = $user->branches()->pluck('branches.id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    public function with(): array
+    {
+        return [
+            'roleOptions' => Role::query()->where('guard_name', 'web')->orderBy('name')->pluck('name')->all(),
+            'permissionOptions' => Permission::query()->where('guard_name', 'web')->orderBy('name')->pluck('name')->all(),
+            'branchOptions' => Branch::query()
+                ->when(\Illuminate\Support\Facades\Schema::hasColumn('branches', 'is_active'), fn ($q) => $q->where('is_active', 1))
+                ->orderBy('name')
+                ->get(['id', 'name']),
+        ];
     }
 
     /**
@@ -44,22 +70,30 @@ new #[Layout('components.layouts.app')] class extends Component {
             ],
             'status' => ['required', Rule::in(['active', 'inactive'])],
             'password' => ['nullable', 'string', 'min:8', 'confirmed'],
+            'pos_enabled' => ['required', 'boolean'],
+            'roles' => ['array'],
+            'roles.*' => ['string', Rule::exists('roles', 'name')->where('guard_name', 'web')],
+            'permissions' => ['array'],
+            'permissions.*' => ['string', Rule::exists('permissions', 'name')->where('guard_name', 'web')],
+            'branch_ids' => ['array'],
+            'branch_ids.*' => ['integer', Rule::exists('branches', 'id')],
         ]);
 
-        $this->user->forceFill([
-            'name' => Str::headline($this->username),
-            'username' => Str::lower($this->username),
-            'email' => Str::lower($this->email),
+        /** @var User $actor */
+        $actor = auth()->user();
+        app(IamUserService::class)->update($this->user, [
+            'username' => $this->username,
+            'email' => $this->email,
             'status' => $this->status,
-        ]);
+            'password' => $this->password,
+            'password_confirmation' => $this->password_confirmation,
+            'pos_enabled' => $this->pos_enabled,
+            'roles' => $this->roles,
+            'permissions' => $this->permissions,
+            'branch_ids' => $this->branch_ids,
+        ], $actor);
 
-        if ($this->password !== '') {
-            $this->user->password = $this->password;
-        }
-
-        $this->user->save();
-
-        session()->flash('status', __('User updated successfully.'));
+        session()->flash('status', __('IAM user updated successfully.'));
 
         $this->redirectRoute('users.index');
     }
@@ -70,8 +104,16 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function toggleStatus(): void
     {
         $this->status = $this->status === 'active' ? 'inactive' : 'active';
-        $this->user->status = $this->status;
-        $this->user->save();
+        /** @var User $actor */
+        $actor = auth()->user();
+
+        app(IamUserService::class)->update($this->user, [
+            'status' => $this->status,
+            'roles' => $this->roles,
+            'permissions' => $this->permissions,
+            'branch_ids' => $this->branch_ids,
+            'pos_enabled' => $this->pos_enabled,
+        ], $actor);
     }
 }; ?>
 
@@ -141,6 +183,41 @@ new #[Layout('components.layouts.app')] class extends Component {
                     {{ __('Inactive') }}
                 </label>
             </div>
+        </div>
+
+        <label class="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+            <input type="checkbox" wire:model="pos_enabled" class="h-4 w-4 border-neutral-300 text-indigo-600 focus:ring-indigo-500">
+            {{ __('Enable POS login for this user') }}
+        </label>
+
+        <div class="grid gap-2">
+            <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Roles') }}</label>
+            <select wire:model="roles" multiple class="min-h-[120px] rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900">
+                @foreach($roleOptions as $roleName)
+                    <option value="{{ $roleName }}">{{ $roleName }}</option>
+                @endforeach
+            </select>
+            @error('roles.*') <div class="text-xs text-red-600">{{ $message }}</div> @enderror
+        </div>
+
+        <div class="grid gap-2">
+            <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Direct Permissions') }}</label>
+            <select wire:model="permissions" multiple class="min-h-[160px] rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900">
+                @foreach($permissionOptions as $permissionName)
+                    <option value="{{ $permissionName }}">{{ $permissionName }}</option>
+                @endforeach
+            </select>
+            @error('permissions.*') <div class="text-xs text-red-600">{{ $message }}</div> @enderror
+        </div>
+
+        <div class="grid gap-2">
+            <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Allowed Branches') }}</label>
+            <select wire:model="branch_ids" multiple class="min-h-[140px] rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900">
+                @foreach($branchOptions as $branch)
+                    <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                @endforeach
+            </select>
+            @error('branch_ids.*') <div class="text-xs text-red-600">{{ $message }}</div> @enderror
         </div>
 
         <div class="flex items-center gap-3">

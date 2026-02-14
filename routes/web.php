@@ -42,9 +42,17 @@ Route::middleware(['auth', 'active'])->group(function () {
 });
 
 Route::middleware(['auth', 'active', 'role:admin', 'ensure.admin'])->group(function () {
-    Volt::route('users', 'users.index')->name('users.index');
-    Volt::route('users/create', 'users.create')->name('users.create');
-    Volt::route('users/{user}/edit', 'users.edit')->name('users.edit');
+    Volt::route('iam/users', 'users.index')->name('iam.users.index');
+    Volt::route('iam/users/create', 'users.create')->name('iam.users.create');
+    Volt::route('iam/users/{user}/edit', 'users.edit')->name('iam.users.edit');
+    Volt::route('iam/roles', 'users.roles')->name('iam.roles.index');
+    Volt::route('iam/permissions', 'users.permissions')->name('iam.permissions.index');
+
+    Route::redirect('users', 'iam/users')->name('users.index');
+    Route::redirect('users/create', 'iam/users/create')->name('users.create');
+    Route::get('users/{user}/edit', function (\App\Models\User $user) {
+        return redirect()->route('iam.users.edit', $user);
+    })->name('users.edit');
 
     Volt::route('categories', 'categories.index')->name('categories.index');
     Volt::route('categories/create', 'categories.create')->name('categories.create');
@@ -55,7 +63,7 @@ Route::middleware(['auth', 'active', 'role:admin', 'ensure.admin'])->group(funct
     Volt::route('suppliers/{supplier}/edit', 'suppliers.edit')->name('suppliers.edit');
 });
 
-Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|finance.access|settings.pos_terminals.manage'])->group(function () {
     Volt::route('settings/finance', 'finance.settings')->name('finance.settings');
     Volt::route('settings/payment-terms', 'settings.payment-terms')->name('settings.payment-terms');
     Volt::route('settings/pos-terminals', 'settings.pos-terminals')->name('settings.pos-terminals');
@@ -65,39 +73,39 @@ Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
     Volt::route('ledger/batches/{batch}', 'ledger.batches.show')->name('ledger.batches.show');
 });
 
-Route::middleware(['auth', 'active', 'role:admin|manager|cashier'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|receivables.access'])->group(function () {
     Volt::route('customers', 'customers.index')->name('customers.index');
 });
 
-Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|receivables.access'])->group(function () {
     Volt::route('customers/create', 'customers.create')->name('customers.create');
     Volt::route('customers/{customer}/edit', 'customers.edit')->name('customers.edit');
     Volt::route('customers/import', 'customers.import')->name('customers.import');
 });
 
-Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|catalog.access'])->group(function () {
     Volt::route('recipes', 'recipes.index')->name('recipes.index');
     Volt::route('recipes/create', 'recipes.create')->name('recipes.create');
     Volt::route('recipes/{recipe}', 'recipes.show')->name('recipes.show');
     Volt::route('recipes/{recipe}/edit', 'recipes.edit')->name('recipes.edit');
 });
 
-Route::middleware(['auth', 'active', 'role:admin|manager|kitchen'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|operations.access'])->group(function () {
     Volt::route('daily-dish/menus', 'daily-dish.menus.index')->name('daily-dish.menus.index');
 });
 
-Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operations.access'])->group(function () {
     Volt::route('daily-dish/menus/{branch}/{serviceDate}', 'daily-dish.menus.edit')
         ->middleware('ensure.active-branch')
         ->name('daily-dish.menus.edit');
 });
 
-Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operations.access'])->group(function () {
     Volt::route('meal-plan-requests', 'meal-plan-requests.index')->name('meal-plan-requests.index');
     Volt::route('meal-plan-requests/{mealPlanRequest}', 'meal-plan-requests.show')->name('meal-plan-requests.show');
 });
 
-Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|cashier|operations.access'])->group(function () {
     Volt::route('daily-dish/ops/{branch}/{date}', 'daily-dish.ops.day')
         ->middleware('ensure.active-branch')
         ->name('daily-dish.ops.day');
@@ -106,13 +114,13 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
         ->name('kitchen.ops');
 });
 
-Route::middleware(['auth', 'active', 'role:admin|manager|cashier'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|operations.access'])->group(function () {
     Volt::route('daily-dish/ops/{branch}/{date}/manual/create', 'daily-dish.ops.manual-create')
         ->middleware('ensure.active-branch')
         ->name('daily-dish.ops.manual.create');
 });
 
-Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operations.access'])->group(function () {
     Volt::route('subscriptions', 'subscriptions.index')->name('subscriptions.index');
     Volt::route('subscriptions/create', 'subscriptions.create')->name('subscriptions.create');
     Volt::route('subscriptions/{subscription}', 'subscriptions.show')->name('subscriptions.show');
@@ -120,7 +128,7 @@ Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
     Volt::route('subscriptions/generate', 'subscriptions.generate')->name('subscriptions.generate');
 });
 
-Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operations.access'])->group(function () {
     Route::get('inventory/items/search', function (Request $request) {
         $term = trim((string) $request->query('q', ''));
         if ($term === '' || strlen($term) < 2) {
@@ -177,7 +185,7 @@ Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
     })->name('inventory.items.search');
 });
 
-Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|cashier|orders.access|operations.access'])->group(function () {
     Route::get('orders/menu-items/search', function (Request $request) {
         $term = trim((string) $request->query('q', ''));
         $branchId = (int) $request->query('branch_id');
@@ -232,6 +240,13 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
         $status = (string) $request->query('status', 'all');
         $source = $request->query('source');
         $branchId = (int) $request->query('branch_id');
+        $isAdmin = $request->user()?->isAdmin() ?? false;
+        $allowedBranchIds = collect($request->attributes->get('allowed_branch_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
         $dailyDishFilter = (string) $request->query('daily_dish_filter', 'all');
         $scheduledDate = $request->query('scheduled_date');
         $search = $request->query('search');
@@ -245,11 +260,18 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
                 abort(404);
             }
         }
+        if (! $isAdmin && $branchId > 0 && ! in_array($branchId, $allowedBranchIds, true)) {
+            abort(403);
+        }
+        if (! $isAdmin && $branchId <= 0 && $allowedBranchIds === []) {
+            abort(403);
+        }
 
         $orders = Order::query()
             ->when($status !== 'all', fn ($q) => $q->where('status', $status))
             ->when($source, fn ($q) => $q->where('source', $source))
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->when(! $isAdmin && $branchId <= 0, fn ($q) => $q->whereIn('branch_id', $allowedBranchIds))
             ->when($dailyDishFilter === 'only', fn ($q) => $q->where('is_daily_dish', 1))
             ->when($dailyDishFilter === 'exclude', function ($q) {
                 $q->where(function ($qq) {
@@ -297,6 +319,13 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
         $status = (string) $request->query('status', 'all');
         $source = $request->query('source');
         $branchId = (int) $request->query('branch_id');
+        $isAdmin = $request->user()?->isAdmin() ?? false;
+        $allowedBranchIds = collect($request->attributes->get('allowed_branch_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
         $dailyDishFilter = (string) $request->query('daily_dish_filter', 'all');
         $scheduledDate = $request->query('scheduled_date');
         $search = $request->query('search');
@@ -310,6 +339,12 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
                 abort(404);
             }
         }
+        if (! $isAdmin && $branchId > 0 && ! in_array($branchId, $allowedBranchIds, true)) {
+            abort(403);
+        }
+        if (! $isAdmin && $branchId <= 0 && $allowedBranchIds === []) {
+            abort(403);
+        }
 
         $orders = Order::query()
             ->with(['items' => function ($q) {
@@ -320,6 +355,7 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
             ->when($status !== 'all', fn ($q) => $q->where('status', $status))
             ->when($source, fn ($q) => $q->where('source', $source))
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->when(! $isAdmin && $branchId <= 0, fn ($q) => $q->whereIn('branch_id', $allowedBranchIds))
             ->when($dailyDishFilter === 'only', fn ($q) => $q->where('is_daily_dish', 1))
             ->when($dailyDishFilter === 'exclude', function ($q) {
                 $q->where(function ($qq) {
@@ -367,6 +403,13 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
     Route::get('orders/kitchen/print', function (Request $request) {
         $date = $request->query('date', now()->toDateString());
         $branchId = (int) $request->query('branch_id');
+        $isAdmin = $request->user()?->isAdmin() ?? false;
+        $allowedBranchIds = collect($request->attributes->get('allowed_branch_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
         $showSubscription = $request->boolean('show_subscription', true);
         $showManual = $request->boolean('show_manual', true);
         $includeDraft = $request->boolean('include_draft', false);
@@ -383,6 +426,12 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
             if (! $q->exists()) {
                 abort(404);
             }
+        }
+        if (! $isAdmin && $branchId > 0 && ! in_array($branchId, $allowedBranchIds, true)) {
+            abort(403);
+        }
+        if (! $isAdmin && $branchId <= 0 && $allowedBranchIds === []) {
+            abort(403);
         }
 
         $statuses = ['Confirmed', 'InProduction'];
@@ -412,6 +461,7 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
             ->whereDate('scheduled_date', $date)
             ->whereIn('status', $statuses)
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->when(! $isAdmin && $branchId <= 0, fn ($q) => $q->whereIn('branch_id', $allowedBranchIds))
             ->when(! $showSubscription, fn ($q) => $q->where('source', '!=', 'Subscription'))
             ->when(! $showManual, fn ($q) => $q->where('source', 'Subscription'))
             ->when($search, function ($q) use ($search) {
@@ -487,22 +537,22 @@ Route::middleware(['auth', 'active', 'role:admin|manager|kitchen|cashier'])->gro
     })->name('orders.items');
 });
 
-Route::middleware(['auth', 'active', 'role:admin|manager|cashier'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|operations.access'])->group(function () {
     Volt::route('inventory', 'inventory.index')->name('inventory.index');
     Volt::route('inventory/{item}', 'inventory.show')->name('inventory.show')->whereNumber('item');
 });
 
-Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operations.access'])->group(function () {
     Volt::route('inventory/transfers', 'inventory.transfers')->name('inventory.transfers');
     Volt::route('inventory/create', 'inventory.create')->name('inventory.create');
     Volt::route('inventory/{item}/edit', 'inventory.edit')->name('inventory.edit');
 });
 
-Route::middleware(['auth', 'active', 'role:admin|manager|cashier'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|catalog.access'])->group(function () {
     Volt::route('menu-items', 'menu-items.index')->name('menu-items.index');
 });
 
-Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|catalog.access|finance.access|operations.access'])->group(function () {
     Volt::route('menu-items/availability', 'menu-items.availability')->name('menu-items.availability');
     Volt::route('menu-items/categorize', 'menu-items.categorize')->name('menu-items.categorize');
     Volt::route('menu-items/create', 'menu-items.create')->name('menu-items.create');
@@ -529,7 +579,7 @@ Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
     Volt::route('expenses/{expense}/edit', 'expenses.edit')->name('expenses.edit');
 });
 
-Route::middleware(['auth', 'active', 'role:admin|manager|staff'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|finance.access'])->group(function () {
     // Use the richer petty cash Volt page component
     Volt::route('petty-cash', 'petty-cash.page')->name('petty-cash.index');
 });
@@ -542,7 +592,7 @@ Route::middleware(['auth', 'active'])->group(function () {
 });
 
 // Sales tickets (POS receipts)
-Route::middleware(['auth', 'active', 'role:admin|manager|cashier'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|orders.access'])->group(function () {
     Volt::route('sales', 'sales.index')->name('sales.index');
     Volt::route('sales/{sale}', 'sales.show')->name('sales.show');
     Route::get('sales/{sale}/receipt', function (\App\Models\Sale $sale) {
@@ -556,7 +606,7 @@ Route::middleware(['auth', 'active', 'role:admin|manager|cashier'])->group(funct
 });
 
 // AR (receivables)
-Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|receivables.access'])->group(function () {
     Volt::route('receivables/payments', 'receivables.payments.index')->name('receivables.payments.index');
     Volt::route('receivables/payments/create', 'receivables.payments.create')->name('receivables.payments.create');
     Volt::route('receivables/payments/{payment}', 'receivables.payments.show')->name('receivables.payments.show');
@@ -570,6 +620,7 @@ Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
     Volt::route('invoices', 'receivables.invoices.index')->name('invoices.index');
     Volt::route('invoices/create', 'receivables.invoices.create')->name('invoices.create');
     Volt::route('invoices/create/{order_id}', 'receivables.invoices.create')->name('invoices.create-from-order');
+    Volt::route('invoices/{invoice}/edit', 'receivables.invoices.create')->name('invoices.edit');
     Volt::route('invoices/{invoice}', 'receivables.invoices.show')->name('invoices.show');
     Route::get('invoices/{invoice}/print', function (\App\Models\ArInvoice $invoice) {
         $invoice->load(['items', 'customer', 'paymentAllocations.payment']);
@@ -578,7 +629,7 @@ Route::middleware(['auth', 'active', 'role:admin|manager'])->group(function () {
 });
 
 // Reports (manager/staff)
-Route::middleware(['auth', 'active', 'role:admin|manager|staff'])->prefix('reports')->name('reports.')->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|reports.access'])->prefix('reports')->name('reports.')->group(function () {
     Volt::route('/', 'reports.index')->name('index');
     Volt::route('orders', 'reports.orders')->name('orders');
     Volt::route('purchase-orders', 'reports.purchase-orders')->name('purchase-orders');

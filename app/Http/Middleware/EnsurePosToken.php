@@ -3,18 +3,28 @@
 namespace App\Http\Middleware;
 
 use App\Models\PosTerminal;
+use App\Services\Security\BranchAccessService;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 class EnsurePosToken
 {
+    public function __construct(
+        private readonly BranchAccessService $branchAccess,
+    ) {
+    }
+
     public function handle(Request $request, Closure $next, string $requiredAbility = 'pos:*'): Response
     {
         $user = $request->user();
         $token = $user?->currentAccessToken();
         if (! $user || ! $token) {
             return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        if (! $user->canUsePos()) {
+            return response()->json(['message' => 'AUTH_ERROR', 'reason' => 'POS_DISABLED'], 403);
         }
 
         if (! $token->can($requiredAbility) && ! $token->can('pos:*')) {
@@ -34,6 +44,10 @@ class EnsurePosToken
 
         if (! $terminal) {
             return response()->json(['message' => 'AUTH_ERROR', 'reason' => 'TERMINAL_NOT_FOUND'], 403);
+        }
+
+        if (! $this->branchAccess->canAccessBranch($user, (int) $terminal->branch_id)) {
+            return response()->json(['message' => 'AUTH_ERROR', 'reason' => 'BRANCH_FORBIDDEN'], 403);
         }
 
         // Soft "last seen" tracking.

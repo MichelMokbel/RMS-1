@@ -19,6 +19,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     protected $paginationTheme = 'tailwind';
 
+    public function mount(): void
+    {
+        $today = now()->toDateString();
+        $this->date_from = $today;
+        $this->date_to = $today;
+    }
+
     public function updating($name): void
     {
         if (in_array($name, ['branch_id', 'customer_id', 'date_from', 'date_to'], true)) {
@@ -28,8 +35,21 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function with(): array
     {
+        $baseQuery = $this->query();
+        $invoices = (clone $baseQuery)->paginate(15);
+        $totals = [
+            'trade_revenue_cents' => (int) ((clone $baseQuery)->sum('subtotal_cents') ?? 0),
+            'discount_cents' => (int) ((clone $baseQuery)->sum('discount_total_cents') ?? 0),
+            'net_amount_cents' => (int) ((clone $baseQuery)->sum('total_cents') ?? 0),
+            'cash_cents' => (int) ((clone $baseQuery)->whereRaw('LOWER(payment_type) = ?', ['cash'])->sum('total_cents') ?? 0),
+            'card_cents' => (int) ((clone $baseQuery)->whereRaw('LOWER(payment_type) = ?', ['card'])->sum('total_cents') ?? 0),
+            'credit_cents' => (int) ((clone $baseQuery)->whereRaw('LOWER(payment_type) = ?', ['credit'])->sum('total_cents') ?? 0),
+        ];
+        $totals['total_collection_cents'] = $totals['cash_cents'] + $totals['card_cents'] + $totals['credit_cents'];
+
         return [
-            'invoices' => $this->query()->paginate(15),
+            'invoices' => $invoices,
+            'totals' => $totals,
             'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
             'customers' => Schema::hasTable('customers') ? Customer::orderBy('name')->limit(200)->get() : collect(),
             'exportParams' => $this->exportParams(),
@@ -39,7 +59,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function query()
     {
         return ArInvoice::query()
-            ->with(['customer'])
+            ->with(['customer', 'salesPerson'])
             ->where('type', 'invoice')
             ->whereIn('status', ['issued', 'partially_paid', 'paid'])
             ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id))
@@ -97,23 +117,63 @@ new #[Layout('components.layouts.app')] class extends Component {
         <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('S.I') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Date') }}</th>
-                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Invoice #') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Invoice Number') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('POS Ref') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Customer') }}</th>
-                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Total') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Sales Person') }}</th>
+                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Total Trade Revenue') }}</th>
+                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Discount') }}</th>
+                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Net Amount') }}</th>
+                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Cash') }}</th>
+                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Card') }}</th>
+                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Credit') }}</th>
+                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Total Collection') }}</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                 @forelse ($invoices as $inv)
+                    @php
+                        $tradeRevenueCents = (int) ($inv->subtotal_cents ?? 0);
+                        $discountCents = (int) ($inv->discount_total_cents ?? 0);
+                        $netAmountCents = (int) ($inv->total_cents ?? 0);
+                        $paymentType = strtolower((string) ($inv->payment_type ?? 'credit'));
+                        $cashCents = $paymentType === 'cash' ? $netAmountCents : 0;
+                        $cardCents = $paymentType === 'card' ? $netAmountCents : 0;
+                        $creditCents = $paymentType === 'credit' ? $netAmountCents : 0;
+                        $totalCollectionCents = $cashCents + $cardCents + $creditCents;
+                    @endphp
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
+                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $invoices->firstItem() + $loop->index }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $inv->issue_date?->format('Y-m-d') }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $inv->invoice_number ?: ('#'.$inv->id) }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $inv->pos_reference ?? '-' }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $inv->customer?->name ?? '—' }}</td>
-                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($inv->total_cents) }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $inv->salesPerson?->username ?: ($inv->salesPerson?->name ?? '-') }}</td>
+                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($tradeRevenueCents) }}</td>
+                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($discountCents) }}</td>
+                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($netAmountCents) }}</td>
+                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($cashCents) }}</td>
+                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($cardCents) }}</td>
+                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($creditCents) }}</td>
+                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($totalCollectionCents) }}</td>
                     </tr>
                 @empty
-                    <tr><td colspan="4" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No invoices found.') }}</td></tr>
+                    <tr><td colspan="13" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No invoices found.') }}</td></tr>
                 @endforelse
+                @if ($invoices->count() > 0)
+                    <tr class="bg-neutral-50 dark:bg-neutral-800/70">
+                        <td colspan="6" class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Total') }}</td>
+                        <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($totals['trade_revenue_cents'] ?? 0) }}</td>
+                        <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($totals['discount_cents'] ?? 0) }}</td>
+                        <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($totals['net_amount_cents'] ?? 0) }}</td>
+                        <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($totals['cash_cents'] ?? 0) }}</td>
+                        <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($totals['card_cents'] ?? 0) }}</td>
+                        <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($totals['credit_cents'] ?? 0) }}</td>
+                        <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($totals['total_collection_cents'] ?? 0) }}</td>
+                    </tr>
+                @endif
             </tbody>
         </table>
     </div>

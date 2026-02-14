@@ -8,6 +8,7 @@ use App\Http\Requests\Api\Pos\RegisterTerminalRequest;
 use App\Http\Requests\Api\Pos\SetupBranchesRequest;
 use App\Models\PosTerminal;
 use App\Models\User;
+use App\Services\Security\BranchAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +16,11 @@ use Illuminate\Support\Facades\Hash;
 
 class AuthController extends Controller
 {
+    public function __construct(
+        private readonly BranchAccessService $branchAccess,
+    ) {
+    }
+
     public function branches(SetupBranchesRequest $request): JsonResponse
     {
         $data = $request->validated();
@@ -22,9 +28,23 @@ class AuthController extends Controller
         if ($auth instanceof JsonResponse) {
             return $auth;
         }
+        /** @var User $user */
+        $user = $auth;
+
+        if (! $user->canUsePos()) {
+            return response()->json(['message' => 'AUTH_ERROR'], 403);
+        }
 
         $branches = DB::table('branches')
             ->where('is_active', 1)
+            ->when(! $user->isAdmin(), function ($q) use ($user): void {
+                $allowed = $this->branchAccess->allowedBranchIds($user);
+                if ($allowed === []) {
+                    $q->whereRaw('1 = 0');
+                    return;
+                }
+                $q->whereIn('id', $allowed);
+            })
             ->orderBy('name')
             ->get(['id', 'name', 'code'])
             ->map(fn ($branch) => [
@@ -46,6 +66,12 @@ class AuthController extends Controller
         if ($auth instanceof JsonResponse) {
             return $auth;
         }
+        /** @var User $user */
+        $user = $auth;
+
+        if (! $user->canUsePos()) {
+            return response()->json(['message' => 'AUTH_ERROR'], 403);
+        }
 
         $branchIsActive = DB::table('branches')
             ->where('id', (int) $data['branch_id'])
@@ -59,6 +85,13 @@ class AuthController extends Controller
                     'branch_id' => ['Selected branch is not active.'],
                 ],
             ], 422);
+        }
+
+        if (! $this->branchAccess->canAccessBranch($user, (int) $data['branch_id'])) {
+            return response()->json([
+                'message' => 'AUTH_ERROR',
+                'error' => 'You are not allowed to register terminals for this branch.',
+            ], 403);
         }
 
         $existingByDevice = PosTerminal::query()
@@ -113,6 +146,10 @@ class AuthController extends Controller
         /** @var User $user */
         $user = $auth;
 
+        if (! $user->canUsePos()) {
+            return response()->json(['message' => 'AUTH_ERROR'], 403);
+        }
+
         $terminal = PosTerminal::query()
             ->where('device_id', $data['device_id'])
             ->where('active', 1)
@@ -122,6 +159,13 @@ class AuthController extends Controller
             return response()->json([
                 'message' => 'AUTH_ERROR',
                 'error' => 'Device is not registered to a POS terminal.',
+            ], 403);
+        }
+
+        if (! $this->branchAccess->canAccessBranch($user, (int) $terminal->branch_id)) {
+            return response()->json([
+                'message' => 'AUTH_ERROR',
+                'error' => 'You are not allowed to use terminals in this branch.',
             ], 403);
         }
 

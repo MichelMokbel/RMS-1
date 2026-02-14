@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Reports;
 
 use App\Http\Controllers\Controller;
 use App\Models\ArInvoice;
+use App\Models\Branch;
 use App\Support\Money\MinorUnits;
 use App\Support\Reports\CsvExport;
 use App\Support\Reports\PdfExport;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -19,9 +21,27 @@ class SalesEntryMonthlyReportController extends Controller
     }
 
     /**
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    private function resolvedMonthlyRange(Request $request): array
+    {
+        $start = now()->startOfMonth();
+        $end = now()->endOfMonth();
+
+        $from = $request->filled('date_from')
+            ? Carbon::parse((string) $request->input('date_from'))->startOfDay()
+            : $start->copy()->startOfDay();
+        $to = $request->filled('date_to')
+            ? Carbon::parse((string) $request->input('date_to'))->endOfDay()
+            : $end->copy()->endOfDay();
+
+        return [$from, $to];
+    }
+
+    /**
      * @return Collection<int, array{month: string, count: int, total_cents: int}>
      */
-    private function query(Request $request, int $limit = 2000): Collection
+    private function query(Request $request, Carbon $from, Carbon $to, int $limit = 2000): Collection
     {
         $rows = ArInvoice::query()
             ->select(['issue_date', 'total_cents', 'customer_id', 'branch_id'])
@@ -29,8 +49,8 @@ class SalesEntryMonthlyReportController extends Controller
             ->whereIn('status', ['issued', 'partially_paid', 'paid'])
             ->when($request->filled('branch_id') && $request->integer('branch_id') > 0, fn ($q) => $q->where('branch_id', $request->integer('branch_id')))
             ->when($request->filled('customer_id') && $request->integer('customer_id') > 0, fn ($q) => $q->where('customer_id', $request->integer('customer_id')))
-            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('issue_date', '>=', $request->date_from))
-            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('issue_date', '<=', $request->date_to))
+            ->whereDate('issue_date', '>=', $from->toDateString())
+            ->whereDate('issue_date', '<=', $to->toDateString())
             ->orderByDesc('issue_date')
             ->limit($limit)
             ->get();
@@ -47,20 +67,34 @@ class SalesEntryMonthlyReportController extends Controller
 
     public function print(Request $request)
     {
-        $months = $this->query($request);
-        $filters = $request->only(['branch_id', 'customer_id', 'date_from', 'date_to']);
+        [$from, $to] = $this->resolvedMonthlyRange($request);
+        $months = $this->query($request, $from, $to);
+        $filters = array_merge(
+            $request->only(['branch_id', 'customer_id']),
+            ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()]
+        );
+        $generatedBy = (string) ($request->user()?->username ?: $request->user()?->name ?: '-');
+        $warehouse = $request->integer('branch_id') > 0
+            ? (string) (Branch::query()->whereKey($request->integer('branch_id'))->value('name') ?: $request->integer('branch_id'))
+            : 'All Branches';
 
         return view('reports.sales-entry-monthly-print', [
             'months' => $months,
             'filters' => $filters,
             'generatedAt' => now(),
+            'generatedBy' => $generatedBy,
+            'warehouse' => $warehouse,
+            'salesPerson' => '-',
+            'startAt' => $from,
+            'endAt' => $to,
             'formatCents' => fn ($c) => $this->formatCents($c),
         ]);
     }
 
     public function csv(Request $request): StreamedResponse
     {
-        $months = $this->query($request);
+        [$from, $to] = $this->resolvedMonthlyRange($request);
+        $months = $this->query($request, $from, $to);
         $headers = [__('Month'), __('Count'), __('Total')];
         $rows = $months->map(fn ($row) => [
             $row['month'],
@@ -73,13 +107,26 @@ class SalesEntryMonthlyReportController extends Controller
 
     public function pdf(Request $request)
     {
-        $months = $this->query($request);
-        $filters = $request->only(['branch_id', 'customer_id', 'date_from', 'date_to']);
+        [$from, $to] = $this->resolvedMonthlyRange($request);
+        $months = $this->query($request, $from, $to);
+        $filters = array_merge(
+            $request->only(['branch_id', 'customer_id']),
+            ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()]
+        );
+        $generatedBy = (string) ($request->user()?->username ?: $request->user()?->name ?: '-');
+        $warehouse = $request->integer('branch_id') > 0
+            ? (string) (Branch::query()->whereKey($request->integer('branch_id'))->value('name') ?: $request->integer('branch_id'))
+            : 'All Branches';
 
         return PdfExport::download('reports.sales-entry-monthly-print', [
             'months' => $months,
             'filters' => $filters,
             'generatedAt' => now(),
+            'generatedBy' => $generatedBy,
+            'warehouse' => $warehouse,
+            'salesPerson' => '-',
+            'startAt' => $from,
+            'endAt' => $to,
             'formatCents' => fn ($c) => $this->formatCents($c),
         ], 'sales-entry-monthly.pdf');
     }

@@ -16,6 +16,7 @@
         .right { text-align: right; }
         .aging { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
         .aging-box { border: 1px solid #e5e7eb; padding: 12px; min-width: 100px; }
+        @include('reports.print-header-styles')
         @media print { .no-print { display: none !important; } }
     </style>
 </head>
@@ -24,7 +25,7 @@
         <button class="btn" onclick="window.print()">Print</button>
         <a class="btn" href="{{ route('reports.payables') }}">Back to Report</a>
     </div>
-    <h1>Payables (AP) Report</h1>
+    @include('reports.print-header', ['reportTitle' => 'Payables (AP) Report'])
     <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} | Tab: {{ $tab }} | Filters: {{ json_encode($filters) }}</div>
 
     @if ($tab === 'aging')

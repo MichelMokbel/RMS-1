@@ -122,6 +122,7 @@ Evidence:
 - Controller: `app/Http/Controllers/Api/Pos/AuthController.php::login()`
 - Validation: `app/Http/Requests/Api/Pos/LoginRequest.php`
 - Terminal lookup: `App\Models\PosTerminal` (`pos_terminals` table)
+- IAM guardrails: user must be active, `users.pos_enabled = 1`, have `pos.login`, and have access to the terminal's branch.
 
 Request JSON schema:
 ```json
@@ -151,7 +152,7 @@ Status codes and errors:
   ```json
   { "message": "AUTH_ERROR" }
   ```
-- `403`: user inactive OR device not mapped to an active POS terminal
+- `403`: user inactive OR POS not enabled OR missing `pos.login` OR branch not allowed OR device not mapped to active POS terminal
   ```json
   { "message": "AUTH_ERROR", "error": "Device is not registered to a POS terminal." }
   ```
@@ -1265,6 +1266,7 @@ POST /api/pos/login
 ```
 
 Expected response (200): contains `token`, `terminal.code="T01"`, `branch_id=1`.
+Prerequisite: login user must have IAM POS access (`pos_enabled=1`, `pos.login`, and branch allowlist includes terminal branch).
 
 DB expectations:
 - `personal_access_tokens` row created (Sanctum)

@@ -14,6 +14,7 @@
         th, td { border: 1px solid #e5e7eb; padding: 8px; font-size: 13px; text-align: left; }
         th { background: #f9fafb; font-weight: 600; }
         .right { text-align: right; }
+        @include('reports.print-header-styles')
         @media print { .no-print { display: none !important; } }
     </style>
 </head>
@@ -22,7 +23,7 @@
         <button class="btn" onclick="window.print()">Print</button>
         <a class="btn" href="{{ route('reports.customer-aging-summary') }}">Back to Report</a>
     </div>
-    <h1>Customer Aging Summary</h1>
+    @include('reports.print-header', ['reportTitle' => 'Customer Aging Summary'])
     <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} | Filters: {{ json_encode($filters) }}</div>
     <table>
         <thead>

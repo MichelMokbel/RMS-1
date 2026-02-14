@@ -14,7 +14,9 @@ use App\Models\PosTerminal;
 use App\Models\Supplier;
 use App\Models\User;
 use App\Services\AR\ArInvoiceService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Spatie\Permission\Models\Permission;
 
 function seedPosTerminalForExtendedSync(string $deviceId, string $code = 'T01', int $branchId = 1): PosTerminal
 {
@@ -30,6 +32,17 @@ function seedPosTerminalForExtendedSync(string $deviceId, string $code = 'T01', 
 
 function posTokenForExtendedDevice(User $user, string $deviceId): string
 {
+    Permission::findOrCreate('pos.login', 'web');
+    $user->givePermissionTo('pos.login');
+    $user->forceFill(['pos_enabled' => true])->save();
+    $branchId = (int) (PosTerminal::query()->where('device_id', $deviceId)->value('branch_id') ?? 1);
+    DB::table('user_branch_access')->insertOrIgnore([
+        'user_id' => (int) $user->id,
+        'branch_id' => $branchId,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
     return (string) $user->createToken('pos:'.$deviceId, ['pos:*', 'device:'.$deviceId])->plainTextToken;
 }
 

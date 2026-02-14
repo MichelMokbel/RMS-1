@@ -144,7 +144,7 @@ new class extends Component {
         /** @var \App\Models\User|null $user */
         $user = Auth::user();
 
-        if (! $user || (! $user->hasRole('admin') && ! $user->hasRole('manager'))) {
+        if (! $user || (! $user->hasRole('admin') && ! $user->hasRole('manager') && ! $user->can('settings.pos_terminals.manage'))) {
             abort(403);
         }
     }
@@ -240,4 +240,3 @@ new class extends Component {
         </div>
     </x-settings.layout>
 </section>
-

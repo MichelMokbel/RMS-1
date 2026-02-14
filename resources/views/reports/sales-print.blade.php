@@ -15,6 +15,7 @@
         th { background: #f9fafb; font-weight: 600; }
         tfoot td { font-weight: 700; background: #f9fafb; }
         .right { text-align: right; }
+        @include('reports.print-header-styles')
         @media print { .no-print { display: none !important; } }
     </style>
 </head>
@@ -23,7 +24,7 @@
         <button class="btn" onclick="window.print()">Print</button>
         <a class="btn" href="{{ route('reports.sales') }}">Back to Report</a>
     </div>
-    <h1>Sales Report</h1>
+    @include('reports.print-header', ['reportTitle' => 'Sales Report'])
     <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} | Filters: {{ json_encode($filters) }}</div>
     <table>
         <thead>

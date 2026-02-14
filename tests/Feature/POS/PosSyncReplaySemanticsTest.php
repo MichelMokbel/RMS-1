@@ -4,7 +4,9 @@ use App\Models\Customer;
 use App\Models\PosSyncEvent;
 use App\Models\PosTerminal;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Spatie\Permission\Models\Permission;
 
 function seedPosTerminalForSync(string $deviceId, string $code = 'T01', int $branchId = 1): PosTerminal
 {
@@ -20,6 +22,17 @@ function seedPosTerminalForSync(string $deviceId, string $code = 'T01', int $bra
 
 function posTokenForDevice(User $user, string $deviceId): string
 {
+    Permission::findOrCreate('pos.login', 'web');
+    $user->givePermissionTo('pos.login');
+    $user->forceFill(['pos_enabled' => true])->save();
+    $branchId = (int) (PosTerminal::query()->where('device_id', $deviceId)->value('branch_id') ?? 1);
+    DB::table('user_branch_access')->insertOrIgnore([
+        'user_id' => (int) $user->id,
+        'branch_id' => $branchId,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
     return (string) $user->createToken('pos:'.$deviceId, ['pos:*', 'device:'.$deviceId])->plainTextToken;
 }
 
@@ -192,4 +205,3 @@ test('test_duplicate_event_after_success_returns_ok_with_same_entity', function 
 
     expect(Customer::query()->count())->toBe(1);
 });
-

@@ -14,6 +14,8 @@ use App\Models\RestaurantTableSession;
 use App\Models\User;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 function seedPosTerminal(string $deviceId, string $code = 'T01', int $branchId = 1): PosTerminal
 {
@@ -27,8 +29,42 @@ function seedPosTerminal(string $deviceId, string $code = 'T01', int $branchId =
     ]);
 }
 
+function enablePosAccess(User $user): void
+{
+    Permission::findOrCreate('pos.login', 'web');
+    $user->givePermissionTo('pos.login');
+    $user->forceFill(['pos_enabled' => true])->save();
+}
+
+/**
+ * @param  array<int, int>  $branchIds
+ */
+function grantBranchAccess(User $user, array $branchIds): void
+{
+    foreach ($branchIds as $branchId) {
+        DB::table('branches')->insertOrIgnore([
+            'id' => (int) $branchId,
+            'name' => 'Branch '.(int) $branchId,
+            'code' => 'B'.(int) $branchId,
+            'is_active' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('user_branch_access')->insertOrIgnore([
+            'user_id' => (int) $user->id,
+            'branch_id' => (int) $branchId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+}
+
 function posToken(User $user, string $deviceId): string
 {
+    enablePosAccess($user);
+    $branchId = (int) (PosTerminal::query()->where('device_id', $deviceId)->value('branch_id') ?? 1);
+    grantBranchAccess($user, [$branchId]);
+
     return (string) $user->createToken('pos:'.$deviceId, ['pos:*', 'device:'.$deviceId])->plainTextToken;
 }
 
@@ -298,11 +334,49 @@ test('petty cash expense create is idempotent by client_uuid', function () {
 
 test('pos login requires device_id bound to a terminal', function () {
     $user = User::factory()->create(['status' => 'active']);
+    enablePosAccess($user);
 
     $this->postJson('/api/pos/login', [
         'email' => $user->email,
         'password' => 'password',
         'device_id' => 'UNKNOWN-DEVICE',
+    ])->assertStatus(403);
+});
+
+test('pos login fails when pos is disabled for user', function () {
+    $user = User::factory()->create(['status' => 'active', 'pos_enabled' => false]);
+    Permission::findOrCreate('pos.login', 'web');
+    $user->givePermissionTo('pos.login');
+    seedPosTerminal('DEV-A', 'T01', 1);
+
+    $this->postJson('/api/pos/login', [
+        'email' => $user->email,
+        'password' => 'password',
+        'device_id' => 'DEV-A',
+    ])->assertStatus(403);
+});
+
+test('pos login fails when user lacks pos.login permission', function () {
+    $user = User::factory()->create(['status' => 'active', 'pos_enabled' => true]);
+    seedPosTerminal('DEV-A', 'T01', 1);
+
+    $this->postJson('/api/pos/login', [
+        'email' => $user->email,
+        'password' => 'password',
+        'device_id' => 'DEV-A',
+    ])->assertStatus(403);
+});
+
+test('pos login fails when terminal branch is outside user allowlist', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    enablePosAccess($user);
+    grantBranchAccess($user, [1]);
+    seedPosTerminal('DEV-BR2', 'T02', 2);
+
+    $this->postJson('/api/pos/login', [
+        'email' => $user->email,
+        'password' => 'password',
+        'device_id' => 'DEV-BR2',
     ])->assertStatus(403);
 });
 
@@ -312,6 +386,8 @@ test('pos login works with username', function () {
         'email' => 'cashier@example.com',
         'status' => 'active',
     ]);
+    enablePosAccess($user);
+    grantBranchAccess($user, [1]);
     seedPosTerminal('DEV-A', 'T01', 1);
 
     $response = $this->postJson('/api/pos/login', [
@@ -324,12 +400,36 @@ test('pos login works with username', function () {
     expect((string) ($response['token'] ?? ''))->not->toBe('');
 });
 
+test('pos login works for waiter role when pos is enabled', function () {
+    Permission::findOrCreate('pos.login', 'web');
+    $waiterRole = Role::findOrCreate('waiter', 'web');
+    $waiterRole->givePermissionTo('pos.login');
+
+    $user = User::factory()->create([
+        'username' => 'waiter.user',
+        'email' => 'waiter@example.com',
+        'status' => 'active',
+        'pos_enabled' => true,
+    ]);
+    $user->assignRole('waiter');
+
+    grantBranchAccess($user, [1]);
+    seedPosTerminal('DEV-WAITER', 'T03', 1);
+
+    $this->postJson('/api/pos/login', [
+        'username' => 'waiter.user',
+        'password' => 'password',
+        'device_id' => 'DEV-WAITER',
+    ])->assertOk();
+});
+
 test('pos setup branches returns active branches for valid credentials', function () {
     $user = User::factory()->create([
         'username' => 'setup.user',
         'email' => 'setup@example.com',
         'status' => 'active',
     ]);
+    enablePosAccess($user);
 
     DB::table('branches')->insertOrIgnore([
         'id' => 2001,
@@ -348,6 +448,7 @@ test('pos setup branches returns active branches for valid credentials', functio
         'created_at' => now(),
         'updated_at' => now(),
     ]);
+    grantBranchAccess($user, [2001]);
 
     $response = $this->postJson('/api/pos/setup/branches', [
         'username' => 'setup.user',
@@ -365,6 +466,7 @@ test('pos setup terminal registration creates active terminal', function () {
         'email' => 'register@example.com',
         'status' => 'active',
     ]);
+    enablePosAccess($user);
 
     DB::table('branches')->insertOrIgnore([
         'id' => 2003,
@@ -374,6 +476,7 @@ test('pos setup terminal registration creates active terminal', function () {
         'created_at' => now(),
         'updated_at' => now(),
     ]);
+    grantBranchAccess($user, [2003]);
 
     $response = $this->postJson('/api/pos/setup/terminals/register', [
         'email' => 'register@example.com',

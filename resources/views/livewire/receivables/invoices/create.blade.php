@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Customer;
+use App\Models\ArInvoice;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\PaymentTerm;
@@ -36,19 +37,76 @@ new #[Layout('components.layouts.app')] class extends Component {
     // Order prefill
     public ?int $source_order_id = null;
     public ?string $source_order_number = null;
+    public ?int $editing_invoice_id = null;
 
-    public function mount(?int $order_id = null): void
+    public function mount(?ArInvoice $invoice = null, ?int $order_id = null): void
     {
+        if ($invoice) {
+            $this->prefillFromInvoiceDraft($invoice);
+            return;
+        }
+
         $this->branch_id = (int) config('inventory.default_branch_id', 1) ?: 1;
         $this->invoice_date = now()->toDateString();
         $this->sales_person_id = Auth::id();
         $this->payment_term_id = $this->defaultPaymentTermId('credit');
         $this->invoice_discount_value = $this->moneyZero();
 
-        // If order_id is provided, prefill from order
         if ($order_id) {
             $this->prefillFromOrder($order_id);
         } else {
+            $this->addItemRow();
+        }
+    }
+
+    protected function prefillFromInvoiceDraft(ArInvoice $invoice): void
+    {
+        $invoice = $invoice->load(['items', 'customer']);
+        if (! $invoice->isDraft()) {
+            abort(404);
+        }
+
+        $this->editing_invoice_id = (int) $invoice->id;
+        $this->branch_id = (int) $invoice->branch_id;
+        $this->invoice_date = $invoice->issue_date?->toDateString() ?? now()->toDateString();
+        $this->payment_type = (string) ($invoice->payment_type ?: 'credit');
+        $this->payment_term_id = $invoice->payment_term_id ? (int) $invoice->payment_term_id : null;
+        $this->sales_person_id = $invoice->sales_person_id ? (int) $invoice->sales_person_id : Auth::id();
+        $this->lpo_reference = $invoice->lpo_reference;
+        $this->invoice_discount_type = (string) ($invoice->invoice_discount_type ?: 'fixed');
+        $this->invoice_discount_value = $this->invoice_discount_type === 'percent'
+            ? number_format(((int) ($invoice->invoice_discount_value ?? 0)) / 100, 2, '.', '')
+            : MinorUnits::format((int) ($invoice->invoice_discount_value ?? 0));
+        $this->notes = $invoice->notes;
+
+        $this->customer_id = $invoice->customer_id ? (int) $invoice->customer_id : null;
+        $this->customer_search = $invoice->customer
+            ? trim((string) $invoice->customer->name.' '.(string) ($invoice->customer->phone ?? ''))
+            : '';
+
+        $this->source_order_id = $invoice->source_order_id ? (int) $invoice->source_order_id : null;
+        if ($this->source_order_id) {
+            $this->source_order_number = (string) (Order::query()->whereKey($this->source_order_id)->value('order_number') ?? '');
+        }
+
+        $this->selected_items = [];
+        $this->item_search = [];
+        $digits = MinorUnits::scaleDigits(MinorUnits::posScale());
+        foreach ($invoice->items as $item) {
+            $menuItemId = $item->sellable_type === MenuItem::class ? (int) ($item->sellable_id ?? 0) : null;
+            $this->selected_items[] = [
+                'menu_item_id' => $menuItemId,
+                'quantity' => (string) $item->qty,
+                'unit' => (string) ($item->unit ?? ''),
+                'unit_price' => number_format((float) MinorUnits::format((int) $item->unit_price_cents), $digits, '.', ''),
+                'discount_amount' => number_format((float) MinorUnits::format((int) $item->discount_cents), $digits, '.', ''),
+                'line_notes' => $item->line_notes,
+                'sort_order' => count($this->selected_items),
+            ];
+            $this->item_search[] = (string) ($item->name_snapshot ?: $item->description);
+        }
+
+        if (count($this->selected_items) === 0) {
             $this->addItemRow();
         }
     }
@@ -408,32 +466,53 @@ new #[Layout('components.layouts.app')] class extends Component {
             $invoiceDiscountValue = $this->invoice_discount_type === 'percent'
                 ? $this->parsePercentToBps($this->invoice_discount_value)
                 : MinorUnits::parsePos($this->invoice_discount_value);
-            $invoice = $service->createDraft(
-                branchId: $this->branch_id,
-                customerId: $this->customer_id,
-                items: $items,
-                actorId: $userId,
-                currency: (string) config('pos.currency'),
-                sourceSaleId: null,
-                type: 'invoice',
-                issueDate: $this->invoice_date,
-                paymentType: $this->payment_type,
-                paymentTermId: $this->payment_term_id,
-                paymentTermDays: 0,
-                salesPersonId: $this->sales_person_id,
-                lpoReference: $this->lpo_reference,
-                invoiceDiscountType: $this->invoice_discount_type,
-                invoiceDiscountValue: $invoiceDiscountValue,
-            );
-            // Link to source order if applicable
-            if ($this->source_order_id) {
-                $invoice->update(['source_order_id' => $this->source_order_id, 'updated_by' => $userId]);
-                // Mark order as invoiced
-                Order::where('id', $this->source_order_id)->update(['invoiced_at' => now()]);
-            }
 
-            if ($this->notes) {
-                $invoice->update(['notes' => $this->notes, 'updated_by' => $userId]);
+            if ($this->editing_invoice_id) {
+                $existing = ArInvoice::query()->findOrFail($this->editing_invoice_id);
+                $invoice = $service->updateDraft($existing, [
+                    'branch_id' => $this->branch_id,
+                    'customer_id' => $this->customer_id,
+                    'items' => $items,
+                    'issue_date' => $this->invoice_date,
+                    'payment_type' => $this->payment_type,
+                    'payment_term_id' => $this->payment_term_id,
+                    'payment_term_days' => 0,
+                    'sales_person_id' => $this->sales_person_id,
+                    'lpo_reference' => $this->lpo_reference,
+                    'invoice_discount_type' => $this->invoice_discount_type,
+                    'invoice_discount_value' => $invoiceDiscountValue,
+                    'notes' => $this->notes,
+                    'source_order_id' => $this->source_order_id,
+                    'currency' => (string) config('pos.currency'),
+                ], $userId);
+            } else {
+                $invoice = $service->createDraft(
+                    branchId: $this->branch_id,
+                    customerId: $this->customer_id,
+                    items: $items,
+                    actorId: $userId,
+                    currency: (string) config('pos.currency'),
+                    sourceSaleId: null,
+                    type: 'invoice',
+                    issueDate: $this->invoice_date,
+                    paymentType: $this->payment_type,
+                    paymentTermId: $this->payment_term_id,
+                    paymentTermDays: 0,
+                    salesPersonId: $this->sales_person_id,
+                    lpoReference: $this->lpo_reference,
+                    invoiceDiscountType: $this->invoice_discount_type,
+                    invoiceDiscountValue: $invoiceDiscountValue,
+                );
+                // Link to source order if applicable
+                if ($this->source_order_id) {
+                    $invoice->update(['source_order_id' => $this->source_order_id, 'updated_by' => $userId]);
+                    // Mark order as invoiced
+                    Order::where('id', $this->source_order_id)->update(['invoiced_at' => now()]);
+                }
+
+                if ($this->notes) {
+                    $invoice->update(['notes' => $this->notes, 'updated_by' => $userId]);
+                }
             }
             if ($issue) {
                 $invoice = $service->issue($invoice, $userId);
@@ -505,7 +584,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 <div class="w-full max-w-5xl mx-auto px-4 space-y-6">
     <div class="flex items-center justify-between">
-        <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Create Invoice') }}</h1>
+        <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+            {{ $editing_invoice_id ? __('Edit Invoice') : __('Create Invoice') }}
+        </h1>
         <flux:button :href="route('invoices.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
     </div>
 
@@ -882,4 +963,3 @@ document.addEventListener('alpine:init', () => {
     }));
 });
 </script>
-

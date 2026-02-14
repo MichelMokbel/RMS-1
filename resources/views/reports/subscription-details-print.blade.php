@@ -16,6 +16,7 @@
         table { width: 100%; border-collapse: collapse; margin-top: 8px; }
         th, td { border: 1px solid #e5e7eb; padding: 8px; font-size: 13px; text-align: left; }
         th { background: #f9fafb; font-weight: 600; }
+        @include('reports.print-header-styles')
         @media print { .no-print { display: none !important; } body { margin: 12px; } th, td { font-size: 12px; } }
     </style>
 </head>
@@ -24,7 +25,7 @@
         <button class="btn" onclick="window.print()">Print</button>
         <a class="btn" href="{{ route('reports.subscription-details') }}">Back to Report</a>
     </div>
-    <h1>Subscription Details Report</h1>
+    @include('reports.print-header', ['reportTitle' => 'Subscription Details Report'])
     <div class="meta">
         Generated: {{ $generatedAt->format('Y-m-d H:i') }} |
         Status: {{ $filters['status'] ?? 'all' }} |

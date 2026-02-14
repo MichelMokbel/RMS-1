@@ -392,9 +392,33 @@ class ArInvoiceService
 
             $this->recalc($locked->fresh(['items']));
 
-            $year = now()->format('Y');
-            $seq = $this->sequences->next('ar_invoice', (int) $locked->branch_id, $year);
-            $locked->invoice_number = 'INV'.$year.'-'.str_pad((string) $seq, 6, '0', STR_PAD_LEFT);
+            $meta = is_array($locked->meta) ? $locked->meta : [];
+            $duplicateRevision = (int) ($meta['duplicate_revision'] ?? 0);
+            $duplicateBaseNumber = trim((string) ($meta['duplicate_base_invoice_number'] ?? ''));
+
+            if ($duplicateRevision > 0 && $duplicateBaseNumber !== '') {
+                $candidate = $duplicateBaseNumber.'V'.$duplicateRevision;
+                if (strlen($candidate) > 32) {
+                    throw ValidationException::withMessages([
+                        'invoice_number' => __('Duplicate invoice revision number is too long.'),
+                    ]);
+                }
+                $exists = ArInvoice::query()
+                    ->where('branch_id', $locked->branch_id)
+                    ->where('invoice_number', $candidate)
+                    ->whereKeyNot($locked->id)
+                    ->exists();
+                if ($exists) {
+                    throw ValidationException::withMessages([
+                        'invoice_number' => __('Duplicate invoice revision number already exists.'),
+                    ]);
+                }
+                $locked->invoice_number = $candidate;
+            } else {
+                $year = now()->format('Y');
+                $seq = $this->sequences->next('ar_invoice', (int) $locked->branch_id, $year);
+                $locked->invoice_number = 'INV'.$year.'-'.str_pad((string) $seq, 6, '0', STR_PAD_LEFT);
+            }
 
             $issueDate = $locked->issue_date ? $locked->issue_date->toDateString() : now()->toDateString();
             $termsDays = (int) ($locked->payment_term_days ?? 0);
@@ -423,6 +447,206 @@ class ArInvoiceService
 
             return $issued->fresh(['items']);
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    public function updateDraft(ArInvoice $invoice, array $payload, int $actorId): ArInvoice
+    {
+        return DB::transaction(function () use ($invoice, $payload, $actorId) {
+            $locked = ArInvoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            if ($locked->status !== 'draft') {
+                throw ValidationException::withMessages([
+                    'invoice' => __('Only draft invoices can be edited.'),
+                ]);
+            }
+
+            $locked->fill([
+                'branch_id' => (int) ($payload['branch_id'] ?? $locked->branch_id),
+                'customer_id' => (int) ($payload['customer_id'] ?? $locked->customer_id),
+                'payment_type' => $payload['payment_type'] ?? $locked->payment_type,
+                'payment_term_id' => $payload['payment_term_id'] ?? $locked->payment_term_id,
+                'payment_term_days' => (int) ($payload['payment_term_days'] ?? $locked->payment_term_days),
+                'sales_person_id' => $payload['sales_person_id'] ?? $locked->sales_person_id,
+                'lpo_reference' => $payload['lpo_reference'] ?? $locked->lpo_reference,
+                'issue_date' => $payload['issue_date'] ?? $locked->issue_date?->toDateString(),
+                'due_date' => null,
+                'currency' => $payload['currency'] ?? $locked->currency,
+                'notes' => $payload['notes'] ?? $locked->notes,
+                'source_order_id' => $payload['source_order_id'] ?? $locked->source_order_id,
+                'invoice_discount_type' => $payload['invoice_discount_type'] ?? $locked->invoice_discount_type,
+                'invoice_discount_value' => (int) ($payload['invoice_discount_value'] ?? $locked->invoice_discount_value),
+                'updated_by' => $actorId,
+            ]);
+            $locked->save();
+
+            $locked->items()->delete();
+
+            foreach ((array) ($payload['items'] ?? []) as $row) {
+                ArInvoiceItem::create([
+                    'invoice_id' => $locked->id,
+                    'description' => (string) ($row['description'] ?? ''),
+                    'qty' => (string) ($row['qty'] ?? '1.000'),
+                    'unit' => $row['unit'] ?? null,
+                    'unit_price_cents' => (int) ($row['unit_price_cents'] ?? 0),
+                    'discount_cents' => (int) ($row['discount_cents'] ?? 0),
+                    'tax_cents' => (int) ($row['tax_cents'] ?? 0),
+                    'line_total_cents' => (int) ($row['line_total_cents'] ?? 0),
+                    'line_notes' => $row['line_notes'] ?? null,
+                    'sellable_type' => $row['sellable_type'] ?? null,
+                    'sellable_id' => $row['sellable_id'] ?? null,
+                    'name_snapshot' => $row['name_snapshot'] ?? null,
+                    'sku_snapshot' => $row['sku_snapshot'] ?? null,
+                    'meta' => $row['meta'] ?? null,
+                ]);
+            }
+
+            $this->recalc($locked->fresh(['items']));
+
+            return $locked->fresh(['items', 'customer', 'paymentAllocations.payment']);
+        });
+    }
+
+    public function void(ArInvoice $invoice, int $actorId, ?string $reason = null): ArInvoice
+    {
+        return DB::transaction(function () use ($invoice, $actorId, $reason) {
+            $locked = ArInvoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+
+            if ($locked->status === 'voided') {
+                return $locked->fresh(['items', 'customer', 'paymentAllocations.payment']);
+            }
+
+            if (! in_array((string) $locked->status, ['draft', 'issued', 'partially_paid', 'paid'], true)) {
+                throw ValidationException::withMessages([
+                    'status' => __('Only draft, issued, partially paid, or paid invoices can be voided.'),
+                ]);
+            }
+
+            $this->voidInvoiceAllocations($locked, $actorId, $reason);
+
+            $locked->status = 'voided';
+            $locked->voided_at = $locked->voided_at ?? now();
+            $locked->voided_by = $locked->voided_by ?? $actorId;
+            $locked->void_reason = $reason ? trim($reason) : ($locked->void_reason ?: null);
+            $locked->save();
+            $this->recalc($locked->fresh(['items']));
+
+            return $locked->fresh(['items', 'customer', 'paymentAllocations.payment']);
+        });
+    }
+
+    public function voidAndDuplicate(ArInvoice $invoice, int $actorId, ?string $reason = null): ArInvoice
+    {
+        return DB::transaction(function () use ($invoice, $actorId, $reason) {
+            $locked = ArInvoice::query()->with(['items'])->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+
+            if ($locked->status === 'voided') {
+                throw ValidationException::withMessages([
+                    'status' => __('Invoice is already voided.'),
+                ]);
+            }
+
+            if (! in_array((string) $locked->status, ['draft', 'issued', 'partially_paid', 'paid'], true)) {
+                throw ValidationException::withMessages([
+                    'status' => __('Only draft, issued, partially paid, or paid invoices can be voided and duplicated.'),
+                ]);
+            }
+
+            $rootId = (int) data_get($locked->meta, 'duplicate_root_invoice_id', $locked->id);
+            $baseNumber = $this->duplicateBaseInvoiceNumber($locked->invoice_number);
+            if (! $baseNumber) {
+                $baseNumber = $this->duplicateBaseInvoiceNumber((string) data_get($locked->meta, 'duplicate_base_invoice_number', ''));
+            }
+            $nextRevision = ArInvoice::query()
+                ->where('meta->duplicate_root_invoice_id', $rootId)
+                ->count() + 1;
+
+            $this->voidInvoiceAllocations($locked, $actorId, $reason);
+
+            $locked->status = 'voided';
+            $locked->voided_at = $locked->voided_at ?? now();
+            $locked->voided_by = $locked->voided_by ?? $actorId;
+            $locked->void_reason = $reason ? trim($reason) : ($locked->void_reason ?: null);
+            $locked->save();
+            $this->recalc($locked->fresh(['items']));
+
+            $items = $locked->items->map(fn (ArInvoiceItem $item) => [
+                'description' => (string) $item->description,
+                'qty' => (string) $item->qty,
+                'unit' => $item->unit,
+                'unit_price_cents' => (int) $item->unit_price_cents,
+                'discount_cents' => (int) $item->discount_cents,
+                'tax_cents' => (int) $item->tax_cents,
+                'line_total_cents' => (int) $item->line_total_cents,
+                'line_notes' => $item->line_notes,
+                'sellable_type' => $item->sellable_type,
+                'sellable_id' => $item->sellable_id,
+                'name_snapshot' => $item->name_snapshot,
+                'sku_snapshot' => $item->sku_snapshot,
+                'meta' => $item->meta,
+            ])->all();
+
+            $duplicate = $this->createDraft(
+                branchId: (int) $locked->branch_id,
+                customerId: (int) $locked->customer_id,
+                items: $items,
+                actorId: $actorId,
+                currency: (string) ($locked->currency ?: config('pos.currency')),
+                posReference: null,
+                source: (string) ($locked->source ?: 'dashboard'),
+                sourceSaleId: $locked->source_sale_id ? (int) $locked->source_sale_id : null,
+                type: (string) ($locked->type ?: 'invoice'),
+                issueDate: $locked->issue_date?->toDateString(),
+                paymentType: $locked->payment_type,
+                paymentTermId: $locked->payment_term_id,
+                paymentTermDays: (int) ($locked->payment_term_days ?? 0),
+                salesPersonId: $locked->sales_person_id,
+                lpoReference: $locked->lpo_reference,
+                invoiceDiscountType: (string) ($locked->invoice_discount_type ?: 'fixed'),
+                invoiceDiscountValue: (int) ($locked->invoice_discount_value ?? 0),
+            );
+
+            $duplicate->update([
+                'source_order_id' => $locked->source_order_id,
+                'notes' => $locked->notes,
+                'meta' => array_merge((array) ($duplicate->meta ?? []), [
+                    'duplicate_root_invoice_id' => $rootId,
+                    'duplicate_source_invoice_id' => (int) $locked->id,
+                    'duplicate_base_invoice_number' => $baseNumber,
+                    'duplicate_revision' => $nextRevision,
+                ]),
+                'updated_by' => $actorId,
+            ]);
+
+            return $duplicate->fresh(['items', 'customer']);
+        });
+    }
+
+    private function duplicateBaseInvoiceNumber(?string $invoiceNumber): ?string
+    {
+        $number = trim((string) ($invoiceNumber ?? ''));
+        if ($number === '') {
+            return null;
+        }
+
+        return preg_replace('/V\\d+$/', '', $number) ?: $number;
+    }
+
+    private function voidInvoiceAllocations(ArInvoice $invoice, int $actorId, ?string $reason = null): void
+    {
+        PaymentAllocation::query()
+            ->where('allocatable_type', ArInvoice::class)
+            ->where('allocatable_id', $invoice->id)
+            ->whereNull('voided_at')
+            ->lockForUpdate()
+            ->get()
+            ->each(function (PaymentAllocation $allocation) use ($actorId, $reason): void {
+                $allocation->voided_at = now();
+                $allocation->voided_by = $actorId;
+                $allocation->void_reason = $reason ? trim($reason) : ($allocation->void_reason ?: __('Invoice voided'));
+                $allocation->save();
+            });
     }
 
     /**
@@ -573,4 +797,3 @@ class ArInvoiceService
         });
     }
 }
-

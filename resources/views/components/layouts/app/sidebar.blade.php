@@ -21,7 +21,11 @@
                 $isStaff = $user?->hasAnyRole(['admin','manager','staff']) ?? false;
 
                 $inPlatform = request()->routeIs('dashboard');
-                $inAdmin = request()->routeIs('categories.*') || request()->routeIs('suppliers.*') || request()->routeIs('customers.*');
+                $inAdmin = request()->routeIs('categories.*')
+                    || request()->routeIs('suppliers.*')
+                    || request()->routeIs('customers.*')
+                    || request()->routeIs('iam.*')
+                    || request()->routeIs('users.*');
                 $inOrders = request()->routeIs('orders.*') || request()->routeIs('meal-plan-requests.*') || request()->routeIs('subscriptions.*');
                 $inCatalog = request()->routeIs('menu-items.*') || request()->routeIs('recipes.*');
                 $inOps = request()->routeIs('inventory.*') || request()->routeIs('purchase-orders.*');
@@ -42,6 +46,9 @@
 
                 @if ($isAdmin)
                     <flux:navlist.group expandable :expanded="$inAdmin" :heading="__('Administration')">
+                        <flux:navlist.item icon="shield-check" :href="route('iam.users.index')" :current="request()->routeIs('iam.*') || request()->routeIs('users.*')" wire:navigate>
+                            {{ __('Identity & Access') }}
+                        </flux:navlist.item>
                         <flux:navlist.item icon="folder" :href="route('categories.index')" :current="request()->routeIs('categories.*')" wire:navigate>
                             {{ __('Categories') }}
                         </flux:navlist.item>

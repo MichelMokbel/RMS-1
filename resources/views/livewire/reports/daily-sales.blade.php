@@ -12,6 +12,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?string $date_from = null;
     public ?string $date_to = null;
 
+    public function mount(): void
+    {
+        $today = now()->toDateString();
+        $this->date_from = $today;
+        $this->date_to = $today;
+    }
+
     public function with(): array
     {
         return [

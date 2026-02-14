@@ -19,6 +19,7 @@ Base prefix: `/api/pos`
 ### Auth model
 
 This endpoint is pre-token setup and authenticates using user credentials in the body.
+User must be active, `pos_enabled = true`, and authorized for `pos.login`.
 
 ### Request body
 
@@ -40,7 +41,8 @@ This endpoint is pre-token setup and authenticates using user credentials in the
 }
 ```
 
-Only active branches are returned (`is_active = 1`).
+Only active branches the user is allowed to access are returned (`is_active = 1` + IAM branch allowlist).
+Admin users see all active branches.
 
 ### Errors
 
@@ -57,6 +59,7 @@ Only active branches are returned (`is_active = 1`).
 ### Auth model
 
 This endpoint is pre-token setup and authenticates using user credentials in the body.
+User must be active, `pos_enabled = true`, and authorized for `pos.login`.
 
 ### Request body
 
@@ -75,6 +78,7 @@ This endpoint is pre-token setup and authenticates using user credentials in the
 ### Behavior
 
 - Branch must be active (`branches.is_active = 1`).
+- User must be allowed to access the selected branch (admin bypass).
 - Terminal is upserted by `device_id`.
 - Terminal `active` is always set to `true`.
 - Terminal code must be unique within a branch.
@@ -99,6 +103,7 @@ This endpoint is pre-token setup and authenticates using user credentials in the
 
 - `401 { "message": "AUTH_ERROR" }` invalid credentials.
 - `403 { "message": "AUTH_ERROR" }` inactive user.
+- `403 { "message": "AUTH_ERROR" }` POS disabled / missing POS permission / branch not allowed.
 - `422` validation errors, including:
   - inactive branch
   - duplicate terminal code in the same branch
@@ -109,4 +114,3 @@ This endpoint is pre-token setup and authenticates using user credentials in the
 2. User selects a branch.
 3. Call `POST /api/pos/setup/terminals/register` with selected branch + terminal details.
 4. Call `POST /api/pos/login` with same credentials and `device_id` to get the Sanctum token.
-

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 use Laravel\Fortify\TwoFactorAuthenticatable;
@@ -26,6 +27,7 @@ class User extends Authenticatable
         'email',
         'password',
         'status',
+        'pos_enabled',
     ];
 
     /**
@@ -57,6 +59,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'pos_enabled' => 'boolean',
         ];
     }
 
@@ -66,6 +69,57 @@ class User extends Authenticatable
     public function isActive(): bool
     {
         return $this->status === 'active';
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->hasRole('admin');
+    }
+
+    public function canUsePos(): bool
+    {
+        return $this->isActive()
+            && (bool) ($this->pos_enabled ?? false)
+            && ($this->hasRole('admin') || $this->can('pos.login'));
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    public function allowedBranchIds(): array
+    {
+        if ($this->isAdmin()) {
+            if (! Schema::hasTable('branches')) {
+                return [];
+            }
+
+            $q = \Illuminate\Support\Facades\DB::table('branches')->select('id');
+            if (Schema::hasColumn('branches', 'is_active')) {
+                $q->where('is_active', 1);
+            }
+
+            return $q->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+        }
+
+        if (! Schema::hasTable('user_branch_access')) {
+            return [];
+        }
+
+        return $this->branches()
+            ->pluck('branches.id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+    }
+
+    public function branches()
+    {
+        return $this->belongsToMany(
+            Branch::class,
+            'user_branch_access',
+            'user_id',
+            'branch_id'
+        )->withTimestamps();
     }
 
     /**
