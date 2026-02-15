@@ -95,5 +95,6 @@
             </tbody>
         </table>
     @endif
+    @include('reports.print-footer')
 </body>
 </html>

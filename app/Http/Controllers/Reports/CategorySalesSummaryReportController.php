@@ -18,7 +18,7 @@ class CategorySalesSummaryReportController extends Controller
         return MinorUnits::format((int) ($cents ?? 0));
     }
 
-    private function query(Request $request, int $limit = 500)
+    private function query(Request $request, int $limit = 5000)
     {
         return DB::table('ar_invoice_items as items')
             ->join('ar_invoices as inv', 'inv.id', '=', 'items.invoice_id')
@@ -30,9 +30,11 @@ class CategorySalesSummaryReportController extends Controller
             ->select([
                 'cat.id as category_id',
                 'cat.name as category_name',
+                'mi.id as item_id',
+                DB::raw("COALESCE(mi.name, items.description) as item_name"),
                 DB::raw('SUM(items.line_total_cents) as total_cents'),
                 DB::raw('SUM(items.qty) as qty_total'),
-                DB::raw('COUNT(items.id) as line_count'),
+                DB::raw('ROUND(AVG(items.unit_price_cents)) as avg_unit_price_cents'),
             ])
             ->where('inv.type', 'invoice')
             ->whereIn('inv.status', ['issued', 'partially_paid', 'paid'])
@@ -40,7 +42,8 @@ class CategorySalesSummaryReportController extends Controller
             ->when($request->filled('category_id') && $request->integer('category_id') > 0, fn ($q) => $q->where('cat.id', $request->integer('category_id')))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('inv.issue_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('inv.issue_date', '<=', $request->date_to))
-            ->groupBy('cat.id', 'cat.name')
+            ->groupBy('cat.id', 'cat.name', 'mi.id', 'items.description')
+            ->orderBy('cat.name')
             ->orderByDesc('total_cents')
             ->limit($limit)
             ->get();
@@ -48,7 +51,7 @@ class CategorySalesSummaryReportController extends Controller
 
     public function print(Request $request)
     {
-        $rows = $this->query($request, 2000);
+        $rows = $this->query($request, 5000);
         $filters = $request->only(['branch_id', 'category_id', 'date_from', 'date_to']);
 
         return view('reports.category-sales-summary-print', [
@@ -61,13 +64,51 @@ class CategorySalesSummaryReportController extends Controller
 
     public function csv(Request $request): StreamedResponse
     {
-        $rows = $this->query($request, 2000);
-        $headers = [__('Category'), __('Qty'), __('Lines'), __('Total')];
-        $data = $rows->map(fn ($row) => [
-            $row->category_name ?? __('Uncategorized'),
-            (string) ($row->qty_total ?? 0),
-            (int) ($row->line_count ?? 0),
-            $this->formatCents((int) ($row->total_cents ?? 0)),
+        $rows = $this->query($request, 5000);
+        $grouped = $rows->groupBy(fn ($r) => $r->category_name ?? __('Uncategorized'));
+        $headers = [__('Category'), __('Item'), __('Qty'), __('Unit Price'), __('Total')];
+
+        $data = collect();
+        $grandTotalCents = 0;
+        $grandQty = 0;
+
+        foreach ($grouped as $categoryName => $items) {
+            $catTotalCents = 0;
+            $catQty = 0;
+
+            foreach ($items as $row) {
+                $totalCents = (int) ($row->total_cents ?? 0);
+                $qty = (float) ($row->qty_total ?? 0);
+                $catTotalCents += $totalCents;
+                $catQty += $qty;
+
+                $data->push([
+                    $categoryName,
+                    $row->item_name ?? '—',
+                    number_format($qty, 3),
+                    $this->formatCents((int) ($row->avg_unit_price_cents ?? 0)),
+                    $this->formatCents($totalCents),
+                ]);
+            }
+
+            $data->push([
+                $categoryName,
+                __('Category Total'),
+                number_format($catQty, 3),
+                '',
+                $this->formatCents($catTotalCents),
+            ]);
+
+            $grandTotalCents += $catTotalCents;
+            $grandQty += $catQty;
+        }
+
+        $data->push([
+            '',
+            __('GRAND TOTAL'),
+            number_format($grandQty, 3),
+            '',
+            $this->formatCents($grandTotalCents),
         ]);
 
         return CsvExport::stream($headers, $data, 'category-sales-summary.csv');
@@ -75,7 +116,7 @@ class CategorySalesSummaryReportController extends Controller
 
     public function pdf(Request $request)
     {
-        $rows = $this->query($request, 2000);
+        $rows = $this->query($request, 5000);
         $filters = $request->only(['branch_id', 'category_id', 'date_from', 'date_to']);
 
         return PdfExport::download('reports.category-sales-summary-print', [

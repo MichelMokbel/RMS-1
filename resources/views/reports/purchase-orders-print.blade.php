@@ -57,5 +57,6 @@
             </tfoot>
         @endif
     </table>
+    @include('reports.print-footer')
 </body>
 </html>

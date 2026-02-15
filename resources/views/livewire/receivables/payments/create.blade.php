@@ -24,6 +24,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public array $allocations = [];
 
+    public string $invoice_date_from = '';
+    public string $invoice_date_to = '';
+
     public function mount(): void
     {
         $this->branch_id = (int) config('inventory.default_branch_id', 1) ?: 1;
@@ -73,9 +76,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
-        $invoices = ArInvoice::query()
+        $query = ArInvoice::query()
             ->where('customer_id', $this->customer_id)
-            ->whereIn('status', ['issued', 'partially_paid'])
+            ->whereIn('status', ['issued', 'partially_paid']);
+
+        if ($this->invoice_date_from !== '') {
+            $query->whereDate('issue_date', '>=', $this->invoice_date_from);
+        }
+        if ($this->invoice_date_to !== '') {
+            $query->whereDate('issue_date', '<=', $this->invoice_date_to);
+        }
+
+        $invoices = $query
             ->orderByDesc('issue_date')
             ->get()
             ->map(function (ArInvoice $invoice) {
@@ -95,6 +107,41 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->toArray();
 
         $this->allocations = $invoices;
+        $this->syncAmount();
+    }
+
+    public function updatedInvoiceDateFrom(): void
+    {
+        $this->loadInvoices();
+    }
+
+    public function updatedInvoiceDateTo(): void
+    {
+        $this->loadInvoices();
+    }
+
+    public function toggleSelectAll(): void
+    {
+        $allSelected = collect($this->allocations)->every(fn ($a) => (bool) ($a['selected'] ?? false));
+
+        foreach ($this->allocations as $idx => $alloc) {
+            $this->allocations[$idx]['selected'] = ! $allSelected;
+        }
+
+        $this->syncAmount();
+    }
+
+    public function syncAmount(): void
+    {
+        $this->amount = MinorUnits::format($this->allocatedTotalCents());
+    }
+
+    public function updated($property): void
+    {
+        // Auto-sync amount when any allocation selection or amount changes
+        if (str_starts_with($property, 'allocations.')) {
+            $this->syncAmount();
+        }
     }
 
     public function save(ArPaymentService $payments): void
@@ -326,6 +373,33 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <h3 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Allocations') }}</h3>
                 <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Remaining') }}: {{ $this->formatMoney($this->remainingCents()) }}</p>
             </div>
+
+            {{-- Date filters --}}
+            @if($customer_id)
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-4 items-end">
+                    <div>
+                        <label class="text-xs font-medium text-neutral-600 dark:text-neutral-300">{{ __('Invoice Date From') }}</label>
+                        <input type="date" wire:model.live="invoice_date_from" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" />
+                    </div>
+                    <div>
+                        <label class="text-xs font-medium text-neutral-600 dark:text-neutral-300">{{ __('Invoice Date To') }}</label>
+                        <input type="date" wire:model.live="invoice_date_to" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" />
+                    </div>
+                    <div>
+                        <flux:button wire:click="toggleSelectAll" variant="subtle" size="sm">
+                            @if(count($allocations) > 0 && collect($allocations)->every(fn ($a) => (bool) ($a['selected'] ?? false)))
+                                {{ __('Deselect All') }}
+                            @else
+                                {{ __('Select All') }}
+                            @endif
+                        </flux:button>
+                    </div>
+                    <div class="text-right text-sm text-neutral-600 dark:text-neutral-300">
+                        {{ count($allocations) }} {{ __('invoice(s)') }}
+                    </div>
+                </div>
+            @endif
+
             @error('allocations') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
             <div class="overflow-x-auto">
                 <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -343,14 +417,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @forelse ($allocations as $idx => $alloc)
                             <tr>
                                 <td class="px-3 py-2 text-sm">
-                                    <input type="checkbox" wire:model="allocations.{{ $idx }}.selected" class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500">
+                                    <input type="checkbox" wire:model.live="allocations.{{ $idx }}.selected" class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500">
                                 </td>
                                 <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $alloc['invoice_number'] }}</td>
                                 <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $alloc['issue_date'] }}</td>
                                 <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $alloc['due_date'] }}</td>
                                 <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney($alloc['outstanding_cents']) }}</td>
                                 <td class="px-3 py-2 text-sm text-right">
-                                    <flux:input wire:model="allocations.{{ $idx }}.amount" type="number" step="{{ $this->moneyStep() }}" min="0" />
+                                    <flux:input wire:model.live="allocations.{{ $idx }}.amount" type="number" step="{{ $this->moneyStep() }}" min="0" />
                                 </td>
                             </tr>
                         @empty

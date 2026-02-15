@@ -584,6 +584,20 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|fin
     Volt::route('petty-cash', 'petty-cash.page')->name('petty-cash.index');
 });
 
+// POS Android app download
+Route::middleware(['auth', 'active'])->group(function () {
+    Route::get('tools/pos-app', function () {
+        $path = storage_path('app/apk/pos.apk');
+        if (! file_exists($path)) {
+            abort(404, 'POS app APK not found. Please upload the APK to storage/app/apk/pos.apk');
+        }
+
+        return response()->download($path, 'pos.apk', [
+            'Content-Type' => 'application/vnd.android.package-archive',
+        ]);
+    })->name('tools.pos-app');
+});
+
 // POS (front-of-house) disabled on web
 Route::middleware(['auth', 'active'])->group(function () {
     Route::get('pos', fn () => abort(404))->name('pos.index');

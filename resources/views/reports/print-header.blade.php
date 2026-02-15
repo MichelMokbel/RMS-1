@@ -30,7 +30,6 @@
     <div class="report-header-top">
         <div>
             <img class="report-logo" src="{{ asset('logo.png') }}" alt="Layla Kitchen Logo">
-            <div class="report-logo-text">Layla Kitchen</div>
         </div>
         <div class="report-company">
             <h2>LAYLA KITCHEN W.L.L</h2>

@@ -166,6 +166,11 @@
                     >
                         {{ __('Cards Generator') }}
                     </flux:navlist.item>
+                    <flux:navlist.item
+                        href="{{ route('tools.pos-app') }}"
+                    >
+                        {{ __('Install POS App') }}
+                    </flux:navlist.item>
                 </flux:navlist.group>
             </flux:navlist>
 

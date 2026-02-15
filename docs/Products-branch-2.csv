@@ -1,0 +1,53 @@
+Name*,UOM*,Product Category Name,Product Type,Sale Price,Cost Price,Arabic Name,Active
+Hommos,Each,Appetizers,Item,20,0,,Y
+Moutabal,Each,Appetizers,Item,22,0,,Y
+Vine Leaves,Each,Appetizers,Item,24,0,,Y
+Foul Mdamas,Each,Appetizers,Item,20,0,,Y
+Fetta Mtable,Each,Appetizers,Item,24,0,,Y
+Labneh with Mint & Garlic,Each,Appetizers,Item,20,0,,Y
+Zaatar,Each,Saj,Item,12,0,,Y
+Akkawi Cheese,Each,Saj,Item,17,0,,Y
+Akkawi Cheese with Zaatar,Each,Saj,Item,18,0,,Y
+Labneh & Veggies,Each,Saj,Item,13,0,,Y
+Labneh Zaatar & Rocca,Each,Saj,Item,18,0,,Y
+Turkey & Cheese,Each,Saj,Item,20,0,,Y
+Armenian Lahmeh bi Ajjin,Each,Saj,Item,20,0,,Y
+Muhamara,Each,Saj,Item,17,0,,Y
+Muhamara with Kashkawan,Each,Saj,Item,19,0,,Y
+Tabbouleh,Each,Salads,Item,25,0,,Y
+Fattoush,Each,Salads,Item,25,0,,Y
+Olive Salad,Each,Salads,Item,18,0,,Y
+Greek Salad,Each,Salads,Item,30,0,,Y
+Rocca Salad with Beetroot,Each,Salads,Item,30,0,,Y
+Famous Chicken,Each,Specialty Wraps,Item,35,0,,Y
+Spicy Chicken,Each,Specialty Wraps,Item,35,0,,Y
+Chicken Shawarma,Each,Specialty Wraps,Item,27,0,,Y
+Arayes Kafta,Each,Specialty Wraps,Item,27,0,,Y
+Arayes Soujouk,Each,Specialty Wraps,Item,27,0,,Y
+Lebanese Falafel,Each,Specialty Wraps,Item,12,0,,Y
+Cheese with Tomato,Each,Lebanese Sandwiches,Item,15,0,,Y
+Grilled Halloumi,Each,Lebanese Sandwiches,Item,18,0,,Y
+Lebanese Grilled Taouk,Each,Lebanese Sandwiches,Item,35,0,,Y
+Chicken Fajita,Each,Lebanese Sandwiches,Item,35,0,,Y
+Chicken Avocado Sub,Each,Lebanese Sandwiches,Item,35,0,,Y
+Crispy Chicken Escalope,Each,Lebanese Sandwiches,Item,35,0,,Y
+Beef Rosto,Each,Lebanese Sandwiches,Item,38,0,,Y
+Philly Steak,Each,Lebanese Sandwiches,Item,38,0,,Y
+Nutella Crepes,Each,Desserts,Item,25,0,,Y
+Belgian Chocolate Crepes,Each,Desserts,Item,30,0,,Y
+Lotus Crepes,Each,Desserts,Item,25,0,,Y
+Pistachio Crepes,Each,Desserts,Item,28,0,,Y
+Pepsi,Each,Desserts,Item,10,0,,Y
+Pepsi Diet,Each,Desserts,Item,10,0,,Y
+7UP,Each,Desserts,Item,10,0,,Y
+Miranda,Each,Desserts,Item,10,0,,Y
+Mineral Water,Each,Desserts,Item,8,0,,Y
+Sparkling Water,Each,Desserts,Item,10,0,,Y
+Shisha,Each,Shisha,Item,85,0,,Y
+Shisa Ajami,Each,Shisha,Item,150,0,,Y
+Add Cheese,Each ,Add Ons,Item,5,0,,Y
+Add Vegetablles,Each ,Add Ons,Item,5,0,,Y
+Add Strawberry,Each,Add Ons,Item,5,0,,Y
+Add Banana,Each,Add Ons,Item,5,0,,Y
+Add Blueberry,Each,Add Ons,Item,8,0,,Y
+Add Raspberry,Each,Add Ons,Item,8,0,,Y

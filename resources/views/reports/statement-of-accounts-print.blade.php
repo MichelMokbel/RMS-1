@@ -29,5 +29,6 @@
         <div class="card">Payments: {{ $formatCents($summary['payments']) }}</div>
         <div class="card">Closing: {{ $formatCents($summary['closing']) }}</div>
     </div>
+    @include('reports.print-footer')
 </body>
 </html>

@@ -79,5 +79,6 @@
             @endforelse
         </tbody>
     </table>
+    @include('reports.print-footer')
 </body>
 </html>
