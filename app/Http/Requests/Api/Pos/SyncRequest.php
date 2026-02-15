@@ -15,7 +15,7 @@ class SyncRequest extends FormRequest
     {
         return [
             'device_id' => ['required', 'string', 'max:80', 'regex:/^[A-Za-z0-9._-]+$/'],
-            'terminal_code' => ['required', 'string', 'regex:/^T\\d{2}$/'],
+            'terminal_code' => ['required', 'string', 'max:20', 'regex:/^[A-Za-z0-9._-]+$/'],
             'branch_id' => ['required', 'integer', 'min:1'],
             'last_pulled_at' => ['sometimes', 'nullable', 'date'],
             'events' => ['required', 'array'],

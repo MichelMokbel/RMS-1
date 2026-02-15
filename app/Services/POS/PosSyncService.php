@@ -779,7 +779,7 @@ class PosSyncService
     private function handleInvoiceFinalize($terminal, $user, string $deviceId, array $payload): array
     {
         $v = Validator::make($payload, [
-            'pos_reference' => ['required', 'string', 'regex:/^T\\d{2}-\\d{8}-\\d{6}$/'],
+            'pos_reference' => ['required', 'string', 'regex:/^[A-Za-z0-9._-]+-\\d{8}-\\d{6}$/'],
             'payment_type' => ['required', 'string', 'in:cash,card,credit,mixed'],
             'customer_id' => ['required', 'integer', 'min:1'],
             'issue_date' => ['required', 'date_format:Y-m-d'],
