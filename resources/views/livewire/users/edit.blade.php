@@ -69,7 +69,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 Rule::unique(User::class)->ignore($this->user->id),
             ],
             'status' => ['required', Rule::in(['active', 'inactive'])],
-            'password' => ['nullable', 'string', 'min:8', 'confirmed'],
+            'password' => ['nullable', 'string', 'min:4', 'confirmed'],
             'pos_enabled' => ['required', 'boolean'],
             'roles' => ['array'],
             'roles.*' => ['string', Rule::exists('roles', 'name')->where('guard_name', 'web')],
