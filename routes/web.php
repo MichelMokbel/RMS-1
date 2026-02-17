@@ -128,6 +128,43 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operation
     Volt::route('subscriptions/generate', 'subscriptions.generate')->name('subscriptions.generate');
 });
 
+// Company Food (standalone module)
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operations.access'])->prefix('company-food')->name('company-food.')->group(function () {
+    Volt::route('projects', 'company-food.projects.index')->name('projects.index');
+    Volt::route('projects/create', 'company-food.projects.create')->name('projects.create');
+    Route::get('projects/{project}/export-csv', function (\App\Models\CompanyFoodProject $project) {
+        $orders = \App\Models\CompanyFoodOrder::query()
+            ->where('project_id', $project->id)
+            ->with(['employeeList', 'saladOption', 'appetizerOption1', 'appetizerOption2', 'mainOption', 'sweetOption', 'locationOption', 'soupOption'])
+            ->orderBy('employee_name')
+            ->get();
+
+        return response()->streamDownload(function () use ($orders) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, ['Date', 'List', 'Employee', 'Salad', 'Appetizer 1', 'Appetizer 2', 'Main', 'Sweet', 'Soup', 'Location']);
+            foreach ($orders as $o) {
+                fputcsv($out, [
+                    $o->order_date?->format('Y-m-d') ?? '',
+                    $o->employeeList?->name ?? '',
+                    $o->employee_name,
+                    $o->saladOption?->name ?? '',
+                    $o->appetizerOption1?->name ?? '',
+                    $o->appetizerOption2?->name ?? '',
+                    $o->mainOption?->name ?? '',
+                    $o->sweetOption?->name ?? '',
+                    $o->soupOption?->name ?? '',
+                    $o->locationOption?->name ?? '',
+                ]);
+            }
+            fclose($out);
+        }, 'company-food-orders-' . $project->slug . '.csv', [
+            'Content-Type' => 'text/csv',
+        ]);
+    })->name('projects.export-csv');
+    Volt::route('projects/{project}', 'company-food.projects.show')->name('projects.show');
+    Volt::route('projects/{project}/edit', 'company-food.projects.edit')->name('projects.edit');
+});
+
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operations.access'])->group(function () {
     Route::get('inventory/items/search', function (Request $request) {
         $term = trim((string) $request->query('q', ''));

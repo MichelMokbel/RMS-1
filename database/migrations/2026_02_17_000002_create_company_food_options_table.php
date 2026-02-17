@@ -1,0 +1,29 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('company_food_options', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('project_id')->constrained('company_food_projects')->cascadeOnDelete();
+            $table->string('category', 50); // salad, appetizer, main, sweet, location
+            $table->string('name');
+            $table->unsignedInteger('sort_order')->default(0);
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+
+            $table->index(['project_id', 'category']);
+            $table->index(['project_id', 'is_active']);
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('company_food_options');
+    }
+};

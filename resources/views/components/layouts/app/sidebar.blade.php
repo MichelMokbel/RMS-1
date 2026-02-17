@@ -26,7 +26,7 @@
                     || request()->routeIs('customers.*')
                     || request()->routeIs('iam.*')
                     || request()->routeIs('users.*');
-                $inOrders = request()->routeIs('orders.*') || request()->routeIs('meal-plan-requests.*') || request()->routeIs('subscriptions.*');
+                $inOrders = request()->routeIs('orders.*') || request()->routeIs('meal-plan-requests.*') || request()->routeIs('subscriptions.*') || request()->routeIs('company-food.*');
                 $inCatalog = request()->routeIs('menu-items.*') || request()->routeIs('recipes.*');
                 $inOps = request()->routeIs('inventory.*') || request()->routeIs('purchase-orders.*');
                 $inDailyDish = request()->routeIs('daily-dish.*');
@@ -74,6 +74,9 @@
                             </flux:navlist.item>
                             <flux:navlist.item icon="ticket" :href="route('subscriptions.index')" :current="request()->routeIs('subscriptions.*')" wire:navigate>
                                 {{ __('Subscriptions') }}
+                            </flux:navlist.item>
+                            <flux:navlist.item icon="building-office-2" :href="route('company-food.projects.index')" :current="request()->routeIs('company-food.*')" wire:navigate>
+                                {{ __('Company Food') }}
                             </flux:navlist.item>
                         @endif
                     </flux:navlist.group>

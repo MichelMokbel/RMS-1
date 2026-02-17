@@ -6,6 +6,8 @@ use App\Http\Controllers\Api\AP\ApReportsController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DailyDishMenuController;
+use App\Http\Controllers\Api\PublicCompanyFoodController;
+use App\Http\Controllers\Api\PublicCompanyFoodOrderController;
 use App\Http\Controllers\Api\PublicDailyDishController;
 use App\Http\Controllers\Api\PublicDailyDishOrderController;
 use App\Http\Controllers\Api\Expenses\ExpenseCategoryController;
@@ -47,6 +49,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
 Route::middleware(['api', 'throttle:60,1'])->prefix('public')->group(function () {
     Route::get('daily-dish/menus', [PublicDailyDishController::class, 'menus']);
     Route::post('daily-dish/orders', [PublicDailyDishOrderController::class, 'store'])->middleware('throttle:20,1');
+
+    // Company Food (standalone module - no integration with orders/daily-dish)
+    Route::prefix('company-food/{projectSlug}')->middleware('throttle:60,1')->group(function () {
+        Route::get('options', [PublicCompanyFoodController::class, 'options']);
+        Route::post('orders', [PublicCompanyFoodOrderController::class, 'store'])->middleware('throttle:20,1');
+        Route::get('orders/{id}', [PublicCompanyFoodOrderController::class, 'show']);
+        Route::put('orders/{id}', [PublicCompanyFoodOrderController::class, 'update'])->middleware('throttle:20,1');
+    });
 });
 
 $apiAuthMiddleware =  'auth';
