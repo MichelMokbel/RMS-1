@@ -3,6 +3,7 @@
 use App\Models\InventoryItem;
 use App\Models\MenuItem;
 use App\Models\Order;
+use App\Models\User;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,14 +14,26 @@ use Laravel\Fortify\Features;
 
 Route::get('/', function () {
     if (Auth::check()) {
-        return redirect()->route('dashboard');
+        /** @var User $user */
+        $user = Auth::user();
+        if ($user->hasRole('admin')) {
+            return redirect()->route('dashboard');
+        }
+        if ($user->hasAnyRole(['manager', 'kitchen', 'cashier']) || $user->can('orders.access') || $user->can('operations.access')) {
+            return redirect()->route('orders.index');
+        }
+        if ($user->hasAnyRole(['staff']) || $user->can('reports.access')) {
+            return redirect()->route('reports.index');
+        }
+
+        return redirect()->route('profile.edit');
     }
 
     return redirect()->route('login');
 })->name('home');
 
 Volt::route('dashboard', 'dashboard')
-    ->middleware(['auth', 'active'])
+    ->middleware(['auth', 'active', 'role:admin', 'ensure.admin'])
     ->name('dashboard');
 
 Route::middleware(['auth', 'active'])->group(function () {

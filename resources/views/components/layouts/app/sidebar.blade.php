@@ -9,10 +9,6 @@
                 <flux:sidebar.toggle class="lg:hidden" icon="x-mark" />
             </div>
 
-            <a href="{{ route('dashboard') }}" class="me-5 flex items-center space-x-2 rtl:space-x-reverse" wire:navigate>
-                <x-app-logo />
-            </a>
-
             @php
                 $user = auth()->user();
                 $isAdmin = $user?->hasRole('admin') ?? false;
@@ -37,13 +33,19 @@
                 $inReports = request()->routeIs('reports.*') || request()->routeIs('ledger.*');
             @endphp
 
+            <a href="{{ $isAdmin ? route('dashboard') : route('home') }}" class="me-5 flex items-center space-x-2 rtl:space-x-reverse" wire:navigate>
+                <x-app-logo />
+            </a>
+
             <flux:navlist variant="outline">
+                @if ($isAdmin)
                 <flux:navlist.group expandable :expanded="$inPlatform" :heading="__('Platform')">
                     <flux:navlist.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:navlist.item>
                 </flux:navlist.group>
 
+                @endif
                 @if ($isAdmin)
                     <flux:navlist.group expandable :expanded="$inAdmin" :heading="__('Administration')">
                         <flux:navlist.item icon="shield-check" :href="route('iam.users.index')" :current="request()->routeIs('iam.*') || request()->routeIs('users.*')" wire:navigate>
