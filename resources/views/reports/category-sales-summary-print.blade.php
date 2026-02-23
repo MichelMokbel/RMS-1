@@ -29,9 +29,14 @@
     @include('reports.print-header', ['reportTitle' => 'Category Wise Sales Summary'])
 
     @php
-        $grouped = $rows->groupBy(fn ($r) => $r->category_name ?? 'Uncategorized');
         $grandTotalCents = $rows->sum(fn ($r) => (int) ($r->total_cents ?? 0));
         $grandQty = $rows->sum(fn ($r) => (float) ($r->qty_total ?? 0));
+        $currentGroupBy = $groupBy ?? 'category';
+        if ($currentGroupBy === 'none') {
+            $grouped = collect(['All Items' => $rows]);
+        } else {
+            $grouped = $rows->groupBy(fn ($r) => $r->category_name ?? 'Uncategorized');
+        }
     @endphp
 
     <table>
@@ -56,12 +61,14 @@
                         <td class="right">{{ $formatCents((int) ($row->total_cents ?? 0)) }}</td>
                     </tr>
                 @endforeach
-                <tr class="subtotal-row">
-                    <td class="item-name">Category Total</td>
-                    <td class="right">{{ number_format($items->sum(fn ($r) => (float) ($r->qty_total ?? 0)), 3) }}</td>
-                    <td></td>
-                    <td class="right">{{ $formatCents($items->sum(fn ($r) => (int) ($r->total_cents ?? 0))) }}</td>
-                </tr>
+                @if ($currentGroupBy !== 'none')
+                    <tr class="subtotal-row">
+                        <td class="item-name">Category Total</td>
+                        <td class="right">{{ number_format($items->sum(fn ($r) => (float) ($r->qty_total ?? 0)), 3) }}</td>
+                        <td></td>
+                        <td class="right">{{ $formatCents($items->sum(fn ($r) => (int) ($r->total_cents ?? 0))) }}</td>
+                    </tr>
+                @endif
             @empty
                 <tr><td colspan="4">No sales found.</td></tr>
             @endforelse

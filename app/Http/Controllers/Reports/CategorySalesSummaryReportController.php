@@ -52,20 +52,25 @@ class CategorySalesSummaryReportController extends Controller
     public function print(Request $request)
     {
         $rows = $this->query($request, 5000);
-        $filters = $request->only(['branch_id', 'category_id', 'date_from', 'date_to']);
+        $filters = $request->only(['branch_id', 'category_id', 'date_from', 'date_to', 'group_by']);
+        $groupBy = (string) $request->input('group_by', 'category');
 
         return view('reports.category-sales-summary-print', [
             'rows' => $rows,
             'filters' => $filters,
             'generatedAt' => now(),
             'formatCents' => fn ($c) => $this->formatCents($c),
+            'groupBy' => $groupBy,
         ]);
     }
 
     public function csv(Request $request): StreamedResponse
     {
         $rows = $this->query($request, 5000);
-        $grouped = $rows->groupBy(fn ($r) => $r->category_name ?? __('Uncategorized'));
+        $groupBy = (string) $request->input('group_by', 'category');
+        $grouped = $groupBy === 'none'
+            ? collect([__('All Items') => $rows])
+            : $rows->groupBy(fn ($r) => $r->category_name ?? __('Uncategorized'));
         $headers = [__('Category'), __('Item'), __('Qty'), __('Unit Price'), __('Total')];
 
         $data = collect();
@@ -91,13 +96,15 @@ class CategorySalesSummaryReportController extends Controller
                 ]);
             }
 
-            $data->push([
-                $categoryName,
-                __('Category Total'),
-                number_format($catQty, 3),
-                '',
-                $this->formatCents($catTotalCents),
-            ]);
+            if ($groupBy !== 'none') {
+                $data->push([
+                    $categoryName,
+                    __('Category Total'),
+                    number_format($catQty, 3),
+                    '',
+                    $this->formatCents($catTotalCents),
+                ]);
+            }
 
             $grandTotalCents += $catTotalCents;
             $grandQty += $catQty;
@@ -117,13 +124,15 @@ class CategorySalesSummaryReportController extends Controller
     public function pdf(Request $request)
     {
         $rows = $this->query($request, 5000);
-        $filters = $request->only(['branch_id', 'category_id', 'date_from', 'date_to']);
+        $filters = $request->only(['branch_id', 'category_id', 'date_from', 'date_to', 'group_by']);
+        $groupBy = (string) $request->input('group_by', 'category');
 
         return PdfExport::download('reports.category-sales-summary-print', [
             'rows' => $rows,
             'filters' => $filters,
             'generatedAt' => now(),
             'formatCents' => fn ($c) => $this->formatCents($c),
+            'groupBy' => $groupBy,
         ], 'category-sales-summary.pdf');
     }
 }

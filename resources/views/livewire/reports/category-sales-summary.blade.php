@@ -13,6 +13,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?int $category_id = null;
     public ?string $date_from = null;
     public ?string $date_to = null;
+    public string $group_by = 'category';
 
     public function with(): array
     {
@@ -21,6 +22,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
             'categories' => Schema::hasTable('categories') ? Category::orderBy('name')->get() : collect(),
             'exportParams' => $this->exportParams(),
+            'groupBy' => $this->group_by,
         ];
     }
 
@@ -61,6 +63,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'category_id' => $this->category_id,
             'date_from' => $this->date_from,
             'date_to' => $this->date_to,
+            'group_by' => $this->group_by,
         ], fn ($v) => $v !== null && $v !== '');
     }
 
@@ -93,14 +96,26 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endforeach
                 </select>
             </div>
+            <div class="min-w-[220px]">
+                <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Grouping') }}</label>
+                <select wire:model.live="group_by" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                    <option value="category">{{ __('By Category') }}</option>
+                    <option value="none">{{ __('No Grouping') }}</option>
+                </select>
+            </div>
             <x-reports.date-range fromName="date_from" toName="date_to" />
         </div>
     </div>
 
     @php
-        $grouped = $rows->groupBy(fn ($r) => $r->category_name ?? __('Uncategorized'));
         $grandTotalCents = $rows->sum(fn ($r) => (int) ($r->total_cents ?? 0));
         $grandQty = $rows->sum(fn ($r) => (float) ($r->qty_total ?? 0));
+        $currentGroupBy = $groupBy ?? $group_by ?? 'category';
+        if ($currentGroupBy === 'none') {
+            $grouped = collect(['All Items' => $rows]);
+        } else {
+            $grouped = $rows->groupBy(fn ($r) => $r->category_name ?? __('Uncategorized'));
+        }
     @endphp
 
     <div class="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
@@ -126,12 +141,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <td class="px-3 py-1.5 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney((int) ($row->total_cents ?? 0)) }}</td>
                         </tr>
                     @endforeach
-                    <tr class="bg-neutral-50 dark:bg-neutral-800/50">
-                        <td class="px-3 py-1.5 pl-6 text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Category Total') }}</td>
-                        <td class="px-3 py-1.5 text-sm text-right font-semibold text-neutral-800 dark:text-neutral-200">{{ number_format($items->sum(fn ($r) => (float) ($r->qty_total ?? 0)), 3) }}</td>
-                        <td class="px-3 py-1.5"></td>
-                        <td class="px-3 py-1.5 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($items->sum(fn ($r) => (int) ($r->total_cents ?? 0))) }}</td>
-                    </tr>
+                    @if ($currentGroupBy !== 'none')
+                        <tr class="bg-neutral-50 dark:bg-neutral-800/50">
+                            <td class="px-3 py-1.5 pl-6 text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Category Total') }}</td>
+                            <td class="px-3 py-1.5 text-sm text-right font-semibold text-neutral-800 dark:text-neutral-200">{{ number_format($items->sum(fn ($r) => (float) ($r->qty_total ?? 0)), 3) }}</td>
+                            <td class="px-3 py-1.5"></td>
+                            <td class="px-3 py-1.5 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($items->sum(fn ($r) => (int) ($r->total_cents ?? 0))) }}</td>
+                        </tr>
+                    @endif
                 @empty
                     <tr><td colspan="4" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No sales found.') }}</td></tr>
                 @endforelse
