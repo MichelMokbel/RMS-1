@@ -35,6 +35,7 @@ class CategorySalesSummaryReportController extends Controller
                 DB::raw('SUM(items.line_total_cents) as total_cents'),
                 DB::raw('SUM(items.qty) as qty_total'),
                 DB::raw('ROUND(AVG(items.unit_price_cents)) as avg_unit_price_cents'),
+                DB::raw('SUM(items.unit_price_cents * items.qty) - SUM(items.line_total_cents) as discount_cents'),
             ])
             ->where('inv.type', 'invoice')
             ->whereIn('inv.status', ['issued', 'partially_paid', 'paid'])
@@ -85,20 +86,24 @@ class CategorySalesSummaryReportController extends Controller
         } else {
             $grouped = $rows->groupBy(fn ($r) => $r->category_name ?? __('Uncategorized'));
         }
-        $headers = [__('Category'), __('Item'), __('Qty'), __('Unit Price'), __('Total')];
+        $headers = [__('Category'), __('Item'), __('Qty'), __('Unit Price'), __('Discount'), __('Total')];
 
         $data = collect();
         $grandTotalCents = 0;
+        $grandDiscountCents = 0;
         $grandQty = 0;
 
         foreach ($grouped as $categoryName => $items) {
             $catTotalCents = 0;
+            $catDiscountCents = 0;
             $catQty = 0;
 
             foreach ($items as $row) {
                 $totalCents = (int) ($row->total_cents ?? 0);
+                $discountCents = (int) ($row->discount_cents ?? 0);
                 $qty = (float) ($row->qty_total ?? 0);
                 $catTotalCents += $totalCents;
+                $catDiscountCents += $discountCents;
                 $catQty += $qty;
 
                 $data->push([
@@ -106,6 +111,7 @@ class CategorySalesSummaryReportController extends Controller
                     $row->item_name ?? '—',
                     number_format($qty, 3),
                     $this->formatCents((int) ($row->avg_unit_price_cents ?? 0)),
+                    $this->formatCents($discountCents),
                     $this->formatCents($totalCents),
                 ]);
             }
@@ -116,11 +122,13 @@ class CategorySalesSummaryReportController extends Controller
                     __('Category Total'),
                     number_format($catQty, 3),
                     '',
+                    $this->formatCents($catDiscountCents),
                     $this->formatCents($catTotalCents),
                 ]);
             }
 
             $grandTotalCents += $catTotalCents;
+            $grandDiscountCents += $catDiscountCents;
             $grandQty += $catQty;
         }
 
@@ -129,6 +137,7 @@ class CategorySalesSummaryReportController extends Controller
             __('GRAND TOTAL'),
             number_format($grandQty, 3),
             '',
+            $this->formatCents($grandDiscountCents),
             $this->formatCents($grandTotalCents),
         ]);
 

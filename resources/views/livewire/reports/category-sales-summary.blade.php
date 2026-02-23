@@ -143,6 +143,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     @php
         $grandTotalCents = $rows->sum(fn ($r) => (int) ($r->total_cents ?? 0));
+        $grandDiscountCents = $rows->sum(fn ($r) => (int) ($r->discount_cents ?? 0));
         $grandQty = $rows->sum(fn ($r) => (float) ($r->qty_total ?? 0));
         $currentGroupBy = $groupBy ?? $group_by ?? 'category';
         $categoryGroups = $categoryGroups ?? [];
@@ -170,38 +171,45 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Item') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Qty') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Unit Price') }}</th>
+                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Discount') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Total') }}</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                 @forelse ($grouped as $categoryName => $items)
                     <tr class="bg-neutral-100 dark:bg-neutral-800">
-                        <td colspan="4" class="px-3 py-2 text-sm font-bold text-neutral-900 dark:text-neutral-100">{{ $categoryName }}</td>
+                        <td colspan="5" class="px-3 py-2 text-sm font-bold text-neutral-900 dark:text-neutral-100">{{ $categoryName }}</td>
                     </tr>
                     @foreach ($items as $row)
                         <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
                             <td class="px-3 py-1.5 pl-6 text-sm text-neutral-700 dark:text-neutral-200">{{ $row->item_name ?? '—' }}</td>
                             <td class="px-3 py-1.5 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ number_format((float) ($row->qty_total ?? 0), 3) }}</td>
                             <td class="px-3 py-1.5 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney((int) ($row->avg_unit_price_cents ?? 0)) }}</td>
+                            <td class="px-3 py-1.5 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney((int) ($row->discount_cents ?? 0)) }}</td>
                             <td class="px-3 py-1.5 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney((int) ($row->total_cents ?? 0)) }}</td>
                         </tr>
                     @endforeach
                     @if ($currentGroupBy !== 'none')
+                        @php
+                            $groupDiscountCents = $items->sum(fn ($r) => (int) ($r->discount_cents ?? 0));
+                        @endphp
                         <tr class="bg-neutral-50 dark:bg-neutral-800/50">
                             <td class="px-3 py-1.5 pl-6 text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Category Total') }}</td>
                             <td class="px-3 py-1.5 text-sm text-right font-semibold text-neutral-800 dark:text-neutral-200">{{ number_format($items->sum(fn ($r) => (float) ($r->qty_total ?? 0)), 3) }}</td>
                             <td class="px-3 py-1.5"></td>
+                            <td class="px-3 py-1.5 text-sm text-right font-semibold text-neutral-800 dark:text-neutral-200">{{ $this->formatMoney($groupDiscountCents) }}</td>
                             <td class="px-3 py-1.5 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($items->sum(fn ($r) => (int) ($r->total_cents ?? 0))) }}</td>
                         </tr>
                     @endif
                 @empty
-                    <tr><td colspan="4" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No sales found.') }}</td></tr>
+                    <tr><td colspan="5" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No sales found.') }}</td></tr>
                 @endforelse
                 @if ($grouped->isNotEmpty())
                     <tr class="bg-neutral-200 dark:bg-neutral-700">
                         <td class="px-3 py-2 text-sm font-bold text-neutral-900 dark:text-neutral-100">{{ __('GRAND TOTAL') }}</td>
                         <td class="px-3 py-2 text-sm text-right font-bold text-neutral-900 dark:text-neutral-100">{{ number_format($grandQty, 3) }}</td>
                         <td class="px-3 py-2"></td>
+                        <td class="px-3 py-2 text-sm text-right font-bold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($grandDiscountCents) }}</td>
                         <td class="px-3 py-2 text-sm text-right font-bold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($grandTotalCents) }}</td>
                     </tr>
                 @endif

@@ -30,6 +30,7 @@
 
     @php
         $grandTotalCents = $rows->sum(fn ($r) => (int) ($r->total_cents ?? 0));
+        $grandDiscountCents = $rows->sum(fn ($r) => (int) ($r->discount_cents ?? 0));
         $grandQty = $rows->sum(fn ($r) => (float) ($r->qty_total ?? 0));
         $currentGroupBy = $groupBy ?? 'category';
         $categoryGroups = $categoryGroups ?? [];
@@ -56,38 +57,45 @@
                 <th>Item</th>
                 <th class="right">Qty</th>
                 <th class="right">Unit Price</th>
+                <th class="right">Discount</th>
                 <th class="right">Total</th>
             </tr>
         </thead>
         <tbody>
             @forelse ($grouped as $categoryName => $items)
                 <tr class="category-row">
-                    <td colspan="4">{{ $categoryName }}</td>
+                    <td colspan="5">{{ $categoryName }}</td>
                 </tr>
                 @foreach ($items as $row)
                     <tr>
                         <td class="item-name">{{ $row->item_name ?? '—' }}</td>
                         <td class="right">{{ number_format((float) ($row->qty_total ?? 0), 3) }}</td>
                         <td class="right">{{ $formatCents((int) ($row->avg_unit_price_cents ?? 0)) }}</td>
+                        <td class="right">{{ $formatCents((int) ($row->discount_cents ?? 0)) }}</td>
                         <td class="right">{{ $formatCents((int) ($row->total_cents ?? 0)) }}</td>
                     </tr>
                 @endforeach
                 @if ($currentGroupBy !== 'none')
+                    @php
+                        $groupDiscountCents = $items->sum(fn ($r) => (int) ($r->discount_cents ?? 0));
+                    @endphp
                     <tr class="subtotal-row">
                         <td class="item-name">Category Total</td>
                         <td class="right">{{ number_format($items->sum(fn ($r) => (float) ($r->qty_total ?? 0)), 3) }}</td>
                         <td></td>
+                        <td class="right">{{ $formatCents($groupDiscountCents) }}</td>
                         <td class="right">{{ $formatCents($items->sum(fn ($r) => (int) ($r->total_cents ?? 0))) }}</td>
                     </tr>
                 @endif
             @empty
-                <tr><td colspan="4">No sales found.</td></tr>
+                <tr><td colspan="5">No sales found.</td></tr>
             @endforelse
             @if ($grouped->isNotEmpty())
                 <tr class="grand-total-row">
                     <td>GRAND TOTAL</td>
                     <td class="right">{{ number_format($grandQty, 3) }}</td>
                     <td></td>
+                    <td class="right">{{ $formatCents($grandDiscountCents) }}</td>
                     <td class="right">{{ $formatCents($grandTotalCents) }}</td>
                 </tr>
             @endif
