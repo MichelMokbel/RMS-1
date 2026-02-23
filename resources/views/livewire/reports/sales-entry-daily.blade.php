@@ -37,14 +37,22 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $baseQuery = $this->query();
         $invoices = (clone $baseQuery)->paginate(15);
+        $allInvoices = (clone $baseQuery)->get();
         $totals = [
-            'trade_revenue_cents' => (int) ((clone $baseQuery)->sum('subtotal_cents') ?? 0),
-            'discount_cents' => (int) ((clone $baseQuery)->sum('discount_total_cents') ?? 0),
-            'net_amount_cents' => (int) ((clone $baseQuery)->sum('total_cents') ?? 0),
-            'cash_cents' => (int) ((clone $baseQuery)->whereRaw('LOWER(payment_type) = ?', ['cash'])->sum('total_cents') ?? 0),
-            'card_cents' => (int) ((clone $baseQuery)->whereRaw('LOWER(payment_type) = ?', ['card'])->sum('total_cents') ?? 0),
-            'credit_cents' => (int) ((clone $baseQuery)->whereRaw('LOWER(payment_type) = ?', ['credit'])->sum('total_cents') ?? 0),
+            'trade_revenue_cents' => (int) $allInvoices->sum(fn ($inv) => (int) ($inv->subtotal_cents ?? 0)),
+            'discount_cents' => (int) $allInvoices->sum(fn ($inv) => (int) ($inv->discount_total_cents ?? 0)),
+            'net_amount_cents' => (int) $allInvoices->sum(fn ($inv) => (int) ($inv->total_cents ?? 0)),
+            'cash_cents' => 0,
+            'card_cents' => 0,
+            'credit_cents' => 0,
         ];
+
+        foreach ($allInvoices as $inv) {
+            $breakdown = $this->paymentBreakdownCents($inv);
+            $totals['cash_cents'] += $breakdown['cash_cents'];
+            $totals['card_cents'] += $breakdown['card_cents'];
+            $totals['credit_cents'] += $breakdown['credit_cents'];
+        }
         $totals['total_collection_cents'] = $totals['cash_cents'] + $totals['card_cents'] + $totals['credit_cents'];
 
         return [
@@ -59,7 +67,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function query()
     {
         return ArInvoice::query()
-            ->with(['customer', 'salesPerson'])
+            ->with(['customer', 'salesPerson', 'paymentAllocations.payment'])
             ->where('type', 'invoice')
             ->whereIn('status', ['issued', 'partially_paid', 'paid'])
             ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id))
@@ -68,6 +76,53 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->date_to, fn ($q) => $q->whereDate('issue_date', '<=', $this->date_to))
             ->orderByDesc('issue_date')
             ->orderByDesc('id');
+    }
+
+    /**
+     * @return array{cash_cents:int,card_cents:int,credit_cents:int}
+     */
+    public function paymentBreakdownCents(ArInvoice $invoice): array
+    {
+        $netAmountCents = (int) ($invoice->total_cents ?? 0);
+        $paymentType = strtolower((string) ($invoice->payment_type ?? 'credit'));
+        $cashCents = 0;
+        $cardCents = 0;
+        $hasAllocations = false;
+
+        foreach ($invoice->paymentAllocations as $allocation) {
+            $amount = max(0, (int) ($allocation->amount_cents ?? 0));
+            if ($amount <= 0) {
+                continue;
+            }
+
+            $hasAllocations = true;
+            $method = strtolower((string) ($allocation->payment?->method ?? ''));
+            if ($method === 'cash') {
+                $cashCents += $amount;
+                continue;
+            }
+
+            // Non-cash settled methods are grouped under card in this report.
+            $cardCents += $amount;
+        }
+
+        if ($paymentType === 'credit') {
+            return ['cash_cents' => 0, 'card_cents' => 0, 'credit_cents' => $netAmountCents];
+        }
+
+        if (! $hasAllocations) {
+            return [
+                'cash_cents' => $paymentType === 'cash' ? $netAmountCents : 0,
+                'card_cents' => in_array($paymentType, ['card', 'mixed'], true) ? $netAmountCents : 0,
+                'credit_cents' => 0,
+            ];
+        }
+
+        return [
+            'cash_cents' => $cashCents,
+            'card_cents' => $cardCents,
+            'credit_cents' => max(0, $netAmountCents - $cashCents - $cardCents),
+        ];
     }
 
     public function exportParams(): array
@@ -138,10 +193,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                         $tradeRevenueCents = (int) ($inv->subtotal_cents ?? 0);
                         $discountCents = (int) ($inv->discount_total_cents ?? 0);
                         $netAmountCents = (int) ($inv->total_cents ?? 0);
-                        $paymentType = strtolower((string) ($inv->payment_type ?? 'credit'));
-                        $cashCents = $paymentType === 'cash' ? $netAmountCents : 0;
-                        $cardCents = $paymentType === 'card' ? $netAmountCents : 0;
-                        $creditCents = $paymentType === 'credit' ? $netAmountCents : 0;
+                        $paymentBreakdown = $this->paymentBreakdownCents($inv);
+                        $cashCents = (int) ($paymentBreakdown['cash_cents'] ?? 0);
+                        $cardCents = (int) ($paymentBreakdown['card_cents'] ?? 0);
+                        $creditCents = (int) ($paymentBreakdown['credit_cents'] ?? 0);
                         $totalCollectionCents = $cashCents + $cardCents + $creditCents;
                     @endphp
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">

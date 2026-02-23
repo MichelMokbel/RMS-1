@@ -16,6 +16,66 @@ class PublicCompanyFoodOrderController extends Controller
         private CompanyFoodOrderService $orderService
     ) {}
 
+    public function index(Request $request, string $projectSlug): JsonResponse
+    {
+        $project = $this->resolveProject($projectSlug);
+
+        try {
+            $validated = validator($request->query(), [
+                'order_date' => [
+                    'required',
+                    'date',
+                    'after_or_equal:'.$project->start_date->format('Y-m-d'),
+                    'before_or_equal:'.$project->end_date->format('Y-m-d'),
+                ],
+                'employee_list_id' => [
+                    'required',
+                    'integer',
+                    'exists:company_food_employee_lists,id',
+                ],
+            ])->validate();
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed.',
+                'errors' => $e->errors(),
+            ], 422);
+        }
+
+        $orderDate = \Carbon\Carbon::parse($validated['order_date'])->startOfDay();
+
+        $orders = CompanyFoodOrder::query()
+            ->where('project_id', $project->id)
+            ->where('employee_list_id', $validated['employee_list_id'])
+            ->whereDate('order_date', $orderDate)
+            ->orderBy('employee_name')
+            ->orderBy('id')
+            ->get();
+
+        $data = $orders->map(function (CompanyFoodOrder $order): array {
+            return [
+                'id' => $order->id,
+                'employee_list_id' => $order->employee_list_id,
+                'order_date' => $order->order_date?->format('Y-m-d'),
+                'employee_name' => $order->employee_name,
+                'salad_option_id' => $order->salad_option_id,
+                'appetizer_option_ids' => [
+                    $order->appetizer_option_id_1,
+                    $order->appetizer_option_id_2,
+                ],
+                'main_option_id' => $order->main_option_id,
+                'sweet_option_id' => $order->sweet_option_id,
+                'location_option_id' => $order->location_option_id,
+                'soup_option_id' => $order->soup_option_id,
+            ];
+        })->values()->all();
+
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+        ]);
+    }
+
     public function store(Request $request, string $projectSlug): JsonResponse
     {
         $project = $this->resolveProject($projectSlug);

@@ -44,31 +44,21 @@
             </tr>
         </thead>
         <tbody>
-            @forelse ($invoices as $inv)
-                @php
-                    $tradeRevenueCents = (int) ($inv->subtotal_cents ?? 0);
-                    $discountCents = (int) ($inv->discount_total_cents ?? 0);
-                    $netAmountCents = (int) ($inv->total_cents ?? 0);
-                    $paymentType = strtolower((string) ($inv->payment_type ?? 'credit'));
-                    $cashCents = $paymentType === 'cash' ? $netAmountCents : 0;
-                    $cardCents = $paymentType === 'card' ? $netAmountCents : 0;
-                    $creditCents = $paymentType === 'credit' ? $netAmountCents : 0;
-                    $totalCollectionCents = $cashCents + $cardCents + $creditCents;
-                @endphp
+            @forelse ($rows as $row)
                 <tr>
-                    <td class="center">{{ $loop->iteration }}</td>
-                    <td>{{ $inv->issue_date?->format('Y-m-d') }}</td>
-                    <td>{{ $inv->invoice_number ?: ('#'.$inv->id) }}</td>
-                    <td>{{ $inv->pos_reference ?? '-' }}</td>
-                    <td>{{ $inv->customer?->name ?? '—' }}</td>
-                    <td>{{ $inv->salesPerson?->username ?: ($inv->salesPerson?->name ?? '-') }}</td>
-                    <td class="right">{{ $formatCents($tradeRevenueCents) }}</td>
-                    <td class="right">{{ $formatCents($discountCents) }}</td>
-                    <td class="right">{{ $formatCents($netAmountCents) }}</td>
-                    <td class="right">{{ $formatCents($cashCents) }}</td>
-                    <td class="right">{{ $formatCents($cardCents) }}</td>
-                    <td class="right">{{ $formatCents($creditCents) }}</td>
-                    <td class="right">{{ $formatCents($totalCollectionCents) }}</td>
+                    <td class="center">{{ $row['si'] }}</td>
+                    <td>{{ $row['date'] }}</td>
+                    <td>{{ $row['invoice_number'] }}</td>
+                    <td>{{ $row['pos_ref'] ?? '-' }}</td>
+                    <td>{{ $row['customer'] ?? '—' }}</td>
+                    <td>{{ $row['sales_person'] ?? '-' }}</td>
+                    <td class="right">{{ $formatCents((int) ($row['trade_revenue_cents'] ?? 0)) }}</td>
+                    <td class="right">{{ $formatCents((int) ($row['discount_cents'] ?? 0)) }}</td>
+                    <td class="right">{{ $formatCents((int) ($row['net_amount_cents'] ?? 0)) }}</td>
+                    <td class="right">{{ $formatCents((int) ($row['cash_cents'] ?? 0)) }}</td>
+                    <td class="right">{{ $formatCents((int) ($row['card_cents'] ?? 0)) }}</td>
+                    <td class="right">{{ $formatCents((int) ($row['credit_cents'] ?? 0)) }}</td>
+                    <td class="right">{{ $formatCents((int) ($row['total_collection_cents'] ?? 0)) }}</td>
                 </tr>
             @empty
                 <tr><td colspan="13">No invoices found.</td></tr>

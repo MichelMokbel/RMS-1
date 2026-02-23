@@ -18,7 +18,7 @@ class CompanyFoodProject extends Model
                 'name' => 'List 1',
                 'sort_order' => 0,
             ]);
-            foreach (['salad', 'appetizer', 'main', 'sweet', 'location'] as $i => $category) {
+            foreach (['salad', 'appetizer', 'soup', 'main', 'sweet', 'location'] as $i => $category) {
                 CompanyFoodListCategory::create([
                     'employee_list_id' => $list->id,
                     'category' => $category,

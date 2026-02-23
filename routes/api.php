@@ -53,6 +53,7 @@ Route::middleware(['api', 'throttle:60,1'])->prefix('public')->group(function ()
     // Company Food (standalone module - no integration with orders/daily-dish)
     Route::prefix('company-food/{projectSlug}')->middleware('throttle:60,1')->group(function () {
         Route::get('options', [PublicCompanyFoodController::class, 'options']);
+        Route::get('orders', [PublicCompanyFoodOrderController::class, 'index']);
         Route::post('orders', [PublicCompanyFoodOrderController::class, 'store'])->middleware('throttle:20,1');
         Route::get('orders/{id}', [PublicCompanyFoodOrderController::class, 'show']);
         Route::put('orders/{id}', [PublicCompanyFoodOrderController::class, 'update'])->middleware('throttle:20,1');

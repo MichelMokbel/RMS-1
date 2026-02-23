@@ -102,6 +102,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <option value="credit">{{ __('Credit') }}</option>
                     <option value="cash">{{ __('Cash') }}</option>
                     <option value="card">{{ __('Card') }}</option>
+                    <option value="mixed">{{ __('Mixed') }}</option>
                 </select>
             </div>
             <div class="min-w-[260px] grow">

@@ -3,6 +3,7 @@
 namespace App\Services\CompanyFood;
 
 use App\Models\CompanyFoodEmployeeList;
+use App\Models\CompanyFoodOption;
 use App\Models\CompanyFoodOrder;
 use App\Models\CompanyFoodProject;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +17,7 @@ class CompanyFoodOrderService
         $orderDate = $this->resolveOrderDate($project, $data);
         $employeeList = $this->resolveEmployeeList($project, $data);
         $validOptionIds = $this->getValidActiveOptionIds($project, $orderDate, $employeeList->id);
-        $categories = $employeeList->getCategorySlugs();
+        $categories = $this->resolveEffectiveCategories($employeeList, $validOptionIds);
         $this->ensureListCategoriesHaveOptions($validOptionIds, $categories);
 
         $employeeNames = $employeeList->employees()->pluck('employee_name')->map(fn ($n) => (string) $n)->values()->all();
@@ -84,7 +85,7 @@ class CompanyFoodOrderService
         $orderDate = $order->order_date;
         $employeeList = $order->employeeList;
         $validOptionIds = $this->getValidActiveOptionIds($project, $orderDate, $employeeList->id);
-        $categories = $employeeList->getCategorySlugs();
+        $categories = $this->resolveEffectiveCategories($employeeList, $validOptionIds);
         $this->ensureListCategoriesHaveOptions($validOptionIds, $categories);
 
         $employeeNames = $employeeList->employees()->pluck('employee_name')->map(fn ($n) => (string) $n)->values()->all();
@@ -135,6 +136,40 @@ class CompanyFoodOrderService
         $order->update($updateData);
 
         return $order->fresh(['saladOption', 'appetizerOption1', 'appetizerOption2', 'mainOption', 'sweetOption', 'locationOption', 'soupOption']);
+    }
+
+    /**
+     * Effective categories are list-configured categories plus any categories that
+     * currently have active options for the selected date/list.
+     *
+     * @param  array<string, array<int>>  $validOptionIds
+     * @return array<string>
+     */
+    private function resolveEffectiveCategories(CompanyFoodEmployeeList $employeeList, array $validOptionIds): array
+    {
+        $configuredCategories = $employeeList->listCategories()
+            ->pluck('category')
+            ->map(fn ($cat) => (string) $cat)
+            ->filter()
+            ->values()
+            ->all();
+
+        $orderedConfigured = array_values(array_filter(
+            CompanyFoodOption::CATEGORIES,
+            fn (string $cat): bool => in_array($cat, $configuredCategories, true)
+        ));
+
+        $dynamicCategories = [];
+        foreach (CompanyFoodOption::CATEGORIES as $cat) {
+            if (! empty($validOptionIds[$cat] ?? [])) {
+                $dynamicCategories[] = $cat;
+            }
+        }
+
+        return array_values(array_unique([
+            ...$orderedConfigured,
+            ...$dynamicCategories,
+        ]));
     }
 
     private function resolveOrderDate(CompanyFoodProject $project, array $data): \Carbon\Carbon

@@ -2,7 +2,7 @@
 
 This API allows an external website to let employees submit and edit their food selections for a company food project. No authentication is required; the project is identified by its slug, and order edits are secured by an `edit_token` returned when creating an order.
 
-A project can have multiple **employee lists**, each with a different menu. For example, List 1 might offer salad, appetizers, main, sweet, and location; List 2 might offer only soup and main. **Each day has its own menu** – options are defined per date. **Main dishes and soup are list-specific** – each list has its own main and soup options. Salad, appetizer, sweet, and location are shared across all lists. The form flow is: user selects date, then list, then employee name, then the menu for that date and list.
+A project can have multiple **employee lists**, each with a different menu. For example, List 1 might offer salad, appetizers, soup, main, sweet, and location; List 2 might offer only soup and main. **Each day has its own menu** – options are defined per date. **Main dishes and soup are list-specific** – each list has its own main and soup options. Salad, appetizer, sweet, and location are shared across all lists. The form flow is: user selects date, then list, then employee name, then the menu for that date and list.
 
 ---
 
@@ -56,6 +56,7 @@ GET /api/public/company-food/{projectSlug}/options
             "categories": {
               "salad": [{ "id": 1, "name": "Caesar Salad" }],
               "appetizer": [...],
+              "soup": [{ "id": 2, "name": "Lentil Soup" }],
               "main": [...],
               "sweet": [...],
               "location": [...]
@@ -125,6 +126,7 @@ Content-Type: application/json
   "email": "hr@company.com",
   "salad_option_id": 1,
   "appetizer_option_ids": [3, 4],
+  "soup_option_id": 5,
   "main_option_id": 6,
   "sweet_option_id": 8,
   "location_option_id": 10
@@ -163,7 +165,71 @@ List 2 has its own soup and main options. Use option IDs from `options_by_date[d
 
 ---
 
-### 3. Get Order
+### 3. List Orders
+
+Lists all orders for a given date and employee list. This is intended for HR/admin-style pages; it does **not** return edit tokens.
+
+**Request**
+
+```
+GET /api/public/company-food/{projectSlug}/orders?order_date=YYYY-MM-DD&employee_list_id=LIST_ID
+```
+
+**Query parameters**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `order_date` | string | Yes | Date (YYYY-MM-DD) within project period. Must match a date in `available_dates`. |
+| `employee_list_id` | integer | Yes | ID from `data.options_by_date[date].lists[].id`. |
+
+**Example**
+
+```
+GET /api/public/company-food/ahr-meals-2026/orders?order_date=2026-01-15&employee_list_id=1
+```
+
+**Response** `200 OK`
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 42,
+      "employee_list_id": 1,
+      "order_date": "2026-01-15",
+      "employee_name": "John Smith",
+      "salad_option_id": 1,
+      "appetizer_option_ids": [3, 4],
+      "soup_option_id": 5,
+      "main_option_id": 6,
+      "sweet_option_id": 8,
+      "location_option_id": 10
+    },
+    {
+      "id": 43,
+      "employee_list_id": 1,
+      "order_date": "2026-01-15",
+      "employee_name": "John Smith",
+      "salad_option_id": 2,
+      "appetizer_option_ids": [3, 4],
+      "soup_option_id": 11,
+      "main_option_id": 6,
+      "sweet_option_id": 8,
+      "location_option_id": 10
+    }
+  ]
+}
+```
+
+Notes:
+
+- One row per order (an employee can appear multiple times).
+- No `edit_token` in this response.
+
+---
+
+### 4. Get Order
 
 Retrieves an existing order. Requires `edit_token` to prove the requester can access it.
 
@@ -215,7 +281,7 @@ X-Edit-Token: {token}
 
 ---
 
-### 4. Update Order
+### 5. Update Order
 
 Updates an existing order. Requires `edit_token` in the request body or `X-Edit-Token` header. Send only the fields for the order's list categories (same as Create Order for that list).
 
@@ -296,7 +362,7 @@ The **Menu** tab shows a grid of all days from **18 February to 19 March** (31 d
 ### Lists tab
 
 - Create employee lists (e.g. "List 1", "List 2").
-- Configure which categories each list uses (List 1: full menu; List 2: soup + main only).
+- Configure which categories each list uses (List 1: full menu including soup; List 2: soup + main only).
 - Add or import employees per list.
 
 ---
@@ -313,5 +379,6 @@ The API is intended for use from external websites. Ensure your Laravel CORS con
 |--------|----------|---------|
 | GET  | `/api/public/company-food/{projectSlug}/options` | Get lists with employees and options |
 | POST | `/api/public/company-food/{projectSlug}/orders` | Create order |
+| GET  | `/api/public/company-food/{projectSlug}/orders` | List orders for a date and list (no edit_token) |
 | GET  | `/api/public/company-food/{projectSlug}/orders/{id}` | Get order (requires edit_token) |
 | PUT  | `/api/public/company-food/{projectSlug}/orders/{id}` | Update order (requires edit_token) |

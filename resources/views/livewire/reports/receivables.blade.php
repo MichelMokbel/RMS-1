@@ -98,6 +98,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ['value' => 'credit', 'label' => __('Credit')],
                 ['value' => 'cash', 'label' => __('Cash')],
                 ['value' => 'card', 'label' => __('Card')],
+                ['value' => 'mixed', 'label' => __('Mixed')],
             ]" />
         </div>
     </div>

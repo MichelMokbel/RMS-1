@@ -39,7 +39,7 @@ class SalesEntryDailyReportController extends Controller
     private function query(Request $request, Carbon $from, Carbon $to, int $limit = 500): Collection
     {
         return ArInvoice::query()
-            ->with(['customer', 'salesPerson'])
+            ->with(['customer', 'salesPerson', 'paymentAllocations.payment'])
             ->where('type', 'invoice')
             ->whereIn('status', ['issued', 'partially_paid', 'paid'])
             ->when($request->filled('branch_id') && $request->integer('branch_id') > 0, fn ($q) => $q->where('branch_id', $request->integer('branch_id')))
@@ -62,11 +62,7 @@ class SalesEntryDailyReportController extends Controller
             $tradeRevenue = (int) ($inv->subtotal_cents ?? 0);
             $discount = (int) ($inv->discount_total_cents ?? 0);
             $netAmount = (int) ($inv->total_cents ?? 0);
-
-            $paymentType = strtolower((string) ($inv->payment_type ?? 'credit'));
-            $cash = $paymentType === 'cash' ? $netAmount : 0;
-            $card = $paymentType === 'card' ? $netAmount : 0;
-            $credit = $paymentType === 'credit' ? $netAmount : 0;
+            ['cash_cents' => $cash, 'card_cents' => $card, 'credit_cents' => $credit] = $this->paymentBreakdownCents($inv, $netAmount);
             $totalCollection = $cash + $card + $credit;
 
             return [
@@ -85,6 +81,56 @@ class SalesEntryDailyReportController extends Controller
                 'total_collection_cents' => $totalCollection,
             ];
         });
+    }
+
+    /**
+     * @return array{cash_cents:int,card_cents:int,credit_cents:int}
+     */
+    private function paymentBreakdownCents(ArInvoice $invoice, int $netAmount): array
+    {
+        $paymentType = strtolower((string) ($invoice->payment_type ?? 'credit'));
+        $cash = 0;
+        $card = 0;
+        $hasAllocations = false;
+
+        foreach ($invoice->paymentAllocations as $allocation) {
+            $amount = max(0, (int) ($allocation->amount_cents ?? 0));
+            if ($amount <= 0) {
+                continue;
+            }
+
+            $hasAllocations = true;
+            $method = strtolower((string) ($allocation->payment?->method ?? ''));
+            if ($method === 'cash') {
+                $cash += $amount;
+                continue;
+            }
+
+            // Non-cash settled methods are grouped under the report's card column.
+            $card += $amount;
+        }
+
+        if ($paymentType === 'credit') {
+            return [
+                'cash_cents' => 0,
+                'card_cents' => 0,
+                'credit_cents' => $netAmount,
+            ];
+        }
+
+        if (! $hasAllocations) {
+            return [
+                'cash_cents' => $paymentType === 'cash' ? $netAmount : 0,
+                'card_cents' => in_array($paymentType, ['card', 'mixed'], true) ? $netAmount : 0,
+                'credit_cents' => 0,
+            ];
+        }
+
+        return [
+            'cash_cents' => $cash,
+            'card_cents' => $card,
+            'credit_cents' => max(0, $netAmount - $cash - $card),
+        ];
     }
 
     /**
