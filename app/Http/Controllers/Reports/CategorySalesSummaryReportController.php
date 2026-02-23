@@ -52,8 +52,9 @@ class CategorySalesSummaryReportController extends Controller
     public function print(Request $request)
     {
         $rows = $this->query($request, 5000);
-        $filters = $request->only(['branch_id', 'category_id', 'date_from', 'date_to', 'group_by']);
+        $filters = $request->only(['branch_id', 'category_id', 'date_from', 'date_to', 'group_by', 'category_groups']);
         $groupBy = (string) $request->input('group_by', 'category');
+        $categoryGroups = (array) $request->input('category_groups', []);
 
         return view('reports.category-sales-summary-print', [
             'rows' => $rows,
@@ -61,6 +62,7 @@ class CategorySalesSummaryReportController extends Controller
             'generatedAt' => now(),
             'formatCents' => fn ($c) => $this->formatCents($c),
             'groupBy' => $groupBy,
+            'categoryGroups' => $categoryGroups,
         ]);
     }
 
@@ -68,9 +70,21 @@ class CategorySalesSummaryReportController extends Controller
     {
         $rows = $this->query($request, 5000);
         $groupBy = (string) $request->input('group_by', 'category');
-        $grouped = $groupBy === 'none'
-            ? collect([__('All Items') => $rows])
-            : $rows->groupBy(fn ($r) => $r->category_name ?? __('Uncategorized'));
+        $categoryGroups = (array) $request->input('category_groups', []);
+        if ($groupBy === 'none') {
+            $grouped = collect([__('All Items') => $rows]);
+        } elseif ($groupBy === 'custom') {
+            $grouped = $rows->groupBy(function ($r) use ($categoryGroups) {
+                $catId = $r->category_id ?? null;
+                $groupName = $catId !== null && isset($categoryGroups[$catId]) && $categoryGroups[$catId] !== ''
+                    ? $categoryGroups[$catId]
+                    : ($r->category_name ?? __('Uncategorized'));
+
+                return $groupName;
+            });
+        } else {
+            $grouped = $rows->groupBy(fn ($r) => $r->category_name ?? __('Uncategorized'));
+        }
         $headers = [__('Category'), __('Item'), __('Qty'), __('Unit Price'), __('Total')];
 
         $data = collect();
@@ -124,8 +138,9 @@ class CategorySalesSummaryReportController extends Controller
     public function pdf(Request $request)
     {
         $rows = $this->query($request, 5000);
-        $filters = $request->only(['branch_id', 'category_id', 'date_from', 'date_to', 'group_by']);
+        $filters = $request->only(['branch_id', 'category_id', 'date_from', 'date_to', 'group_by', 'category_groups']);
         $groupBy = (string) $request->input('group_by', 'category');
+        $categoryGroups = (array) $request->input('category_groups', []);
 
         return PdfExport::download('reports.category-sales-summary-print', [
             'rows' => $rows,
@@ -133,6 +148,7 @@ class CategorySalesSummaryReportController extends Controller
             'generatedAt' => now(),
             'formatCents' => fn ($c) => $this->formatCents($c),
             'groupBy' => $groupBy,
+            'categoryGroups' => $categoryGroups,
         ], 'category-sales-summary.pdf');
     }
 }

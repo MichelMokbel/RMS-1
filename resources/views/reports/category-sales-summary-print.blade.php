@@ -32,8 +32,19 @@
         $grandTotalCents = $rows->sum(fn ($r) => (int) ($r->total_cents ?? 0));
         $grandQty = $rows->sum(fn ($r) => (float) ($r->qty_total ?? 0));
         $currentGroupBy = $groupBy ?? 'category';
+        $categoryGroups = $categoryGroups ?? [];
+
         if ($currentGroupBy === 'none') {
             $grouped = collect(['All Items' => $rows]);
+        } elseif ($currentGroupBy === 'custom') {
+            $grouped = $rows->groupBy(function ($r) use ($categoryGroups) {
+                $catId = $r->category_id ?? null;
+                $groupName = $catId !== null && isset($categoryGroups[$catId]) && $categoryGroups[$catId] !== ''
+                    ? $categoryGroups[$catId]
+                    : ($r->category_name ?? 'Uncategorized');
+
+                return $groupName;
+            });
         } else {
             $grouped = $rows->groupBy(fn ($r) => $r->category_name ?? 'Uncategorized');
         }

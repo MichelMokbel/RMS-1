@@ -14,6 +14,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?string $date_from = null;
     public ?string $date_to = null;
     public string $group_by = 'category';
+    public array $category_groups = [];
 
     public function with(): array
     {
@@ -23,6 +24,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'categories' => Schema::hasTable('categories') ? Category::orderBy('name')->get() : collect(),
             'exportParams' => $this->exportParams(),
             'groupBy' => $this->group_by,
+            'categoryGroups' => $this->category_groups,
         ];
     }
 
@@ -64,7 +66,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'date_from' => $this->date_from,
             'date_to' => $this->date_to,
             'group_by' => $this->group_by,
-        ], fn ($v) => $v !== null && $v !== '');
+            'category_groups' => $this->category_groups,
+        ], fn ($v) => $v !== null && $v !== [] && $v !== '');
     }
 
     public function formatMoney(?int $cents): string
@@ -100,6 +103,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Grouping') }}</label>
                 <select wire:model.live="group_by" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                     <option value="category">{{ __('By Category') }}</option>
+                    <option value="custom">{{ __('Custom Groups') }}</option>
                     <option value="none">{{ __('No Grouping') }}</option>
                 </select>
             </div>
@@ -108,11 +112,52 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     @php
+        $currentGroupBy = $groupBy ?? $group_by ?? 'category';
+    @endphp
+
+    @if ($currentGroupBy === 'custom')
+        <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+            <div class="text-sm font-medium text-neutral-800 dark:text-neutral-100 mb-3">
+                {{ __('Define Custom Category Groups') }}
+            </div>
+            <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                @foreach ($categories as $cat)
+                    <div class="flex items-center gap-2">
+                        <div class="flex-1 text-sm text-neutral-800 dark:text-neutral-100">
+                            {{ $cat->name }}
+                        </div>
+                        <input
+                            type="text"
+                            wire:model.live="category_groups.{{ $cat->id }}"
+                            placeholder="{{ __('Group name') }}"
+                            class="w-32 rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-800 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
+                        />
+                    </div>
+                @endforeach
+            </div>
+            <p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+                {{ __('Items in categories with the same group name will be summed under that group. Leave blank to keep a category separate.') }}
+            </p>
+        </div>
+    @endif
+
+    @php
         $grandTotalCents = $rows->sum(fn ($r) => (int) ($r->total_cents ?? 0));
         $grandQty = $rows->sum(fn ($r) => (float) ($r->qty_total ?? 0));
         $currentGroupBy = $groupBy ?? $group_by ?? 'category';
+        $categoryGroups = $categoryGroups ?? [];
+
         if ($currentGroupBy === 'none') {
             $grouped = collect(['All Items' => $rows]);
+        } elseif ($currentGroupBy === 'custom') {
+            $grouped = $rows->groupBy(function ($r) use ($categoryGroups) {
+                $catId = $r->category_id ?? null;
+                $groupName = $catId !== null && isset($categoryGroups[$catId]) && $categoryGroups[$catId] !== ''
+                    ? $categoryGroups[$catId]
+                    : ($r->category_name ?? __('Uncategorized'));
+
+                return $groupName;
+            });
         } else {
             $grouped = $rows->groupBy(fn ($r) => $r->category_name ?? __('Uncategorized'));
         }
