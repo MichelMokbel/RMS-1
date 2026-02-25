@@ -169,7 +169,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('S.I') }}</th>
-                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Date') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Date & Time') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Invoice Number') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('POS Ref') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Customer') }}</th>
@@ -197,7 +197,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endphp
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
                         <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $invoices->firstItem() + $loop->index }}</td>
-                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $inv->issue_date?->format('Y-m-d') }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ ($inv->created_at ?? $inv->issue_date)?->format('Y-m-d H:i:s') }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $inv->invoice_number ?: ('#'.$inv->id) }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $inv->pos_reference ?? '-' }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $inv->customer?->name ?? '—' }}</td>

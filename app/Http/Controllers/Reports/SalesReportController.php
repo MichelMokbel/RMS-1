@@ -43,11 +43,11 @@ class SalesReportController extends Controller
     public function csv(Request $request): StreamedResponse
     {
         $sales = $this->query($request, 2000);
-        $headers = [__('Invoice #'), __('POS Ref'), __('Date'), __('Status'), __('Total')];
+        $headers = [__('Invoice #'), __('POS Ref'), __('Date & Time'), __('Status'), __('Total')];
         $rows = $sales->map(fn ($s) => [
             $s->invoice_number ?: ('#'.$s->id),
             $s->pos_reference ?? '',
-            $s->issue_date?->format('Y-m-d'),
+            ($s->created_at ?? $s->issue_date)?->format('Y-m-d H:i:s'),
             $s->status,
             $this->formatCents($s->total_cents),
         ]);

@@ -31,7 +31,7 @@
             <tr>
                 <th>Invoice #</th>
                 <th>POS Ref</th>
-                <th>Date</th>
+                <th>Date & Time</th>
                 <th>Status</th>
                 <th class="right">Total</th>
             </tr>
@@ -41,7 +41,7 @@
                 <tr>
                     <td>{{ $s->invoice_number ?: ('#'.$s->id) }}</td>
                     <td>{{ $s->pos_reference ?? '—' }}</td>
-                    <td>{{ $s->issue_date?->format('Y-m-d') }}</td>
+                    <td>{{ ($s->created_at ?? $s->issue_date)?->format('Y-m-d H:i:s') }}</td>
                     <td>{{ $s->status }}</td>
                     <td class="right">{{ $formatCents($s->total_cents) }}</td>
                 </tr>

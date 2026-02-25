@@ -67,7 +67,7 @@ class SalesEntryDailyReportController extends Controller
 
             return [
                 'si' => $index + 1,
-                'date' => $inv->issue_date?->format('Y-m-d'),
+                'date' => ($inv->created_at ?? $inv->issue_date)?->format('Y-m-d H:i:s'),
                 'invoice_number' => $inv->invoice_number ?: ('#'.$inv->id),
                 'pos_ref' => $inv->pos_reference,
                 'customer' => $inv->customer?->name,
@@ -185,7 +185,7 @@ class SalesEntryDailyReportController extends Controller
         $rows = $this->buildRows($this->query($request, $from, $to, 2000));
         $headers = [
             __('S.I'),
-            __('Date'),
+            __('Date & Time'),
             __('Invoice Number'),
             __('POS Ref'),
             __('Customer'),

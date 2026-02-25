@@ -29,7 +29,7 @@
         <thead>
             <tr>
                 <th class="center">S.I</th>
-                <th>Date</th>
+                <th>Date & Time</th>
                 <th>Invoice Number</th>
                 <th>POS Ref</th>
                 <th>Customer</th>
