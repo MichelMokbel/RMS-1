@@ -106,15 +106,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             $cardCents += $amount;
         }
 
-        if ($paymentType === 'credit') {
-            return ['cash_cents' => 0, 'card_cents' => 0, 'credit_cents' => $netAmountCents];
-        }
-
         if (! $hasAllocations) {
             return [
                 'cash_cents' => $paymentType === 'cash' ? $netAmountCents : 0,
                 'card_cents' => in_array($paymentType, ['card', 'mixed'], true) ? $netAmountCents : 0,
-                'credit_cents' => 0,
+                'credit_cents' => $paymentType === 'credit' ? $netAmountCents : 0,
             ];
         }
 

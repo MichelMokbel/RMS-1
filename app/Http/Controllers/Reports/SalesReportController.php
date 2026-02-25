@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Reports;
 
 use App\Http\Controllers\Controller;
-use App\Models\Sale;
+use App\Models\ArInvoice;
 use App\Support\Reports\CsvExport;
 use App\Support\Reports\PdfExport;
 use App\Support\Money\MinorUnits;
@@ -19,12 +19,14 @@ class SalesReportController extends Controller
 
     private function query(Request $request, int $limit = 500)
     {
-        return Sale::query()
+        return ArInvoice::query()
+            ->where('type', 'invoice')
+            ->whereIn('status', ['issued', 'partially_paid', 'paid', 'voided'])
             ->when($request->filled('branch_id') && $request->integer('branch_id') > 0, fn ($q) => $q->where('branch_id', $request->integer('branch_id')))
             ->when($request->filled('status') && $request->status !== 'all', fn ($q) => $q->where('status', $request->status))
-            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('pos_date', '>=', $request->date_from))
-            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('pos_date', '<=', $request->date_to))
-            ->orderByDesc('pos_date')
+            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('issue_date', '>=', $request->date_from))
+            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('issue_date', '<=', $request->date_to))
+            ->orderByDesc('issue_date')
             ->orderByDesc('id')
             ->limit($limit)
             ->get();
@@ -41,8 +43,14 @@ class SalesReportController extends Controller
     public function csv(Request $request): StreamedResponse
     {
         $sales = $this->query($request, 2000);
-        $headers = [__('Sale #'), __('Date'), __('Status'), __('Total')];
-        $rows = $sales->map(fn ($s) => [$s->sale_number, $s->pos_date?->format('Y-m-d'), $s->status, $this->formatCents($s->total_cents)]);
+        $headers = [__('Invoice #'), __('POS Ref'), __('Date'), __('Status'), __('Total')];
+        $rows = $sales->map(fn ($s) => [
+            $s->invoice_number ?: ('#'.$s->id),
+            $s->pos_reference ?? '',
+            $s->issue_date?->format('Y-m-d'),
+            $s->status,
+            $this->formatCents($s->total_cents),
+        ]);
 
         return CsvExport::stream($headers, $rows, 'sales-report.csv');
     }

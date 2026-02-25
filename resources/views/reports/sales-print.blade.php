@@ -29,7 +29,8 @@
     <table>
         <thead>
             <tr>
-                <th>Sale #</th>
+                <th>Invoice #</th>
+                <th>POS Ref</th>
                 <th>Date</th>
                 <th>Status</th>
                 <th class="right">Total</th>
@@ -38,19 +39,20 @@
         <tbody>
             @forelse ($sales as $s)
                 <tr>
-                    <td>{{ $s->sale_number }}</td>
-                    <td>{{ $s->pos_date?->format('Y-m-d') }}</td>
+                    <td>{{ $s->invoice_number ?: ('#'.$s->id) }}</td>
+                    <td>{{ $s->pos_reference ?? '—' }}</td>
+                    <td>{{ $s->issue_date?->format('Y-m-d') }}</td>
                     <td>{{ $s->status }}</td>
                     <td class="right">{{ $formatCents($s->total_cents) }}</td>
                 </tr>
             @empty
-                <tr><td colspan="4">No sales found.</td></tr>
+                <tr><td colspan="5">No sales found.</td></tr>
             @endforelse
         </tbody>
         @if ($sales->count() > 0)
             <tfoot>
                 <tr>
-                    <td colspan="3">Total</td>
+                    <td colspan="4">Total</td>
                     <td class="right">{{ $formatCents($sales->sum('total_cents')) }}</td>
                 </tr>
             </tfoot>

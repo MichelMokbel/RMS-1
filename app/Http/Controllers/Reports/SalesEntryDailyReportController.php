@@ -110,19 +110,11 @@ class SalesEntryDailyReportController extends Controller
             $card += $amount;
         }
 
-        if ($paymentType === 'credit') {
-            return [
-                'cash_cents' => 0,
-                'card_cents' => 0,
-                'credit_cents' => $netAmount,
-            ];
-        }
-
         if (! $hasAllocations) {
             return [
                 'cash_cents' => $paymentType === 'cash' ? $netAmount : 0,
                 'card_cents' => in_array($paymentType, ['card', 'mixed'], true) ? $netAmount : 0,
-                'credit_cents' => 0,
+                'credit_cents' => $paymentType === 'credit' ? $netAmount : 0,
             ];
         }
 

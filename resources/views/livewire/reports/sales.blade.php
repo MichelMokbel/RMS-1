@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\Sale;
+use App\Models\ArInvoice;
 use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -11,17 +11,12 @@ use Livewire\WithPagination;
 new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
 
-    public int $branch_id = 1;
+    public int $branch_id = 0;
     public string $status = 'all';
     public ?string $date_from = null;
     public ?string $date_to = null;
 
     protected $paginationTheme = 'tailwind';
-
-    public function mount(): void
-    {
-        $this->branch_id = (int) config('inventory.default_branch_id', 1) ?: 1;
-    }
 
     public function updating($name): void
     {
@@ -41,12 +36,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private function query()
     {
-        return Sale::query()
+        return ArInvoice::query()
+            ->where('type', 'invoice')
+            ->whereIn('status', ['issued', 'partially_paid', 'paid', 'voided'])
             ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id))
             ->when($this->status !== 'all', fn ($q) => $q->where('status', $this->status))
-            ->when($this->date_from, fn ($q) => $q->whereDate('pos_date', '>=', $this->date_from))
-            ->when($this->date_to, fn ($q) => $q->whereDate('pos_date', '<=', $this->date_to))
-            ->orderByDesc('pos_date')
+            ->when($this->date_from, fn ($q) => $q->whereDate('issue_date', '>=', $this->date_from))
+            ->when($this->date_to, fn ($q) => $q->whereDate('issue_date', '<=', $this->date_to))
+            ->orderByDesc('issue_date')
             ->orderByDesc('id');
     }
 
@@ -83,8 +80,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             <x-reports.date-range fromName="date_from" toName="date_to" />
             <x-reports.status-select name="status" :options="[
                 ['value' => 'all', 'label' => __('All')],
-                ['value' => 'open', 'label' => __('Open')],
-                ['value' => 'closed', 'label' => __('Closed')],
+                ['value' => 'issued', 'label' => __('Issued')],
+                ['value' => 'partially_paid', 'label' => __('Partially Paid')],
+                ['value' => 'paid', 'label' => __('Paid')],
                 ['value' => 'voided', 'label' => __('Voided')],
             ]" />
         </div>
@@ -94,7 +92,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
-                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Sale #') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Invoice #') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('POS Ref') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Date') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Status') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Total') }}</th>
@@ -103,21 +102,22 @@ new #[Layout('components.layouts.app')] class extends Component {
             <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                 @forelse ($sales as $sale)
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
-                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $sale->sale_number }}</td>
-                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $sale->pos_date?->format('Y-m-d') }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $sale->invoice_number ?: ('#'.$sale->id) }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $sale->pos_reference ?: '—' }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $sale->issue_date?->format('Y-m-d') }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $sale->status }}</td>
                         <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($sale->total_cents) }}</td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="4" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No sales found.') }}</td>
+                        <td colspan="5" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No sales found.') }}</td>
                     </tr>
                 @endforelse
             </tbody>
             @if ($sales->count() > 0)
                 <tfoot class="bg-neutral-50 dark:bg-neutral-800/90">
                     <tr>
-                        <td colspan="3" class="px-3 py-2 text-right text-sm font-semibold text-neutral-700 dark:text-neutral-200">{{ __('Total') }}</td>
+                        <td colspan="4" class="px-3 py-2 text-right text-sm font-semibold text-neutral-700 dark:text-neutral-200">{{ __('Total') }}</td>
                         <td class="px-3 py-2 text-right text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($sales->getCollection()->sum('total_cents')) }}</td>
                     </tr>
                 </tfoot>
