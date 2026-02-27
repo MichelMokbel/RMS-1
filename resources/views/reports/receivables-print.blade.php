@@ -45,7 +45,7 @@
                     <td>{{ $inv->customer?->name ?? '—' }}</td>
                     <td>{{ $inv->issue_date?->format('Y-m-d') }}</td>
                     <td>{{ $inv->status }}</td>
-                    <td>{{ $inv->payment_type ?? '—' }}</td>
+                    <td>{{ $resolvedPaymentType($inv) }}</td>
                     <td class="right">{{ $formatCents($inv->total_cents) }}</td>
                     <td class="right">{{ $formatCents($inv->balance_cents) }}</td>
                 </tr>

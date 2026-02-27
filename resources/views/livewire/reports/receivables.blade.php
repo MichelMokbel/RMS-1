@@ -2,6 +2,7 @@
 
 use App\Models\ArInvoice;
 use App\Support\Money\MinorUnits;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
@@ -42,15 +43,76 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private function query()
     {
+        $paymentType = $this->payment_type !== 'all' ? $this->payment_type : null;
+
         return ArInvoice::query()
-            ->with(['customer'])
+            ->with(['customer', 'paymentAllocations.payment'])
             ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id))
             ->when($this->status !== 'all', fn ($q) => $q->where('status', $this->status))
-            ->when($this->payment_type !== 'all', fn ($q) => $q->where('payment_type', $this->payment_type))
+            ->when($paymentType !== null, fn (Builder $q) => $this->applyPaymentTypeFilter($q, $paymentType))
             ->when($this->date_from, fn ($q) => $q->whereDate('issue_date', '>=', $this->date_from))
             ->when($this->date_to, fn ($q) => $q->whereDate('issue_date', '<=', $this->date_to))
             ->orderByDesc('issue_date')
             ->orderByDesc('id');
+    }
+
+    private function applyPaymentTypeFilter(Builder $query, string $paymentType): Builder
+    {
+        $hasCash = fn (Builder $q) => $q
+            ->where('amount_cents', '>', 0)
+            ->whereHas('payment', fn (Builder $p) => $p->where('method', 'cash'));
+        $hasNonCash = fn (Builder $q) => $q
+            ->where('amount_cents', '>', 0)
+            ->whereHas('payment', fn (Builder $p) => $p->where('method', '!=', 'cash'));
+
+        return match (strtolower($paymentType)) {
+            'cash' => $query
+                ->whereHas('paymentAllocations', $hasCash)
+                ->whereDoesntHave('paymentAllocations', $hasNonCash),
+            'card' => $query
+                ->whereHas('paymentAllocations', $hasNonCash)
+                ->whereDoesntHave('paymentAllocations', $hasCash),
+            'mixed' => $query
+                ->whereHas('paymentAllocations', $hasCash)
+                ->whereHas('paymentAllocations', $hasNonCash),
+            'credit' => $query
+                ->where('payment_type', 'credit')
+                ->whereDoesntHave('paymentAllocations', fn (Builder $q) => $q->where('amount_cents', '>', 0)),
+            default => $query->where('payment_type', $paymentType),
+        };
+    }
+
+    public function resolvedPaymentType(ArInvoice $invoice): string
+    {
+        $hasCash = false;
+        $hasCard = false;
+
+        foreach ($invoice->paymentAllocations as $allocation) {
+            $amount = max(0, (int) ($allocation->amount_cents ?? 0));
+            if ($amount <= 0) {
+                continue;
+            }
+
+            $method = strtolower((string) ($allocation->payment?->method ?? ''));
+            if ($method === 'cash') {
+                $hasCash = true;
+            } else {
+                // Non-cash settled methods are grouped under card in this report.
+                $hasCard = true;
+            }
+        }
+
+        if ($hasCash && $hasCard) {
+            return 'mixed';
+        }
+        if ($hasCash) {
+            return 'cash';
+        }
+        if ($hasCard) {
+            return 'card';
+        }
+
+        return strtolower((string) ($invoice->payment_type ?: 'credit'));
     }
 
     public function exportParams(): array
@@ -123,7 +185,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $inv->customer?->name ?? '—' }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $inv->issue_date?->format('Y-m-d') }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $inv->status }}</td>
-                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $inv->payment_type ?? '—' }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $this->resolvedPaymentType($inv) }}</td>
                         <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatCents($inv->total_cents) }}</td>
                         <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatCents($inv->balance_cents) }}</td>
                     </tr>
