@@ -1,0 +1,247 @@
+id,english_name,arabic_name
+1,Mini Zaatar,ميني زعتر
+2,Cheese Fatayer,جبنة فطاير
+3,Mini Pizza,ميني بيززا
+4,Mini Kishk,ميني كشك
+5,Fatayer Bakleh,فطاير بقلة
+6,Fatayer Spinach,فطاير سبانخ
+7,Puff Pastry Hot Dog,بوفف باستري هوت دوغ
+8,Sfiha Lahme,صفيحة لحمة
+9,Mini Falafel,ميني فالافيل
+10,Mini Mushroom Quiche,ميني فطر كيش
+11,Spring Rolls,سبرينغ رولز
+12,Tuna Sandwich,تونا ساندويش
+13,Chicken Sandwich,دجاج ساندويش
+14,Halloumi Sandwich,حلّوم ساندويش
+15,Turkey Sandwich,حبش ساندويش
+16,Boiled Eggs Sandwich,مسلوق بيض ساندويش
+17,Hotdog,هوت دوغ
+18,Mini Burger Beef,ميني برغر لحم بقر
+19,Mini Burger Chicken,ميني برغر دجاج
+20,Shrimps Spring Rolls ,روبيان سبرينغ رولز
+21,Vegetable Plate,طبق خضار
+22,Fawarigh,فوارغ
+23,croissant Turkey,كرواسون حبش
+24,Croissant Zaator,كرواسون زعتر
+25,Croissant Chocolate,كرواسون شوكولا
+26,Spniach Pie,فطيرة سبانخ
+27,Mushroom Pie,فطيرة فطر
+28,Eggs Cheese,بيض مع جبنة
+29,croissant halloumi,كرواسون حلّوم
+30,Tuna puff pastry,تونا بوفف باستري
+31,Tahini,تاهيني
+32,Steak Veg,ستيك فيج
+33,Tacos Plate,طبق تاكوس
+34,Pilaf Rice,بيلاف رز
+36,EggPlant,باذنجان
+37,Machewi Mix,ماتشيوي ميكس
+38,Chicken Potato,دجاج بطاطا
+39,Sweet potato,حلوة بطاطا
+40,Bruchetta,بروتشيتتا
+41,Mozzarella Sticks ,موززاريللا ستيككس
+42,Salmon Pie,سالمون فطيرة
+43,Shrimp with cocktail sauce,روبيان مع كوككتايل صلصة
+44,Mtabbal,متاببال
+45,Shrimp Avocado Cups,روبيان افوكادو كوبس
+46,Carrot Cucumber Couliflower Plat,كارروت كوكومبير كوليفلووير بلات
+47,Hommos Makdous,هومموس ماكدوس
+48,Burghul with Tomato,برغل بالبندورة
+49,Chicken Noodles,نودلز بالدجاج
+50,Quiche Salmon,كيش سالمون
+51,Chicken Bites Dozen,دجاج بيتيس دزينة
+52,Kebbeh Raw,كيببيه راو
+53,Chicken Strogonoff ,دجاج ستروجونوفف
+54,Strogonoff Beef,ستروجونوفف لحم بقر
+55,Water Bones,مياه بونيس
+57,Shrimp Fajita ,روبيان فاهيتا
+58,Cheese Rolls 18pcs,جبنة رولز 18 قطعة
+59,Fatayer Cheese,فطاير جبنة
+60,Hindbeh,هيندبيه
+61,Mehchi Silik,محشي سيليك
+62,Fattet Batenjen,فاتتيت باتينجين
+63,Tarator,تاراتور
+64,Mdardara with fried Onions,مدردرة مع فرييد ونيونس
+83,Daily Dish 2,طبق اليوم 2
+84,Daily dish M.S.,يومي طبق م.س.
+85,Aluminum Pot 175 * 100 pcs per ctn Big size,طنجرة ألمنيوم 175×100 (100 قطعة/كرتون) حجم كبير
+86,Glass Cleaner,منظف زجاج
+88,Iftar Box Small,بوكس إفطار صغير
+89,Main Dish 1 Portion,طبق رئيسي 1 (حصة)
+90,Main Dish Half Portion,طبق رئيسي (نصف حصة)
+91,Asian Daily Dish,طبق اسيان يومي
+92,funderdome cake,فونديردومي كاكي
+93,Daily Record,سجل يومي
+94,Daily Dish Monthly 26 Days,طبق يومي شهري (26 يوم)
+95,Kameh Kg,كِمَة (كغ)
+96,Kashta 12pcs,قشطة (12 قطعة)
+97,Kashta 6pcs,قشطة (6 قطع)
+98,Jouz 12Pcs,جوز (12 قطعة)
+99,Jouz 6Pcs,جوز (6 قطع)
+100,Maacroun Half Portion,مااكرون نصف حصة
+101,Ouwaymat Half Portion,عوّيمات (نصف حصة)
+102,ouwaymat,عوّيمات
+103,Fruit Salad,سلطة فواكه
+122,Catering,تموين
+123,Funderdome Cakes,فونديردومي كاكيس
+124,Caboodle ,كابودلي
+125,Miscellaneous,ميسكيللانيوس
+126,TeKnwledge Coffee Break ,تيكنوليدجي كوففي بريك
+127,TeKnowledge Full Catering ,تيكنووليدجي فولل كاتيرينج
+128,Teknowledge Special Coffee Breack  snacks part of Full day,تيكنووليدجي سبيكيال كوففي بريكك سناككس بارت وف فولل داي
+129,Teknowledge Full Breakfast only ,تيكنووليدجي فولل بريكفاست ونلي
+130,beef burger,لحم بقر برغر
+131,chicken burger,دجاج برغر
+132,chicken chawarma,دجاج شاورما
+133,Beef Chawarma,لحم بقر شاورما
+134,Hot dog,هوت دوغ
+135,Chips,شيبس
+136,Coca Cola,كوكا كولا
+137,Coca Cola Zero,كوكا كولا زيرو
+138,Sprite,سبرايت
+139,Arwa Water,اروا مياه
+140,Special Box,بوكس خاص
+141,Meal Subscription 20 days,اشتراك وجبات (20 يوم)
+142,Catering Event,تموين مناسبة
+143,Waiter/Waitress - Monthly Rate 22 Days,وايتير/وايتريسس - مونثلي راتي 22 دايس
+144,Delivery Charge,رسوم التوصيل
+145,Avocado Sauce ,افوكادو صلصة
+146,Chips ,شيبس
+147,Batenjen With Cheese,باتينجين مع جبنة
+148,Talabat Orders,تالابات طلبات
+149,Snoonu Orders,سنونو طلبات
+150,Rafeeq Orders,رافيق طلبات
+151,Keeta Orders,كيتا طلبات
+152,Kids Box,بوكس أطفال
+153,Kamhieh,كامهييه
+154,Lamb Chops Raw,لامب تشوبس راو
+155,Delivery Platform Payment,توصيل منصة دفعة
+156,Mix Grill Platter,طبق ميكس جريلل
+157,Fish Grilled,سمك جريلليد
+178,Pumpkin Kebbeh 1 Dozen,بومبكين كيببيه 1 دزينة
+179,Cheese Rolls 12 pcs,جبنة رولز 12 قطعة
+180,Msakhan Chicken,مساخان دجاج
+181,Zaatar,زعتر
+182,Kebbeh 6 pcs,كيببيه 6 قطعة
+183,Chicken Strips,دجاج ستريبس
+184,Chiken potato,تشيكين بطاطا
+185,Soup,سوب
+186,Falafel 12pcs,فالافيل 12 قطعة
+214,Warak 3inab Veg,واراك 3يناب فيج
+217,Koussa Mehchi,كوسا محشي
+218,Warak 3inab Meat,واراك 3يناب لحمة
+219,Roast Beef Mashed Potato Veg,روست بيف بطاطا مهروسة فيج
+220,roast beef and veg,روست بيف و فيج
+221,Potato Soufle,بطاطا سوفلي
+222,Siyyadiyeh,صيادية
+223,Roast Beef,روست بيف
+224,Kharouf Mehchi,خاروف محشي
+225,Maintenance works,أعمال صيانة
+227,Rice with Meat,رز مع لحمة
+228,Chicken Caju with Nuts,دجاج كاجو مع مكسرات
+229,Chicken With Rice,دجاج مع رز
+231,Shrimp Provencial,روبيان بروفينكيال
+232,Gigot with Vegetables,جيجوت مع خضار
+233,Lazagna,لازاجنا
+234,Spinach Pie,سبانخ فطيرة
+235,Sawarma Chicken 12 Pcs,ساوارما دجاج 12 قطعة
+236,Mini Shawarma Meat ,ميني شاورما لحمة
+237,Samkeh Harra,سامكيه هاررا
+238,Creamy pasta shrimp,كريمي باستا روبيان
+239,Chicken spinach,دجاج سبانخ
+242,Kharouf Mechi Warak 3inab,خاروف ميتشي واراك 3يناب
+243,Eggplant wiht Cheese,باذنجان مع جبنة
+244,Chicken Wings,دجاج وينجس
+245,Pasta Alfredo,باستا ألفريدو
+246,Shrimp Noodles,روبيان نودلز
+247,Moghrabiye,موغرابييي
+248,Moujadara ,مجدرة
+249,Mloukhiye,ملوخية
+250,Riz Aa Djej,ريز اا دجيج
+252,Daoud Basha with Rice,داود باشا مع رز
+254,Frickeh Chicken,فريككيه دجاج
+255,Koussa Kablama,كوسسا كابلاما
+257,Hrissi,هريسسي
+258,Oriental Rice with Chicken,شرقي رز مع دجاج
+259,Briyani Meat,بريياني لحمة
+260,Kameh Half Portion,كاميه نصف حصة
+261,Chich Barak 120 Pcs,شيش برك 120 قطعة
+262,Salmon with Vegetables,سالمون مع خضار
+264,Paella,بايللا
+265,Mehchi Malfouf Raw,محشي ملفوف راو
+266,Rice with meat Plate,طبق رز مع لحمة
+267,Rice with Chicken Meal,رز مع دجاج ميل
+274,chicken Escalope ,دجاج يسكالوبي
+275,Chicken Burger,دجاج برغر
+277,Cutlery,أدوات مائدة
+278,Bakdounis cut 1 Box,باكدونيس كوت 1 بوكس
+279,Lemon Juice ,ليمون عصير
+280,Perfecta Mayonnaise,مايونيز بيرفكتا
+281,Tomato Cut 1 Box,بندورة كوت 1 بوكس
+282,Mustard Sauce,مستردة صلصة
+283,Ba2dounis,با2دونيس
+284,Raheb Salad,راهيب سلطة
+285,Bakleh Salad,بقلة سلطة
+286,Caterart Fetta Salad,كاتيرارت فيتتا سلطة
+287,Crab Salad,كراب سلطة
+288,Blue Cheese Salad,بلوي جبنة سلطة
+289,Strawberry Salad,ستراوبيرري سلطة
+290,Chicken Quinoa Salad,دجاج سلطة كينوا
+292,Salad ,سلطة
+293,Special Salad,سبيكيال سلطة
+294,Kale salad ,كالي سلطة
+295,Rocca With Goat Cheese Salad,روككا مع جوات جبنة سلطة
+296,Goat Cheese Salad,جوات جبنة سلطة
+298,Pasta Salad,سلطة باستا
+299,Caesar Salad,سلطة قيصر
+308,Roast Beef Mini Sandwish 12pcs,روست بيف ميني ساندويش 12 قطعة
+309,Chich Barak 80 Pcs,شيش برك 80 قطعة
+310,Fajita Chicken,فاهيتا دجاج
+311,Fajita Shrimp,فاهيتا روبيان
+312,Steak Sandwich,ستيك ساندويش
+313,Mini Shawarma Chicken ,ميني شاورما دجاج
+314,Sujuk,سوجوك
+315,Assorted Sandwishes,اسسورتيد ساندويشيس
+334,Maamoul Jozz,ماامول جوزز
+336,Maamoul Mix,ماامول ميكس
+337,Meghli,ميغلي
+338,Custom Cake,كوستوم كاكي
+339,Big Bread,كبير بريد
+340,Snayniye,سناينييي
+341,Amhiyye,امهيييي
+342,Small Bread,سمالل بريد
+343,chich barak 40 pcs,شيش برك 40 قطعة
+344,Croissant ,كرواسون
+345,Popsicle,بوبسيكلي
+346,Maakaroun 1 Kg,مااكارون 1 كغ
+348,Cupcake with custome design,كوبكاكي مع كوستومي ديسيجن
+349,Tacos Beef,تاكوس لحم بقر
+419,Salad Panache,سلطة باناتشي
+420,Layla Fetta Salad,لايلا فيتتا سلطة
+421,Apple tarte,تارت تفاح
+422,Bemyeh with meat,بيمييه مع لحمة
+423,Biryani chicken,بيرياني دجاج
+424,Bourghoul with tomato,برغل بالبندورة
+425,Butter Chicken,دجاج بالزبدة
+426,Chicken cordon bleu,دجاج كوردون بلو
+427,Chocolate Crunch,شوكولا كرنش
+428,Custard,كاسترد
+429,Fajita,فاهيتا
+430,Fassolia with meat,فاصوليا مع لحمة
+431,Fattouch or Malfouf Salad,فتوش أو سلطة ملفوف
+432,Fruit cake,كيك فواكه
+433,Kafta platter,طبق كفتة
+434,Loubye with meat,لوبيا مع لحمة
+435,Malfouf Salad / Yogurt and Cucumber,سلطة ملفوف / لبن وخيار
+436,Mehchi malfouf with oil,محشي ملفوف مع زيت
+437,Mloukiye,ملوخية
+438,Mouhalabiye,مهلبية
+439,Noodles with vegetables,نودلز مع خضار
+440,Oriental chicken with rice,دجاج شرقي مع رز
+441,Oriental meat with rice,لحمة شرقية مع رز
+442,Pasta red sauce,باستا بصلصة حمرا
+443,Pasta with vegetables,باستا مع خضار
+444,Roast beef with vegetables,روست بيف مع خضار
+445,Sfouf bi debs,سفوف بدبس
+446,Swiss Rolls,سويس رول
+447,Taouk platter,طبق طاووق
+448,Vine leaves with oil,ورق عنب مع زيت

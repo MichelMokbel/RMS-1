@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use Livewire\Volt\Volt;
 use Laravel\Fortify\Features;
 
@@ -31,6 +32,117 @@ Route::get('/', function () {
 
     return redirect()->route('login');
 })->name('home');
+
+// Temporary utility endpoint for importing menu_items.arabic_name from CSV in environments
+// where CLI access is unavailable. Protect via env flag + token (+ optional expiry).
+Route::get('/tools/menu-items/import-arabic-names', function (Request $request) {
+    $enabled = filter_var((string) env('TEMP_ARABIC_IMPORT_ENABLED', false), FILTER_VALIDATE_BOOL);
+    if (! $enabled) {
+        abort(404);
+    }
+
+    $expectedToken = (string) env('TEMP_ARABIC_IMPORT_TOKEN', '');
+    $providedToken = (string) $request->query('token', '');
+    if ($expectedToken === '' || ! hash_equals($expectedToken, $providedToken)) {
+        abort(403, 'Invalid token.');
+    }
+
+    $expiresAt = trim((string) env('TEMP_ARABIC_IMPORT_EXPIRES_AT', ''));
+    if ($expiresAt !== '') {
+        $ts = strtotime($expiresAt);
+        if ($ts === false) {
+            abort(500, 'Invalid TEMP_ARABIC_IMPORT_EXPIRES_AT format.');
+        }
+        if (time() > $ts) {
+            abort(403, 'Import URL expired.');
+        }
+    }
+
+    $csvPath = (string) env('TEMP_ARABIC_IMPORT_FILE', base_path('arabic-names.csv'));
+    if (! Str::startsWith($csvPath, ['/'])) {
+        $csvPath = base_path($csvPath);
+    }
+    if (! is_file($csvPath)) {
+        abort(404, "CSV file not found at: {$csvPath}");
+    }
+
+    if (! Schema::hasTable('menu_items') || ! Schema::hasColumn('menu_items', 'arabic_name')) {
+        abort(500, 'menu_items.arabic_name is not available.');
+    }
+
+    $fh = fopen($csvPath, 'r');
+    if ($fh === false) {
+        abort(500, "Unable to open CSV: {$csvPath}");
+    }
+
+    $header = fgetcsv($fh, 0, ',', '"', '\\');
+    if ($header === false) {
+        fclose($fh);
+        abort(422, 'CSV is empty.');
+    }
+
+    $header = array_map(fn ($v) => strtolower(trim((string) $v)), $header);
+    $idIdx = array_search('id', $header, true);
+    $arabicIdx = array_search('arabic_name', $header, true);
+    if ($idIdx === false || $arabicIdx === false) {
+        fclose($fh);
+        abort(422, 'CSV must include headers: id, arabic_name');
+    }
+
+    $processed = 0;
+    $updated = 0;
+    $skipped = 0;
+    $notFound = 0;
+
+    DB::beginTransaction();
+    try {
+        while (($row = fgetcsv($fh, 0, ',', '"', '\\')) !== false) {
+            $processed++;
+            $id = isset($row[$idIdx]) ? (int) trim((string) $row[$idIdx]) : 0;
+            $arabic = isset($row[$arabicIdx]) ? trim((string) $row[$arabicIdx]) : '';
+
+            if ($id <= 0 || $arabic === '') {
+                $skipped++;
+                continue;
+            }
+
+            $exists = DB::table('menu_items')->where('id', $id)->exists();
+            if (! $exists) {
+                $notFound++;
+                continue;
+            }
+
+            $affected = DB::table('menu_items')
+                ->where('id', $id)
+                ->update([
+                    'arabic_name' => $arabic,
+                    'updated_at' => now(),
+                ]);
+
+            if ($affected > 0) {
+                $updated++;
+            }
+        }
+
+        DB::commit();
+    } catch (\Throwable $e) {
+        DB::rollBack();
+        fclose($fh);
+        throw $e;
+    }
+
+    fclose($fh);
+
+    return response()->json([
+        'status' => 'ok',
+        'message' => 'Arabic names import completed.',
+        'file' => $csvPath,
+        'processed' => $processed,
+        'updated' => $updated,
+        'skipped_invalid_or_empty' => $skipped,
+        'not_found_ids' => $notFound,
+    ]);
+});
 
 Volt::route('dashboard', 'dashboard')
     ->middleware(['auth', 'active', 'role:admin', 'ensure.admin'])

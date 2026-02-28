@@ -71,7 +71,7 @@ class MenuItem extends Model
 
     public function scopeOrdered(Builder $query): Builder
     {
-        return $query->orderBy('display_order')->orderBy('name');
+        return $query->orderBy('code')->orderBy('name');
     }
 
     public function scopeSearch(Builder $query, ?string $term): Builder

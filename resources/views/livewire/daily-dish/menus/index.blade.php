@@ -14,6 +14,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public int $branch_id = 1;
     public string $month;
     public string $year;
+    public int $filter_branch_id = 1;
+    public string $filter_month;
+    public string $filter_year;
 
     public bool $showCloneModal = false;
     public ?string $clone_from = null;
@@ -32,7 +35,23 @@ new #[Layout('components.layouts.app')] class extends Component {
         $today = now();
         $this->month = (string) $today->format('m');
         $this->year = (string) $today->format('Y');
+        $this->filter_branch_id = $this->branch_id;
+        $this->filter_month = $this->month;
+        $this->filter_year = $this->year;
         $this->clone_branch_id = $this->branch_id;
+    }
+
+    public function applyFilters(): void
+    {
+        $data = $this->validate([
+            'filter_branch_id' => ['required', 'integer', 'min:1'],
+            'filter_month' => ['required', 'regex:/^(0[1-9]|1[0-2]|[1-9])$/'],
+            'filter_year' => ['required', 'digits:4'],
+        ]);
+
+        $this->branch_id = (int) $data['filter_branch_id'];
+        $this->month = str_pad((string) $data['filter_month'], 2, '0', STR_PAD_LEFT);
+        $this->year = (string) $data['filter_year'];
     }
 
     public function with(): array
@@ -279,15 +298,15 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     @endif
 
-    <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
+    <form wire:submit="applyFilters" class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
         <div class="flex flex-wrap items-end gap-3">
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Branch ID') }}</label>
-                <flux:input wire:model="branch_id" type="number" min="1" class="w-32" />
+                <flux:input wire:model.defer="filter_branch_id" type="number" min="1" class="w-32" />
             </div>
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Month') }}</label>
-                <select wire:model="month" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                <select wire:model.defer="filter_month" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                     @for($m=1;$m<=12;$m++)
                         <option value="{{ str_pad($m,2,'0',STR_PAD_LEFT) }}">{{ \Carbon\Carbon::create()->month($m)->format('F') }}</option>
                     @endfor
@@ -295,16 +314,29 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Year') }}</label>
-                <select wire:model="year" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                <select wire:model.defer="filter_year" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                     @for($y = now()->year - 1; $y <= now()->year + 1; $y++)
                         <option value="{{ $y }}">{{ $y }}</option>
                     @endfor
                 </select>
             </div>
+            <div>
+                <flux:button type="submit" variant="primary" wire:loading.attr="disabled" wire:target="applyFilters">
+                    {{ __('Submit') }}
+                </flux:button>
+            </div>
         </div>
+    </form>
+
+    <div wire:loading.flex wire:target="applyFilters" class="items-center gap-2 rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-700 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
+        <svg class="h-4 w-4 animate-spin text-neutral-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z"></path>
+        </svg>
+        <span>{{ __('Loading daily dish planner...') }}</span>
     </div>
 
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+    <div wire:loading.remove wire:target="applyFilters" class="grid grid-cols-1 gap-4 md:grid-cols-3">
         @php
             $start = \Carbon\Carbon::create($year, $month, 1);
             $daysInMonth = (int) $start->daysInMonth;

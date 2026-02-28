@@ -629,7 +629,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         .orders-create-drawer .touch-target { min-height: 44px; min-width: 44px; touch-action: manipulation; }
     </style>
 
-    <div class="orders-create-drawer" data-open="{{ $showCreateDrawer ? '1' : '0' }}" role="dialog" aria-modal="true" aria-hidden="{{ $showCreateDrawer ? 'false' : 'true' }}">
+    <div class="orders-create-drawer" data-open="{{ $showCreateDrawer ? '1' : '0' }}" role="dialog" aria-modal="true" @if(! $showCreateDrawer) inert @endif>
         <div class="orders-create-drawer__backdrop" wire:click="closeCreateDrawer"></div>
         <div class="orders-create-drawer__panel">
             <div class="sticky top-0 z-10 border-b border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/95">
@@ -910,7 +910,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     @once
         <script>
             document.addEventListener('alpine:init', function() {
-                if (typeof Alpine.data('menuItemLookup') === 'function') return;
+                if (window.__ordersMenuItemLookupRegistered) {
+                    return;
+                }
+                window.__ordersMenuItemLookupRegistered = true;
+
                 Alpine.data('menuItemLookup', ({ index, initial, selectedId, searchUrl, branchId }) => ({
                     index,
                     query: initial || '',

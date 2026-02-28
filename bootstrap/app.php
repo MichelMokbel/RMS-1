@@ -18,6 +18,8 @@ use App\Console\Commands\IntegrityAudit;
 use App\Console\Commands\ReapplySafeForeignKeys;
 use App\Console\Commands\FinanceLockDate;
 use App\Console\Commands\BackfillMenuItemBranches;
+use App\Console\Commands\ExportMenuItemsMissingArabic;
+use App\Console\Commands\ImportMenuItemArabicNames;
 use App\Services\Orders\SubscriptionOrderGenerationService;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
@@ -38,6 +40,8 @@ return Application::configure(basePath: dirname(__DIR__))
         ReapplySafeForeignKeys::class,
         FinanceLockDate::class,
         BackfillMenuItemBranches::class,
+        ExportMenuItemsMissingArabic::class,
+        ImportMenuItemArabicNames::class,
     ])
     ->withSchedule(function (Schedule $schedule) {
         $time = config('subscriptions.generation_time', '06:00');
