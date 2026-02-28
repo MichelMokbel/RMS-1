@@ -17,7 +17,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public int $branch_id = 0;
     public string $date_from = '';
     public string $date_to = '';
-    public string $order_type = 'all';
+    public string $order_type = 'daily_dish';
     public string $search = '';
     public ?int $customer_id = null;
     public string $customer_search = '';

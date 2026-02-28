@@ -11,10 +11,10 @@ use App\Models\OrderItem;
 use App\Mail\DailyDishOrderAdminMail;
 use App\Mail\DailyDishOrderCustomerMail;
 use App\Services\Orders\OrderNumberService;
-use App\Services\Orders\OrderTotalsService;
 use App\Services\Pricing\MealPlanPricingService;
 use App\Services\Security\RecaptchaService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
@@ -26,7 +26,6 @@ class PublicDailyDishOrderController extends Controller
         Request $request,
         RecaptchaService $recaptcha,
         OrderNumberService $numberService,
-        OrderTotalsService $totalsService,
         MealPlanPricingService $pricingService
     ) {
         $branchRule = ['nullable', 'integer'];
@@ -56,6 +55,7 @@ class PublicDailyDishOrderController extends Controller
             'items.*.mealType' => ['nullable', 'string'],
             'items.*.main' => ['nullable', 'string'],
             'items.*.menu_item_id' => ['nullable', 'integer'],
+            'items.*.day_total' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $verify = $recaptcha->verify($payload['recaptcha_token'] ?? null, $request->ip());
@@ -92,6 +92,28 @@ class PublicDailyDishOrderController extends Controller
 
         $items = collect($payload['items'] ?? []);
         $usesNewShape = $items->contains(fn ($row) => isset($row['mains']) && is_array($row['mains']));
+        $isSubscriptionRequest = $this->isSubscriptionRequest($payload);
+        $source = $isSubscriptionRequest ? 'Subscription' : 'Website';
+        $planPrice = null;
+        $appetizerMenuItemId = null;
+
+        if ($isSubscriptionRequest) {
+            $planPrice = $this->fixedSubscriptionPrice((string) ($payload['mealPlan'] ?? ''));
+            if ($planPrice === null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unsupported meal plan.',
+                ], 422);
+            }
+
+            $appetizerMenuItemId = $this->resolveDefaultAppetizerMenuItemId();
+            if ($appetizerMenuItemId === null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Default appetizer item is not configured.',
+                ], 422);
+            }
+        }
 
         // Group into one Order per day (key)
         $groups = $items->groupBy('key');
@@ -99,8 +121,12 @@ class PublicDailyDishOrderController extends Controller
         $createdOrderIds = [];
         $leadId = null;
 
-        DB::transaction(function () use ($groups, $payload, $branchId, $numberService, $totalsService, $pricingService, &$createdOrderIds, $usesNewShape, $systemUserId) {
+        DB::transaction(function () use ($groups, $payload, $branchId, $numberService, $pricingService, &$createdOrderIds, $usesNewShape, $systemUserId, $isSubscriptionRequest, $source, $planPrice, $appetizerMenuItemId) {
             foreach ($groups as $date => $items) {
+                $websiteDayTotal = ! $isSubscriptionRequest
+                    ? $this->resolveWebsiteDayTotal($items, (string) $date)
+                    : null;
+
                 $menu = DailyDishMenu::query()
                     ->where('branch_id', $branchId)
                     ->whereDate('service_date', $date)
@@ -163,12 +189,6 @@ class PublicDailyDishOrderController extends Controller
 
                     $hasMealPlan = ! empty($payload['mealPlan']);
                     if ($hasMealPlan) {
-                        $planKey = (string) $payload['mealPlan'];
-                        $planPrice = $pricingService->planPriceForKey($planKey);
-                        if ($planPrice === null) {
-                            abort(422, "Unsupported meal plan '{$planKey}'.");
-                        }
-
                         foreach ($mainSelections as $sel) {
                             $menuItemId = $sel['menu_item_id'];
                             if (! $menuItemId) {
@@ -182,14 +202,15 @@ class PublicDailyDishOrderController extends Controller
 
                             $k = 'plan|'.$menuItemId;
                             if (! isset($lineGroups[$k])) {
-                                $lineGroups[$k] = [
-                                    'menu_item_id' => $menuItemId,
-                                    'qty' => 0,
-                                    'unit_price' => $planPrice,
-                                    'label' => 'Meal Plan',
-                                ];
-                            }
-                            $lineGroups[$k]['qty'] += $sel['qty'];
+                                    $lineGroups[$k] = [
+                                        'menu_item_id' => $menuItemId,
+                                        'qty' => 0,
+                                        'unit_price' => $planPrice,
+                                        'label' => 'Meal Plan',
+                                        'role' => 'main',
+                                    ];
+                                }
+                                $lineGroups[$k]['qty'] += $sel['qty'];
                         }
                     } else {
                         $hasNonPlate = false;
@@ -220,6 +241,7 @@ class PublicDailyDishOrderController extends Controller
                                         'qty' => 0,
                                         'unit_price' => $pricingService->portionPrice($portion) ?? $pricingService->portionPrice('plate') ?? 0.0,
                                         'label' => $pricingService->portionLabel($portion),
+                                        'role' => 'main',
                                     ];
                                 }
                                 $lineGroups[$k]['qty'] += $sel['qty'];
@@ -235,6 +257,7 @@ class PublicDailyDishOrderController extends Controller
                                     'qty' => $saladQty,
                                     'unit_price' => $pricingService->addonPrice('salad') ?? 0.0,
                                     'label' => 'Salad Add-on',
+                                    'role' => 'salad',
                                 ];
                             }
 
@@ -248,6 +271,7 @@ class PublicDailyDishOrderController extends Controller
                                     'qty' => $dessertQty,
                                     'unit_price' => $pricingService->addonPrice('dessert') ?? 0.0,
                                     'label' => 'Dessert Add-on',
+                                    'role' => 'dessert',
                                 ];
                             }
                         } else {
@@ -288,6 +312,7 @@ class PublicDailyDishOrderController extends Controller
                                         'qty' => 0,
                                         'unit_price' => $bundlePrice,
                                         'label' => $label,
+                                        'role' => 'main',
                                     ];
                                 }
                                 $lineGroups[$k]['qty'] += 1;
@@ -326,16 +351,31 @@ class PublicDailyDishOrderController extends Controller
                                 'qty' => 0,
                                 'unit_price' => $bundlePrice,
                                 'label' => $label,
+                                'role' => 'main',
                             ];
                         }
                         $lineGroups[$k]['qty']++;
                     }
                 }
 
+                if ($isSubscriptionRequest && $appetizerMenuItemId) {
+                    $lineGroups['subscription-appetizer|'.$appetizerMenuItemId] = [
+                        'menu_item_id' => $appetizerMenuItemId,
+                        'qty' => 1,
+                        'unit_price' => 0,
+                        'label' => 'Appetizer',
+                        'role' => 'appetizer',
+                    ];
+                }
+
+                $orderTotal = $isSubscriptionRequest
+                    ? (float) $planPrice
+                    : (float) $websiteDayTotal;
+
                 $order = Order::create([
                     'order_number' => $numberService->generate(),
                     'branch_id' => $branchId,
-                    'source' => 'Website',
+                    'source' => $source,
                     'is_daily_dish' => 1,
                     'type' => 'Delivery',
                     'status' => 'Draft',
@@ -347,9 +387,9 @@ class PublicDailyDishOrderController extends Controller
                     'scheduled_date' => $date,
                     'scheduled_time' => null,
                     'notes' => $payload['notes'] ?? null,
-                    'total_before_tax' => 0,
+                    'total_before_tax' => $orderTotal,
                     'tax_amount' => 0,
-                    'total_amount' => 0,
+                    'total_amount' => $orderTotal,
                     'created_by' => $systemUserId,
                 ]);
 
@@ -370,10 +410,9 @@ class PublicDailyDishOrderController extends Controller
                         'line_total' => round($qty * $price, 3),
                         'status' => 'Pending',
                         'sort_order' => $sort++,
+                        'role' => (string) ($lg['role'] ?? 'main'),
                     ]);
                 }
-
-                $totalsService->recalc($order);
 
                 $createdOrderIds[] = $order->id;
             }
@@ -506,5 +545,48 @@ class PublicDailyDishOrderController extends Controller
         }
 
         return $bundles;
+    }
+
+    private function isSubscriptionRequest(array $payload): bool
+    {
+        $plan = (string) ($payload['mealPlan'] ?? '');
+
+        return in_array($plan, ['20', '26'], true);
+    }
+
+    private function fixedSubscriptionPrice(string $planKey): ?float
+    {
+        return match ($planKey) {
+            '20' => 40.000,
+            '26' => 42.300,
+            default => null,
+        };
+    }
+
+    private function resolveWebsiteDayTotal(Collection $items, string $date): float
+    {
+        $row = $items->first();
+        if (! is_array($row) || ! isset($row['day_total']) || ! is_numeric($row['day_total'])) {
+            abort(422, "Missing day_total for {$date}.");
+        }
+
+        return round((float) $row['day_total'], 3);
+    }
+
+    private function resolveDefaultAppetizerMenuItemId(): ?int
+    {
+        $code = trim((string) config('subscriptions.default_appetizer_code', ''));
+        if ($code === '') {
+            return null;
+        }
+
+        $query = MenuItem::query()->where('code', $code);
+        if (Schema::hasColumn('menu_items', 'is_active')) {
+            $query->where('is_active', 1);
+        }
+
+        $item = $query->first(['id']);
+
+        return $item ? (int) $item->id : null;
     }
 }

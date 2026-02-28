@@ -6,5 +6,6 @@ return [
     'generated_item_quantity' => (float) env('SUBSCRIPTIONS_ITEM_QUANTITY', 1.0),
     'include_all_matching_role_items' => (bool) env('SUBSCRIPTIONS_INCLUDE_ALL_ROLE_ITEMS', true),
     'generation_time' => env('SUBSCRIPTIONS_GENERATION_TIME', '06:00'),
+    'auto_generate' => (bool) env('SUBSCRIPTIONS_AUTO_GENERATE', false),
+    'default_appetizer_code' => env('SUBSCRIPTIONS_APPETIZER_CODE', ''),
 ];
-

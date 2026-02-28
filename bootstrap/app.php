@@ -44,6 +44,10 @@ return Application::configure(basePath: dirname(__DIR__))
         ImportMenuItemArabicNames::class,
     ])
     ->withSchedule(function (Schedule $schedule) {
+        if (! (bool) config('subscriptions.auto_generate', false)) {
+            return;
+        }
+
         $time = config('subscriptions.generation_time', '06:00');
         $schedule->call(function () {
             $service = app(SubscriptionOrderGenerationService::class);

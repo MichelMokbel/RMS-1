@@ -2050,7 +2050,8 @@
           dessert: day.dessert,
           salad_qty: pricing.saladQty,
           dessert_qty: pricing.dessertQty,
-          mains: selection.mains
+          mains: selection.mains,
+          day_total: pricing.total
         });
       });
 
@@ -2311,5 +2312,4 @@
   </script>
 </body>
 </html>
-
 
