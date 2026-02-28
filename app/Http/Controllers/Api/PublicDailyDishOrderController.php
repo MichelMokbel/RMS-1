@@ -478,8 +478,8 @@ class PublicDailyDishOrderController extends Controller
             ->orderBy('scheduled_date')
             ->get();
 
-        $emailSentAdmin = false;
-        $emailSentCustomer = false;
+        $emailSentAdmin = true;
+        $emailSentCustomer = true;
 
         $adminEmail = (string) (env('DAILY_DISH_ADMIN_EMAIL') ?: 'info@layla-kitchen.com');
         try {
