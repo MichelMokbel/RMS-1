@@ -39,7 +39,6 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $convertIncludeDessert = true;
     public string $convertDefaultOrderType = 'Delivery';
     public ?string $convertDeliveryTime = null;
-    public bool $convertGenerateFirstOrder = false;
 
     public function updatingStatus(): void
     {
@@ -190,7 +189,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            DB::transaction(function () use ($req, $subscriptionService, $actorId) {
+            DB::transaction(function () use ($req, $subscriptionService, $actorId, $totalsService) {
                 $customer = null;
                 if ($this->convertCustomerId) {
                     $customer = Customer::find($this->convertCustomerId);
@@ -300,11 +299,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     }
                 }
 
-                // Optional immediate generation for start date (uses the published menu for that date)
-                if ($this->convertGenerateFirstOrder) {
-                    app(\App\Services\Orders\SubscriptionOrderGenerationService::class)
-                        ->generateForDate($this->convertStartDate, $this->convertBranchId, $actorId, dryRun: false);
-                }
+                // Conversion must not generate extra orders; only reclassify/link existing request orders.
 
                 $req->status = 'converted';
                 $req->save();
@@ -643,9 +638,6 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             <div class="pt-2">
                 <flux:checkbox wire:model="convertAttachOrders" :label="__('Attach existing website order(s) to this subscription and count them as used meals')" />
-            </div>
-            <div>
-                <flux:checkbox wire:model="convertGenerateFirstOrder" :label="__('Generate subscription order for the start date now (requires published menu)')" />
             </div>
         </div>
 

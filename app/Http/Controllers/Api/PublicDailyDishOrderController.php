@@ -205,12 +205,42 @@ class PublicDailyDishOrderController extends Controller
                                     $lineGroups[$k] = [
                                         'menu_item_id' => $menuItemId,
                                         'qty' => 0,
-                                        'unit_price' => $planPrice,
+                                        'unit_price' => 0,
                                         'label' => 'Meal Plan',
                                         'role' => 'main',
                                     ];
                                 }
                                 $lineGroups[$k]['qty'] += $sel['qty'];
+                        }
+
+                        if ($saladQty > 0) {
+                            $saladMenuItemId = $saladMenuItem?->getKey();
+                            if (! $saladMenuItemId) {
+                                abort(422, "Could not resolve salad item for {$date}.");
+                            }
+
+                            $lineGroups['plan-salad|'.$saladMenuItemId] = [
+                                'menu_item_id' => $saladMenuItemId,
+                                'qty' => $saladQty,
+                                'unit_price' => 0,
+                                'label' => 'Salad',
+                                'role' => 'salad',
+                            ];
+                        }
+
+                        if ($dessertQty > 0) {
+                            $dessertMenuItemId = $dessertMenuItem?->getKey();
+                            if (! $dessertMenuItemId) {
+                                abort(422, "Could not resolve dessert item for {$date}.");
+                            }
+
+                            $lineGroups['plan-dessert|'.$dessertMenuItemId] = [
+                                'menu_item_id' => $dessertMenuItemId,
+                                'qty' => $dessertQty,
+                                'unit_price' => 0,
+                                'label' => 'Dessert',
+                                'role' => 'dessert',
+                            ];
                         }
                     } else {
                         $hasNonPlate = false;

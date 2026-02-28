@@ -109,6 +109,8 @@ it('creates only subscription orders with fixed 40 total and auto appetizer for 
     foreach ($orders as $order) {
         $hasApp = $order->items()->where('menu_item_id', $appetizer->id)->exists();
         expect($hasApp)->toBeTrue();
+        expect($order->items()->where('role', 'salad')->exists())->toBeTrue();
+        expect($order->items()->where('role', 'dessert')->exists())->toBeTrue();
     }
 });
 
@@ -141,6 +143,9 @@ it('uses fixed 42.3 total for mealPlan 26', function () {
     $order = Order::query()->firstOrFail();
     expect($order->source)->toBe('Subscription');
     expect((float) $order->total_amount)->toBe(42.3);
+    expect($order->items()->where('role', 'salad')->exists())->toBeTrue();
+    expect($order->items()->where('role', 'dessert')->exists())->toBeTrue();
+    expect($order->items()->where('role', 'appetizer')->exists())->toBeTrue();
 });
 
 it('returns 422 when subscription appetizer code is not configured to an active menu item', function () {
@@ -203,4 +208,3 @@ it('creates website order and trusts submitted day_total for non-subscription re
     expect($order->source)->toBe('Website');
     expect((float) $order->total_amount)->toBe(123.45);
 });
-
