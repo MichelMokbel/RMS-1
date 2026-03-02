@@ -257,6 +257,89 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operation
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operations.access'])->prefix('company-food')->name('company-food.')->group(function () {
     Volt::route('projects', 'company-food.projects.index')->name('projects.index');
     Volt::route('projects/create', 'company-food.projects.create')->name('projects.create');
+    Route::get('projects/{project}/export-employees-pdf', function (\App\Models\CompanyFoodProject $project) {
+        $project->load([
+            'employeeLists' => fn ($q) => $q->with([
+                'listCategories' => fn ($qq) => $qq->orderBy('sort_order'),
+                'employees' => fn ($qq) => $qq->orderBy('sort_order')->orderBy('employee_name'),
+            ])->orderBy('sort_order'),
+        ]);
+
+        return \App\Support\Reports\PdfExport::download('reports.company-food-employees-print', [
+            'project' => $project,
+            'employeeLists' => $project->employeeLists,
+            'generatedAt' => now(),
+        ], 'company-food-employees-' . $project->slug . '.pdf');
+    })->name('projects.export-employees-pdf');
+    Route::get('projects/{project}/export-kitchen-prep-pdf', function (\App\Models\CompanyFoodProject $project) {
+        $project->load([
+            'options' => fn ($q) => $q->orderBy('menu_date')->orderBy('category')->orderBy('sort_order'),
+            'employeeLists' => fn ($q) => $q->with([
+                'listCategories' => fn ($qq) => $qq->orderBy('sort_order'),
+            ])->orderBy('sort_order'),
+        ]);
+
+        $orders = \App\Models\CompanyFoodOrder::query()
+            ->where('project_id', $project->id)
+            ->with(['employeeList', 'saladOption', 'appetizerOption1', 'appetizerOption2', 'mainOption', 'sweetOption', 'locationOption', 'soupOption'])
+            ->orderBy('employee_name')
+            ->orderBy('order_date')
+            ->get();
+
+        $employeeListsById = $project->employeeLists->keyBy('id');
+        $optionNamesById = $project->options->pluck('name', 'id');
+
+        $kitchenPrep = $orders->groupBy(fn ($o) => $o->order_date?->format('Y-m-d'))->map(function ($dateOrders) use ($employeeListsById, $optionNamesById) {
+            return $dateOrders->groupBy('employee_list_id')->map(function ($listOrders, $listId) use ($employeeListsById, $optionNamesById) {
+                $list = $employeeListsById->get((int) $listId);
+                $categories = $list
+                    ? $list->listCategories->pluck('category')->values()->all()
+                    : \App\Models\CompanyFoodOption::CATEGORIES;
+
+                $sections = $listOrders->groupBy('location_option_id')->map(function ($locOrders, $locId) use ($optionNamesById) {
+                    $locationName = $locOrders->first()?->locationOption?->name ?? ($locId ? __('Unknown') : __('No location'));
+
+                    $counts = [
+                        'salad' => $locOrders->groupBy('salad_option_id')->map->count(),
+                        'appetizer' => $locOrders->flatMap(fn ($o) => array_filter([$o->appetizer_option_id_1, $o->appetizer_option_id_2]))
+                            ->groupBy(fn ($id) => $id)->map->count(),
+                        'main' => $locOrders->groupBy('main_option_id')->map->count(),
+                        'sweet' => $locOrders->groupBy('sweet_option_id')->map->count(),
+                        'soup' => $locOrders->groupBy('soup_option_id')->map->count(),
+                    ];
+
+                    $resolvedCounts = collect($counts)->map(function ($categoryCounts) use ($optionNamesById) {
+                        return $categoryCounts->filter(fn ($_, $id) => (bool) $id)
+                            ->map(function ($count, $id) use ($optionNamesById) {
+                                return [
+                                    'name' => $optionNamesById->get((int) $id, __('Option #:id', ['id' => $id])),
+                                    'count' => $count,
+                                ];
+                            })
+                            ->values()
+                            ->all();
+                    })->all();
+
+                    return [
+                        'name' => $locationName,
+                        'counts' => $resolvedCounts,
+                    ];
+                })->values()->all();
+
+                return [
+                    'listName' => $list?->name ?? __('Unknown'),
+                    'sections' => $sections,
+                    'categories' => $categories,
+                ];
+            })->values()->all();
+        })->all();
+
+        return \App\Support\Reports\PdfExport::download('reports.company-food-kitchen-prep-print', [
+            'project' => $project,
+            'kitchenPrep' => $kitchenPrep,
+            'generatedAt' => now(),
+        ], 'company-food-kitchen-prep-' . $project->slug . '.pdf', 'a4', 'landscape');
+    })->name('projects.export-kitchen-prep-pdf');
     Route::get('projects/{project}/export-csv', function (\App\Models\CompanyFoodProject $project) {
         $orders = \App\Models\CompanyFoodOrder::query()
             ->where('project_id', $project->id)

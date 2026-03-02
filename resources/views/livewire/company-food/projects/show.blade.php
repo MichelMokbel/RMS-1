@@ -548,7 +548,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{ __('API URL') }}: {{ url('/api/public/company-food/' . $project->slug . '/options') }}
             </p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap gap-2">
+            <flux:button :href="route('company-food.projects.export-employees-pdf', $project)" variant="ghost">{{ __('Employee List PDF') }}</flux:button>
+            <flux:button :href="route('company-food.projects.export-kitchen-prep-pdf', $project)" variant="ghost">{{ __('Kitchen Prep PDF') }}</flux:button>
             <flux:button :href="route('company-food.projects.edit', $project)" wire:navigate variant="ghost">{{ __('Edit') }}</flux:button>
             <flux:button :href="route('company-food.projects.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
         </div>
