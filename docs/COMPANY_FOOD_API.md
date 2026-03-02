@@ -18,10 +18,7 @@ Replace `{projectSlug}` with the project slug (e.g. `ahr-meals-2026`). The slug 
 
 ## Rate Limits
 
-| Endpoint | Limit |
-|----------|-------|
-| GET options, GET order | 60 requests per minute |
-| POST order, PUT order | 20 requests per minute |
+Company Food public endpoints are currently **not rate-limited**.
 
 ---
 

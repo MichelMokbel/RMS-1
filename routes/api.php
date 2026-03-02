@@ -46,17 +46,20 @@ Route::middleware(['auth:sanctum'])->group(function () {
 });
 
 // Public endpoints for the external website form (no session/cookies)
-Route::middleware(['api', 'throttle:60,1'])->prefix('public')->group(function () {
-    Route::get('daily-dish/menus', [PublicDailyDishController::class, 'menus']);
-    Route::post('daily-dish/orders', [PublicDailyDishOrderController::class, 'store'])->middleware('throttle:20,1');
+Route::middleware('api')->prefix('public')->group(function () {
+    Route::middleware('throttle:60,1')->group(function () {
+        Route::get('daily-dish/menus', [PublicDailyDishController::class, 'menus']);
+        Route::post('daily-dish/orders', [PublicDailyDishOrderController::class, 'store'])->middleware('throttle:20,1');
+    });
 
     // Company Food (standalone module - no integration with orders/daily-dish)
-    Route::prefix('company-food/{projectSlug}')->middleware('throttle:60,1')->group(function () {
+    // Intentionally unthrottled per current integration requirement.
+    Route::prefix('company-food/{projectSlug}')->group(function () {
         Route::get('options', [PublicCompanyFoodController::class, 'options']);
         Route::get('orders', [PublicCompanyFoodOrderController::class, 'index']);
-        Route::post('orders', [PublicCompanyFoodOrderController::class, 'store'])->middleware('throttle:20,1');
+        Route::post('orders', [PublicCompanyFoodOrderController::class, 'store']);
         Route::get('orders/{id}', [PublicCompanyFoodOrderController::class, 'show']);
-        Route::put('orders/{id}', [PublicCompanyFoodOrderController::class, 'update'])->middleware('throttle:20,1');
+        Route::put('orders/{id}', [PublicCompanyFoodOrderController::class, 'update']);
     });
 });
 

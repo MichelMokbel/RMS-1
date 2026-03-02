@@ -1,0 +1,973 @@
+﻿Document no,Date Ordered,Supplier,Product,UOM,Unit Price,Qty Ordered,Line Amt,Discount,Document Status
+800013,2025-03-27 06:34:06,Verde W.l.l.,Mayonnaise_21012,Each,40,4,160,0,Completed
+800016,2025-04-01 01:09:35,Al Majed Marketing & Distribution,Masoor Dal 15Kg_17007,Each,58,2,116,0,Completed
+800016,2025-04-01 01:09:35,Al Majed Marketing & Distribution,Mashhor Indian 1121 Long Grain Basmati Rice 1x35kg_17005,Each,140,2,280,0,Completed
+800018,2025-04-01 01:35:06,Gulf Center,Frozen Whole Chicken 1100gms - Brazil_16000,Each,88,5,440,0,Completed
+800019,2025-04-06 05:12:38,Watania W.L.L,Supply & Installation of Interfacing for Fire Alarm System and Supply of Gas Shut-Off Valve_103,Eachch,2860,1,2860,0,Completed
+800020,2025-04-08 10:01:16,Verde W.l.l.,Fresh Eggs Grade A -_21010,Each,120,1,120,0,Completed
+800021,2025-04-08 10:56:01,Al Majed Marketing & Distribution,Sunflower oil 4x5Lit_21000,Each,108,5,540,0,Completed
+800021,2025-04-08 10:56:01,Al Majed Marketing & Distribution,Salt Bags 20 KGS_17009,Each,16,2,32,0,Completed
+800022,2025-04-08 12:22:51,Delta group,Topside Frozen Brazil_15000,Each,24,20,480,0,Completed
+800023,2025-04-10 03:54:20,Gulf Center,Frozen Whole Chicken 1100gms - Brazil_16000,Each,8.8,50,440,0,Completed
+800024,2025-04-14 04:03:32,Al Majed Marketing & Distribution,Sona Masoori Rice 35 Kg_17004,Each,92,2,184,0,Completed
+800024,2025-04-14 04:03:32,Al Majed Marketing & Distribution,Mashhor Indian 1121 Long Grain Basmati Rice 1x35kg_17005,Each,140,1,140,0,Completed
+800024,2025-04-14 04:03:32,Al Majed Marketing & Distribution,Masoor Dal 15Kg_17007,Each,58,3,174,0,Completed
+800025,2025-04-14 04:19:13,Deep Seafood,Frozen Mackerel Whole 10kgs_18034,Each,65,2,130,0,Completed
+800026,2025-04-14 04:23:25,Gulf Center,Frozen Whole Chicken 1100gms - Brazil_16000,Each,8.8,50,440,0,Completed
+800027,2025-04-20 02:20:31,Verde W.l.l.,Topside Frozen Brazil_15000,Each,24,20,480,0,Completed
+800027,2025-04-20 02:20:31,Verde W.l.l.,Chicken Breast Aurora 2kgx6_16012,Each,165,2,330,0,Completed
+800030,2025-04-21 09:48:40,Gulf Center,Frozen Whole Chicken 1100gms - Brazil_16000,Each,8.8,100,880,0,Completed
+800031,2025-04-21 11:24:09,Gulf Center,Frozen Whole Chicken 1100gms - Brazil_16000,Each,8.8,1,8.8,0,Completed
+800032,2025-04-26 03:27:13,Verde W.l.l.,Sunflower oil 4x5Lit_21000,Each,115,6,690,0,Completed
+800033,2025-04-26 03:31:29,Deep Seafood,Frozen Mackerel Whole 10kgs_18034,Each,65,2,130,0,Completed
+800034,2025-04-27 11:34:47,Al Zaman International Catering & Trading,Topside Frozen Brazil_15000,Each,23,20,460,0,Completed
+800034,2025-04-27 11:34:47,Al Zaman International Catering & Trading,Chicken Breast Aurora 2kgx6_16012,Each,150,1,150,0,Completed
+800034,2025-04-27 11:34:47,Al Zaman International Catering & Trading,Sun White Rice 20Kg_17003,Each,128,1,128,0,Completed
+800034,2025-04-27 11:34:47,Al Zaman International Catering & Trading,White Vinegar 4x3.78ltr_21005,Each,18,4,72,0,Completed
+800035,2025-04-28 01:14:32,Yacoob Trading & Contracting,HAPPY GARDENS PICKLED GRAPE LEAVES_21008,Each,13.06,36,470.16,0,Completed
+800035,2025-04-28 01:14:32,Yacoob Trading & Contracting,"AOUN WHITE BURGHUL FINE 	4kg_17027",Each,23,5,115,0,Completed
+800036,2025-04-29 10:36:59,Al Zaman International Catering & Trading,Beef Slice Alwahid 20x900g_15001,Each,309,1,309,0,Completed
+800036,2025-04-29 10:36:59,Al Zaman International Catering & Trading,Frozen Spinach 10x1kg KLA India_18033,Each,37,2,74,0,Completed
+800036,2025-04-29 10:36:59,Al Zaman International Catering & Trading,Frozen Whole Chicken 1100gms - Brazil_16000,Each,7.45,50,372.5,0,Completed
+800037,2025-04-30 05:34:08,Al Zaman International Catering & Trading,Frozen Beef Tenderloin Brazil_15002,Each,41,15,615,0,Completed
+800038,2025-04-30 05:49:15,Verde W.l.l.,Karan - Black Angus Beef Chilled Eyeround_15003,Each,28,20,560,0,Completed
+800039,2025-05-03 01:12:34,Verde W.l.l.,Frozen Beef Tenderloin Brazil_15002,Each,32,30,960,0,Completed
+800039,2025-05-03 01:12:34,Verde W.l.l.,Al Shaab Tahina 8 kg_21014,Each,122,1,122,0,Completed
+800040,2025-05-04 02:10:30,Al Zaman International Catering & Trading,Chicken Breast Aurora 2kgx6_16012,Each,150,2,300,0,Completed
+800040,2025-05-04 02:10:30,Al Zaman International Catering & Trading,Frozen Whole Chicken 1100gms - Brazil_16000,Each,8.2,50,410,0,Completed
+800041,2025-05-06 11:30:55,Al Zaman International Catering & Trading,Chicken Shawarma Diplomata 4x2.5Kg_16002,Each,105,1,105,0,Completed
+800041,2025-05-06 11:30:55,Al Zaman International Catering & Trading,Topside Frozen Brazil_15000,Each,23,40,920,0,Completed
+800042,2025-05-06 12:41:27,Tesla International Group Contracting & Trading w.l.l.,Maintenance works_180,Each,900,1,900,0,Completed
+800043,2025-05-11 04:53:51,Al Zaman International Catering & Trading,Sunflower oil 4x5Lit_21000,Each,112,5,560,0,Completed
+800043,2025-05-11 04:53:51,Al Zaman International Catering & Trading,Frozen French Fries 4 x 2.5Kg_18005,Each,50,1,50,0,Completed
+800043,2025-05-11 04:53:51,Al Zaman International Catering & Trading,Frozen Spinach 10x1kg KLA India_18033,Each,37,2,74,0,Completed
+800043,2025-05-11 04:53:51,Al Zaman International Catering & Trading,Chicken Breast Aurora 2kgx6_16012,Each,150,2,300,0,Completed
+800043,2025-05-11 04:53:51,Al Zaman International Catering & Trading,Palm Oil 18 Ltr_21001,Each,82,2,164,0,Completed
+800045,2025-05-12 02:22:01,Al Zaman International Catering & Trading,Frozen Whole Chicken 1100gms - Brazil_16000,Each,8.2,50,410,0,Completed
+800046,2025-05-12 04:25:39,Deep Seafood,Frozen Mackerel Whole 10kgs_18034,Each,65,2,130,0,Completed
+800044,2025-05-12 11:21:01,Ideal Qatar,LEBANON 5283000909763 AOUN PARBOILED RICE 2KG_17002,Each,14.4,10,144,0,Completed
+800044,2025-05-12 11:21:01,Ideal Qatar,AOUN SODIUM BICARBONATE_17010,Each,3.6,12,43.2,0,Completed
+800047,2025-05-14 03:03:20,Al Zaman International Catering & Trading,Sun White Rice 20Kg_17003,Each,128,2,256,0,Completed
+800048,2025-05-17 10:40:43,Flamex Trade,Maintenance works_180,Each,3000,1,3000,0,Completed
+800050,2025-05-20 02:51:45,Al Zaman International Catering & Trading,Tomato Paste 800gms x 12_21020,Each,40,1,40,0,Completed
+800050,2025-05-20 02:51:45,Al Zaman International Catering & Trading,Topside Frozen Brazil_15000,Each,23,35,805,0,Completed
+800050,2025-05-20 02:51:45,Al Zaman International Catering & Trading,Frozen Whole Chicken 1100gms - Brazil_16000,Each,8.2,20,164,0,Completed
+800050,2025-05-20 02:51:45,Al Zaman International Catering & Trading,Fresh Eggs Grade A -_21010,Each,92,1,92,0,Completed
+800052,2025-05-22 01:10:55,Al Zaman International Catering & Trading,Frozen Whole Chicken 1100gms - Brazil_16000,Each,8.2,40,328,0,Completed
+800051,2025-05-22 12:57:47,Al Majed Marketing & Distribution,Mashhor Indian 1121 Long Grain Basmati Rice 1x35kg_17005,Each,140,1,140,0,Completed
+800051,2025-05-22 12:57:47,Al Majed Marketing & Distribution,Sona Masoori Rice 35 Kg_17004,Each,92,2,184,0,Completed
+800051,2025-05-22 12:57:47,Al Majed Marketing & Distribution,Masoor Dal 15Kg_17007,Each,58,2,116,0,Completed
+800053,2025-05-27 12:10:12,Deep Seafood,Frozen Mackerel Whole 10kgs_18034,Each,65,2,130,0,Completed
+800054,2025-05-28 04:57:02,Al Zaman International Catering & Trading,Sun White Rice 20Kg_17003,Each,128,1,128,0,Completed
+800054,2025-05-28 04:57:02,Al Zaman International Catering & Trading,Beef Slice Alwahid 20x900g_15001,Each,300,1,300,0,Completed
+800054,2025-05-28 04:57:02,Al Zaman International Catering & Trading,Fresh Eggs Grade A -_21010,Each,92,1,92,0,Completed
+800055,2025-05-29 01:11:36,Ideal Qatar,Happy Gardens Chickpeas 9mm-20 kg_21025,Each,180.5,1,180.5,0,Completed
+800055,2025-05-29 01:11:36,Ideal Qatar,AOUN BROWN BURGHUL FINE 4KG_17026,Each,19.71,6,118.26,0,Completed
+800055,2025-05-29 01:11:36,Ideal Qatar,HAPPY GARDENS PICKLED GRAPE LEAVES_21008,Each,13.06,36,470.16,0,Completed
+800055,2025-05-29 01:11:36,Ideal Qatar,LEBANON 5283000909763 AOUN PARBOILED RICE 2KG_17002,Each,14.4,10,144,0,Completed
+800055,2025-05-29 01:11:36,Ideal Qatar,BM Tomato Paste 650 GR - Lebanon_21019,Each,8.5,24,204,0,Completed
+800055,2025-05-29 01:11:36,Ideal Qatar,MBM Apple Vinegar 500ML_21004,Each,6.25,12,75,0,Completed
+800055,2025-05-29 01:11:36,Ideal Qatar,Aoun All Spices Powder 500GR_17025,Each,35.63,2,71.26,0,Completed
+800055,2025-05-29 01:11:36,Ideal Qatar,Aoun Sumac Powder 500 GR_17024,Each,25.89,6,155.34,0,Completed
+800055,2025-05-29 01:11:36,Ideal Qatar,Aoun 7 Spices 500 GR_17023,Each,27.08,2,54.16,0,Completed
+800055,2025-05-29 01:11:36,Ideal Qatar,SHP- Gourmet Foods White Onion Powder_17029,Each,14.45,5,72.25,0,Completed
+800056,2025-05-29 02:23:07,Al Majed Marketing & Distribution,Sona Masoori Rice 35 Kg_17004,Each,92,2,184,0,Completed
+800056,2025-05-29 02:23:07,Al Majed Marketing & Distribution,Mashhor Indian 1121 Long Grain Basmati Rice 1x35kg_17005,Each,140,2,280,0,Completed
+800057,2025-05-29 02:31:23,Al Zaman International Catering & Trading,Frozen Whole Chicken 1100gms - Brazil_16000,Each,9.62,50,481,0,Completed
+800058,2025-06-01 03:02:10,Fresh Meat Factory,Topside Chilled South Africa_15009,KG,24,20,480,0,Completed
+800059,2025-06-02 02:06:33,Al Zaman International Catering & Trading,PD Shrimp 11/15 (10 x 1 Kg )_18029,Each,29,10,290,0,Completed
+800059,2025-06-02 02:06:33,Al Zaman International Catering & Trading,Frozen Mix Vegetable_18004,Each,42,1,42,0,Completed
+800059,2025-06-02 02:06:33,Al Zaman International Catering & Trading,Frozen French Fries 4 x 2.5Kg_18005,Each,55,1,55,0,Completed
+800059,2025-06-02 02:06:33,Al Zaman International Catering & Trading,Sunflower oil 4x5Lit_21000,Each,113,10,1130,0,Completed
+800060,2025-06-10 04:19:02,Fresh Meat Factory,Topside Chilled South Africa_15009,KG,24,20,480,0,Completed
+800061,2025-06-10 04:47:36,Al Zaman International Catering & Trading,Chicken Breast Aurora 2kgx6_16012,Each,165,2,330,0,Completed
+800061,2025-06-10 04:47:36,Al Zaman International Catering & Trading,Tomato Paste 800gms x 12_21020,Each,40,1,40,0,Completed
+800061,2025-06-10 04:47:36,Al Zaman International Catering & Trading,Sun White Rice 20Kg_17003,Each,128,2,256,0,Completed
+800061,2025-06-10 04:47:36,Al Zaman International Catering & Trading,Chicken Shawarma Diplomata 4x2.5Kg_16002,Each,105,1,105,0,Completed
+800062,2025-06-13 02:14:18,Awafia Trading W.L.L,Karak Tea_22003,KG,35,2,70,0,Completed
+800062,2025-06-13 02:14:18,Awafia Trading W.L.L,Coffee Beans_22000,KG,90,5,450,0,Completed
+800062,2025-06-13 02:14:18,Awafia Trading W.L.L,Hot Chocolate_22001,KG,50,2,100,0,Completed
+800062,2025-06-13 02:14:18,Awafia Trading W.L.L,Cappuccino Topping_22002,KG,70,2,140,0,Completed
+800063,2025-06-16 15:53:19,Al Zaman International Catering & Trading,Frozen Whole Chicken 1100gms - Brazil_16000,Each,9.35,70,654.5,0,Completed
+800063,2025-06-16 15:53:19,Al Zaman International Catering & Trading,Palm Oil 18 Ltr_21001,Each,77,2,154,0,Completed
+800063,2025-06-16 15:53:19,Al Zaman International Catering & Trading,Green Peas 2.5 Kg_18015,Each,12,1,12,0,Completed
+800063,2025-06-16 15:53:19,Al Zaman International Catering & Trading,Green Beans 2.5 Kgs_18035,Each,10,1,10,0,Completed
+800064,2025-06-16 15:56:43,Fresh Meat Factory,Topside Chilled South Africa_15009,KG,24,40,960,0,Completed
+800065,2025-06-18 11:38:23,Al Majed Marketing & Distribution,Masoor Dal 15Kg_17007,Each,58,2,116,0,Completed
+800065,2025-06-18 11:38:23,Al Majed Marketing & Distribution,Sona Masoori Rice 35 Kg_17004,Each,92,2,184,0,Completed
+800065,2025-06-18 11:38:23,Al Majed Marketing & Distribution,Mashhor Indian 1121 Long Grain Basmati Rice 1x35kg_17005,Each,140,2,280,0,Completed
+800066,2025-06-18 12:46:35,Deep Seafood,Frozen Mackerel Whole 10kgs_18034,Each,65,2,130,0,Completed
+800067,2025-06-18 16:24:17,Al Zaman International Catering & Trading,Frozen Spinach 10x1kg KLA India_18033,Each,37,2,74,0,Completed
+800067,2025-06-18 16:24:17,Al Zaman International Catering & Trading,Frozen French Fries 4 x 2.5Kg_18005,Each,55,3,165,0,Completed
+800067,2025-06-18 16:24:17,Al Zaman International Catering & Trading,Chicken Breast Aurora 2kgx6_16012,Each,162,3,486,0,Completed
+800067,2025-06-18 16:24:17,Al Zaman International Catering & Trading,Frozen Whole Chicken 1100gms - Brazil_16000,Each,9.35,30,280.5,0,Completed
+800067,2025-06-18 16:24:17,Al Zaman International Catering & Trading,PD Shrimp 11/15 (10 x 1 Kg )_18029,Each,29,10,290,0,Completed
+800067,2025-06-18 16:24:17,Al Zaman International Catering & Trading,Salt Bags 20 KGS_17009,Each,14,1,14,0,Completed
+800067,2025-06-18 16:24:17,Al Zaman International Catering & Trading,Tomato Paste 800gms x 12_21020,Each,40,2,80,0,Completed
+800067,2025-06-18 16:24:17,Al Zaman International Catering & Trading,Tomato Peeled 6 x 2.5Kgs_21018,Each,96,1,96,0,Completed
+800067,2025-06-18 16:24:17,Al Zaman International Catering & Trading,Mix Sea Food 20x400 gm_18030,Each,170,1,170,0,Completed
+800067,2025-06-18 16:24:17,Al Zaman International Catering & Trading,Fresh Eggs Grade A -_21010,Each,152,2,304,0,Completed
+800068,2025-06-28 12:23:09,Ideal Qatar,Happy Gardens Chickpeas 9mm-20 kg_21025,Each,180.5,2,361,0,Completed
+800068,2025-06-28 12:23:09,Ideal Qatar,HAPPY GARDENS PICKLED GRAPE LEAVES_21008,Each,13.06,96,1253.76,0,Completed
+800069,2025-06-29 15:41:57,Tredos Trading,Chicken Strips Regular 6x1KG_16003,Each,140,1,140,0,Completed
+800069,2025-06-29 15:41:57,Tredos Trading,Perfecta Mayonnaise_21011,Each,180,1,180,0,Completed
+800069,2025-06-29 15:41:57,Tredos Trading,Mustard Sauce_21026,Each,120,1,120,0,Completed
+800069,2025-06-29 15:41:57,Tredos Trading,White Cheddar Slice 1x2.27KG_13006,Each,122.5,1,122.5,0,Completed
+800069,2025-06-29 15:41:57,Tredos Trading,Yellow Cheddar Slice 1x2.27KG_13000,Each,122.5,1,122.5,0,Completed
+800069,2025-06-29 15:41:57,Tredos Trading,Whole Peeled Tomatoes 6x2.5KG_21015,Each,90,1,90,0,Completed
+800069,2025-06-29 15:41:57,Tredos Trading,Tredos Kashkaval 1x2.8KG_10003,Each,66.66,1,66.66,0,Completed
+800069,2025-06-29 15:41:57,Tredos Trading,Frozen Shredded Mozzarella_18019,Each,25,6,150,0,Completed
+800070,2025-07-02 17:04:50,Tredos Trading,Cowland Unsalted Butter Spread 82%_10009,Eachch,360,1,360,0,Completed
+800071,2025-07-06 16:25:38,Tredos Trading,Frozen Shredded Mozzarella_18019,Each,300,1,300,0,Completed
+800071,2025-07-06 16:25:38,Tredos Trading,Hash Brown Triangular 4x2.5Kgs_18022,Each,90,1,90,0,Completed
+800071,2025-07-06 16:25:38,Tredos Trading,"French Fries 9x9mm, Skin off 4x2.5Kgs_18021",Each,68,2,136,0,Completed
+800072,2025-07-06 17:28:05,Ideal Qatar,LEBANON 5283000909763 AOUN PARBOILED RICE 2KG_17002,Each,14.4,15,216,0,Completed
+800072,2025-07-06 17:28:05,Ideal Qatar,BM Tomato Paste 650 GR - Lebanon_21019,Each,8.5,60,510,0,Completed
+800073,2025-07-07 14:16:08,Al Zaman International Catering & Trading,Palm Oil 18 Ltr_21001,Each,79,3,237,0,Completed
+800073,2025-07-07 14:16:08,Al Zaman International Catering & Trading,Frozen Strawberry 10x1kg_18002,Each,75,3,225,0,Completed
+800073,2025-07-07 14:16:08,Al Zaman International Catering & Trading,Salt 25Kgs_17008,Each,15,2,30,0,Completed
+800073,2025-07-07 14:16:08,Al Zaman International Catering & Trading,Sun White Rice 20Kg_17003,Each,128,3,384,0,Completed
+800073,2025-07-07 14:16:08,Al Zaman International Catering & Trading,Corn Flour Bag 25KG_17030,Each,90,1,90,0,Completed
+800073,2025-07-07 14:16:08,Al Zaman International Catering & Trading,Frozen Mango Pulp 16x1Kg_18001,Each,105,2,210,0,Completed
+800074,2025-07-07 14:52:05,Tredos Trading,Whole Peeled Tomatoes 6x2.5KG_21015,Each,90,3,270,0,Completed
+800075,2025-07-10 13:06:37,Al Majed Marketing & Distribution,Mashhor Indian 1121 Long Grain Basmati Rice 1x35kg_17005,Each,140,2,280,0,Completed
+800075,2025-07-10 13:06:37,Al Majed Marketing & Distribution,Masoor Dal 15Kg_17007,Each,58,2,116,0,Completed
+800075,2025-07-10 13:06:37,Al Majed Marketing & Distribution,Sona Masoori Rice 35 Kg_17004,Each,92,2,184,0,Completed
+800076,2025-07-12 14:46:21,Al Zaman International Catering & Trading,Fish Fillet - 4 x 2.5 KG_18027,Each,73,2,146,0,Completed
+800076,2025-07-12 14:46:21,Al Zaman International Catering & Trading,Topside Frozen Brazil_15000,Each,23,40,920,0,Completed
+800076,2025-07-12 14:46:21,Al Zaman International Catering & Trading,Okra Zero 20x400g_18012,Each,90,1,90,0,Completed
+800076,2025-07-12 14:46:21,Al Zaman International Catering & Trading,Sunflower oil 4x5Lit_21000,Each,112,6,672,0,Completed
+800076,2025-07-12 14:46:21,Al Zaman International Catering & Trading,PD Shrimp 11/15 (10 x 1 Kg )_18029,Each,29,3,87,0,Completed
+800076,2025-07-12 14:46:21,Al Zaman International Catering & Trading,Chicken Breast Aurora 2kgx6_16012,Each,165,4,660,0,Completed
+800077,2025-07-12 15:05:54,Tredos Trading,Breaded Chicken Nuggets 6x1KG_309,Each,90,2,180,0,Completed
+800077,2025-07-12 15:05:54,Tredos Trading,Chicken Strips Regular 6x1KG_16003,Each,140,2,280,0,Completed
+800078,2025-07-12 15:15:56,Benina Food,Benina - Oyster Sauce 1.9L_20002,Each,18.5,2,37,0,Completed
+800078,2025-07-12 15:15:56,Benina Food,Benina - Soy Sauce Original 1.86L_20001,Each,12.5,2,25,0,Completed
+800078,2025-07-12 15:15:56,Benina Food,Benina - Sweet and Sour 1.9L_20003,Each,20,2,40,0,Completed
+800079,2025-07-12 16:15:00,Verde W.l.l.,Chilled Beef Tenderlion_15004,KG,32,20,640,0,Completed
+800079,2025-07-12 16:15:00,Verde W.l.l.,Philadelphia Cream Cheese 6.6KG_13004,Each,219,1,219,0,Completed
+800080,2025-07-16 15:21:50,Tredos Trading,White Cheddar Slice 1x2.27KG_13006,Each,122.5,1,122.5,0,Completed
+800080,2025-07-16 15:21:50,Tredos Trading,Perfecta Mayonnaise_21011,Each,180,1,180,0,Completed
+800080,2025-07-16 15:21:50,Tredos Trading,Yellow Cheddar Slice 1x2.27KG_13000,Each,122.5,1,122.5,0,Completed
+800080,2025-07-16 15:21:50,Tredos Trading,Tomex Frozen Sweet Corn 4x2.5KG_18000,Each,95,1,95,0,Completed
+800080,2025-07-16 15:21:50,Tredos Trading,Tomex Mix Vegetables 4x2.5KG_18011,Each,50,1,50,0,Completed
+800081,2025-07-16 16:24:24,Ideal Qatar,"AOUN WHITE BURGHUL FINE 	4kg_17027",Each,22.8,4,91.2,0,Completed
+800081,2025-07-16 16:24:24,Ideal Qatar,Happy Gardens Foul Medamas 400gr 1x24_21024,Each,2,24,48,0,Completed
+800081,2025-07-16 16:24:24,Ideal Qatar,Aoun Sumac Powder 500 GR_17024,Each,25.89,3,77.67,0,Completed
+800081,2025-07-16 16:24:24,Ideal Qatar,Aoun Garlic Powder 500GR 1x12_17021,Each,15.91,3,47.73,0,Completed
+800081,2025-07-16 16:24:24,Ideal Qatar,SHP Cinnamon Stick_17028,Each,85,1,85,0,Completed
+800081,2025-07-16 16:24:24,Ideal Qatar,Aoun Green Lentils 900 Gr 1x20_17022,Each,9.5,7,66.5,0,Completed
+800081,2025-07-16 16:24:24,Ideal Qatar,Aoun Lime_17020,Each,10.2,5,51,0,Completed
+800082,2025-07-20 13:05:31,Al Majed Marketing & Distribution,Masoor Dal 15Kg_17007,Each,58,3,174,0,Completed
+800082,2025-07-20 13:05:31,Al Majed Marketing & Distribution,Sona Masoori Rice 35 Kg_17004,Each,92,2,184,0,Completed
+800083,2025-07-20 13:59:54,Verde W.l.l.,Chilled Striploin Brazil_15006,Each,34,18,612,0,Completed
+800083,2025-07-20 13:59:54,Verde W.l.l.,Frozen Tenderloin Brazil_15008,Each,51,18,918,0,Completed
+800084,2025-07-21 17:25:02,Tredos Trading,Green Beans - Cut 4x2.5KG_18018,Each,60,1,60,0,Completed
+800084,2025-07-21 17:25:02,Tredos Trading,Green Peas - Medium Fine 4x2.5KG_18014,Each,63,1,63,0,Completed
+800084,2025-07-21 17:25:02,Tredos Trading,Beef Bacon Bits Toppings 6x1KG_18024,Each,170,1,170,0,Completed
+800084,2025-07-21 17:25:02,Tredos Trading,Frozen Shredded Mozzarella_18019,Each,25,12,300,0,Completed
+800085,2025-07-26 16:43:56,Tredos Trading,Fresh Eggs Grade A -_21010,Each,135,2,270,0,Completed
+800085,2025-07-26 16:43:56,Tredos Trading,Perfecta Mayonnaise_21011,Each,180,1,180,0,Completed
+800085,2025-07-26 16:43:56,Tredos Trading,Barilla Penne Rigate 12x500gm_10015,Each,100,1,100,0,Completed
+800085,2025-07-26 16:43:56,Tredos Trading,Barilla Spaghetti (No.5)_10016,Each,150,1,150,0,Completed
+800085,2025-07-26 16:43:56,Tredos Trading,White Chunk Tuna in Sunflower Oil 6x1.8KG_21034,Each,230,1,230,0,Completed
+800086,2025-07-26 17:45:58,Benina Food,Benina - Soy Sauce Original 1.86L_20001,Each,12.5,3,37.5,0,Completed
+800086,2025-07-26 17:45:58,Benina Food,Benina Sesame Oil 1.86L_21002,Each,65,3,195,0,Completed
+800086,2025-07-26 17:45:58,Benina Food,Benina - Sweet and Sour 1.9L_20003,Each,20,2,40,0,Completed
+800086,2025-07-26 17:45:58,Benina Food,Benina - Oyster Sauce 1.9L_20002,Each,18.5,2,37,0,Completed
+800087,2025-07-27 09:15:18,Al Zaman International Catering & Trading,Fish Fillet - 4 x 2.5 KG_18027,Each,75,1,75,0,Completed
+800087,2025-07-27 09:15:18,Al Zaman International Catering & Trading,Topside Frozen Brazil_15000,Each,27,60,1620,0,Completed
+800087,2025-07-27 09:15:18,Al Zaman International Catering & Trading,Chicken Breast Aurora 2kgx6_16012,Each,156,4,624,0,Completed
+800087,2025-07-27 09:15:18,Al Zaman International Catering & Trading,Frozen Beef Tenderloin Brazil_15002,Each,49.25,20,985,0,Completed
+800088,2025-07-27 09:56:42,Gulf Center,Frozen Whole Chicken 1100gms - Brazil_16000,Each,10.45,50,522.5,0,Completed
+800088,2025-07-27 09:56:42,Gulf Center,Frozen Chicken 1200 Gm Brazil_16004,Each,11.4,20,228,0,Completed
+800089,2025-07-27 17:50:41,Qnited Trading Company,SUGAR PASTE COLOR 1KG_19009,Each,16,4,64,0,Completed
+800089,2025-07-27 17:50:41,Qnited Trading Company,Chocolate Sticks 1KG_19016,Each,27,4,108,0,Completed
+800089,2025-07-27 17:50:41,Qnited Trading Company,WHITE SUGAR PASTE 1KG X 12PCS_19005,Each,180,1,180,0,Completed
+800089,2025-07-27 17:50:41,Qnited Trading Company,SUGAR PASTE COLOR 1KG_19009,Each,16,4,64,0,Completed
+800089,2025-07-27 17:50:41,Qnited Trading Company,COCOA POWDER 1KG_19012,Each,60,4,240,0,Completed
+800089,2025-07-27 17:50:41,Qnited Trading Company,MILK COMPOUND BLOCKS 2.5KG_19014,Each,45,2,90,0,Completed
+800089,2025-07-27 17:50:41,Qnited Trading Company,DARK COMPOUND BLOCKS 2.5KG_19015,Each,45,2,90,0,Completed
+800089,2025-07-27 17:50:41,Qnited Trading Company,WHITE COMPOUND BLOCKS 2.5KG_19013,Each,45,2,90,0,Completed
+800090,2025-07-28 17:00:07,Packon Trading,Aluminum Foil - 6pcs (1.5kg)_12021,Each,126,1,126,0,Completed
+800090,2025-07-28 17:00:07,Packon Trading,Garbage Bag - 90*110 (12KG)_12000,Each,48,1,48,0,Completed
+800090,2025-07-28 17:00:07,Packon Trading,M | W Plastic Container 250ml (500pcs)_12025,Each,63,1,63,0,Completed
+800090,2025-07-28 17:00:07,Packon Trading,Aluminum Container - 1120 (400pcs)_12022,Each,89,1,89,0,Completed
+800090,2025-07-28 17:00:07,Packon Trading,Cling Film 6pcs_12051,Each,77,1,77,0,Completed
+800090,2025-07-28 17:00:07,Packon Trading,Cling Film - 2kg_12031,Each,35,1,35,0,Completed
+800090,2025-07-28 17:00:07,Packon Trading,Maxi Roll - 6pcs_12032,Each,18,1,18,0,Completed
+800090,2025-07-28 17:00:07,Packon Trading,Vinyl Gloves Medium 10pcs_12014,Each,51,1,51,0,Completed
+800091,2025-07-31 10:54:55,Al Majed Marketing & Distribution,Chana Dal 5 Kgs_17006,Each,21.5,3,64.5,0,Completed
+800091,2025-07-31 10:54:55,Al Majed Marketing & Distribution,Sona Masoori Rice 35 Kg_17004,Each,92,3,276,0,Completed
+800091,2025-07-31 10:54:55,Al Majed Marketing & Distribution,Masoor Dal 15Kg_17007,Each,58,3,174,0,Completed
+800091,2025-07-31 10:54:55,Al Majed Marketing & Distribution,Palm Oil 18 Ltr_21001,Each,80,2,160,0,Completed
+800092,2025-08-02 11:37:03,Packon Trading,Paper Cup Double Wall 1000 pcs with lid_12029,Each,245,1,245,0,Completed
+800092,2025-08-02 11:37:03,Packon Trading,Aluminum Container - 1120 (400pcs)_12022,Each,89,3,267,0,Completed
+800092,2025-08-02 11:37:03,Packon Trading,M | W Plastic Container 250ml (500pcs)_12025,Each,63,2,126,0,Completed
+800092,2025-08-02 11:37:03,Packon Trading,Maxi Roll - 6pcs_12032,Each,18,4,72,0,Completed
+800092,2025-08-02 11:37:03,Packon Trading,Plastic Bowl 4OZ - 2000pcs_12024,Each,149,1,149,0,Completed
+800092,2025-08-02 11:37:03,Packon Trading,Handy Fuel 72 pcs / Ctn_12026,Each,97,1,97,0,Completed
+800093,2025-08-02 13:23:20,Al Majed Marketing & Distribution,Mashhor Indian 1121 Long Grain Basmati Rice 1x35kg_17005,Each,140,2,280,0,Completed
+800094,2025-08-05 12:26:42,Tredos Trading,Green Peas - Medium Fine 4x2.5KG_18014,Each,63,1,63,0,Completed
+800094,2025-08-05 12:26:42,Tredos Trading,Tomex Mix Vegetables 4x2.5KG_18011,Each,50,1,50,0,Completed
+800094,2025-08-05 12:26:42,Tredos Trading,Green Beans - Cut 4x2.5KG_18018,Each,60,1,60,0,Completed
+800095,2025-08-06 11:45:04,Packon Trading,Aluminum Container - 73365 1x100_12018,Each,104,1,104,0,Completed
+800095,2025-08-06 11:45:04,Packon Trading,Baking Sheet 500pcs_12039,Each,66,1,66,0,Completed
+800095,2025-08-06 11:45:04,Packon Trading,Dish Washing Liquid 20ltr 5x4_12045,Each,33,2,66,0,Completed
+800095,2025-08-06 11:45:04,Packon Trading,Black Round Container - RO16_12043,Each,43,1,43,0,Completed
+800095,2025-08-06 11:45:04,Packon Trading,Aluminum Container - 83185 1x400_12019,Each,162,1,162,0,Completed
+800095,2025-08-06 11:45:04,Packon Trading,Salad Bowl - 500ml_12038,Each,125,1,125,0,Completed
+800095,2025-08-06 11:45:04,Packon Trading,Yellow Bag Small - 20KG_12033,Each,129,1,129,0,Completed
+800095,2025-08-06 11:45:04,Packon Trading,Black Base Container 1 Compartment_12044,Each,77,1,77,0,Completed
+800096,2025-08-12 14:18:25,Packon Trading,Cutlery Pack 500 pcs_12048,Each,72,2,144,0,Completed
+800096,2025-08-12 14:18:25,Packon Trading,Glass Cleaner_12046,Each,33,1,33,0,Completed
+800096,2025-08-12 14:18:25,Packon Trading,Hand Soap 5 ltr x 4_12050,Each,33,1,33,0,Completed
+800096,2025-08-12 14:18:25,Packon Trading,Floor Cleaner 5Ltrx4_12047,Each,33,1,33,0,Completed
+800097,2025-08-14 11:34:04,Packon Trading,M | W Plastic Container 250ml (500pcs)_12025,Each,63,1,63,0,Completed
+800097,2025-08-14 11:34:04,Packon Trading,PE Arm Sleeve 2000/Ctn_12049,Each,127,1,127,0,Completed
+800097,2025-08-14 11:34:04,Packon Trading,Vinyl Gloves Medium 10pcs_12014,Each,51,1,51,0,Completed
+800098,2025-08-16 13:10:50,Fahed Foods w.l.l.,Frz EG Okra Zero 20gx400 Hi-Chef_18038,Each,83,1,83,0,Completed
+800098,2025-08-16 13:10:50,Fahed Foods w.l.l.,Frz EG Mixed Vegetables 2.5Kgx4 Hi-Chef_18010,Each,34,2,68,0,Completed
+800098,2025-08-16 13:10:50,Fahed Foods w.l.l.,Frz EG Cauli Flower 2.5Kgx4 Hi-Chef_18013,Each,35,1,35,0,Completed
+800099,2025-08-16 13:24:06,Packon Trading,Maxi Roll - 6pcs_12032,Each,18,5,90,0,Completed
+800100,2025-08-16 15:30:55,Tredos Trading,Frozen French Fries 4 x 2.5Kg_18005,Each,68,2,136,0,Completed
+800101,2025-08-17 11:22:39,Packon Trading,Black Rect Container RE 32 Pack On 150pcs/ctn_12042,Each,63,2,126,0,Completed
+800102,2025-08-18 11:45:03,Al Majed Marketing & Distribution,Sona Masoori Rice 35 Kg_17004,Each,92,2,184,0,Completed
+800102,2025-08-18 11:45:03,Al Majed Marketing & Distribution,Masoor Dal 15Kg_17007,Each,58,2,116,0,Completed
+800103,2025-08-19 10:06:27,Al Majed Marketing & Distribution,Sunflower oil 4x5Lit_21000,Each,116,5,580,0,Completed
+800104,2025-08-20 14:19:32,Tredos Trading,Alpro Almond Barista 8x1Ltr_150,Each,108,1,108,0,Completed
+800104,2025-08-20 14:19:32,Tredos Trading,Alpro Coconut Barista 12x1Ltr_151,Each,155,1,155,0,Completed
+800105,2025-08-21 13:46:19,BRF,Sadia Breast Box_16005,Each,130,1,130,0,Completed
+800105,2025-08-21 13:46:19,BRF,Sadia Chicken Shawarma - ctn_16006,Each,100,1,100,0,Completed
+800105,2025-08-21 13:46:19,BRF,Sadia Whole Chicken 1200 Gms - 10 Pcs/Ctn_16010,Each,105,1,105,0,Completed
+800105,2025-08-21 13:46:19,BRF,Sadia Whole Chicken 1100 Gms - 10 Pcs/Ctn_16009,Each,99,1,99,0,Completed
+800106,2025-08-21 16:18:13,Ideal Qatar,Coco Mazaya Charcoal 10KG_381,Each,84,1,84,0,Completed
+800106,2025-08-21 16:18:13,Ideal Qatar,Happy Gardens Black Olives 12 kgs_21021,Each,168,1,168,0,Completed
+800106,2025-08-21 16:18:13,Ideal Qatar,Happy Gardens Green Olives_21023,Each,163.2,1,163.2,0,Completed
+800106,2025-08-21 16:18:13,Ideal Qatar,Tannous Blossom Water 500 ML_21030,Each,5.95,12,71.4,0,Completed
+800106,2025-08-21 16:18:13,Ideal Qatar,Aoun Moghrabiya 900 GR_17018,Each,9.6,10,96,0,Completed
+800106,2025-08-21 16:18:13,Ideal Qatar,Aoun Egyptian Rice 5 Kgs_17001,Each,27.9,5,139.5,0,Completed
+800106,2025-08-21 16:18:13,Ideal Qatar,LEBANON 5283000909763 AOUN PARBOILED RICE 2KG_17002,Each,13.6,5,68,0,Completed
+800107,2025-08-22 11:41:44,Pilot Parties Processing,Waiter/Waitress - Monthly Rate 22 Days_900,Each,3200,1,3200,0,Completed
+800108,2025-08-23 10:24:08,Packon Trading,M | W Plastic Container 250ml (500pcs)_12025,Each,63,3,189,0,Completed
+800108,2025-08-23 10:24:08,Packon Trading,Handy Fuel 72 pcs / Ctn_12026,Each,97,1,97,0,Completed
+800108,2025-08-23 10:24:08,Packon Trading,Container w/Hinged Lid 250ML /8OZ 500Pcs_12040,Each,97,1,97,0,Completed
+800108,2025-08-23 10:24:08,Packon Trading,Plastic Rectangular Container 1500 - 300pcs_12023,Each,172,1,172,0,Completed
+800108,2025-08-23 10:24:08,Packon Trading,Black Base Container 1 Compartment_12044,Each,77,1,77,0,Completed
+800108,2025-08-23 10:24:08,Packon Trading,Wooden coffee Stirrer Paper Wrapped-14cm - CTN_12028,Each,123,1,123,0,Completed
+800108,2025-08-23 10:24:08,Packon Trading,Wet wipes 7*11cm -1000p_12065,Each,89,1,89,0,Completed
+800108,2025-08-23 10:24:08,Packon Trading,Q Paper Napkins 33x33cm - CTN_12027,Each,61,1,61,0,Completed
+800108,2025-08-23 10:24:08,Packon Trading,M/W Rectangular Cont w/Lid 1000ML - 500pcs_12066,Each,155,1,155,0,Completed
+800108,2025-08-23 10:24:08,Packon Trading,Kraft Salad Bowl 750ML - CTN_12037,Each,158,1,158,0,Completed
+800109,2025-08-24 15:07:38,Packon Trading,Cling Film 6pcs_12051,Each,77,2,154,0,Completed
+800109,2025-08-24 15:07:38,Packon Trading,Aluminum Pot 173 * 50 pcs per ctn small size_12017,Each,105,1,105,0,Completed
+800109,2025-08-24 15:07:38,Packon Trading,Aluminum Pot 175 * 100 pcs per ctn Big size_12016,Each,225,1,225,0,Completed
+800109,2025-08-24 15:07:38,Packon Trading,Vinyl Gloves Medium 10pcs_12014,Each,51,1,51,0,Completed
+800109,2025-08-24 15:07:38,Packon Trading,Black Round Container - RO16_12043,Each,43,2,86,0,Completed
+800110,2025-08-25 14:08:45,Al Majed Marketing & Distribution,Sona Masoori Rice 35 Kg_17004,Each,92,2,184,0,Completed
+800110,2025-08-25 14:08:45,Al Majed Marketing & Distribution,Mashhor Indian 1121 Long Grain Basmati Rice 1x35kg_17005,Each,140,1,140,0,Completed
+800110,2025-08-25 14:08:45,Al Majed Marketing & Distribution,Masoor Dal 15Kg_17007,Each,58,3,174,0,Completed
+800111,2025-08-25 16:40:56,Bluefin,Topside Chilled South Africa_15009,KG,32,40,1280,0,Completed
+800112,2025-08-25 16:59:04,Bluefin,Tanmiah Plain Chicken Breast 6 OZ - Calibrated 5*2Kg_16011,Each,180,1,180,0,Completed
+800113,2025-08-25 17:04:34,BRF,Sadia Whole legs 10.8 Kg_16008,Each,135,1,135,0,Completed
+800113,2025-08-25 17:04:34,BRF,Sadia Whole Chicken 1100 Gms - 10 Pcs/Ctn_16009,Each,99,3,297,0,Completed
+800114,2025-08-26 09:43:50,Packon Trading,Maxi Roll - 6pcs_12032,Each,18,10,180,0,Completed
+800115,2025-08-26 13:46:07,Fahed Foods w.l.l.,Fish Filet Frozen - Vietnam 1 Kg_18025,Each,9,10,90,0,Completed
+800115,2025-08-26 13:46:07,Fahed Foods w.l.l.,FRZ EG Broccoli 2.5KGx4 Hi-Chef_4030,Each,47,1,47,0,Completed
+800115,2025-08-26 13:46:07,Fahed Foods w.l.l.,Frz EG Okra Zero 20gx400 Hi-Chef_18038,Each,83,1,83,0,Completed
+800115,2025-08-26 13:46:07,Fahed Foods w.l.l.,Shrimp Frozen 11/15 1 Kg_18028,Each,28,10,280,0,Completed
+800115,2025-08-26 13:46:07,Fahed Foods w.l.l.,FZ EG Strawberry 1kgx8 Vegie-Tut_18009,Each,60,1,60,0,Completed
+800115,2025-08-26 13:46:07,Fahed Foods w.l.l.,FRZ EG Cut Beans 2.5x4kg Hi-Chef_18017,Each,43,1,43,0,Completed
+800116,2025-08-26 13:57:34,Al Majed Marketing & Distribution,Palm Oil 18 Ltr_21001,Each,80,2,160,0,Completed
+800117,2025-08-26 14:02:39,Tredos Trading,"French Fries 9x9mm, Skin off 4x2.5Kgs_18021",Each,68,2,136,0,Completed
+800118,2025-08-26 14:28:32,Ideal Qatar,BM Mixed pickles 10 kg_21007,Each,81.5,2,163,0,Completed
+800119,2025-08-28 14:42:50,Tredos Trading,StarSea Chunk White Tune in sunflower oil 6x1.85Kg_21035,Each,225,1,225,0,Completed
+800119,2025-08-28 14:42:50,Tredos Trading,Whole Peeled Tomatoes 6x2.5KG_21015,Each,90,2,180,0,Completed
+800119,2025-08-28 14:42:50,Tredos Trading,Cheddar Cheese Sauce (TIN) 3.4 Kg_21033,Each,38.33,2,76.66,0,Completed
+800119,2025-08-28 14:42:50,Tredos Trading,Chicken Stock Powder 2 Kg_17031,Each,33.33,2,66.66,0,Completed
+800119,2025-08-28 14:42:50,Tredos Trading,Beef Stock Powder 2 Kg_17035,Each,33.33,2,66.66,0,Completed
+800120,2025-08-28 15:53:03,Fahed Foods w.l.l.,FRZ US Beef HotDog 6Inch 6/1Kg Oak Valley_18040,Each,72,1,72,0,Completed
+800120,2025-08-28 15:53:03,Fahed Foods w.l.l.,Candia Puff Pastry Butter Extra Tourage 82% 1Kgx10_19020,Each,510,1,510,0,Completed
+800120,2025-08-28 15:53:03,Fahed Foods w.l.l.,AlWadi-Pomegrenate Molasses 500mlx12_21029,Each,90,1,90,0,Completed
+800121,2025-08-28 16:14:36,Ideal Qatar,AOUN RED LENTILS 900GR_17017,Each,9.5,10,95,0,Completed
+800121,2025-08-28 16:14:36,Ideal Qatar,Aoun Green Lentils 900 Gr 1x20_17022,Each,9.5,10,95,0,Completed
+800122,2025-08-28 16:15:12,Benina Food,Kings Harvest - Crispy Fried Onions_20012,KG,27,1,27,0,Completed
+800122,2025-08-28 16:15:12,Benina Food,Colavita Balsamic Vinegar - 5L_21003,Each,49,1,49,0,Completed
+800122,2025-08-28 16:15:12,Benina Food,Bister Dijon Mustard - 5KG_21027,Each,70,1,70,0,Completed
+800122,2025-08-28 16:15:12,Benina Food,Benina Quinoa Multicolor 1000G_20013,Each,23,3,69,0,Completed
+800122,2025-08-28 16:15:12,Benina Food,Benina - Soy Sauce Original 1.86L_20001,Each,12.5,6,75,0,Completed
+800122,2025-08-28 16:15:12,Benina Food,Benina - Oyster Sauce 1.9L_20002,Each,18.5,6,111,0,Completed
+800122,2025-08-28 16:15:12,Benina Food,Dodoni - Feta Goat Cheese 200 GRS_13003,Each,14,12,168,0,Completed
+800122,2025-08-28 16:15:12,Benina Food,Dodoni - Feta Cheese 200 GRS_13002,Each,14.5,12,174,0,Completed
+800122,2025-08-28 16:15:12,Benina Food,Coombe Castle - Dragon Mild White Cheddar_13005,KG,23,5,115,0,Completed
+800122,2025-08-28 16:15:12,Benina Food,Talmera - Monterey Jack Block Cheese_13007,KG,34,2.6,88.4,0,Completed
+800124,2025-08-28 16:27:02,Bluefin,Topside Chilled South Africa_15009,KG,32,40,1280,0,Completed
+800124,2025-08-28 16:27:02,Bluefin,Tanmiah Plain Chicken Breast 6 OZ - Calibrated 5*2Kg_16011,Each,180,2,360,0,Completed
+800123,2025-08-28 16:40:25,Packon Trading,Aluminum Container - 1120 (400pcs)_12022,Each,89,3,267,0,Completed
+800123,2025-08-28 16:40:25,Packon Trading,Floor Cleaner 5Ltrx4_12047,Each,33,1,33,0,Completed
+800123,2025-08-28 16:40:25,Packon Trading,Garbage Bag - 90*110 (12KG)_12000,Each,48,1,48,0,Completed
+800123,2025-08-28 16:40:25,Packon Trading,Latex Gloves Large_60030,Each,51,1,51,0,Completed
+800123,2025-08-28 16:40:25,Packon Trading,Black Rect Container RE 32 Pack On 150pcs/ctn_12042,Each,63,1,63,0,Completed
+800123,2025-08-28 16:40:25,Packon Trading,Dish Washing Liquid 20ltr 5x4_12045,Each,33,1,33,0,Completed
+800123,2025-08-28 16:40:25,Packon Trading,Yellow Bag Medium - 20KG_12034,Each,129,1,129,0,Completed
+800123,2025-08-28 16:40:25,Packon Trading,Paper Cup Double Wall 500pcs_12030,Each,100,2,200,0,Completed
+800123,2025-08-28 16:40:25,Packon Trading,Shopping Bag Small_12036,Each,18,1,18,0,Completed
+800123,2025-08-28 16:40:25,Packon Trading,Shopping Bag Medium_12035,Each,33,1,33,0,Completed
+800125,2025-08-28 16:50:53,BRF,Sadia Whole Chicken 1100 Gms - 10 Pcs/Ctn_16009,Each,99,1,99,0,Completed
+800125,2025-08-28 16:50:53,BRF,Sadia Whole Chicken 1200 Gms - 10 Pcs/Ctn_16010,Each,105,2,210,0,Completed
+800126,2025-08-28 17:03:49,Al Majed Marketing & Distribution,Almond Slice 1 Kg_17038,Each,45,2,90,0,Completed
+800126,2025-08-28 17:03:49,Al Majed Marketing & Distribution,Wallnut 1 Kg_17039,Each,35,1,35,0,Completed
+800126,2025-08-28 17:03:49,Al Majed Marketing & Distribution,Sugar Renuka 50Kgs_17034,Each,108,1,108,0,Completed
+800126,2025-08-28 17:03:49,Al Majed Marketing & Distribution,Salt 25Kgs_17008,Each,15,1,15,0,Completed
+800126,2025-08-28 17:03:49,Al Majed Marketing & Distribution,QFM Flour No1 Bag 50 Kg_17032,Each,145,1,145,0,Completed
+800126,2025-08-28 17:03:49,Al Majed Marketing & Distribution,Fresh Eggs Grade A -_21010,Each,125,2,250,0,Completed
+800127,2025-08-30 14:43:49,Bluefin,Topside Chilled South Africa_15009,KG,32,20,640,0,Completed
+800128,2025-08-30 15:33:54,Tredos Trading,Wabel Kaskawal Shredded Mozarells 6x2Kg_18020,Each,300,1,300,0,Completed
+800129,2025-09-01 17:04:16,Fahed Foods w.l.l.,Frz EG Chopped Spinach 2.5KGx4 Hi-Chef_18032,Each,35,1,35,0,Completed
+800129,2025-09-01 17:04:16,Fahed Foods w.l.l.,Frz EG Cauli Flower 2.5Kgx4 Hi-Chef_18013,Each,35,1,35,0,Completed
+800129,2025-09-01 17:04:16,Fahed Foods w.l.l.,Chicken Breast Aurora 2kgx6_16012,Each,165,2,330,0,Completed
+800129,2025-09-01 17:04:16,Fahed Foods w.l.l.,FZ EG Strawberry 1kgx8 Vegie-Tut_18009,Each,60,2,120,0,Completed
+800130,2025-09-01 17:11:08,Bluefin,Tanmiah Plain Chicken Breast 6 OZ - Calibrated 5*2Kg_16011,Each,180,3,540,0,Completed
+800131,2025-09-04 11:59:21,Al Majed Marketing & Distribution,Sona Masoori Rice 35 Kg_17004,Each,82,4,328,0,Completed
+800131,2025-09-04 11:59:21,Al Majed Marketing & Distribution,Sunflower oil 4x5Lit_21000,Each,116,6,696,0,Completed
+800131,2025-09-04 11:59:21,Al Majed Marketing & Distribution,Zeeba Rice 3 kgs x12_17000,Each,144,2,288,0,Completed
+800131,2025-09-04 11:59:21,Al Majed Marketing & Distribution,Mashhor Indian 1121 Long Grain Basmati Rice 1x35kg_17005,Each,140,2,280,0,Completed
+800132,2025-09-04 12:17:17,Fahed Foods w.l.l.,Fish Filet Frozen - Vietnam 1 Kg_18025,Each,9,10,90,0,Completed
+800132,2025-09-04 12:17:17,Fahed Foods w.l.l.,Frz EG Chopped Spinach 2.5KGx4 Hi-Chef_18032,Each,35,2,70,0,Completed
+800132,2025-09-04 12:17:17,Fahed Foods w.l.l.,FRZ EG Cut Beans 2.5x4kg Hi-Chef_18017,Each,43,2,86,0,Completed
+800132,2025-09-04 12:17:17,Fahed Foods w.l.l.,Frz EG Okra Zero 20gx400 Hi-Chef_18038,Each,83,1,83,0,Completed
+800132,2025-09-04 12:17:17,Fahed Foods w.l.l.,Shrimp Frozen 11/15 1 Kg_18028,Each,28,10,280,0,Completed
+800133,2025-09-04 12:25:19,BRF,Sadia Hot Dog small size 20x340gr_16007,Each,74,2,148,0,Completed
+800133,2025-09-04 12:25:19,BRF,Sadia Whole Chicken 1100 Gms - 10 Pcs/Ctn_16009,Each,99,3,297,0,Completed
+800134,2025-09-04 12:28:48,Tredos Trading,Breaded Chicken Nuggets 6x1KG_309,Each,90,1,90,0,Completed
+800134,2025-09-04 12:28:48,Tredos Trading,Chicken Strips Regular 6x1KG_16003,Each,140,1,140,0,Completed
+800134,2025-09-04 12:28:48,Tredos Trading,Wabel Kaskawal Shredded Mozarells 6x2Kg_18020,Each,300,2,600,0,Completed
+800134,2025-09-04 12:28:48,Tredos Trading,Whole Peeled Tomatoes 6x2.5KG_21015,Each,90,4,360,0,Completed
+800135,2025-09-04 13:03:55,Bluefin,Topside Chilled South Africa_15009,KG,32,20,640,0,Completed
+800135,2025-09-04 13:03:55,Bluefin,Topside Chilled South Africa_15009,KG,32,20,640,0,Completed
+800136,2025-09-07 09:19:16,Packon Trading,Cling Film 6pcs_12051,Each,77,2,154,0,Completed
+800136,2025-09-07 09:19:16,Packon Trading,Plastic Bowl 4OZ - 2000pcs_12024,Each,149,1,149,0,Completed
+800137,2025-09-08 15:46:39,Packon Trading,Black Rect Container RE 32 Pack On 150pcs/ctn_12042,Each,63,2,126,0,Completed
+800137,2025-09-08 15:46:39,Packon Trading,Black Base 2 compartement RE 2/32 - 150pcs/Ctn_12067,Each,103,2,206,0,Completed
+800138,2025-09-08 18:05:49,Al Majed Marketing & Distribution,Masoor Dal 15Kg_17007,Each,58,3,174,0,Completed
+800138,2025-09-08 18:05:49,Al Majed Marketing & Distribution,Palm Oil 18 Ltr_21001,Each,80,3,240,0,Completed
+800139,2025-09-08 18:14:04,Fahed Foods w.l.l.,FZ EG Strawberry 1kgx8 Vegie-Tut_18009,Each,60,2,120,0,Completed
+800139,2025-09-08 18:14:04,Fahed Foods w.l.l.,FZ EG Mango SlicesFahed Food 1Kgx8 / Box_18008,Each,69,2,138,0,Completed
+800139,2025-09-08 18:14:04,Fahed Foods w.l.l.,Chicken Breast Aurora 2kgx6_16012,Each,168,4,672,0,Completed
+800139,2025-09-08 18:14:04,Fahed Foods w.l.l.,"French Fries 9x9mm, Skin off 4x2.5Kgs_18021",Each,65,1,65,0,Completed
+800140,2025-09-08 18:31:08,Valencia International Trading Company w.l.l.,Milk Powder - SLG 25 Kgs_17040,Each,290,1,290,0,Completed
+800140,2025-09-08 18:31:08,Valencia International Trading Company w.l.l.,Unsalted Butter 82% Beurre Doux 10x1Kg - France_13015,Each,495,1,495,0,Completed
+800140,2025-09-08 18:31:08,Valencia International Trading Company w.l.l.,Croissant Butter 82% Le Grand Tourage 10x1Kg_19004,Each,575,1,575,0,Completed
+800141,2025-09-08 19:00:55,Benina Food,Benina - Parmesan Grana Moravia Cheese 5 Kg_13001,Each,250,1,250,0,Completed
+800142,2025-09-10 11:31:28,Bluefin,Topside Chilled South Africa_15009,KG,32,40,1280,0,Completed
+800143,2025-09-10 14:50:36,Al Majed Marketing & Distribution,Sugar Renuka 50Kgs_17034,Each,108,1,108,0,Completed
+800143,2025-09-10 14:50:36,Al Majed Marketing & Distribution,Fresh Eggs Grade A -_21010,Each,145,2,290,0,Completed
+800147,2025-09-10 16:17:39,Valencia International Trading Company w.l.l.,SUGAR PASTE black 1KG X 12PCS_19006,Each,168,1,168,0,Completed
+800147,2025-09-10 16:17:39,Valencia International Trading Company w.l.l.,SUGAR PASTE White 1KG X 12PCS_19007,Each,168,1,168,0,Completed
+800148,2025-09-10 16:33:49,Fahed Foods w.l.l.,Frz EG Mixed Vegetables 2.5Kgx4 Hi-Chef_18010,Each,34,3,102,0,Completed
+800149,2025-09-10 17:02:47,Packon Trading,Wooden coffee Stirrer Paper Wrapped-14cm - CTN_12028,Each,123,2,246,0,Completed
+800149,2025-09-10 17:02:47,Packon Trading,Q Paper Napkins 33x33cm - CTN_12027,Each,61,2,122,0,Completed
+800149,2025-09-10 17:02:47,Packon Trading,Handy Fuel 72 pcs / Ctn_12026,Each,97,2,194,0,Completed
+800150,2025-09-11 14:23:51,Packon Trading,Kraft Salad Bowl 750ML - CTN_12037,Each,158,2,316,0,Completed
+800150,2025-09-11 14:23:51,Packon Trading,M/W Rectangular Cont w/Lid 1000ML - 500pcs_12066,Each,155,1,155,0,Completed
+800150,2025-09-11 14:23:51,Packon Trading,Plastic Rectangular Container 1500 - 300pcs_12023,Each,172,2,344,0,Completed
+800150,2025-09-11 14:23:51,Packon Trading,Black Base Container 1 Compartment_12044,Each,77,2,154,0,Completed
+800150,2025-09-11 14:23:51,Packon Trading,Paper Cup Double Wall 500pcs_12030,Each,100,5,500,0,Completed
+800150,2025-09-11 14:23:51,Packon Trading,Black Round Container - RO16_12043,Each,43,2,86,0,Completed
+800151,2025-09-14 10:01:31,Tredos Trading,Perfecta Mayonnaise_21011,Each,180,1,180,0,Completed
+800151,2025-09-14 10:01:31,Tredos Trading,Mustard Sauce_21026,Each,120,1,120,0,Completed
+800152,2025-09-14 10:15:38,BRF,Sadia Whole Chicken 1100 Gms - 10 Pcs/Ctn_16009,Each,99,3,297,0,Completed
+800153,2025-09-14 10:27:56,Fahed Foods w.l.l.,Shrimp Frozen 11/15 1 Kg_18028,Each,28,20,560,0,Completed
+800153,2025-09-14 10:27:56,Fahed Foods w.l.l.,Fish Filet Frozen - Vietnam 1 Kg_18025,Each,9,20,180,0,Completed
+800153,2025-09-14 10:27:56,Fahed Foods w.l.l.,Chicken Breast Aurora 2kgx6_16012,Each,168,1,168,0,Completed
+800154,2025-09-14 11:12:44,Ideal Qatar,Aoun Green Lentils 900 Gr 1x20_17022,Each,9,7,63,0,Completed
+800154,2025-09-14 11:12:44,Ideal Qatar,Aoun White Kidney Beans 900GR_17016,Each,10.79,12,129.48,0,Completed
+800154,2025-09-14 11:12:44,Ideal Qatar,Aoun Lime_17020,Each,10.2,5,51,0,Completed
+800154,2025-09-14 11:12:44,Ideal Qatar,Aoun Cumin Powder 500GR_17014,Each,22.53,2,45.06,0,Completed
+800154,2025-09-14 11:12:44,Ideal Qatar,Aoun Corriander Powder 500GR_17013,Each,11.64,2,23.28,0,Completed
+800154,2025-09-14 11:12:44,Ideal Qatar,Aoun Cinnamon Powder 500GR_17012,Each,14.5,2,29,0,Completed
+800154,2025-09-14 11:12:44,Ideal Qatar,Aoun All Spices Powder 500GR_17025,Each,37.5,2,75,0,Completed
+800154,2025-09-14 11:12:44,Ideal Qatar,Aoun White Pepper Powder 500GR_17011,Each,41.8,2,83.6,0,Completed
+800154,2025-09-14 11:12:44,Ideal Qatar,Aoun 7 Spices 500 GR_17023,Each,27.08,2,54.16,0,Completed
+800154,2025-09-14 11:12:44,Ideal Qatar,Happy Gardens Chickpeas 9mm-20 kg_21025,Each,171,2,342,0,Completed
+800154,2025-09-14 11:12:44,Ideal Qatar,Happy Gardens Foul Medamas 400gr 1x24_3010,Each,2,48,96,0,Completed
+800154,2025-09-14 11:12:44,Ideal Qatar,Happy Gardens Tehina Brl N.W. 10KG_21022,Each,160,1,160,0,Completed
+800154,2025-09-14 11:12:44,Ideal Qatar,AOUN RED LENTILS 900GR_17017,Each,8.29,7,58.03,0,Completed
+800154,2025-09-14 11:12:44,Ideal Qatar,Aoun Red Round Beans 900GR_17015,Each,11.05,6,66.3,0,Completed
+800154,2025-09-14 11:12:44,Ideal Qatar,LEBANON 5283000909763 AOUN PARBOILED RICE 2KG_17002,Each,13.6,10,136,0,Completed
+800155,2025-09-15 11:42:56,RealPack,Clorex 4x4ltr_12010,Each,36,1,36,0,Completed
+800155,2025-09-15 11:42:56,RealPack,Aluminum Plate 6586 - 100pcs_12013,Each,48,1,48,0,Completed
+800155,2025-09-15 11:42:56,RealPack,Nylon Foil_12012,Each,28,2,56,0,Completed
+800155,2025-09-15 11:42:56,RealPack,White Plastic bag 20pkt_12015,Each,35,1,35,0,Completed
+800155,2025-09-15 11:42:56,RealPack,Maxi 135Mtr 6 pcs_12001,Each,42,5,210,0,Completed
+800155,2025-09-15 11:42:56,RealPack,Toilet Roll 10pcs_12002,Each,9,2,18,0,Completed
+800155,2025-09-15 11:42:56,RealPack,Tissue Box - 30pcs_12003,Each,48,1,48,0,Completed
+800155,2025-09-15 11:42:56,RealPack,RP Kraft Salad Bowl - 75o ML 300pcs_12004,Each,150,2,300,0,Completed
+800155,2025-09-15 11:42:56,RealPack,Hair Net Black 1000pcs_12005,Each,38,1,38,0,Completed
+800155,2025-09-15 11:42:56,RealPack,Paper Bag 30x25x15 Brown_12006,Each,135,1,135,0,Completed
+800155,2025-09-15 11:42:56,RealPack,HD Spoon Black 1000pcs_12008,Each,50,1,50,0,Completed
+800155,2025-09-15 11:42:56,RealPack,Paper Bag 35x35x20 Brown_12007,Each,165,1,165,0,Completed
+800155,2025-09-15 11:42:56,RealPack,Black Garbage Bag 120x140_12009,Each,55,1,55,0,Completed
+800155,2025-09-15 11:42:56,RealPack,RP Plastic Container Round 250 ml 500pcs_12011,Each,77,3,231,0,Completed
+800156,2025-09-16 11:35:47,Fahed Foods w.l.l.,IT Chopped Tomatoes 2550GMx6 Patisiya_21017,Each,75,6,450,0,Completed
+800156,2025-09-16 11:35:47,Fahed Foods w.l.l.,Chicken Breast Aurora 2kgx6_16012,Each,168,2,336,0,Completed
+800157,2025-09-18 14:50:09,Fahed Foods w.l.l.,Shrimp Frozen 11/15 1 Kg_18028,Each,28,10,280,0,Completed
+800157,2025-09-18 14:50:09,Fahed Foods w.l.l.,Aviko H Patatas Bravas 4x2500g_18039,Each,110,2,220,0,Completed
+800157,2025-09-18 14:50:09,Fahed Foods w.l.l.,FZ EG Mango SlicesFahed Food 1Kgx8 / Box_18008,Each,69,1,69,0,Completed
+800157,2025-09-18 14:50:09,Fahed Foods w.l.l.,FZ EG Strawberry 1kgx8 Vegie-Tut_18009,Each,60,1,60,0,Completed
+800157,2025-09-18 14:50:09,Fahed Foods w.l.l.,Frz EG Okra Zero 20gx400 Hi-Chef_18038,Each,83,1,83,0,Completed
+800157,2025-09-18 14:50:09,Fahed Foods w.l.l.,FRZ EG Cut Beans 2.5x4kg Hi-Chef_18017,Each,43,1,43,0,Completed
+800157,2025-09-18 14:50:09,Fahed Foods w.l.l.,Fish Filet Frozen - Vietnam 1 Kg_18025,Each,9,10,90,0,Completed
+800158,2025-09-18 15:06:45,BRF,Sadia Chicken Shawarma - ctn_16006,Each,100,2,200,0,Completed
+800158,2025-09-18 15:06:45,BRF,Sadia Whole Chicken 1100 Gms - 10 Pcs/Ctn_16009,Each,99,3,297,0,Completed
+800159,2025-09-18 15:19:16,Tredos Trading,Wabel Kaskawal Shredded Mozarells 6x2Kg_18020,Each,300,1,300,0,Completed
+800159,2025-09-18 15:19:16,Tredos Trading,Chicken Strips Regular 6x1KG_16003,Each,140,1,140,0,Completed
+800159,2025-09-18 15:19:16,Tredos Trading,Tomex Frozen Sweet Corn 4x2.5KG_18000,Each,95,1,95,0,Completed
+800160,2025-09-18 15:25:41,Bluefin,Topside Chilled South Africa_15009,KG,32,40,1280,0,Completed
+800161,2025-09-18 15:31:46,Friendly Food Qatar w.l.l.,LAKELAND - MILLAC WHIP TOPPING UNSWEETENED (12X1L)_14001,Each,189,1,189,0,Completed
+800161,2025-09-18 15:31:46,Friendly Food Qatar w.l.l.,GRANORO PENNE RIGATE 24X500G (1026)_14002,Each,129.6,1,129.6,0,Completed
+800161,2025-09-18 15:31:46,Friendly Food Qatar w.l.l.,"GRANORO DEDICATO ""NIDI FETTUCCINE"" 12X500G (48082)_14003",Each,90,1,90,0,Completed
+800161,2025-09-18 15:31:46,Friendly Food Qatar w.l.l.,GRANORO - SPIRALI GRANDI 24X500G (10100)_14004,Each,141.6,1,141.6,0,Completed
+800161,2025-09-18 15:31:46,Friendly Food Qatar w.l.l.,ALKARAMAH - SPRING ROLLS SMALL{24X160G}_14005,Each,78,1,78,0,Completed
+800162,2025-09-18 16:51:30,Al Majed Marketing & Distribution,EGG LARGE 360PCS (12X30's)_21009,Each,155,2,310,0,Completed
+800163,2025-09-20 14:59:17,Valencia International Trading Company w.l.l.,Frozen Mix Berries 2.5kgs Andros Chef_19011,Each,87.5,2,175,0,Completed
+800163,2025-09-20 14:59:17,Valencia International Trading Company w.l.l.,WHITE SUGAR PASTE 1KG X 12PCS_19005,Each,180,1,180,0,Completed
+800163,2025-09-20 14:59:17,Valencia International Trading Company w.l.l.,Croissant Butter 82% Le Grand Tourage 10x1Kg_19004,Each,575,1,575,0,Completed
+800163,2025-09-20 14:59:17,Valencia International Trading Company w.l.l.,Bake XL - Improver 10Kgs_19000,Each,163,1,163,0,Completed
+800163,2025-09-20 14:59:17,Valencia International Trading Company w.l.l.,Milk Compound Chocolate 5Kgs_19001,Each,80,1,80,0,Completed
+800163,2025-09-20 14:59:17,Valencia International Trading Company w.l.l.,DARK COMPOUND BLOCKS 2.5KG_19015,Each,45,1,45,0,Completed
+800163,2025-09-20 14:59:17,Valencia International Trading Company w.l.l.,White Compound Chocolate 5Kgs_19002,Each,80,1,80,0,Completed
+800164,2025-09-20 15:25:24,Al Majed Marketing & Distribution,Chana Dal 5 Kgs_17006,Each,21.5,1,21.5,0,Completed
+800164,2025-09-20 15:25:24,Al Majed Marketing & Distribution,Sugar Renuka 50Kgs_17034,Each,108,1,108,0,Completed
+800164,2025-09-20 15:25:24,Al Majed Marketing & Distribution,Masoor Dal 15Kg_17007,Each,58,3,174,0,Completed
+800164,2025-09-20 15:25:24,Al Majed Marketing & Distribution,Salt 25Kgs_17008,Each,15,1,15,0,Completed
+800164,2025-09-20 15:25:24,Al Majed Marketing & Distribution,Sona Masoori Rice 35 Kg_17004,Each,92,3,276,0,Completed
+800165,2025-09-20 15:51:50,Tredos Trading,Tomex Spinach Leaf 4x2.5kgs_18031,Each,55,2,110,0,Completed
+800165,2025-09-20 15:51:50,Tredos Trading,Hash Brown Triangular 4x2.5Kgs_18022,Each,90,1,90,0,Completed
+800166,2025-09-21 14:38:34,Fahed Foods w.l.l.,Chicken Breast Aurora 2kgx6_16012,Each,168,5,840,0,Completed
+800167,2025-09-21 14:47:45,Al Majed Marketing & Distribution,Sunflower oil 4x5Lit_21000,Each,114,7,798,0,Completed
+800168,2025-09-23 11:44:42,BRF,Sadia Whole Chicken 1100 Gms - 10 Pcs/Ctn_16009,Each,99,6,594,0,Completed
+800169,2025-09-23 12:13:45,Tredos Trading,Tomex Spinach Leaf 4x2.5kgs_18031,Each,55,3,165,0,Completed
+800169,2025-09-23 12:13:45,Tredos Trading,Barilla Spaghetti (No.5)_10016,Each,150,1,150,0,Completed
+800169,2025-09-23 12:13:45,Tredos Trading,Chicken Strips Regular 6x1KG_16003,Each,140,2,280,0,Completed
+800169,2025-09-23 12:13:45,Tredos Trading,Breaded Chicken Nuggets 6x1KG_309,Each,90,2,180,0,Completed
+800170,2025-09-23 13:17:01,Ideal Qatar,AOUN BROWN BURGHUL FINE 4KG_17026,Each,19.71,6,118.26,0,Completed
+800170,2025-09-23 13:17:01,Ideal Qatar,"AOUN WHITE BURGHUL FINE 	4kg_17027",Each,22.8,6,136.8,0,Completed
+800170,2025-09-23 13:17:01,Ideal Qatar,Happy Gardens Tehina Brl N.W. 10KG_21022,Each,160,1,160,0,Completed
+800170,2025-09-23 13:17:01,Ideal Qatar,Happy Gardens Vine Leaves -Deluxe 908GR 1x12_21028,Each,160.65,6,963.9,0,Completed
+800171,2025-09-23 14:07:16,Fahed Foods w.l.l.,Aviko Crunchy Crispy 9.5mm_18037,Each,90,3,270,0,Completed
+800172,2025-09-23 14:11:30,Al Majed Marketing & Distribution,Zeeba Rice 3 kgs x12_17000,Each,144,2,288,0,Completed
+800172,2025-09-23 14:11:30,Al Majed Marketing & Distribution,Al Wajba Red Vinegar 1ltr x 12 pcs_21031,Each,34,1,34,0,Completed
+800174,2025-09-23 14:20:28,Friendly Food Qatar w.l.l.,StarSea Chunk White Tune in sunflower oil 6x1.85Kg_21035,Each,235,2,470,0,Completed
+800175,2025-09-23 14:26:50,Benina Food,Dodoni - Feta Cheese 200 GRS_13002,Each,14.5,12,174,0,Completed
+800176,2025-09-27 11:24:49,Fahed Foods w.l.l.,FZ EG Mango SlicesFahed Food 1Kgx8 / Box_18008,Each,69,1,69,0,Completed
+800176,2025-09-27 11:24:49,Fahed Foods w.l.l.,FZ EG Strawberry 1kgx8 Vegie-Tut_18009,Each,60,1,60,0,Completed
+800176,2025-09-27 11:24:49,Fahed Foods w.l.l.,Fish Filet Frozen - Vietnam 1 Kg_18025,Each,9,10,90,0,Completed
+800176,2025-09-27 11:24:49,Fahed Foods w.l.l.,Shrimp Frozen 11/15 1 Kg_18028,Each,28,10,280,0,Completed
+800176,2025-09-27 11:24:49,Fahed Foods w.l.l.,Chicken Breast Aurora 2kgx6_16012,Each,168,4,672,0,Completed
+800176,2025-09-27 11:24:49,Fahed Foods w.l.l.,Frz EG Mixed Vegetables 2.5Kgx4 Hi-Chef_18010,Each,34,2,68,0,Completed
+800176,2025-09-27 11:24:49,Fahed Foods w.l.l.,Frz EG Cauli Flower 2.5Kgx4 Hi-Chef_18013,Each,35,1,35,0,Completed
+800176,2025-09-27 11:24:49,Fahed Foods w.l.l.,Frz EG Okra Zero 20gx400 Hi-Chef_18038,Each,83,1,83,0,Completed
+800177,2025-09-27 12:02:06,Al Majed Marketing & Distribution,Chana Dal 5 Kgs_17006,Each,21.5,2,43,0,Completed
+800177,2025-09-27 12:02:06,Al Majed Marketing & Distribution,EGG LARGE 360PCS (12X30's)_21009,Each,155,3,465,0,Completed
+800178,2025-09-27 12:13:36,Bluefin,Eye Round Chilled South African_15010,Each,32,20,640,0,Completed
+800178,2025-09-27 12:13:36,Bluefin,Chilled Beef Tenderlion_15004,KG,32,20,640,0,Completed
+800178,2025-09-27 12:13:36,Bluefin,Topside Chilled South Africa_15009,KG,32,40,1280,0,Completed
+800179,2025-10-02 12:18:01,Tredos Trading,Wabel Kaskawal Shredded Mozarells 6x2Kg_18020,Each,300,1,300,0,Completed
+800179,2025-10-02 12:18:01,Tredos Trading,Perfecta Mayonnaise_21011,Each,180,1,180,0,Completed
+800180,2025-10-02 12:21:21,Fahed Foods w.l.l.,FZ EG Mango SlicesFahed Food 1Kgx8 / Box_18008,Each,69,1,69,0,Completed
+800180,2025-10-02 12:21:21,Fahed Foods w.l.l.,FZ EG Strawberry 1kgx8 Vegie-Tut_18009,Each,60,1,60,0,Completed
+800180,2025-10-02 12:21:21,Fahed Foods w.l.l.,Aviko Crunchy Crispy 9.5mm_18037,Each,90,2,180,0,Completed
+800180,2025-10-02 12:21:21,Fahed Foods w.l.l.,Frz EG Okra Zero 20gx400 Hi-Chef_18038,Each,83,1,83,0,Completed
+800181,2025-10-02 12:33:51,BRF,Sadia Whole Chicken 1100 Gms - 10 Pcs/Ctn_16009,Each,99,3,297,0,Completed
+800182,2025-10-04 11:46:31,Bluefin,Topside Chilled South Africa_15009,KG,32,20,640,0,Completed
+800183,2025-10-04 15:28:16,Al Majed Marketing & Distribution,Palm Oil 18 Ltr_21001,Each,80,3,240,0,Completed
+800183,2025-10-04 15:28:16,Al Majed Marketing & Distribution,Masoor Dal 15Kg_17007,Each,58,3,174,0,Completed
+800183,2025-10-04 15:28:16,Al Majed Marketing & Distribution,Sona Masoori Rice 35 Kg_17004,Each,82,3,246,0,Completed
+800183,2025-10-04 15:28:16,Al Majed Marketing & Distribution,Salt 25Kgs_17008,Each,15,1,15,0,Completed
+800183,2025-10-04 15:28:16,Al Majed Marketing & Distribution,Mashhor Indian 1121 Long Grain Basmati Rice 1x35kg_17005,Each,140,1,140,0,Completed
+800184,2025-10-04 17:44:02,Packon Trading,Plastic Bowl 4OZ - 2000pcs_12024,Each,149,1,149,0,Completed
+800184,2025-10-04 17:44:02,Packon Trading,Plastic Rectangular Container 1500 - 300pcs_12023,Each,172,1,172,0,Completed
+800184,2025-10-04 17:44:02,Packon Trading,RP Kraft Salad Bowl - 75o ML 300pcs_12004,Each,150,1,150,0,Completed
+800184,2025-10-04 17:44:02,Packon Trading,Black Base Container 1 Compartment_12044,Each,88,1,88,0,Completed
+800184,2025-10-04 17:44:02,Packon Trading,Garbage Bag - 90*110 (12KG)_12000,Each,48,1,48,0,Completed
+800184,2025-10-04 17:44:02,Packon Trading,Black Round Container - RO16_12043,Each,43,1,43,0,Completed
+800185,2025-10-05 13:22:50,Friendly Food Qatar w.l.l.,Al Anabi- Vermicelli 24x400G_17033,Each,79.2,1,79.2,0,Completed
+800185,2025-10-05 13:22:50,Friendly Food Qatar w.l.l.,"GRANORO DEDICATO ""NIDI FETTUCCINE"" 12X500G (48082)_14003",Each,90,2,180,0,Completed
+800186,2025-10-06 13:32:31,Bluefin,Topside Chilled South Africa_15009,KG,32,50,1600,0,Completed
+800187,2025-10-06 13:33:31,Ideal Qatar,AOUN WHITE BURGHUL HARD 900Gr_17036,Each,5.52,6,33.12,0,Completed
+800187,2025-10-06 13:33:31,Ideal Qatar,Happy Gardens Tahina Extra 8.58 NW - GW 9.00_21013,Each,162.56,2,325.12,0,Completed
+800188,2025-10-06 16:00:28,Valencia International Trading Company w.l.l.,SUGAR PASTE White 1KG X 12PCS_19007,Each,168,1,168,0,Completed
+800188,2025-10-06 16:00:28,Valencia International Trading Company w.l.l.,Croissant Butter 82% Le Grand Tourage 10x1Kg_19004,Each,575,1,575,0,Completed
+800189,2025-10-08 16:57:16,Friendly Food Qatar w.l.l.,ALKARAMAH - SPRING ROLLS SMALL{24X160G}_14005,Each,78,2,156,0,Completed
+800190,2025-10-09 10:59:06,BRF,Sadia Whole Chicken 1100 Gms - 10 Pcs/Ctn_16009,Each,99,3,297,0,Completed
+800191,2025-10-11 18:13:28,Fahed Foods w.l.l.,Aviko Crunchy Crispy 9.5mm_18037,Each,90,2,180,0,Completed
+800192,2025-10-11 18:32:47,Benina Food,Benina - Soy Sauce Original 1.86L_20001,Each,12.5,10,125,0,Completed
+800193,2025-10-13 10:02:18,Al Hattab For Food Stuffs & Trading,Sunflower oil 4x5Lit_21000,Each,115,7,805,0,Completed
+800194,2025-10-14 14:42:12,Bluefin,QK-South African Chilled Beef Knuckle_15011,Each,32,20,640,0,Completed
+800195,2025-10-15 15:28:44,Qnited Trading Company,Piping Bag 10 Pcs_19018,Each,195,1,195,0,Completed
+800195,2025-10-15 15:28:44,Qnited Trading Company,Vizyon White Sugar Paste 1kgx12Pcs_19017,Each,180,1,180,0,Completed
+800195,2025-10-15 15:28:44,Qnited Trading Company,Spiral Whipping Cream 1 Ltrx12pcs_19021,Each,140,1,140,0,Completed
+800195,2025-10-15 15:28:44,Qnited Trading Company,Vizyon Custard 1Kgx10pcs_19019,Each,285,1,285,0,Completed
+800196,2025-10-18 11:09:29,Al Majed Marketing & Distribution,Masoor Dal 15Kg_17007,Each,58,3,174,0,Completed
+800196,2025-10-18 11:09:29,Al Majed Marketing & Distribution,Chana Dal 5 Kgs_17006,Each,21.5,5,107.5,0,Completed
+800196,2025-10-18 11:09:29,Al Majed Marketing & Distribution,Mashhor Indian 1121 Long Grain Basmati Rice 1x35kg_17005,Each,140,3,420,0,Completed
+800196,2025-10-18 11:09:29,Al Majed Marketing & Distribution,Sona Masoori Rice 35 Kg_17004,Each,82,3,246,0,Completed
+800197,2025-10-18 11:14:52,BRF,Sadia Whole Chicken 1100 Gms - 10 Pcs/Ctn_16009,Each,99,10,990,0,Completed
+800198,2025-10-18 14:24:19,Qnited Trading Company,Qnited Aluminum Container - 1120 (400pcs)_12062,Each,90,3,270,0,Completed
+800198,2025-10-18 14:24:19,Qnited Trading Company,Cling Film 6pcs_12051,Each,75,5,375,0,Completed
+800198,2025-10-18 14:24:19,Qnited Trading Company,Qnited Plastic Blue Bag 5Kgs_12064,Each,36,1,36,0,Completed
+800198,2025-10-18 14:24:19,Qnited Trading Company,Qnited White Plastic Bag 5Kgs_12063,Each,36,1,36,0,Completed
+800198,2025-10-18 14:24:19,Qnited Trading Company,Toilet Roll 10pcs_12002,Each,9,10,90,0,Completed
+800198,2025-10-18 14:24:19,Qnited Trading Company,Maxi Roll - 6pcs_12032,Each,20,2,40,0,Completed
+800198,2025-10-18 14:24:19,Qnited Trading Company,QNited Paper Bag 31x36x18 200pcs_12055,Each,140,1,140,0,Completed
+800198,2025-10-18 14:24:19,Qnited Trading Company,Qnited Paper Bag 27x32x16 200pcs_12056,Each,120,2,240,0,Completed
+800198,2025-10-18 14:24:19,Qnited Trading Company,Qnited Paper BAg 22x14x21 200 Pcs_12057,Each,80,1,80,0,Completed
+800198,2025-10-18 14:24:19,Qnited Trading Company,Qnited Kraft Salad Bowl 500ML - 300 pcs/CTN_12058,Each,130,2,260,0,Completed
+800198,2025-10-18 14:24:19,Qnited Trading Company,Black Round Container - RO16_12043,Each,40,2,80,0,Completed
+800198,2025-10-18 14:24:19,Qnited Trading Company,Qnited Black Container RE32 - 150pcs/Ctn_12059,Each,67,2,134,0,Completed
+800198,2025-10-18 14:24:19,Qnited Trading Company,Qnited 1 Compartement 250pcs/Ctn_12060,Each,85,2,170,0,Completed
+800198,2025-10-18 14:24:19,Qnited Trading Company,Qnited Hinged Clear Container Small Size 300pcs/CTN_12061,Each,45,1,45,0,Completed
+800198,2025-10-18 14:24:19,Qnited Trading Company,Vinyl Gloves Medium 10pcs_12014,Each,45,1,45,0,Completed
+800199,2025-10-18 15:16:25,Ideal Qatar,Aoun Sumac Powder 500 GR_17024,Each,25.89,4,103.56,0,Completed
+800199,2025-10-18 15:16:25,Ideal Qatar,Happy Gardens Tahina Extra 8.58 NW - GW 9.00_21013,Each,162.56,2,325.12,0,Completed
+800199,2025-10-18 15:16:25,Ideal Qatar,SHP- Gourmet Foods White Onion Powder_17029,Each,14.45,1,14.45,0,Completed
+800199,2025-10-18 15:16:25,Ideal Qatar,Aoun 7 Spices 500 GR_17023,Each,27.08,4,108.32,0,Completed
+800200,2025-10-18 15:31:51,Fahed Foods w.l.l.,Shrimp Frozen 11/15 1 Kg_18028,Each,28,10,280,0,Completed
+800200,2025-10-18 15:31:51,Fahed Foods w.l.l.,Fish Filet Frozen - Vietnam 1 Kg_18025,Each,9,10,90,0,Completed
+800200,2025-10-18 15:31:51,Fahed Foods w.l.l.,Aviko Crunchy Crispy 9.5mm_18037,Each,90,3,270,0,Completed
+800200,2025-10-18 15:31:51,Fahed Foods w.l.l.,Frz EG Okra Zero 20gx400 Hi-Chef_18038,Each,83,2,166,0,Completed
+800201,2025-10-18 15:48:01,Tredos Trading,Tomex Spinach Leaf 4x2.5kgs_18031,Each,55,3,165,0,Completed
+800202,2025-10-20 15:47:43,Bluefin,QK-South African Chilled Beef Knuckle_15011,Each,32,20,640,0,Completed
+800203,2025-10-22 15:26:46,Benina Food,Talmera - 160 Slice American Cheese Colored - 2.27Kg_13013,Each,56.75,1,56.75,0,Completed
+800203,2025-10-22 15:26:46,Benina Food,Dodoni - Feta Goat Cheese 200 GRS_13003,Each,14,12,168,0,Completed
+800203,2025-10-22 15:26:46,Benina Food,Lexquis- Emmental Block_13010,Each,35.72,1,35.72,0,Completed
+800203,2025-10-22 15:26:46,Benina Food,Mission - Tort Wheat 15 A 8x15 171c Original - 200g_13011,Each,5,50,250,0,Completed
+800203,2025-10-22 15:26:46,Benina Food,Talmera - 120 Slice American Cheese Colored SSI - 2.27Kg_13012,Each,56.75,1,56.75,0,Completed
+800203,2025-10-22 15:26:46,Benina Food,Dodoni - Feta Cheese 200 GRS_13002,Each,14.5,12,174,0,Completed
+800204,2025-10-23 09:46:47,Fahed Foods w.l.l.,FZ EG Mango SlicesFahed Food 1Kgx8 / Box_18008,Each,69,1,69,0,Completed
+800204,2025-10-23 09:46:47,Fahed Foods w.l.l.,Chilled BR Beef Topside BL JBS_15012,Each,29,40,1160,0,Completed
+800204,2025-10-23 09:46:47,Fahed Foods w.l.l.,FZ EG Strawberry 1kgx8 Vegie-Tut_18009,Each,60,1,60,0,Completed
+800204,2025-10-23 09:46:47,Fahed Foods w.l.l.,Aviko H Patatas Bravas 4x2500g_18039,Each,110,2,220,0,Completed
+800205,2025-10-23 10:10:46,Al Rayes Laundry Equipment & Accessories w.l.l.,Al Rayes Bio Lab Maxi Roll 600 G Green_4027,Each,30,4,120,0,Completed
+800205,2025-10-23 10:10:46,Al Rayes Laundry Equipment & Accessories w.l.l.,Al Rayes Echo Foamchlor FC313 5ltr_4020,Each,49,2,98,0,Completed
+800205,2025-10-23 10:10:46,Al Rayes Laundry Equipment & Accessories w.l.l.,Al Rayes Dish Soap Ginger Lemon 5LTR_4026,Each,40,2,80,0,Completed
+800205,2025-10-23 10:10:46,Al Rayes Laundry Equipment & Accessories w.l.l.,Al Rayes Echo Zan BK 1 ltr_4021,Each,80,1,80,0,Completed
+800206,2025-10-23 10:56:49,Packon Trading,Handy Fuel 72 pcs / Ctn_12026,Each,97,3,291,0,Completed
+800207,2025-10-23 11:29:19,Verde W.l.l.,Philadelphia Cream Cheese 6.6KG_13004,Each,219,1,219,0,Completed
+800208,2025-10-23 12:40:18,Qnited Trading Company,DARK COMPOUND BLOCKS 2.5KG_19015,Each,45,2,90,0,Completed
+800208,2025-10-23 12:40:18,Qnited Trading Company,Chocolate Sticks 1KG_19016,Each,27,5,135,0,Completed
+800208,2025-10-23 12:40:18,Qnited Trading Company,Icing sugar 2Kg 5 pkt_19031,Each,60,1,60,0,Completed
+800208,2025-10-23 12:40:18,Qnited Trading Company,Spiral Whipping Cream 1 Ltrx12pcs_19021,Each,140,2,280,0,Completed
+800208,2025-10-23 12:40:18,Qnited Trading Company,MILK COMPOUND BLOCKS 2.5KG_19014,Each,45,2,90,0,Completed
+800208,2025-10-23 12:40:18,Qnited Trading Company,Vanilla Liquid Btl_19033,Each,61,1,61,0,Completed
+800208,2025-10-23 12:40:18,Qnited Trading Company,Backaldrin Dry Yeast 20Pc x 500g_19032,Each,125,1,125,0,Completed
+800208,2025-10-23 12:40:18,Qnited Trading Company,SUGAR PASTE COLOR 1KG_19009,Each,16,5,80,0,Completed
+800208,2025-10-23 12:40:18,Qnited Trading Company,WHITE COMPOUND BLOCKS 2.5KG_19013,Each,45,2,90,0,Completed
+800209,2025-10-23 13:21:28,Qnited Trading Company,U shape PET Juice cup 12OZ 1000pc/Box_4037,Each,150,1,150,0,Completed
+800209,2025-10-23 13:21:28,Qnited Trading Company,Stretch film 2.5Kgx6_4038,Each,100,1,100,0,Completed
+800209,2025-10-23 13:21:28,Qnited Trading Company,Vinyl Gloves Medium 10pcs_12014,Each,45,3,135,0,Completed
+800209,2025-10-23 13:21:28,Qnited Trading Company,Paper Cup Double Wall 500pcs_12030,Each,90,2,180,0,Completed
+800210,2025-10-23 14:26:45,Al Hattab For Food Stuffs & Trading,Fresh Eggs Grade A -_21010,Each,220,3,660,0,Completed
+800210,2025-10-23 14:26:45,Al Hattab For Food Stuffs & Trading,Flour Turkey 50 Kgs_19035,Each,90,1,90,0,Completed
+800210,2025-10-23 14:26:45,Al Hattab For Food Stuffs & Trading,Pure Ghee 1kg_13014,Each,37,2,74,0,Completed
+800211,2025-10-23 14:37:57,BRF,Sadia Chicken Shawarma - ctn_16006,Each,100,1,100,0,Completed
+800211,2025-10-23 14:37:57,BRF,Sadia Whole Chicken 1100 Gms - 10 Pcs/Ctn_16009,Each,99,4,396,0,Completed
+800211,2025-10-23 14:37:57,BRF,Sadia Hot Dog small size 20x340gr_16007,Each,74,1,74,0,Completed
+800212,2025-10-23 14:53:38,Al Majed Marketing & Distribution,Zeeba Rice 3 kgs x12_17000,Each,144,2,288,0,Completed
+800213,2025-10-23 16:45:34,Ideal Qatar,MBM Apple Vinegar 500ML_21004,Each,6.25,12,75,0,Completed
+800213,2025-10-23 16:45:34,Ideal Qatar,LEBANON 5283000909763 AOUN PARBOILED RICE 2KG_17002,Each,16,10,160,0,Completed
+800213,2025-10-23 16:45:34,Ideal Qatar,BM Mixed pickles 10 kg_21007,Each,81.5,1,81.5,0,Completed
+800214,2025-10-26 10:23:20,Packon Trading,Aluminum Container - 1120 (400pcs)_12022,Each,89,3,267,0,Completed
+800214,2025-10-26 10:23:20,Packon Trading,M | W Plastic Container 250ml (500pcs)_12025,Each,63,3,189,0,Completed
+800216,2025-10-26 12:28:31,Qnited Trading Company,Qnited Cocoa Powder 10Kg Reference 900_19039,Each,300,1,300,0,Completed
+800217,2025-10-26 14:38:52,Gulf Center,Frozen Mackerel Whole 10kgs_18034,Each,60,2,120,0,Completed
+800218,2025-10-27 16:14:38,Fahed Foods w.l.l.,Aviko Crunchy Crispy 9.5mm_18037,Each,90,2,180,0,Completed
+800218,2025-10-27 16:14:38,Fahed Foods w.l.l.,Fish Filet Frozen - Vietnam 1 Kg_18025,Each,9,10,90,0,Completed
+800218,2025-10-27 16:14:38,Fahed Foods w.l.l.,PD Shrimp 11/15 (10 x 1 Kg )_18029,Each,29,20,580,0,Completed
+800219,2025-10-27 16:40:26,Tredos Trading,Green Beans - Cut 4x2.5KG_18018,Each,60,1,60,0,Completed
+800219,2025-10-27 16:40:26,Tredos Trading,Breaded Chicken Nuggets 6x1KG_309,Each,90,1,90,0,Completed
+800219,2025-10-27 16:40:26,Tredos Trading,Perfecta Mayonnaise_21011,Each,180,1,180,0,Completed
+800219,2025-10-27 16:40:26,Tredos Trading,Chicken Strips Regular 6x1KG_16003,Each,140,2,280,0,Completed
+800219,2025-10-27 16:40:26,Tredos Trading,Mozzarella Sticks _1755960205677,Eachch,75,1,75,0,Completed
+800219,2025-10-27 16:40:26,Tredos Trading,Green Peas - Medium Fine 4x2.5KG_18014,Each,63,1,63,0,Completed
+800220,2025-10-27 16:57:58,BRF,Sadia Whole Chicken 1100 Gms - 10 Pcs/Ctn_16009,Each,99,6,594,0,Completed
+800221,2025-10-28 10:40:43,Fahed Foods w.l.l.,Chilled Beef Tenderlion_15004,KG,83,20,1660,0,Completed
+800222,2025-10-29 11:36:17,Qnited Trading Company,Campina Butter Sheet 2x5_19051,Each,500,1,500,0,Completed
+800223,2025-10-29 15:00:30,Qnited Trading Company,Qnited Portion Cup Clear 4OZ 1000pcs_12052,Each,75,2,150,0,Completed
+800223,2025-10-29 15:00:30,Qnited Trading Company,Qnited Paper Bag 27x32x16 200pcs_12056,Each,120,4,480,0,Completed
+800224,2025-11-01 12:35:31,Al Majed Marketing & Distribution,Masoor Dal 15Kg_17007,Each,58,3,174,0,Completed
+800224,2025-11-01 12:35:31,Al Majed Marketing & Distribution,Sona Masoori Rice 35 Kg_17004,Each,82,3,246,0,Completed
+800225,2025-11-01 12:41:12,BRF,Sadia Whole Chicken 1100 Gms - 10 Pcs/Ctn_16009,Each,99,10,990,0,Completed
+800226,2025-11-01 13:07:45,Fahed Foods w.l.l.,Aviko Crunchy Crispy 9.5mm_18037,Each,90,2,180,0,Completed
+800226,2025-11-01 13:07:45,Fahed Foods w.l.l.,Chilled BR Beef Topside BL JBS_15012,Each,29,20,580,0,Completed
+800227,2025-11-01 13:25:45,Al Rayes Laundry Equipment & Accessories w.l.l.,Al Rayes Bio Lab Maxi Roll 600 G Green_4027,Each,30,10,300,0,Completed
+800227,2025-11-01 13:25:45,Al Rayes Laundry Equipment & Accessories w.l.l.,Floor Scrubbing Broom with Stick_4100,Each,15,2,30,0,Completed
+800227,2025-11-01 13:25:45,Al Rayes Laundry Equipment & Accessories w.l.l.,Floor Wiper 45cm with stick_4101,Each,15,2,30,0,Completed
+800227,2025-11-01 13:25:45,Al Rayes Laundry Equipment & Accessories w.l.l.,Soft Broom with Handle 28.5x5x12cm_4102,Each,15,2,30,0,Completed
+800228,2025-11-01 14:01:47,International Foodstuff Group,Al Baladi Pomegranate Molasses 500mlx12_25000,Each,144,2,288,0,Completed
+800228,2025-11-01 14:01:47,International Foodstuff Group,Al Baladi Dried Moghrabieh 900g_25001,Each,9,10,90,0,Completed
+800228,2025-11-01 14:01:47,International Foodstuff Group,Al Baladi Red Lentil 900g_25002,Each,7.75,10,77.5,0,Completed
+800228,2025-11-01 14:01:47,International Foodstuff Group,Al Baladi Stuffed Eggplant ( Macdous ) 14kg_25003,Each,315,1,315,0,Completed
+800229,2025-11-01 14:28:24,Ideal Qatar,Coco Mazaya Charcoal 10KG_381,Each,84,1,84,0,Completed
+800229,2025-11-01 14:28:24,Ideal Qatar,Aoun White Pepper Powder 500GR_17011,Each,41.8,2,83.6,0,Completed
+800229,2025-11-01 14:28:24,Ideal Qatar,VEGONTABLE PULP OF ROASTED EGGPLANT_25004,Each,24.65,6,147.9,0,Completed
+800230,2025-11-01 15:11:08,Qnited Trading Company,Qnited Hinged Clear Container Small Size 300pcs/CTN_12061,Each,45,3,135,0,Completed
+800231,2025-11-02 11:07:10,Al Majed Marketing & Distribution,Palm Oil 18 Ltr_21001,Each,82,2,164,0,Completed
+800231,2025-11-02 11:07:10,Al Majed Marketing & Distribution,Sunflower oil 4x5Lit_21000,Each,116,7,812,0,Completed
+800232,2025-11-03 12:02:20,Qnited Trading Company,Vizyon White Sugar Paste 1kgx12Pcs_19017,Each,180,1,180,0,Completed
+800232,2025-11-03 12:02:20,Qnited Trading Company,SUGAR PASTE COLOR 1KG_19009,Each,16,5,80,0,Completed
+800232,2025-11-03 12:02:20,Qnited Trading Company,SUGAR PASTE black 1KG X 12PCS_19006,Each,16,5,80,0,Completed
+800232,2025-11-03 12:02:20,Qnited Trading Company,WHITE COMPOUND BLOCKS 2.5KG_19013,Each,45,2,90,0,Completed
+800232,2025-11-03 12:02:20,Qnited Trading Company,DARK COMPOUND BLOCKS 2.5KG_19015,Each,45,1,45,0,Completed
+800232,2025-11-03 12:02:20,Qnited Trading Company,Spiral Whipping Cream 1 Ltrx12pcs_19021,Each,140,2,280,0,Completed
+800232,2025-11-03 12:02:20,Qnited Trading Company,Campina Butter Sheet 2x5_19051,Each,500,1,500,0,Completed
+800232,2025-11-03 12:02:20,Qnited Trading Company,Vizyon Baking Powder 2Kg_19025,Each,35,1,35,0,Completed
+800233,2025-11-03 13:04:34,Al Hattab For Food Stuffs & Trading,Fresh Eggs Grade A -_21010,Each,230,3,690,0,Completed
+800233,2025-11-03 13:04:34,Al Hattab For Food Stuffs & Trading,Flour Turkey 50 Kgs_19035,Each,88,2,176,0,Completed
+800234,2025-11-03 13:15:01,Qnited Trading Company,Aluminum Container 1190 250pcs_4107,Each,150,1,150,0,Completed
+800234,2025-11-03 13:15:01,Qnited Trading Company,U shape PET Juice cup 12OZ 1000pc/Box_4037,Each,210,1,210,0,Completed
+800234,2025-11-03 13:15:01,Qnited Trading Company,Plastic Rectangular Container 1500 - 300pcs_12023,Each,172,2,344,0,Completed
+800234,2025-11-03 13:15:01,Qnited Trading Company,paper cup 4OZ 1000 pcs_4106,Each,80,1,80,0,Completed
+800234,2025-11-03 13:15:01,Qnited Trading Company,RP Kraft Salad Bowl - 75o ML 300pcs_12004,Each,140,2,280,0,Completed
+800234,2025-11-03 13:15:01,Qnited Trading Company,Black Base 2 compartement RE 2/32 - 150pcs/Ctn_12067,Each,103,1,103,0,Completed
+800234,2025-11-03 13:15:01,Qnited Trading Company,Qnited Black Container RE32 - 150pcs/Ctn_12059,Each,67,1,67,0,Completed
+800234,2025-11-03 13:15:01,Qnited Trading Company,Microwave Rectangular 1500ml - 150pcs_40106,Each,80,2,160,0,Completed
+800235,2025-11-03 14:47:07,Friendly Food Qatar w.l.l.,GRANORO - LASAGNE ALL' UOVO (12X500G) (120)_18050,Each,116,2,232,0,Completed
+800236,2025-11-05 15:53:12,Qnited Trading Company,White Plastic bag 20pkt_12015,Each,35,1,35,0,Completed
+800236,2025-11-05 15:53:12,Qnited Trading Company,Garbage Bag - 90*110 (12KG)_12000,Each,52,1,52,0,Completed
+800236,2025-11-05 15:53:12,Qnited Trading Company,Q Paper Napkins 33x33cm - CTN_12027,Each,61,2,122,0,Completed
+800236,2025-11-05 15:53:12,Qnited Trading Company,Hair Net Black 1000pcs_12005,Each,35,1,35,0,Completed
+800236,2025-11-05 15:53:12,Qnited Trading Company,Vinyl Gloves Medium 10pcs_12014,Each,45,2,90,0,Completed
+800236,2025-11-05 15:53:12,Qnited Trading Company,Vinyl Gloves large 10pkts_12070,Each,45,1,45,0,Completed
+800237,2025-11-06 10:15:19,Qnited Trading Company,Qnited Cling Film Jumbo 6 Kgs Import Quality_12075,Each,37,4,148,0,Completed
+800238,2025-11-06 13:44:54,Fahed Foods w.l.l.,Fish Filet Frozen - Vietnam 1 Kg_18025,Each,9,10,90,0,Completed
+800238,2025-11-06 13:44:54,Fahed Foods w.l.l.,PD Shrimp 11/15 (10 x 1 Kg )_18029,Each,29,10,290,0,Completed
+800238,2025-11-06 13:44:54,Fahed Foods w.l.l.,FZ EG Strawberry 1kgx8 Vegie-Tut_18009,Each,60,1,60,0,Completed
+800238,2025-11-06 13:44:54,Fahed Foods w.l.l.,Chilled BR Beef Topside BL JBS_15012,Each,29,20,580,0,Completed
+800238,2025-11-06 13:44:54,Fahed Foods w.l.l.,Aviko Crunchy Crispy 9.5mm_18037,Each,90,2,180,0,Completed
+800239,2025-11-06 13:47:18,Tredos Trading,Hash Brown Triangular 4x2.5Kgs_18022,Each,90,2,180,0,Completed
+800239,2025-11-06 13:47:18,Tredos Trading,Mozzarella Sticks _1755960205677,Eachch,175,2,350,0,Completed
+800240,2025-11-06 13:50:57,Ideal Qatar,BM Tomato Paste 650 GR - Lebanon_21019,Each,8.5,12,102,0,Completed
+800240,2025-11-06 13:50:57,Ideal Qatar,Happy Gardens Foul Medamas 400gr 1x24_21024,Each,2,24,48,0,Completed
+800241,2025-11-10 10:08:37,BRF,Sadia Whole Chicken 1100 Gms - 10 Pcs/Ctn_16009,Each,99,10,990,0,Completed
+800242,2025-11-10 10:31:31,Al Majed Marketing & Distribution,Masoor Dal 15Kg_17007,Each,58,3,174,0,Completed
+800243,2025-11-10 10:34:30,Gulf Center,Frozen Mackerel Whole 10kgs_18034,Each,60,2,120,0,Completed
+800244,2025-11-10 10:41:18,Al Zaman International Catering & Trading,Chicken Breast Aurora 2kgx6_16012,Each,159,6,954,0,Completed
+800245,2025-11-10 16:15:50,Ideal Qatar,HAPPY GARDENS PICKLED GRAPE LEAVES_21008,Each,13.06,36,470.16,0,Completed
+800245,2025-11-10 16:15:50,Ideal Qatar,Aoun Green Lentils 900 Gr 1x20_17022,Each,9.5,10,95,0,Completed
+800245,2025-11-10 16:15:50,Ideal Qatar,LEBANON 5283000909763 AOUN PARBOILED RICE 2KG_17002,Each,14.4,10,144,0,Completed
+800245,2025-11-10 16:15:50,Ideal Qatar,Aoun Lime_17020,Each,10.2,10,102,0,Completed
+800246,2025-11-10 16:24:29,Fahed Foods w.l.l.,Chilled BR Beef Topside BL JBS_15012,Each,29,40,1160,0,Completed
+800247,2025-11-10 16:26:22,Benina Food,Talmera Cheddar Block - Mild White 2.27_13016,Each,77.18,1,77.18,0,Completed
+800247,2025-11-10 16:26:22,Benina Food,Talmera - 160 Slice American Cheese Colored - 2.27Kg_13013,Each,56.75,1,56.75,0,Completed
+800247,2025-11-10 16:26:22,Benina Food,Benina - Parmesan Grana Moravia Cheese 5 Kg_13001,Each,250,1,250,0,Completed
+800247,2025-11-10 16:26:22,Benina Food,Lexquis- Emmental Block_13010,Each,35.72,4,142.88,0,Completed
+800247,2025-11-10 16:26:22,Benina Food,Dodoni - Feta Cheese 200 GRS_13002,Each,14.5,12,174,0,Completed
+800248,2025-11-12 15:49:25,Qnited Trading Company,Black Round Container - RO16_12043,Each,40,1,40,0,Completed
+800248,2025-11-12 15:49:25,Qnited Trading Company,Black portion cup 2 OZ with lid 2000pcs_12071,Each,95,1,95,0,Completed
+800248,2025-11-12 15:49:25,Qnited Trading Company,M | W Plastic Container 250ml (500pcs)_12025,Each,50,2,100,0,Completed
+800248,2025-11-12 15:49:25,Qnited Trading Company,Aluminum Tray Oval Shape Large 100pcs_12072,Each,50,2,100,0,Completed
+800248,2025-11-12 15:49:25,Qnited Trading Company,paper cup 4OZ 1000 pcs_4106,Each,80,1,80,0,Completed
+800248,2025-11-12 15:49:25,Qnited Trading Company,Qnited Portion Cup Clear 4OZ 1000pcs_12052,Each,70,1,70,0,Completed
+800248,2025-11-12 15:49:25,Qnited Trading Company,Aluminum Foil - 6pcs (1.5kg)_12021,Each,125,2,250,0,Completed
+800249,2025-11-12 17:11:47,Qnited Trading Company,Vizyon White Sugar Paste 1kgx12Pcs_19017,Each,180,2,360,0,Completed
+800250,2025-11-15 11:50:57,Friendly Food Qatar w.l.l.,White Chunk Tuna in Sunflower Oil 6x1.8KG_21034,Each,230,1,230,0,Completed
+800250,2025-11-15 11:50:57,Friendly Food Qatar w.l.l.,GRANORO PENNE RIGATE 24X500G (1026)_14002,Each,129.6,1,129.6,0,Completed
+800250,2025-11-15 11:50:57,Friendly Food Qatar w.l.l.,"GRANORO DEDICATO ""NIDI FETTUCCINE"" 12X500G (48082)_14003",Each,90,1,90,0,Completed
+800251,2025-11-15 11:52:22,Tredos Trading,Green Beans - Cut 4x2.5KG_18018,Each,60,1,60,0,Completed
+800251,2025-11-15 11:52:22,Tredos Trading,Barilla Spaghetti (No.5)_10016,Each,150,1,150,0,Completed
+800251,2025-11-15 11:52:22,Tredos Trading,Tomex Mix Vegetables 4x2.5KG_18011,Each,40,2,80,0,Completed
+800251,2025-11-15 11:52:22,Tredos Trading,Green Peas - Medium Fine 4x2.5KG_18014,Each,63,1,63,0,Completed
+800251,2025-11-15 11:52:22,Tredos Trading,Tomex Spinach Leaf 4x2.5kgs_18031,Each,55,1,55,0,Completed
+800251,2025-11-15 11:52:22,Tredos Trading,Tomex Frozen Sweet Corn 4x2.5KG_18000,Each,95,1,95,0,Completed
+800251,2025-11-15 11:52:22,Tredos Trading,Whole Peeled Tomatoes 6x2.5KG_21015,Each,90,1,90,0,Completed
+800251,2025-11-15 11:52:22,Tredos Trading,Perfecta Mayonnaise_21011,Each,180,1,180,0,Completed
+800251,2025-11-15 11:52:22,Tredos Trading,White Chunk Tuna in Sunflower Oil 6x1.8KG_21034,Each,230,1,230,0,Completed
+800252,2025-11-15 12:16:02,Fahed Foods w.l.l.,Aviko Crunchy Crispy 9.5mm_18037,Each,90,2,180,0,Completed
+800252,2025-11-15 12:16:02,Fahed Foods w.l.l.,PD Shrimp 11/15 (10 x 1 Kg )_18029,Each,29,10,290,0,Completed
+800253,2025-11-15 12:39:33,Ideal Qatar,BM CUCUMBER PICKLES BARREL_21032,Each,83.3,2,166.6,0,Completed
+800253,2025-11-15 12:39:33,Ideal Qatar,LEBANON 5283000909763 AOUN PARBOILED RICE 2KG_17002,Each,14.4,10,144,0,Completed
+800253,2025-11-15 12:39:33,Ideal Qatar,Happy Gardens Tahina Extra 8.58 NW - GW 9.00_21013,Each,162.56,2,325.12,0,Completed
+800254,2025-11-16 11:16:21,Al Majed Marketing & Distribution,Zeeba Rice 3 kgs x12_17000,Each,144,2,288,0,Completed
+800255,2025-11-16 14:02:27,Fahed Foods w.l.l.,Topside Frozen Brazil_15000,Each,29,20,580,0,Completed
+800256,2025-11-16 16:02:28,Packon Trading,M/W Rectangular Cont w/Lid 1000ML - 500pcs_12066,Each,155,1,155,0,Completed
+800256,2025-11-16 16:02:28,Packon Trading,Black Rect Container RE 32 Pack On 150pcs/ctn_12042,Each,63,2,126,0,Completed
+800256,2025-11-16 16:02:28,Packon Trading,Aluminum Container - 73365 1x100_12018,Each,98,1,98,0,Completed
+800257,2025-11-17 10:14:19,Bluefin,Topside Chilled South Africa_15009,KG,32,35,1120,0,Completed
+800258,2025-11-20 09:00:24,Al Majed Marketing & Distribution,Sona Masoori Rice 35 Kg_17004,Each,90,2,180,0,Completed
+800258,2025-11-20 09:00:24,Al Majed Marketing & Distribution,Palm Oil 18 Ltr_21001,Each,82,2,164,0,Completed
+800258,2025-11-20 09:00:24,Al Majed Marketing & Distribution,Mashhor Indian 1121 Long Grain Basmati Rice 1x35kg_17005,Each,140,2,280,0,Completed
+800259,2025-11-20 09:06:36,Al Hattab For Food Stuffs & Trading,Sunflower oil 4x5Lit_21000,Each,115,8,920,0,Completed
+800260,2025-11-26 12:34:41,Qnited Trading Company,Qnited 1 Compartement 250pcs/Ctn_12060,Each,85,2,170,0,Completed
+800260,2025-11-26 12:34:41,Qnited Trading Company,Aluminum Container - 83185 1x400_12019,Each,1,1,1,0,Completed
+800260,2025-11-26 12:34:41,Qnited Trading Company,Maxi 135Mtr 6 pcs_12001,Each,40,1,40,0,Completed
+800260,2025-11-26 12:34:41,Qnited Trading Company,Stretch film 2.5Kgx6_4038,Each,100,1,100,0,Completed
+800260,2025-11-26 12:34:41,Qnited Trading Company,Garbage Bag - 90*110 (12KG)_12000,Each,48,2,96,0,Completed
+800260,2025-11-26 12:34:41,Qnited Trading Company,Black Base 2 compartement RE 2/32 - 150pcs/Ctn_12067,Each,103,2,206,0,Completed
+800260,2025-11-26 12:34:41,Qnited Trading Company,QNited Paper Bag 31x36x18 200pcs_12055,Each,140,2,280,0,Completed
+800261,2025-11-29 13:56:11,Gulf Center,Frozen Mackerel Whole 10kgs_18034,Each,60,3,180,0,Completed
+800262,2025-11-29 14:53:08,Packon Trading,Vinyl Gloves Medium 10pcs_12014,Each,45,2,90,0,Completed
+800262,2025-11-29 14:53:08,Packon Trading,RP Kraft Salad Bowl - 75o ML 300pcs_12004,Each,150,1,150,0,Completed
+800262,2025-11-29 14:53:08,Packon Trading,White Plastic bag 20pkt_12015,Each,35,2,70,0,Completed
+800262,2025-11-29 14:53:08,Packon Trading,Black Round Container - RO16_12043,Each,43,2,86,0,Completed
+800262,2025-11-29 14:53:08,Packon Trading,Vinyl Gloves large 10pkts_12070,Each,45,2,90,0,Completed
+800263,2025-11-29 15:30:03,Qnited Trading Company,Qnited Paper Bag 27x32x16 200pcs_12056,Each,120,3,360,0,Completed
+800264,2025-12-01 14:48:18,Fahed Foods w.l.l.,Topside Chilled South Africa_15009,KG,36,20,720,0,Completed
+800264,2025-12-01 14:48:18,Fahed Foods w.l.l.,Fish Filet Frozen - Vietnam 1 Kg_18025,Each,9,10,90,0,Completed
+800265,2025-12-01 15:13:11,Ideal Qatar,HAPPY GARDENS PICKLED GRAPE LEAVES_21008,Each,13.06,3,39.18,0,Completed
+800265,2025-12-01 15:13:11,Ideal Qatar,BM Tomato Paste 650 GR - Lebanon_21019,Each,8.5,12,102,0,Completed
+800265,2025-12-01 15:13:11,Ideal Qatar,Happy Gardens Chickpeas 9mm-20 kg_21025,Each,180.5,2,361,0,Completed
+800265,2025-12-01 15:13:11,Ideal Qatar,Aoun Sumac Powder 500 GR_17024,Each,25.89,8,207.12,0,Completed
+800265,2025-12-01 15:13:11,Ideal Qatar,Aoun 7 Spices 500 GR_17023,Each,27.08,2,54.16,0,Completed
+800265,2025-12-01 15:13:11,Ideal Qatar,Aoun Cinnamon Powder 500GR_17012,Each,14.5,2,29,0,Completed
+800266,2025-12-02 17:20:05,Qnited Trading Company,Campina Butter Sheet 2x5_19051,Each,500,1,500,0,Completed
+800266,2025-12-02 17:20:05,Qnited Trading Company,Spiral Whipping Cream 1 Ltrx12pcs_19021,Each,140,2,280,0,Completed
+800266,2025-12-02 17:20:05,Qnited Trading Company,Vizyon White Sugar Paste 1kgx12Pcs_19017,Each,180,2,360,0,Completed
+800266,2025-12-02 17:20:05,Qnited Trading Company,SUGAR PASTE black 1KG X 12PCS_19006,Each,168,1,168,0,Completed
+800266,2025-12-02 17:20:05,Qnited Trading Company,DARK COMPOUND BLOCKS 2.5KG_19015,Each,45,4,180,0,Completed
+800266,2025-12-02 17:20:05,Qnited Trading Company,MILK COMPOUND BLOCKS 2.5KG_19014,Each,45,4,180,0,Completed
+800266,2025-12-02 17:20:05,Qnited Trading Company,WHITE COMPOUND BLOCKS 2.5KG_19013,Each,45,4,180,0,Completed
+800267,2025-12-02 17:36:19,Fahed Foods w.l.l.,Frozen Beef Tenderloin Brazil_15002,Each,60,20,1200,0,Completed
+800267,2025-12-02 17:36:19,Fahed Foods w.l.l.,Chilled BR Beef Topside BL JBS_15012,Each,36,40,1440,0,Completed
+800268,2025-12-02 18:45:15,Fahed Foods w.l.l.,Aviko Crunchy Crispy 9.5mm_18037,Each,90,3,270,0,Completed
+800268,2025-12-02 18:45:15,Fahed Foods w.l.l.,Aviko H Patatas Bravas 4x2500g_18039,Each,110,2,220,0,Completed
+800269,2025-12-02 19:08:39,Al Majed Marketing & Distribution,Sona Masoori Rice 35 Kg_17004,Each,90,2,180,0,Completed
+800269,2025-12-02 19:08:39,Al Majed Marketing & Distribution,Masoor Dal 15Kg_17007,Each,58,2,116,0,Completed
+800270,2025-12-04 13:24:13,Packon Trading,Maxi 135Mtr 6 pcs_12001,Each,35,4,140,0,Completed
+800270,2025-12-04 13:24:13,Packon Trading,Dish Washing Liquid 20ltr 5x4_12045,Each,33,2,66,0,Completed
+800270,2025-12-04 13:24:13,Packon Trading,Yellow Bag Small - 20KG_12033,Each,129,1,129,0,Completed
+800270,2025-12-04 13:24:13,Packon Trading,Cling Film 6pcs_12051,Each,77,2,154,0,Completed
+800270,2025-12-04 13:24:13,Packon Trading,Plastic Bowl 4OZ - 2000pcs_12024,Each,149,1,149,0,Completed
+800270,2025-12-04 13:24:13,Packon Trading,M | W Plastic Container 250ml (500pcs)_12025,Each,63,2,126,0,Completed
+800270,2025-12-04 13:24:13,Packon Trading,Black Rect Container RE 32 Pack On 150pcs/ctn_12042,Each,63,2,126,0,Completed
+800271,2025-12-06 15:07:21,BRF,Sadia Whole Chicken 1100 Gms - 10 Pcs/Ctn_16009,Each,99,10,990,0,Completed
+800272,2025-12-06 15:16:11,Al Majed Marketing & Distribution,Zeeba Rice 3 kgs x12_17000,Each,144,3,432,0,Completed
+800272,2025-12-06 15:16:11,Al Majed Marketing & Distribution,White Vinegar 4x3.78ltr_21005,Each,22,2,44,0,Completed
+800273,2025-12-06 15:26:12,Fahed Foods w.l.l.,Whole Peeled Tomatoes 6x2.5KG_21015,Each,90,3,270,0,Completed
+800273,2025-12-06 15:26:12,Fahed Foods w.l.l.,Frz EG Okra Zero 20gx400 Hi-Chef_18038,Each,83,1,83,0,Completed
+800273,2025-12-06 15:26:12,Fahed Foods w.l.l.,FZ EG Strawberry 1kgx8 Vegie-Tut_18009,Each,60,2,120,0,Completed
+800273,2025-12-06 15:26:12,Fahed Foods w.l.l.,FZ EG Mango SlicesFahed Food 1Kgx8 / Box_18008,Each,69,2,138,0,Completed
+800273,2025-12-06 15:26:12,Fahed Foods w.l.l.,Frz EG Mixed Vegetables 2.5Kgx4 Hi-Chef_18010,Each,34,2,68,0,Completed
+800273,2025-12-06 15:26:12,Fahed Foods w.l.l.,FRZ EG Cut Beans 2.5x4kg Hi-Chef_18017,Each,43,2,86,0,Completed
+800274,2025-12-07 13:25:38,Bluefin,Eye Round Chilled South African_15010,Each,33,16,528,0,Completed
+800275,2025-12-09 15:51:42,Fahed Foods w.l.l.,Chilled BR Beef Topside BL JBS_15012,Each,33,40,1320,0,Completed
+800276,2025-12-09 17:15:44,Ideal Qatar,HAPPY GARDENS PICKLED GRAPE LEAVES_21008,Each,13.06,48,626.88,0,Completed
+800276,2025-12-09 17:15:44,Ideal Qatar,BM CUCUMBER PICKLES BARREL_21032,Each,83.3,2,166.6,0,Completed
+800276,2025-12-09 17:15:44,Ideal Qatar,"AOUN WHITE BURGHUL FINE 	4kg_17027",Each,23,5,115,0,Completed
+800276,2025-12-09 17:15:44,Ideal Qatar,Happy Gardens Tahina Extra 8.58 NW - GW 9.00_21013,Each,162.56,3,487.68,0,Completed
+800277,2025-12-09 17:44:20,Al Zaman International Catering & Trading,Sona Masoori Rice 35 Kg_17004,Each,75,2,150,0,Completed
+800277,2025-12-09 17:44:20,Al Zaman International Catering & Trading,Fresh Eggs Grade A -_21010,Each,170,3,510,0,Completed
+800277,2025-12-09 17:44:20,Al Zaman International Catering & Trading,Chicken Breast Aurora 2kgx6_16012,Each,156,4,624,0,Completed
+800277,2025-12-09 17:44:20,Al Zaman International Catering & Trading,Masoor Dal 15Kg_17007,Each,55,3,165,0,Completed
+800277,2025-12-09 17:44:20,Al Zaman International Catering & Trading,Palm Oil 18 Ltr_21001,Each,79,2,158,0,Completed
+800277,2025-12-09 17:44:20,Al Zaman International Catering & Trading,Sunflower oil 4x5Lit_21000,Each,112,7,784,0,Completed
+800277,2025-12-09 17:44:20,Al Zaman International Catering & Trading,Mashhor Indian 1121 Long Grain Basmati Rice 1x35kg_17005,Each,138,2,276,0,Completed
+800278,2025-12-09 18:06:05,International Foodstuff Group,Al Baladi Dried Moghrabieh 900g_25001,Each,9,12,108,0,Completed
+800278,2025-12-09 18:06:05,International Foodstuff Group,Apple Vinegar 500ml_21040,Each,7.5,24,180,0,Completed
+800279,2025-12-13 12:53:15,Tredos Trading,Mozarella Sticks 6 KG_19050,Each,175,1,175,0,Completed
+800279,2025-12-13 12:53:15,Tredos Trading,Breaded Chicken Nuggets 6x1KG_309,Each,90,1,90,0,Completed
+800279,2025-12-13 12:53:15,Tredos Trading,Tomex Spinach Leaf 4x2.5kgs_18031,Each,55,3,165,0,Completed
+800280,2025-12-13 13:13:45,Fahed Foods w.l.l.,Aviko Crunchy Crispy 9.5mm_18037,Each,90,3,270,0,Completed
+800280,2025-12-13 13:13:45,Fahed Foods w.l.l.,PD Shrimp 11/15 (10 x 1 Kg )_18029,Each,29,10,290,0,Completed
+800280,2025-12-13 13:13:45,Fahed Foods w.l.l.,Fish Filet Frozen - Vietnam 1 Kg_18025,Each,9,10,90,0,Completed
+800281,2025-12-13 13:19:26,Bluefin,Eye Round Chilled South African_15010,Each,33,20,660,0,Completed
+800282,2025-12-14 17:32:34,Fahed Foods w.l.l.,Chilled BR Beef Topside BL JBS_15012,Each,33,20,660,0,Completed
+800282,2025-12-14 17:32:34,Fahed Foods w.l.l.,Fish Filet Frozen - Vietnam 1 Kg_18025,Each,9,20,180,0,Completed
+800282,2025-12-14 17:32:34,Fahed Foods w.l.l.,PD Shrimp 11/15 (10 x 1 Kg )_18029,Each,29,10,290,0,Completed
+800283,2025-12-15 15:35:11,Benina Food,Dodoni - Feta Cheese 200 GRS_13002,Each,14.5,12,174,0,Completed
+800283,2025-12-15 15:35:11,Benina Food,Dodoni - Feta Goat Cheese 200 GRS_13003,Each,14,12,168,0,Completed
+800283,2025-12-15 15:35:11,Benina Food,Lexquis- Emmental Block_13010,Each,35.72,1,35.72,0,Completed
+800283,2025-12-15 15:35:11,Benina Food,Benina - Soy Sauce Original 1.86L_20001,Each,12.5,10,125,0,Completed
+800283,2025-12-15 15:35:11,Benina Food,Benina Sweet & Chili Sauce 1.9L_20007,Each,19,2,38,0,Completed
+800283,2025-12-15 15:35:11,Benina Food,Benina Pizza Sauce 4.1 Kg_20008,Each,41,1,41,0,Completed
+800283,2025-12-15 15:35:11,Benina Food,Beef Jerky Original Flavour 25 G_20009,Each,7.5,4,30,0,Completed
+800283,2025-12-15 15:35:11,Benina Food,Talmera Cheddar Block - Mild White 2.27_13016,Each,77.18,1,77.18,0,Completed
+800284,2025-12-15 16:00:16,Tredos Trading,White Chunk Tuna in Sunflower Oil 6x1.8KG_21034,Each,230,2,460,0,Completed
+800284,2025-12-15 16:00:16,Tredos Trading,Mustard Sauce_21026,Each,120,1,120,0,Completed
+800285,2025-12-16 17:14:05,Gulf Center,Frozen Mackerel Whole 10kgs_18034,Each,60,3,180,0,Completed
+800286,2025-12-16 17:45:58,BRF,Sadia Whole Chicken 1100 Gms - 10 Pcs/Ctn_16009,Each,99,10,990,0,Completed
+800287,2025-12-22 10:00:24,Fahed Foods w.l.l.,Topside Chilled South Africa_15009,KG,33,40,1320,0,Completed
+800288,2025-12-22 10:15:03,Qnited Trading Company,Spiral Whipping Cream 1 Ltrx12pcs_19021,Each,135,1,135,0,Completed
+800288,2025-12-22 10:15:03,Qnited Trading Company,DARK COMPOUND BLOCKS 2.5KG_19015,Each,45,1,45,0,Completed
+800288,2025-12-22 10:15:03,Qnited Trading Company,SUGAR PASTE COLOR 1KG_19009,Each,18,12,216,0,Completed
+800288,2025-12-22 10:15:03,Qnited Trading Company,Icing sugar 2Kg 5 pkt_19031,Each,60,1,60,0,Completed
+800288,2025-12-22 10:15:03,Qnited Trading Company,Campina Butter Sheet 2x5_19051,Each,500,1,500,0,Completed
+800289,2025-12-25 09:14:41,Al Hattab For Food Stuffs & Trading,Sunflower oil 4x5Lit_21000,Each,115,7,805,0,Completed
+800290,2025-12-25 11:39:16,Al Zaman International Catering & Trading,Sona Masoori Rice 35 Kg_17004,Each,75,3,225,0,Completed
+800290,2025-12-25 11:39:16,Al Zaman International Catering & Trading,Masoor Dal 15Kg_17007,Each,55,3,165,0,Completed
+800291,2025-12-25 14:07:40,Qnited Trading Company,Qnited Black Container RE32 - 150pcs/Ctn_12059,Each,67,2,134,0,Completed
+800291,2025-12-25 14:07:40,Qnited Trading Company,Maxi Roll - 6pcs_12032,Each,18,5,90,0,Completed
+800291,2025-12-25 14:07:40,Qnited Trading Company,Latex Gloves Large_60030,Each,45,2,90,0,Completed
+800291,2025-12-25 14:07:40,Qnited Trading Company,Latex Gloves XL_12100,Each,45,1,45,0,Completed
+800291,2025-12-25 14:07:40,Qnited Trading Company,Q Paper Napkins 33x33cm - CTN_12027,Each,61,2,122,0,Completed
+800291,2025-12-25 14:07:40,Qnited Trading Company,Cling Film 6pcs_12051,Each,70,2,140,0,Completed
+800291,2025-12-25 14:07:40,Qnited Trading Company,Microwave Rectangular 1500ml - 150pcs_40106,Each,80,2,160,0,Completed
+800291,2025-12-25 14:07:40,Qnited Trading Company,Qnited Portion Cup Clear 4OZ 1000pcs_12052,Each,70,1,70,0,Completed
+800291,2025-12-25 14:07:40,Qnited Trading Company,Paper Cup Double Wall 500pcs_12030,Each,90,2,180,0,Completed
+800291,2025-12-25 14:07:40,Qnited Trading Company,U shape PET Juice cup 12OZ 1000pc/Box_4037,Each,150,1,150,0,Completed
+800291,2025-12-25 14:07:40,Qnited Trading Company,Wet wipes 7*11cm -1000p_12065,Each,90,1,90,0,Completed
+800292,2025-12-25 14:29:20,Tredos Trading,Perfecta Mayonnaise_21011,Each,180,2,360,0,Completed
+800292,2025-12-25 14:29:20,Tredos Trading,Whole Peeled Tomatoes 6x2.5KG_21015,Each,90,2,180,0,Completed
+800292,2025-12-25 14:29:20,Tredos Trading,Chicken Strips Regular 6x1KG_16003,Each,140,1,140,0,Completed
+800293,2025-12-25 14:42:48,Fahed Foods w.l.l.,FZ EG Mango SlicesFahed Food 1Kgx8 / Box_18008,Each,69,1,69,0,Completed
+800293,2025-12-25 14:42:48,Fahed Foods w.l.l.,FZ EG Strawberry 1kgx8 Vegie-Tut_18009,Each,60,1,60,0,Completed
+800293,2025-12-25 14:42:48,Fahed Foods w.l.l.,Aviko Crunchy Crispy 9.5mm_18037,Each,90,3,270,0,Completed
+800293,2025-12-25 14:42:48,Fahed Foods w.l.l.,Shrimp Frozen 11/15 1 Kg_18028,Each,28,10,280,0,Completed
+800293,2025-12-25 14:42:48,Fahed Foods w.l.l.,Fish Filet Frozen - Vietnam 1 Kg_18025,Each,9,10,90,0,Completed
+800293,2025-12-25 14:42:48,Fahed Foods w.l.l.,Frz EG Okra Zero 20gx400 Hi-Chef_18038,Each,83,2,166,0,Completed
+800294,2025-12-29 11:41:59,Qnited Trading Company,Spiral Whipping Cream 1 Ltrx12pcs_19021,Each,140,2,280,0,Completed
+800294,2025-12-29 11:41:59,Qnited Trading Company,DARK COMPOUND BLOCKS 2.5KG_19015,Each,45,4,180,0,Completed
+800294,2025-12-29 11:41:59,Qnited Trading Company,MILK COMPOUND BLOCKS 2.5KG_19014,Each,45,4,180,0,Completed
+800294,2025-12-29 11:41:59,Qnited Trading Company,President Butter Sheets_19100,Each,575,1,575,0,Completed
+800294,2025-12-29 11:41:59,Qnited Trading Company,Icing sugar 2Kg 5 pkt_19031,Each,60,1,60,0,Completed
+800295,2025-12-29 12:03:21,Fahed Foods w.l.l.,Topside Chilled South Africa_15009,KG,33,40,1320,0,Completed
+800296,2026-01-03 13:01:36,Fahed Foods w.l.l.,Chilled BR Beef Topside BL JBS_15012,Each,33,40,1320,0,Completed
+800296,2026-01-03 13:01:36,Fahed Foods w.l.l.,Frozen Beef Tenderloin Brazil_15002,Each,41,18,738,0,Completed
+800296,2026-01-03 13:01:36,Fahed Foods w.l.l.,Frz EG Okra Zero 20gx400 Hi-Chef_18038,Each,83,2,166,0,Completed
+800296,2026-01-03 13:01:36,Fahed Foods w.l.l.,PD Shrimp 11/15 (10 x 1 Kg )_18029,Each,29,20,580,0,Completed
+800296,2026-01-03 13:01:36,Fahed Foods w.l.l.,Fish Filet Frozen - Vietnam 1 Kg_18025,Each,9,20,180,0,Completed
+800297,2026-01-03 14:10:13,Ideal Qatar,Aoun Lime_17020,Each,10.2,10,102,0,Completed
+800297,2026-01-03 14:10:13,Ideal Qatar,BM Tomato Paste 650 GR - Lebanon_21019,Each,8.5,36,306,0,Completed
+800297,2026-01-03 14:10:13,Ideal Qatar,Happy Gardens Tahina Extra 8.58 NW - GW 9.00_21013,Each,162.56,3,487.68,0,Completed
+800297,2026-01-03 14:10:13,Ideal Qatar,VEGONTABLE PULP OF ROASTED EGGPLANT_25004,Each,24.65,18,443.7,0,Completed
+800297,2026-01-03 14:10:13,Ideal Qatar,Coco Mazaya Charcoal 10KG_381,Each,84,2,168,0,Completed
+800297,2026-01-03 14:10:13,Ideal Qatar,HAPPY GARDENS PICKLED GRAPE LEAVES_21008,Each,13.06,24,313.44,0,Completed
+800297,2026-01-03 14:10:13,Ideal Qatar,Aoun Egyptian Rice 5 Kgs_17001,Each,27.9,5,139.5,0,Completed
+800298,2026-01-03 14:21:20,International Foodstuff Group,Al Baladi Pomegranate Molasses 500mlx12_25000,Each,144,3,432,0,Completed
+800299,2026-01-04 14:29:56,Friendly Food Qatar w.l.l.,MAGGI VEGETABLES STOCK (6X1KG) XA FFQ_17050,Each,222,1,222,0,Completed
+800299,2026-01-04 14:29:56,Friendly Food Qatar w.l.l.,MAGGI - CHICKEN BOUILLON POWDER (6X1KG)_17051,Each,186,1,186,0,Completed
+800299,2026-01-04 14:29:56,Friendly Food Qatar w.l.l.,MAGGI BEEF BOUILLON 24(24X18G)N1 XA_17052,Each,576,1,576,0,Completed
+800300,2026-01-04 15:00:52,Qnited Trading Company,Chicken Breast Aurora 2kgx6_16012,Each,156,4,624,0,Completed
+800301,2026-01-07 15:02:30,Fahed Foods w.l.l.,FZ EG Strawberry 1kgx8 Vegie-Tut_18009,Each,60,2,120,0,Completed
+800301,2026-01-07 15:02:30,Fahed Foods w.l.l.,FH Parmesan Block 33.16Kg_13020,Each,1758,1,1758,0,Completed
+800301,2026-01-07 15:02:30,Fahed Foods w.l.l.,Topside Chilled South Africa_15009,KG,33,40,1320,0,Completed
+800301,2026-01-07 15:02:30,Fahed Foods w.l.l.,FZ EG Mango SlicesFahed Food 1Kgx8 / Box_18008,Each,69,2,138,0,Completed
+800302,2026-01-07 15:30:12,Qnited Trading Company,Chicken Breast Aurora 2kgx6_16012,Each,156,4,624,0,Completed
+800302,2026-01-07 15:30:12,Qnited Trading Company,President Butter Sheets_19100,Each,575,1,575,0,Completed
+800303,2026-01-07 15:35:56,Al Majed Marketing & Distribution,Zeeba Rice 3 kgs x12_17000,Each,144,2,288,0,Completed
+800303,2026-01-07 15:35:56,Al Majed Marketing & Distribution,Fresh Eggs Grade A -_21010,Each,175,3,525,0,Completed
+800304,2026-01-11 16:19:29,Fahed Foods w.l.l.,Whole Peeled Tomatoes 6x2.5KG_21015,Each,80,4,320,0,Completed
+800304,2026-01-11 16:19:29,Fahed Foods w.l.l.,Topside Frozen Brazil_15000,Each,28,20,560,0,Completed
+800305,2026-01-11 16:38:07,International Foodstuff Group,Al Baladi Dried Moghrabieh 900g_25001,Each,9,24,216,0,Completed
+800305,2026-01-11 16:38:07,International Foodstuff Group,Orange Blossom Water 500ml_21086,Each,7.5,12,90,0,Completed
+800306,2026-01-13 16:32:11,Qnited Trading Company,DARK COMPOUND BLOCKS 2.5KG_19015,Each,45,4,180,0,Completed
+800306,2026-01-13 16:32:11,Qnited Trading Company,MILK COMPOUND BLOCKS 2.5KG_19014,Each,45,4,180,0,Completed
+800306,2026-01-13 16:32:11,Qnited Trading Company,WHITE COMPOUND BLOCKS 2.5KG_19013,Each,45,4,180,0,Completed
+800306,2026-01-13 16:32:11,Qnited Trading Company,SUGAR PASTE black 1KG X 12PCS_19006,Each,168,1,168,0,Completed
+800307,2026-01-15 10:23:59,BRF,Sadia Whole Chicken 1100 Gms - 10 Pcs/Ctn_16009,Each,96.25,10,962.5,0,Completed
+800307,2026-01-15 10:23:59,BRF,Sadia Chicken Shawarma - ctn_16006,Each,105,5,525,0,Completed
+800308,2026-01-15 10:44:51,Bluefin,Topside Chilled South Africa_15009,KG,32,40,1280,0,Completed
+800309,2026-01-15 10:52:17,Tredos Trading,Breaded Chicken Nuggets 6x1KG_309,Each,90,2,180,0,Completed
+800309,2026-01-15 10:52:17,Tredos Trading,Chicken Strips Regular 6x1KG_16003,Each,140,1,140,0,Completed
+800309,2026-01-15 10:52:17,Tredos Trading,White Chunk Tuna in Sunflower Oil 6x1.8KG_21034,Each,230,1,230,0,Completed
+800309,2026-01-15 10:52:17,Tredos Trading,Mustard Sauce_21026,Each,120,1,120,0,Completed
+800309,2026-01-15 10:52:17,Tredos Trading,Ketchup Sauce Tredos_19055,Each,70,1,70,0,Completed
+800309,2026-01-15 10:52:17,Tredos Trading,Perfecta Mayonnaise_21011,Each,180,1,180,0,Completed
+800309,2026-01-15 10:52:17,Tredos Trading,Hash Brown Triangular 4x2.5Kgs_18022,Each,90,1,90,0,Completed
+800309,2026-01-15 10:52:17,Tredos Trading,Mozarella Sticks 6 KG_19050,Each,175,1,175,0,Completed
+800310,2026-01-15 11:54:54,Friendly Food Qatar w.l.l.,GRANORO - LASAGNE ALL' UOVO (12X500G) (120)_18050,Each,116,2,232,0,Completed
+800311,2026-01-15 14:05:54,Fahed Foods w.l.l.,FZ EG Strawberry 1kgx8 Vegie-Tut_18009,Each,60,2,120,0,Completed
+800311,2026-01-15 14:05:54,Fahed Foods w.l.l.,Fish Filet Frozen - Vietnam 1 Kg_18025,Each,9,20,180,0,Completed
+800311,2026-01-15 14:05:54,Fahed Foods w.l.l.,PD Shrimp 11/15 (10 x 1 Kg )_18029,Each,29,20,580,0,Completed
+800311,2026-01-15 14:05:54,Fahed Foods w.l.l.,FZ EG Mango SlicesFahed Food 1Kgx8 / Box_18008,Each,69,2,138,0,Completed
+800312,2026-01-15 14:10:10,Ideal Qatar,Aoun Corriander Powder 500GR_17013,Each,11.64,2,23.28,0,Completed
+800312,2026-01-15 14:10:10,Ideal Qatar,Happy Gardens Tahina Extra 8.58 NW - GW 9.00_21013,Each,162.56,4,650.24,0,Completed
+800312,2026-01-15 14:10:10,Ideal Qatar,AOUN BROWN BURGHUL FINE 4KG_17026,Each,20,4,80,0,Completed
+800312,2026-01-15 14:10:10,Ideal Qatar,Happy Gardens Foul Medamas 400gr 1x24_21024,Each,2,36,72,0,Completed
+800312,2026-01-15 14:10:10,Ideal Qatar,"AOUN WHITE BURGHUL FINE 	4kg_17027",Each,23,4,92,0,Completed
+800312,2026-01-15 14:10:10,Ideal Qatar,AOUN BLACK PEPPER POWDER 500GR_17019,Each,27.5,5,137.5,0,Completed
+800312,2026-01-15 14:10:10,Ideal Qatar,Aoun Egyptian Rice 5 Kgs_17001,Each,27.9,4,111.6,0,Completed
+800312,2026-01-15 14:10:10,Ideal Qatar,Happy Gardens Chickpeas 9mm-20 kg_21025,Each,180.5,1,180.5,0,Completed
+800312,2026-01-15 14:10:10,Ideal Qatar,Aoun 7 Spices 500 GR_17023,Each,27.08,4,108.32,0,Completed
+800312,2026-01-15 14:10:10,Ideal Qatar,Aoun All Spices Powder 500GR_17025,Each,35.63,4,142.52,0,Completed
+800312,2026-01-15 14:10:10,Ideal Qatar,VEGONTABLE PULP OF ROASTED EGGPLANT_25004,Each,24.65,3,73.95,0,Completed
+800313,2026-01-15 14:28:05,International Foodstuff Group,White Kidney Beans 900g_300000,Each,10,12,120,0,Completed
+800314,2026-01-19 11:36:26,Ideal Qatar,VEGONTABLE PULP OF ROASTED EGGPLANT_25004,Each,24.65,12,295.8,0,Completed
+800314,2026-01-19 11:36:26,Ideal Qatar,Happy Gardens Foul Medamas 400gr 1x24_3010,Each,2,48,96,0,Completed
+800315,2026-01-19 11:39:48,Tredos Trading,Chicken Strips Regular 6x1KG_16003,Each,140,2,280,0,Completed
+800315,2026-01-19 11:39:48,Tredos Trading,Breaded Chicken Nuggets 6x1KG_309,Each,90,2,180,0,Completed
+800315,2026-01-19 11:39:48,Tredos Trading,Mozarella Sticks 6 KG_19050,Each,175,1,175,0,Completed
+800315,2026-01-19 11:39:48,Tredos Trading,Hash Brown Triangular 4x2.5Kgs_18022,Each,90,1,90,0,Completed
+800316,2026-01-21 05:08:18,Qnited Trading Company,Campina Butter Sheet 2x5_19051,Each,500,1,500,0,Completed
+800316,2026-01-21 05:08:18,Qnited Trading Company,Vizyon White Sugar Paste 1kgx12Pcs_19017,Each,180,2,360,0,Completed
+800316,2026-01-21 05:08:18,Qnited Trading Company,Spiral Whipping Cream 1 Ltrx12pcs_19021,Each,140,2,280,0,Completed
+800316,2026-01-21 05:08:18,Qnited Trading Company,Qnited Cocoa Powder 10Kg Reference 900_19039,Each,300,1,300,0,Completed
+800317,2026-01-21 05:32:38,Green Oasis Establishment,Chicken Breast Aurora 2kgx6_16012,Each,156,5,780,0,Completed
+800318,2026-01-21 16:53:27,Tredos Trading,Chicken Strips Regular 6x1KG_16003,Each,140,3,420,0,Completed
+800318,2026-01-21 16:53:27,Tredos Trading,Breaded Chicken Nuggets 6x1KG_309,Each,90,3,270,0,Completed
+800319,2026-01-24 11:12:23,Tredos Trading,Tomex coated & salted crunchy fries 6x6mm Offer_401,Each,80,5,400,0,Completed
+800320,2026-01-25 15:24:08,Ideal Qatar,BM CUCUMBER PICKLES BARREL_21032,Each,83.3,2,166.6,0,Completed
+800320,2026-01-25 15:24:08,Ideal Qatar,HAPPY GARDENS PICKLED GRAPE LEAVES_21008,Each,13.06,48,626.88,0,Completed
+800320,2026-01-25 15:24:08,Ideal Qatar,Aoun Lime_17020,Each,10.2,6,61.2,0,Completed
+800320,2026-01-25 15:24:08,Ideal Qatar,Aoun All Spices Powder 500GR_17025,Each,35.63,4,142.52,0,Completed
+800320,2026-01-25 15:24:08,Ideal Qatar,Aoun Cinnamon Powder 500GR_17012,Each,14.5,4,58,0,Completed
+800320,2026-01-25 15:24:08,Ideal Qatar,Tomato Paste 800gms x 12_21020,Each,102,4,408,0,Completed
+800321,2026-01-25 16:01:19,Tredos Trading,Breaded Chicken Nuggets 6x1KG_309,Each,90,2,180,0,Completed
+800321,2026-01-25 16:01:19,Tredos Trading,Hash Brown Triangular 4x2.5Kgs_18022,Each,90,2,180,0,Completed
+800321,2026-01-25 16:01:19,Tredos Trading,Chicken Strips Regular 6x1KG_16003,Each,140,2,280,0,Completed
+800321,2026-01-25 16:01:19,Tredos Trading,Perfecta Mayonnaise_21011,Each,180,1,180,0,Completed
+800322,2026-01-25 16:10:18,Green Oasis Establishment,Chicken Breast Aurora 2kgx6_16012,Each,156,4,624,0,Completed
+800323,2026-01-25 16:12:35,Bluefin,Topside Chilled South Africa_15009,KG,32,40,1280,0,Completed
+800324,2026-01-29 17:04:22,Qnited Trading Company,MILK COMPOUND BLOCKS 2.5KG_19014,Each,45,2,90,0,Completed
+800324,2026-01-29 17:04:22,Qnited Trading Company,DARK COMPOUND BLOCKS 2.5KG_19015,Each,45,2,90,0,Completed
+800324,2026-01-29 17:04:22,Qnited Trading Company,Backaldrin Dry Yeast 20Pc x 500g_19032,Each,125,1,125,0,Completed
+800324,2026-01-29 17:04:22,Qnited Trading Company,President Butter Sheets_19100,Each,575,1,575,0,Completed
+800325,2026-01-31 18:25:08,Green Oasis Establishment,Chicken Breast Aurora 2kgx6_16012,Each,156,5,780,0,Completed
+800326,2026-01-31 18:38:22,Ideal Qatar,Happy Gardens Tahina Extra 8.58 NW - GW 9.00_21013,Each,162.56,2,325.12,0,Completed
+800327,2026-01-31 18:46:06,Fahed Foods w.l.l.,Fish Filet Frozen - Vietnam 1 Kg_18025,Each,9,10,90,0,Completed
+800327,2026-01-31 18:46:06,Fahed Foods w.l.l.,PD Shrimp 11/15 (10 x 1 Kg )_18029,Each,29,20,580,0,Completed
+800327,2026-01-31 18:46:06,Fahed Foods w.l.l.,Topside Chilled South Africa_15009,KG,33,40,1320,0,Completed
+800327,2026-01-31 18:46:06,Fahed Foods w.l.l.,Frz EG Okra Zero 20gx400 Hi-Chef_18038,Each,83,2,166,0,Completed
+800328,2026-01-31 18:51:59,Tredos Trading,Mozarella Sticks 6 KG_19050,Each,175,1,175,0,Completed
+800328,2026-01-31 18:51:59,Tredos Trading,Chicken Strips Regular 6x1KG_16003,Each,140,1,140,0,Completed
+800329,2026-01-31 19:13:40,Bluefin,Eye Round Chilled South African_15010,Each,32,15,480,0,Completed
+800330,2026-02-07 10:31:01,Green Oasis Establishment,Chicken Breast Aurora 2kgx6_16012,Each,156,5,780,0,Completed
+800331,2026-02-07 11:12:10,Tredos Trading,Perfecta Mayonnaise_21011,Each,180,1,180,0,Completed
+800331,2026-02-07 11:12:10,Tredos Trading,Hash Brown Triangular 4x2.5Kgs_18022,Each,90,2,180,0,Completed
+800331,2026-02-07 11:12:10,Tredos Trading,Breaded Chicken Nuggets 6x1KG_309,Each,90,1,90,0,Completed
+800331,2026-02-07 11:12:10,Tredos Trading,White Chunk Tuna in Sunflower Oil 6x1.8KG_21034,Each,230,1,230,0,Completed
+800331,2026-02-07 11:12:10,Tredos Trading,Mozzarella Sticks _1755960205677,Eachch,190,1,190,0,Completed
+800332,2026-02-07 12:14:13,Fahed Foods w.l.l.,Chilled BR Beef Topside BL JBS_15012,Each,33,40,1320,0,Completed
+800332,2026-02-07 12:14:13,Fahed Foods w.l.l.,Frozen Beef Tenderloin Brazil_15002,Each,51,15,765,0,Completed
+800332,2026-02-07 12:14:13,Fahed Foods w.l.l.,Aviko Crunchy Crispy 9.5mm_18037,Each,90,2,180,0,Completed
+800332,2026-02-07 12:14:13,Fahed Foods w.l.l.,Aviko H Patatas Bravas 4x2500g_18039,Each,110,1,110,0,Completed
+800333,2026-02-07 12:30:23,Friendly Food Qatar w.l.l.,GRANORO - LASAGNE ALL' UOVO (12X500G) (120)_18050,Each,116,2,232,0,Completed
+800334,2026-02-07 12:43:14,Ideal Qatar,VEGONTABLE PULP OF ROASTED EGGPLANT_25004,Each,24.65,12,295.8,0,Completed
+800335,2026-02-11 17:11:38,Tredos Trading,Chicken Strips Regular 6x1KG_16003,Each,140,2,280,0,Completed
+800335,2026-02-11 17:11:38,Tredos Trading,Breaded Chicken Nuggets 6x1KG_309,Each,90,2,180,0,Completed
+800335,2026-02-11 17:11:38,Tredos Trading,Perfecta Mayonnaise_21011,Each,180,2,360,0,Completed
+800335,2026-02-11 17:11:38,Tredos Trading,Tomex coated & salted crunchy fries 6x6mm Offer_401,Each,80,5,400,0,Completed
+800336,2026-02-12 16:39:20,Ideal Qatar,BM CUCUMBER PICKLES BARREL_21032,Each,83.3,1,83.3,0,Completed
+800336,2026-02-12 16:39:20,Ideal Qatar,Happy Gardens Chickpeas 9mm-20 kg_21025,Each,180.5,2,361,0,Completed
+800336,2026-02-12 16:39:20,Ideal Qatar,HAPPY GARDENS PICKLED GRAPE LEAVES_21008,Each,13.06,36,470.16,0,Completed
+800336,2026-02-12 16:39:20,Ideal Qatar,Happy Gardens Tahina Extra 8.58 NW - GW 9.00_21013,Each,162.56,2,325.12,0,Completed
+800336,2026-02-12 16:39:20,Ideal Qatar,Aoun Green Lentils 900 Gr 1x20_17022,Each,9.5,12,114,0,Completed
+800336,2026-02-12 16:39:20,Ideal Qatar,BM Tomato Paste 650 GR - Lebanon_21019,Each,8.5,12,102,0,Completed
+800337,2026-02-19 13:14:55,Green Oasis Establishment,Mashhor Indian 1121 Long Grain Basmati Rice 1x35kg_17005,Each,138,3,414,0,Completed
+800337,2026-02-19 13:14:55,Green Oasis Establishment,Masoor Dal 15Kg_17007,Each,60,3,180,0,Completed
+800337,2026-02-19 13:14:55,Green Oasis Establishment,Chicken Breast Aurora 2kgx6_16012,Each,156,3,468,0,Completed
+800338,2026-02-21 12:44:15,Ideal Qatar,VEGONTABLE PULP OF ROASTED EGGPLANT_25004,Each,24.65,6,147.9,0,Completed
+800338,2026-02-21 12:44:15,Ideal Qatar,AOUN WHITE BURGHUL HARD 900Gr_17036,Each,5.52,10,55.2,0,Completed
+800339,2026-02-24 15:09:06,Tredos Trading,Ketchup Sauce Tredos_19055,Each,70,1,70,0,Completed
+800339,2026-02-24 15:09:06,Tredos Trading,Chicken Strips Regular 6x1KG_16003,Each,140,2,280,0,Completed
+800340,2026-02-24 15:23:40,Ideal Qatar,Happy Gardens Tahina Extra 8.58 NW - GW 9.00_21013,Each,162.56,3,487.68,0,Completed
+800340,2026-02-24 15:23:40,Ideal Qatar,Happy Gardens Vine Leaves -Deluxe 908GR 1x12_21028,Each,160.65,3,481.95,0,Completed
+800340,2026-02-24 15:23:40,Ideal Qatar,MBM Apple Vinegar 500ML_21004,Each,6.25,12,75,0,Completed
+800340,2026-02-24 15:23:40,Ideal Qatar,White Vinegar 4x3.78ltr_21005,Each,18,4,72,0,Completed
+800340,2026-02-24 15:23:40,Ideal Qatar,AOUN SODIUM BICARBONATE_17010,Each,3.6,10,36,0,Completed
+800340,2026-02-24 15:23:40,Ideal Qatar,AOUN BLACK PEPPER POWDER 500GR_17019,Each,27.5,4,110,0,Completed
+800340,2026-02-24 15:23:40,Ideal Qatar,Aoun White Pepper Powder 500GR_17011,Each,41.8,2,83.6,0,Completed
+800340,2026-02-24 15:23:40,Ideal Qatar,Aoun Egyptian Rice 5 Kgs_17001,Each,27.9,4,111.6,0,Completed
+800340,2026-02-24 15:23:40,Ideal Qatar,Aoun Garlic Powder 500GR 1x12_17021,Each,15.91,2,31.82,0,Completed
+800340,2026-02-24 15:23:40,Ideal Qatar,Happy Gardens Foul Medamas 400gr 1x24_21024,Each,2,48,96,0,Completed
+800341,2026-02-24 15:46:49,Friendly Food Qatar w.l.l.,ALKARAMAH - SPRING ROLLS SMALL{24X160G}_14005,Each,78,2,156,0,Completed
+800341,2026-02-24 15:46:49,Friendly Food Qatar w.l.l.,farm Frites - Potato Cubes 20x20mm - 4x2.5kg_451,Each,80,1,80,0,Completed
+800341,2026-02-24 15:46:49,Friendly Food Qatar w.l.l.,MAGGI - CHICKEN BOUILLON POWDER (6X1KG)_17051,Each,186,1,186,0,Completed
+800342,2026-02-24 16:11:54,Qnited Trading Company,DARK COMPOUND BLOCKS 2.5KG_19015,Each,45,2,90,0,Completed
+800342,2026-02-24 16:11:54,Qnited Trading Company,President Butter Sheets_19100,Each,575,1,575,0,Completed
+800342,2026-02-24 16:11:54,Qnited Trading Company,Icing sugar 2Kg 5 pkt_19031,Each,60,1,60,0,Completed
+800342,2026-02-24 16:11:54,Qnited Trading Company,MILK COMPOUND BLOCKS 2.5KG_19014,Each,45,1,45,0,Completed
+800342,2026-02-24 16:11:54,Qnited Trading Company,WHITE COMPOUND BLOCKS 2.5KG_19013,Each,45,1,45,0,Completed
+800342,2026-02-24 16:11:54,Qnited Trading Company,Spiral Whipping Cream 1 Ltrx12pcs_19021,Each,140,1,140,0,Completed
+Grand Total,,,,,,5735.6,242645.56,,
