@@ -152,24 +152,88 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
+        $this->createOptionForDate($employeeListId, $this->drawerMenuDate, $category, $name);
+
+        $this->drawerNewOption[$category] = '';
+        session()->flash('status', __('Option added.'));
+    }
+
+    public function addDrawerOptionToAllDays(string $category): void
+    {
+        $name = trim($this->drawerNewOption[$category] ?? '');
+        if ($name === '') {
+            session()->flash('error', __('Please enter a name.'));
+            return;
+        }
+
+        $listSpecificCategories = ['main', 'soup'];
+        $employeeListId = in_array($category, $listSpecificCategories, true)
+            ? $this->drawerNewOptionListId
+            : $this->project->employeeLists->first()?->id;
+
+        if (! $employeeListId) {
+            session()->flash('error', __('Please select a list for this option.'));
+            return;
+        }
+
+        if (in_array($category, $listSpecificCategories, true) && ! $this->project->employeeLists->contains('id', $employeeListId)) {
+            session()->flash('error', __('Invalid list selected.'));
+            return;
+        }
+
+        $start = $this->project->start_date->copy()->startOfDay();
+        $end = $this->project->end_date->copy()->startOfDay();
+
+        if ($start->gt($end)) {
+            session()->flash('error', __('Invalid project date range.'));
+            return;
+        }
+
+        $added = 0;
+        for ($date = $start->copy(); $date->lte($end); $date->addDay()) {
+            $added += $this->createOptionForDate($employeeListId, $date->format('Y-m-d'), $category, $name) ? 1 : 0;
+        }
+
+        $this->drawerNewOption[$category] = '';
+
+        if ($added === 0) {
+            session()->flash('status', __('Option already exists on all days.'));
+            return;
+        }
+
+        session()->flash('status', __('Option added to :count day(s).', ['count' => $added]));
+    }
+
+    private function createOptionForDate(int $employeeListId, string $menuDate, string $category, string $name): bool
+    {
+        $exists = $this->project->options()
+            ->where('employee_list_id', $employeeListId)
+            ->whereDate('menu_date', $menuDate)
+            ->where('category', $category)
+            ->where('name', $name)
+            ->exists();
+
+        if ($exists) {
+            return false;
+        }
+
         $maxSort = $this->project->options()
             ->where('category', $category)
             ->where('employee_list_id', $employeeListId)
-            ->whereDate('menu_date', $this->drawerMenuDate)
+            ->whereDate('menu_date', $menuDate)
             ->max('sort_order') ?? 0;
 
         CompanyFoodOption::create([
             'project_id' => $this->project->id,
             'employee_list_id' => $employeeListId,
-            'menu_date' => $this->drawerMenuDate,
+            'menu_date' => $menuDate,
             'category' => $category,
             'name' => $name,
             'sort_order' => $maxSort + 1,
             'is_active' => true,
         ]);
 
-        $this->drawerNewOption[$category] = '';
-        session()->flash('status', __('Option added.'));
+        return true;
     }
 
     public function addOption(): void
@@ -938,6 +1002,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 @endif
                                 <flux:input wire:model="drawerNewOption.{{ $category }}" placeholder="{{ __('Add option...') }}" class="flex-1 min-w-[120px]" wire:keydown.enter="addDrawerOption('{{ $category }}')" />
                                 <flux:button type="button" wire:click="addDrawerOption('{{ $category }}')" size="sm" variant="primary">{{ __('Add') }}</flux:button>
+                                <flux:button type="button" wire:click="addDrawerOptionToAllDays('{{ $category }}')" size="sm" variant="ghost">{{ __('Add to all days') }}</flux:button>
                             </div>
                             @if($listSpecific)
                                 @foreach($optsByList as $listId => $listOpts)
