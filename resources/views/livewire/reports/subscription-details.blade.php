@@ -13,6 +13,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $status = 'all';
     public ?int $customer_id = null;
+    public string $customer_search = '';
     public ?int $branch_id = null;
     public ?string $date_from = null;
     public ?string $date_to = null;
@@ -22,16 +23,45 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function updating($name): void
     {
-        if (in_array($name, ['status', 'customer_id', 'branch_id', 'date_from', 'date_to', 'search'], true)) {
+        if (in_array($name, ['status', 'customer_id', 'customer_search', 'branch_id', 'date_from', 'date_to', 'search'], true)) {
             $this->resetPage();
         }
     }
 
+    public function updatedCustomerSearch(): void
+    {
+        if ($this->customer_id === null) {
+            return;
+        }
+
+        $selected = Customer::find($this->customer_id);
+        $selectedLabel = $selected ? trim($selected->name.' '.($selected->phone ?? '')) : '';
+        if (trim($this->customer_search) !== $selectedLabel) {
+            $this->customer_id = null;
+        }
+    }
+
+    public function selectCustomer(int $id): void
+    {
+        $this->customer_id = $id;
+        $c = Customer::find($id);
+        $this->customer_search = $c ? trim($c->name.' '.($c->phone ?? '')) : '';
+    }
+
     public function with(): array
     {
+        $customers = collect();
+        if (Schema::hasTable('customers') && $this->customer_id === null && trim($this->customer_search) !== '') {
+            $customers = Customer::query()
+                ->search($this->customer_search)
+                ->orderBy('name')
+                ->limit(25)
+                ->get();
+        }
+
         return [
             'subscriptions' => $this->query()->paginate(15),
-            'customers' => Schema::hasTable('customers') ? Customer::orderBy('name')->get() : collect(),
+            'customers' => $customers,
             'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
             'exportParams' => $this->exportParams(),
         ];
@@ -85,14 +115,29 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="min-w-[200px]">
                 <flux:input wire:model.live.debounce.300ms="search" :label="__('Search')" placeholder="{{ __('Subscription code / customer') }}" />
             </div>
-            <div class="w-40">
-                <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Customer') }}</label>
-                <select wire:model.live="customer_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                    <option value="">{{ __('All') }}</option>
-                    @foreach($customers as $customer)
-                        <option value="{{ $customer->id }}">{{ $customer->name }}</option>
-                    @endforeach
-                </select>
+            <div class="min-w-[220px] relative">
+                <flux:input wire:model.live.debounce.300ms="customer_search" :label="__('Customer')" placeholder="{{ __('Search by name/phone/code') }}" />
+                @if($customer_id === null && trim($customer_search) !== '')
+                    <div class="absolute z-10 mt-1 w-full overflow-hidden rounded-md border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+                        <div class="max-h-64 overflow-auto">
+                            @forelse ($customers as $customer)
+                                <button type="button" class="w-full px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-50 dark:text-neutral-100 dark:hover:bg-neutral-800/80" wire:click="selectCustomer({{ $customer->id }})">
+                                    <div class="flex items-center justify-between gap-2">
+                                        <span class="font-medium">{{ $customer->name }}</span>
+                                        @if($customer->customer_code)
+                                            <span class="text-xs text-neutral-500 dark:text-neutral-400">{{ $customer->customer_code }}</span>
+                                        @endif
+                                    </div>
+                                    @if($customer->phone)
+                                        <div class="text-xs text-neutral-500 dark:text-neutral-400">{{ $customer->phone }}</div>
+                                    @endif
+                                </button>
+                            @empty
+                                <div class="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">{{ __('No customers found.') }}</div>
+                            @endforelse
+                        </div>
+                    </div>
+                @endif
             </div>
             <div class="w-40">
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Branch') }}</label>

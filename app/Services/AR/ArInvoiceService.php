@@ -6,7 +6,6 @@ use App\Events\InvoiceIssued;
 use App\Models\ArInvoice;
 use App\Models\ArInvoiceItem;
 use App\Models\Customer;
-use App\Models\MealSubscriptionOrder;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\Payment;
@@ -441,9 +440,9 @@ class ArInvoiceService
 
             InvoiceIssued::dispatch($locked->fresh());
 
-            // Auto-allocate subscription payments if this is a subscription order invoice
+            // Auto-allocate available customer advances for credit invoices.
             $issued = $locked->fresh(['items']);
-            $this->autoAllocateSubscriptionPayment($issued, $actorId);
+            $this->autoAllocateAvailableAdvancePayments($issued, $actorId);
 
             return $issued->fresh(['items']);
         });
@@ -649,36 +648,24 @@ class ArInvoiceService
             });
     }
 
-    /**
-     * Auto-allocate advance payments to subscription order invoices.
-     * Only applies to invoices linked to subscription orders.
-     */
-    protected function autoAllocateSubscriptionPayment(ArInvoice $invoice, int $actorId): void
+    protected function autoAllocateAvailableAdvancePayments(ArInvoice $invoice, int $actorId): void
     {
-        // Only process if invoice has a source order
-        if (! $invoice->source_order_id) {
+        if ($invoice->isCreditNote()) {
             return;
         }
 
-        // Check if this order is a subscription order
-        $isSubscriptionOrder = MealSubscriptionOrder::where('order_id', $invoice->source_order_id)->exists();
-        if (! $isSubscriptionOrder) {
+        if ((string) $invoice->payment_type !== 'credit') {
             return;
         }
 
-        // Find unallocated advance payments for this customer (FIFO by received_at)
-        $customerId = $invoice->customer_id;
-        $branchId = $invoice->branch_id;
         $invoiceBalance = (int) $invoice->balance_cents;
-
         if ($invoiceBalance <= 0) {
             return;
         }
 
-        // Get payments with unallocated balance
         $payments = Payment::query()
-            ->where('customer_id', $customerId)
-            ->where('branch_id', $branchId)
+            ->where('customer_id', (int) $invoice->customer_id)
+            ->where('branch_id', (int) $invoice->branch_id)
             ->where('source', 'ar')
             ->whereNull('voided_at')
             ->orderBy('received_at', 'asc')
@@ -692,13 +679,26 @@ class ArInvoiceService
                 break;
             }
 
-            $unallocated = $payment->unallocatedCents();
+            $lockedPayment = Payment::query()
+                ->whereKey($payment->id)
+                ->lockForUpdate()
+                ->first();
+            if (! $lockedPayment) {
+                continue;
+            }
+
+            $allocated = (int) PaymentAllocation::query()
+                ->where('payment_id', $lockedPayment->id)
+                ->whereNull('voided_at')
+                ->lockForUpdate()
+                ->sum('amount_cents');
+
+            $unallocated = (int) $lockedPayment->amount_cents - $allocated;
             if ($unallocated <= 0) {
                 continue;
             }
 
-            // Check currency and branch match
-            if ($payment->currency && $invoice->currency && $payment->currency !== $invoice->currency) {
+            if ($lockedPayment->currency && $invoice->currency && $lockedPayment->currency !== $invoice->currency) {
                 continue;
             }
 
@@ -709,7 +709,7 @@ class ArInvoiceService
 
             // Create allocation
             PaymentAllocation::create([
-                'payment_id' => $payment->id,
+                'payment_id' => $lockedPayment->id,
                 'allocatable_type' => ArInvoice::class,
                 'allocatable_id' => $invoice->id,
                 'amount_cents' => $allocateAmount,
@@ -719,7 +719,7 @@ class ArInvoiceService
 
             // Record subledger entry for advance applied
             $allocation = PaymentAllocation::query()
-                ->where('payment_id', $payment->id)
+                ->where('payment_id', $lockedPayment->id)
                 ->where('allocatable_id', $invoice->id)
                 ->where('allocatable_type', ArInvoice::class)
                 ->whereNull('voided_at')

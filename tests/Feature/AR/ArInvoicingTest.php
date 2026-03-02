@@ -221,6 +221,86 @@ it('creates advance payment and applies it later', function () {
     expect($payment->unallocatedCents())->toBe(2000);
 });
 
+it('auto-allocates available customer advance when issuing a credit invoice', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $customer = Customer::factory()->corporate()->create();
+
+    /** @var ArPaymentService $payments */
+    $payments = app(ArPaymentService::class);
+    $advance = $payments->createAdvancePayment(
+        customerId: $customer->id,
+        branchId: 1,
+        amountCents: 5000,
+        method: 'bank',
+        receivedAt: now()->toDateTimeString(),
+        reference: null,
+        notes: null,
+        actorId: $user->id
+    );
+
+    /** @var ArInvoiceService $invoices */
+    $invoices = app(ArInvoiceService::class);
+    $invoice = $invoices->createDraft(
+        branchId: 1,
+        customerId: $customer->id,
+        items: [
+            ['description' => 'Service', 'qty' => '1.000', 'unit_price_cents' => 8000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 8000],
+        ],
+        actorId: $user->id,
+        paymentType: 'credit',
+    );
+    $invoice = $invoices->issue($invoice, $user->id);
+
+    expect($invoice->status)->toBe('partially_paid');
+    expect($invoice->paid_total_cents)->toBe(5000);
+    expect($invoice->balance_cents)->toBe(3000);
+
+    $advance = Payment::findOrFail($advance->id);
+    expect($advance->unallocatedCents())->toBe(0);
+});
+
+it('does not auto-allocate advance when invoice payment type is not credit', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $customer = Customer::factory()->corporate()->create();
+
+    /** @var ArPaymentService $payments */
+    $payments = app(ArPaymentService::class);
+    $advance = $payments->createAdvancePayment(
+        customerId: $customer->id,
+        branchId: 1,
+        amountCents: 5000,
+        method: 'bank',
+        receivedAt: now()->toDateTimeString(),
+        reference: null,
+        notes: null,
+        actorId: $user->id
+    );
+
+    /** @var ArInvoiceService $invoices */
+    $invoices = app(ArInvoiceService::class);
+    $invoice = $invoices->createDraft(
+        branchId: 1,
+        customerId: $customer->id,
+        items: [
+            ['description' => 'Service', 'qty' => '1.000', 'unit_price_cents' => 8000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 8000],
+        ],
+        actorId: $user->id,
+        paymentType: 'cash',
+    );
+    $invoice = $invoices->issue($invoice, $user->id);
+
+    expect($invoice->status)->toBe('issued');
+    expect($invoice->paid_total_cents)->toBe(0);
+    expect($invoice->balance_cents)->toBe(8000);
+
+    $advance = Payment::findOrFail($advance->id);
+    expect($advance->unallocatedCents())->toBe(5000);
+});
+
 it('uses QAR as default currency for payments and invoices', function () {
     $invoice = ArInvoice::factory()->create();
     $payment = Payment::factory()->create();

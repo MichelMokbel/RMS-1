@@ -1,6 +1,6 @@
 -- Generated SQL: AR invoice payments reconciliation from unpaid statement CSV
 -- Source file: /Users/mohamadsafar/Desktop/Layla Kitchen/RMS-1/docs/csv/all_customers_statement_2026-03-01_07_55PM.csv
--- Generated at: 2026-03-01T22:13:50
+-- Generated at: 2026-03-02T21:37:55
 -- Branch ID: 1
 -- As-of date (inclusive): 2026-03-01
 -- Statement rows: 525
@@ -633,16 +633,31 @@ SET
   ai.updated_at = NOW();
 SET @statement_override_updates := ROW_COUNT();
 
+SET @statement_rows_loaded := (SELECT COUNT(*) FROM tmp_unpaid_statement);
+SET @statement_distinct_docs := (SELECT COUNT(DISTINCT document_no) FROM tmp_unpaid_statement);
+SET @scope_invoices_count := (SELECT COUNT(*) FROM tmp_scope_invoices);
+SET @missing_invoice_rows := (
+  SELECT COUNT(*) FROM tmp_unpaid_match WHERE match_status = 'missing_invoice'
+);
+SET @amount_mismatch_rows := (
+  SELECT COUNT(*) FROM tmp_unpaid_match
+  WHERE match_status = 'matched' AND statement_amount_cents <> invoice_total_cents
+);
+SET @statement_sum_mismatch_rows := (
+  SELECT COUNT(*) FROM tmp_unpaid_match
+  WHERE match_status = 'matched' AND (statement_paid_cents + statement_balance_cents) <> invoice_total_cents
+);
+
 -- Summary
 SELECT
-  (SELECT COUNT(*) FROM tmp_unpaid_statement) AS statement_rows_loaded,
-  (SELECT COUNT(DISTINCT document_no) FROM tmp_unpaid_statement) AS statement_distinct_docs,
-  (SELECT COUNT(*) FROM tmp_scope_invoices) AS scope_invoices_count,
+  @statement_rows_loaded AS statement_rows_loaded,
+  @statement_distinct_docs AS statement_distinct_docs,
+  @scope_invoices_count AS scope_invoices_count,
   @baseline_paid_updates AS baseline_paid_updates,
   @statement_override_updates AS statement_override_updates,
-  (SELECT COUNT(*) FROM tmp_unpaid_match WHERE match_status = 'missing_invoice') AS missing_invoice_rows,
-  (SELECT COUNT(*) FROM tmp_unpaid_match WHERE match_status = 'matched' AND statement_amount_cents <> invoice_total_cents) AS amount_mismatch_rows,
-  (SELECT COUNT(*) FROM tmp_unpaid_match WHERE match_status = 'matched' AND (statement_paid_cents + statement_balance_cents) <> invoice_total_cents) AS statement_sum_mismatch_rows;
+  @missing_invoice_rows AS missing_invoice_rows,
+  @amount_mismatch_rows AS amount_mismatch_rows,
+  @statement_sum_mismatch_rows AS statement_sum_mismatch_rows;
 
 -- Final status distribution inside scope
 SELECT

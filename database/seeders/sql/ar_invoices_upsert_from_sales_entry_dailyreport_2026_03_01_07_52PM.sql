@@ -1,6 +1,6 @@
 -- Generated SQL: AR invoices upsert from sales-entry CSV
 -- Source file: /Users/mohamadsafar/Desktop/Layla Kitchen/RMS-1/docs/csv/Sales_entry_dailyreport_2026-03-01_07_52PM.csv
--- Generated at: 2026-03-01T21:09:07
+-- Generated at: 2026-03-02T21:34:37
 -- Date range (inclusive): 2026-02-16 to 2026-03-01
 -- Branch ID: 1
 -- Total CSV rows: 311
@@ -659,15 +659,24 @@ JOIN tmp_sales_source s ON s.source_row_num = t.source_row_num
 ORDER BY t.source_row_num;
 SET @inserted_invoice_item_rows := ROW_COUNT();
 
+SET @source_rows_loaded := (SELECT COUNT(*) FROM tmp_sales_source);
+SET @source_distinct_customers := (SELECT COUNT(*) FROM tmp_customer_source);
+SET @skipped_conflict_rows := (
+  SELECT COUNT(*) FROM tmp_invoice_resolution WHERE resolution_status = 'skip_conflict'
+);
+SET @skipped_customer_rows := (
+  SELECT COUNT(*) FROM tmp_invoice_resolution WHERE resolution_status = 'skip_customer'
+);
+
 -- Summary
 SELECT
-  (SELECT COUNT(*) FROM tmp_sales_source) AS source_rows_loaded,
-  (SELECT COUNT(*) FROM tmp_customer_source) AS source_distinct_customers,
+  @source_rows_loaded AS source_rows_loaded,
+  @source_distinct_customers AS source_distinct_customers,
   @inserted_customers AS inserted_customers,
   @inserted_invoice_rows AS inserted_invoices,
   @updated_invoice_rows AS updated_invoices,
-  (SELECT COUNT(*) FROM tmp_invoice_resolution WHERE resolution_status = 'skip_conflict') AS skipped_conflict_rows,
-  (SELECT COUNT(*) FROM tmp_invoice_resolution WHERE resolution_status = 'skip_customer') AS skipped_customer_rows,
+  @skipped_conflict_rows AS skipped_conflict_rows,
+  @skipped_customer_rows AS skipped_customer_rows,
   @deleted_invoice_item_rows AS deleted_existing_invoice_items,
   @inserted_invoice_item_rows AS inserted_invoice_items;
 

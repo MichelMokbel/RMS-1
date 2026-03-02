@@ -1,6 +1,6 @@
 -- Generated SQL: customers upsert from strict OOXML XLSX
 -- Source file: /Users/mohamadsafar/Desktop/Layla Kitchen/RMS-1/docs/csv/Customers (2).xlsx
--- Generated at: 2026-03-01T19:22:35
+-- Generated at: 2026-03-02T21:19:50
 -- Source rows loaded (non-empty name): 524
 -- Source rows skipped (empty name): 0
 -- Matching key: LOWER(TRIM(name))
@@ -678,18 +678,29 @@ WHERE tu.name_norm IS NULL
   AND ta.name_norm IS NULL;
 SET @inserted_rows := ROW_COUNT();
 
+SET @source_rows_loaded := (SELECT COUNT(*) FROM tmp_customers_source);
+SET @source_unique_name_count := (SELECT COUNT(*) FROM tmp_source_unique_names);
+SET @source_ambiguous_name_count := (SELECT COUNT(*) FROM tmp_source_ambiguous_names);
+SET @target_ambiguous_name_count := (SELECT COUNT(*) FROM tmp_target_ambiguous_names);
+SET @skipped_source_ambiguous_rows := (
+  SELECT COUNT(*)
+  FROM tmp_customers_source s
+  JOIN tmp_source_ambiguous_names a ON a.name_norm = s.name_norm
+);
+SET @skipped_target_ambiguous_rows := (
+  SELECT COUNT(*)
+  FROM tmp_source_unique_names su
+  JOIN tmp_target_ambiguous_names ta ON ta.name_norm = su.name_norm
+);
+
 -- Ambiguity + execution summary
 SELECT
-  (SELECT COUNT(*) FROM tmp_customers_source) AS source_rows_loaded,
-  (SELECT COUNT(*) FROM tmp_source_unique_names) AS source_unique_name_count,
-  (SELECT COUNT(*) FROM tmp_source_ambiguous_names) AS source_ambiguous_name_count,
-  (SELECT COUNT(*) FROM tmp_target_ambiguous_names) AS target_ambiguous_name_count,
-  (SELECT COUNT(*)
-     FROM tmp_customers_source s
-     JOIN tmp_source_ambiguous_names a ON a.name_norm = s.name_norm) AS skipped_source_ambiguous_rows,
-  (SELECT COUNT(*)
-     FROM tmp_source_unique_names su
-     JOIN tmp_target_ambiguous_names ta ON ta.name_norm = su.name_norm) AS skipped_target_ambiguous_rows,
+  @source_rows_loaded AS source_rows_loaded,
+  @source_unique_name_count AS source_unique_name_count,
+  @source_ambiguous_name_count AS source_ambiguous_name_count,
+  @target_ambiguous_name_count AS target_ambiguous_name_count,
+  @skipped_source_ambiguous_rows AS skipped_source_ambiguous_rows,
+  @skipped_target_ambiguous_rows AS skipped_target_ambiguous_rows,
   @updated_rows AS updated_rows,
   @inserted_rows AS inserted_rows;
 

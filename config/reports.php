@@ -242,4 +242,15 @@ return [
             'outputs' => ['screen', 'print', 'csv'],
         ],
     ],
+
+    'customer_statement' => [
+        'bank_details' => [
+            'account_name' => 'LAYLA KITCHEN W.L.L',
+            'bank_name' => 'Qatar Islamic Bank',
+            'bank_address' => '',
+            'account_no' => '',
+            'iban' => '',
+            'swift_code' => '',
+        ],
+    ],
 ];

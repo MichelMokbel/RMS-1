@@ -14,6 +14,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public int $branch_id = 1;
     public ?int $customer_id = null;
+    public string $customer_search = '';
     public ?string $date_from = null;
     public ?string $date_to = null;
 
@@ -26,17 +27,46 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function updating($name): void
     {
-        if (in_array($name, ['branch_id', 'customer_id', 'date_from', 'date_to'], true)) {
+        if (in_array($name, ['branch_id', 'customer_id', 'customer_search', 'date_from', 'date_to'], true)) {
             $this->resetPage();
         }
     }
 
+    public function updatedCustomerSearch(): void
+    {
+        if ($this->customer_id === null) {
+            return;
+        }
+
+        $selected = Customer::find($this->customer_id);
+        $selectedLabel = $selected ? trim($selected->name.' '.($selected->phone ?? '')) : '';
+        if (trim($this->customer_search) !== $selectedLabel) {
+            $this->customer_id = null;
+        }
+    }
+
+    public function selectCustomer(int $id): void
+    {
+        $this->customer_id = $id;
+        $c = Customer::find($id);
+        $this->customer_search = $c ? trim($c->name.' '.($c->phone ?? '')) : '';
+    }
+
     public function with(): array
     {
+        $customers = collect();
+        if (Schema::hasTable('customers') && $this->customer_id === null && trim($this->customer_search) !== '') {
+            $customers = Customer::query()
+                ->search($this->customer_search)
+                ->orderBy('name')
+                ->limit(25)
+                ->get();
+        }
+
         return [
             'payments' => $this->query()->paginate(15),
             'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
-            'customers' => Schema::hasTable('customers') ? Customer::orderBy('name')->limit(200)->get() : collect(),
+            'customers' => $customers,
             'exportParams' => $this->exportParams(),
         ];
     }
@@ -87,14 +117,29 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
         <div class="flex flex-wrap items-end gap-3">
             <x-reports.branch-select name="branch_id" :branches="$branches" />
-            <div class="min-w-[220px]">
-                <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Customer') }}</label>
-                <select wire:model.live="customer_id" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                    <option value="">{{ __('All') }}</option>
-                    @foreach ($customers as $c)
-                        <option value="{{ $c->id }}">{{ $c->name }}</option>
-                    @endforeach
-                </select>
+            <div class="min-w-[220px] relative">
+                <flux:input wire:model.live.debounce.300ms="customer_search" :label="__('Customer')" placeholder="{{ __('Search by name/phone/code') }}" />
+                @if($customer_id === null && trim($customer_search) !== '')
+                    <div class="absolute z-10 mt-1 w-full overflow-hidden rounded-md border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+                        <div class="max-h-64 overflow-auto">
+                            @forelse ($customers as $c)
+                                <button type="button" class="w-full px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-50 dark:text-neutral-100 dark:hover:bg-neutral-800/80" wire:click="selectCustomer({{ $c->id }})">
+                                    <div class="flex items-center justify-between gap-2">
+                                        <span class="font-medium">{{ $c->name }}</span>
+                                        @if($c->customer_code)
+                                            <span class="text-xs text-neutral-500 dark:text-neutral-400">{{ $c->customer_code }}</span>
+                                        @endif
+                                    </div>
+                                    @if($c->phone)
+                                        <div class="text-xs text-neutral-500 dark:text-neutral-400">{{ $c->phone }}</div>
+                                    @endif
+                                </button>
+                            @empty
+                                <div class="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">{{ __('No customers found.') }}</div>
+                            @endforelse
+                        </div>
+                    </div>
+                @endif
             </div>
             <x-reports.date-range fromName="date_from" toName="date_to" />
         </div>

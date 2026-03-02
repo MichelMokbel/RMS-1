@@ -1,6 +1,6 @@
 -- Generated SQL: purchase orders upsert from CSV
 -- Source file: /Users/mohamadsafar/Desktop/Layla Kitchen/RMS-1/docs/csv/purchase_order_detail2026_03_01_19_59_16.csv
--- Generated at: 2026-03-01T20:39:00
+-- Generated at: 2026-03-02T21:26:15
 -- Total CSV rows: 972
 -- Valid PO line rows: 971
 -- Footer rows ignored: 1
@@ -1931,14 +1931,25 @@ JOIN tmp_po_target_ids t ON t.po_number COLLATE utf8mb4_unicode_ci = l.po_number
 ORDER BY l.source_row_num;
 SET @inserted_po_line_rows := ROW_COUNT();
 
+SET @source_line_rows := (SELECT COUNT(*) FROM tmp_po_source_lines);
+SET @source_po_count := (SELECT COUNT(*) FROM tmp_po_source_headers);
+SET @eligible_po_count := (SELECT COUNT(*) FROM tmp_po_eligible);
+SET @skipped_po_supplier_missing := (
+  SELECT COUNT(*) FROM tmp_po_supplier_resolution WHERE supplier_resolution = 'missing'
+);
+SET @skipped_po_supplier_ambiguous := (
+  SELECT COUNT(*) FROM tmp_po_supplier_resolution WHERE supplier_resolution = 'ambiguous'
+);
+SET @skipped_po_item_unresolved := (SELECT COUNT(*) FROM tmp_po_item_unresolved);
+
 -- Summary
 SELECT
-  (SELECT COUNT(*) FROM tmp_po_source_lines) AS source_line_rows,
-  (SELECT COUNT(*) FROM tmp_po_source_headers) AS source_po_count,
-  (SELECT COUNT(*) FROM tmp_po_eligible) AS eligible_po_count,
-  (SELECT COUNT(*) FROM tmp_po_supplier_resolution WHERE supplier_resolution = 'missing') AS skipped_po_supplier_missing,
-  (SELECT COUNT(*) FROM tmp_po_supplier_resolution WHERE supplier_resolution = 'ambiguous') AS skipped_po_supplier_ambiguous,
-  (SELECT COUNT(*) FROM tmp_po_item_unresolved) AS skipped_po_item_unresolved,
+  @source_line_rows AS source_line_rows,
+  @source_po_count AS source_po_count,
+  @eligible_po_count AS eligible_po_count,
+  @skipped_po_supplier_missing AS skipped_po_supplier_missing,
+  @skipped_po_supplier_ambiguous AS skipped_po_supplier_ambiguous,
+  @skipped_po_item_unresolved AS skipped_po_item_unresolved,
   @inserted_items AS inserted_items,
   @inserted_po_rows AS inserted_purchase_orders,
   @updated_po_rows AS updated_purchase_orders,

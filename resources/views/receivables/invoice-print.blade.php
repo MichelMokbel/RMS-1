@@ -40,11 +40,13 @@
         .items .discount { width: 8%; }
         .items .total { width: 12%; }
 
-        .totals-bar { display: flex; justify-content: space-between; align-items: center; margin-top: 25mm; border-top: 1px solid #333; border-bottom: 1px solid #333; padding: 2mm 0; font-size: 11px; }
-        .totals-words { flex: 1; }
-        .grand-total { display: flex; gap: 6mm; align-items: center; }
-        .grand-total .label { font-weight: 700; }
-        .grand-total .amount { font-weight: 700; min-width: 24mm; text-align: right; }
+        .totals-bar { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 25mm; border-top: 1px solid #333; border-bottom: 1px solid #333; padding: 2mm 0; font-size: 11px; gap: 8mm; }
+        .totals-words { flex: 1; padding-bottom: 0.9mm; }
+        .totals-summary { min-width: 62mm; border-collapse: collapse; }
+        .totals-summary td { padding: 0.9mm 0; }
+        .totals-summary .label { text-align: left; }
+        .totals-summary .amount { text-align: right; min-width: 24mm; }
+        .totals-summary .total td { font-weight: 700; border-top: 1px solid #333; padding-top: 1.4mm; }
 
         .bottom-area { position: absolute; left: 0; right: 0; bottom: 12mm; font-size: 11px; }
         .signatures-row { display: flex; justify-content: space-between; align-items: flex-start; }
@@ -85,6 +87,10 @@
         : __('Immediate');
     $salesPersonName = $invoice->sales_person_id ? User::query()->where('id', $invoice->sales_person_id)->value('username') : null;
     $preparedByName = $invoice->created_by ? User::query()->where('id', $invoice->created_by)->value('username') : null;
+    $lineDiscountCents = (int) $invoice->items->sum(fn ($item) => (int) ($item->discount_cents ?? 0));
+    $invoiceDiscountCents = (int) ($invoice->invoice_discount_cents ?? 0);
+    $subtotalCents = (int) ($invoice->subtotal_cents ?? 0);
+    $grandTotalCents = (int) ($invoice->total_cents ?? 0);
 
     $numberToWords = function (int $number) use (&$numberToWords): string {
         $ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
@@ -228,10 +234,21 @@
         </thead>
         <tbody>
             @forelse ($invoice->items as $index => $item)
+                @php
+                    $displayDescription = trim((string) ($item->name_snapshot ?? ''));
+                    if ($displayDescription === '') {
+                        $rawDescription = trim((string) ($item->description ?? ''));
+                        $sku = trim((string) ($item->sku_snapshot ?? ''));
+                        if ($rawDescription !== '' && $sku !== '' && str_starts_with($rawDescription, $sku)) {
+                            $rawDescription = ltrim(substr($rawDescription, strlen($sku)));
+                        }
+                        $displayDescription = $rawDescription !== '' ? $rawDescription : 'Item';
+                    }
+                @endphp
                 <tr>
                     <td class="center">{{ $index + 1 }}</td>
                     <td class="center">{{ $item->sku_snapshot ?? '-' }}</td>
-                    <td>{{ $item->description ?? $item->name_snapshot ?? 'Item' }}</td>
+                    <td>{{ $displayDescription }}</td>
                     <td class="center">{{ $item->unit ?? 'EA' }}</td>
                     <td class="center">{{ number_format((float) $item->qty, 3, '.', '') }}</td>
                     <td class="right">{{ $fmtCents((int) $item->unit_price_cents) }}</td>
@@ -249,13 +266,26 @@
     <div class="totals-bar">
         <div class="totals-words">
             <span class="label">{{ $currency }} :</span>
-            {{ $amountToWords((int) $invoice->total_cents) }}
+            {{ $amountToWords($grandTotalCents) }}
         </div>
-        <div class="grand-total">
-            <span class="label">Grand Total</span>
-            <span class="arabic">المبلغ الإجمالي</span>
-            <span class="amount">{{ $fmtCents((int) $invoice->total_cents) }}</span>
-        </div>
+        <table class="totals-summary">
+            <tr>
+                <td class="label">Subtotal</td>
+                <td class="amount">{{ $fmtCents($subtotalCents) }}</td>
+            </tr>
+            <tr>
+                <td class="label">Line Discount</td>
+                <td class="amount">-{{ $fmtCents($lineDiscountCents) }}</td>
+            </tr>
+            <tr>
+                <td class="label">Invoice Discount</td>
+                <td class="amount">-{{ $fmtCents($invoiceDiscountCents) }}</td>
+            </tr>
+            <tr class="total">
+                <td class="label">Grand Total</td>
+                <td class="amount">{{ $fmtCents($grandTotalCents) }}</td>
+            </tr>
+        </table>
     </div>
 
     <div class="bottom-area">
@@ -301,4 +331,3 @@
 </div>
 </body>
 </html>
-
