@@ -282,15 +282,32 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operation
         $orders = \App\Models\CompanyFoodOrder::query()
             ->where('project_id', $project->id)
             ->with(['employeeList', 'saladOption', 'appetizerOption1', 'appetizerOption2', 'mainOption', 'sweetOption', 'locationOption', 'soupOption'])
-            ->orderBy('employee_name')
             ->orderBy('order_date')
+            ->orderBy('employee_name')
             ->get();
 
         $employeeListsById = $project->employeeLists->keyBy('id');
+        $employeeListIdsOrdered = $project->employeeLists->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $employeeListOrderLookup = array_fill_keys($employeeListIdsOrdered, true);
         $optionNamesById = $project->options->pluck('name', 'id');
 
-        $kitchenPrep = $orders->groupBy(fn ($o) => $o->order_date?->format('Y-m-d'))->map(function ($dateOrders) use ($employeeListsById, $optionNamesById) {
-            return $dateOrders->groupBy('employee_list_id')->map(function ($listOrders, $listId) use ($employeeListsById, $optionNamesById) {
+        $kitchenPrep = $orders->groupBy(fn ($o) => $o->order_date?->format('Y-m-d'))->map(function ($dateOrders) use ($employeeListsById, $employeeListIdsOrdered, $employeeListOrderLookup, $optionNamesById) {
+            $groupedByList = $dateOrders->groupBy('employee_list_id');
+            $orderedByList = collect();
+
+            foreach ($employeeListIdsOrdered as $listId) {
+                if ($groupedByList->has($listId)) {
+                    $orderedByList->put((string) $listId, $groupedByList->get($listId));
+                }
+            }
+
+            foreach ($groupedByList as $listId => $listOrders) {
+                if (! isset($employeeListOrderLookup[(int) $listId])) {
+                    $orderedByList->put((string) $listId, $listOrders);
+                }
+            }
+
+            return $orderedByList->map(function ($listOrders, $listId) use ($employeeListsById, $optionNamesById) {
                 $list = $employeeListsById->get((int) $listId);
                 $categories = $list
                     ? $list->listCategories->pluck('category')->values()->all()

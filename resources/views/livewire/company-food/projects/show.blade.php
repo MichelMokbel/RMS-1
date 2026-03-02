@@ -67,9 +67,27 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $orders = $ordersQuery->orderBy('order_date')->get();
 
-        // Kitchen prep: grouped by order_date, then by list, then by location
-        $kitchenPrep = $orders->groupBy(fn ($o) => $o->order_date?->format('Y-m-d'))->map(function ($dateOrders) {
-            return $dateOrders->groupBy('employee_list_id')->map(function ($listOrders, $listId) {
+        // Kitchen prep: grouped by order_date, then by list (respecting configured list order), then by location
+        $employeeListIdsOrdered = $this->project->employeeLists->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $employeeListOrderLookup = array_fill_keys($employeeListIdsOrdered, true);
+
+        $kitchenPrep = $orders->groupBy(fn ($o) => $o->order_date?->format('Y-m-d'))->map(function ($dateOrders) use ($employeeListIdsOrdered, $employeeListOrderLookup) {
+            $groupedByList = $dateOrders->groupBy('employee_list_id');
+            $orderedByList = collect();
+
+            foreach ($employeeListIdsOrdered as $listId) {
+                if ($groupedByList->has($listId)) {
+                    $orderedByList->put((string) $listId, $groupedByList->get($listId));
+                }
+            }
+
+            foreach ($groupedByList as $listId => $listOrders) {
+                if (! isset($employeeListOrderLookup[(int) $listId])) {
+                    $orderedByList->put((string) $listId, $listOrders);
+                }
+            }
+
+            return $orderedByList->map(function ($listOrders, $listId) {
                 $list = $this->project->employeeLists->firstWhere('id', (int) $listId);
                 $listName = $list?->name ?? __('Unknown');
                 $categories = $list ? $list->getCategorySlugs() : ['salad', 'appetizer', 'main', 'sweet', 'location', 'soup'];

@@ -25,11 +25,20 @@
         : (request()->filled('date_to')
             ? Carbon::parse((string) request()->input('date_to'))->endOfDay()
             : ($isMonthly ? now()->endOfMonth() : now()->endOfDay()));
+
+    $logoPath = public_path('logo.png');
+    $logoSrc = asset('logo.png');
+    if (is_file($logoPath) && is_readable($logoPath)) {
+        $logoData = @file_get_contents($logoPath);
+        if ($logoData !== false) {
+            $logoSrc = 'data:image/png;base64,'.base64_encode($logoData);
+        }
+    }
 @endphp
 <div class="report-header">
     <div class="report-header-top">
         <div>
-            <img class="report-logo" src="{{ asset('logo.png') }}" alt="Layla Kitchen Logo">
+            <img class="report-logo" src="{{ $logoSrc }}" alt="Layla Kitchen Logo">
         </div>
         <div class="report-company">
             <h2>LAYLA KITCHEN W.L.L</h2>

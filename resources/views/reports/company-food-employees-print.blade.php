@@ -40,14 +40,14 @@
             <table>
                 <thead>
                     <tr>
-                        <th style="width: 70px;">#</th>
+                        <th style="width: 120px;">Employee Order</th>
                         <th>Employee Name</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @forelse ($list->employees as $index => $employee)
+                    @forelse ($list->employees as $employee)
                         <tr>
-                            <td>{{ $index + 1 }}</td>
+                            <td>{{ $employee->sort_order }}</td>
                             <td>{{ $employee->employee_name }}</td>
                         </tr>
                     @empty
