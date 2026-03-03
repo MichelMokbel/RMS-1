@@ -20,6 +20,14 @@
         th { background: #f9fafb; font-weight: 700; }
         .empty { color: #6b7280; font-size: 12px; margin-top: 6px; }
         @include('reports.print-header-styles')
+
+        /* Keep this report tight at the top of each page. */
+        @page { margin: 3mm 10mm 0 10mm; }
+        @media print {
+            body { margin: 0 !important; padding: 0 0 14mm 0 !important; }
+        }
+        .report-header { margin-top: 0; margin-bottom: 6px; }
+        .report-header-bottom { margin-top: 3px; }
     </style>
 </head>
 <body>
