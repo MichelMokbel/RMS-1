@@ -27,7 +27,19 @@
             body { margin: 0 !important; padding: 0 0 14mm 0 !important; }
         }
         .report-header { margin-top: 0; margin-bottom: 6px; }
-        .report-header-bottom { margin-top: 3px; }
+        .report-header-bottom {
+            margin-top: 3px;
+            display: table;
+            width: 100%;
+            table-layout: fixed;
+        }
+        .report-header-bottom .left,
+        .report-header-bottom .right {
+            display: table-cell;
+            width: 50%;
+            vertical-align: top;
+        }
+        .report-header-bottom .right { text-align: right; }
     </style>
 </head>
 <body>
