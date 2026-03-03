@@ -6,19 +6,18 @@
     <title>Company Food Kitchen Prep</title>
     <style>
         :root { color-scheme: light; }
-        body { font-family: Arial, sans-serif; color: #111827; margin: 18px; }
-        h2 { margin: 0 0 4px; font-size: 16px; }
-        h3 { margin: 10px 0 6px; font-size: 14px; }
-        h4 { margin: 8px 0 4px; font-size: 12px; color: #374151; }
+        body { font-family: Arial, sans-serif; color: #111827; margin: 18px; font-size: 14px; }
         .meta { font-size: 12px; color: #4b5563; margin: 0 0 10px; }
         .section { margin-top: 12px; page-break-inside: auto; break-inside: auto; }
-        h2, h3, h4 { page-break-after: avoid; }
-        table { width: 100%; border-collapse: collapse; margin-top: 4px; page-break-inside: auto; }
-        thead { display: table-header-group; }
-        tr { page-break-inside: avoid; break-inside: avoid; }
-        th, td { border: 1px solid #e5e7eb; padding: 5px 6px; font-size: 11px; text-align: left; }
-        th { background: #f9fafb; font-weight: 700; }
-        .empty { color: #6b7280; font-size: 12px; margin-top: 6px; }
+        .day-title { margin: 0 0 6px; font-size: 38px; font-weight: 700; line-height: 1.15; page-break-after: avoid; }
+        .list-title { margin: 8px 0 6px; font-size: 24px; font-weight: 700; page-break-after: avoid; }
+        .location-title { margin: 4px 0 8px; font-size: 16px; font-weight: 700; color: #374151; page-break-after: avoid; }
+        .category-block { margin: 0 0 16px; page-break-inside: avoid; break-inside: avoid; }
+        .category-name { font-size: 46px; font-weight: 700; line-height: 1.1; margin: 0 0 4px; }
+        .dish-line { font-size: 34px; line-height: 1.2; margin: 0 0 2px 10px; }
+        .dish-name { display: inline; }
+        .dish-count { display: inline; font-weight: 700; }
+        .empty { color: #6b7280; font-size: 14px; margin-top: 8px; }
         @include('reports.print-header-styles')
 
         /* Keep this report tight at the top of each page. */
@@ -70,42 +69,37 @@
 
     @forelse ($kitchenPrep as $dateStr => $lists)
         <div class="section">
-            <h2>{{ \Carbon\Carbon::parse($dateStr)->format('l, M j, Y') }}</h2>
+            <p class="day-title">{{ \Carbon\Carbon::parse($dateStr)->format('l, M j, Y') }}</p>
             @foreach ($lists as $listData)
-                <h3>{{ $listData['listName'] }}</h3>
+                <p class="list-title">{{ $listData['listName'] }}</p>
                 @foreach ($listData['sections'] as $section)
-                    <h4>{{ $section['name'] }}</h4>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style="width: 120px;">Category</th>
-                                <th>Option</th>
-                                <th style="width: 80px;">Count</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @php $hasRows = false; @endphp
-                            @foreach ($categoryLabels as $key => $label)
-                                @if (in_array($key, $listData['categories'], true))
-                                    @php $rows = $section['counts'][$key] ?? []; @endphp
-                                    @forelse ($rows as $row)
-                                        @php $hasRows = true; @endphp
-                                        <tr>
-                                            <td>{{ $label }}</td>
-                                            <td>{{ $row['name'] }}</td>
-                                            <td>{{ $row['count'] }}</td>
-                                        </tr>
-                                    @empty
-                                    @endforelse
-                                @endif
-                            @endforeach
-                            @if (! $hasRows)
-                                <tr>
-                                    <td colspan="3">No prep items for this location.</td>
-                                </tr>
+                    <p class="location-title">{{ $section['name'] }}</p>
+                    @php $hasRows = false; @endphp
+                    @foreach ($categoryLabels as $key => $label)
+                        @if (in_array($key, $listData['categories'], true))
+                            @php
+                                $rows = collect($section['counts'][$key] ?? [])
+                                    ->sortByDesc('count')
+                                    ->values()
+                                    ->all();
+                            @endphp
+                            @if (! empty($rows))
+                                @php $hasRows = true; @endphp
+                                <div class="category-block">
+                                    <p class="category-name">{{ $label }}</p>
+                                    @foreach ($rows as $row)
+                                        <p class="dish-line">
+                                            <span class="dish-name">{{ $row['name'] }}:</span>
+                                            <span class="dish-count">{{ $row['count'] }}</span>
+                                        </p>
+                                    @endforeach
+                                </div>
                             @endif
-                        </tbody>
-                    </table>
+                        @endif
+                    @endforeach
+                    @if (! $hasRows)
+                        <p class="empty">No prep items for this location.</p>
+                    @endif
                 @endforeach
             @endforeach
         </div>
