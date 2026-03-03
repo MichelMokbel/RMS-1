@@ -324,7 +324,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operation
                 'location_option_id' => $locationOptionId > 0 ? $locationOptionId : null,
             ],
             'generatedAt' => now(),
-        ], 'company-food-employees-' . $project->slug . '.pdf');
+        ], 'company-food-employees-' . $project->slug . '.pdf', 'a4', 'landscape');
     })->name('projects.export-employees-pdf');
     Route::get('projects/{project}/export-kitchen-prep-pdf', function (Request $request, \App\Models\CompanyFoodProject $project) {
         $project->load([

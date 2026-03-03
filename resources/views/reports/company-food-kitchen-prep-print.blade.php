@@ -11,8 +11,11 @@
         h3 { margin: 10px 0 6px; font-size: 14px; }
         h4 { margin: 8px 0 4px; font-size: 12px; color: #374151; }
         .meta { font-size: 12px; color: #4b5563; margin: 0 0 10px; }
-        .section { margin-top: 12px; page-break-inside: avoid; }
-        table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+        .section { margin-top: 12px; page-break-inside: auto; break-inside: auto; }
+        h2, h3, h4 { page-break-after: avoid; }
+        table { width: 100%; border-collapse: collapse; margin-top: 4px; page-break-inside: auto; }
+        thead { display: table-header-group; }
+        tr { page-break-inside: avoid; break-inside: avoid; }
         th, td { border: 1px solid #e5e7eb; padding: 5px 6px; font-size: 11px; text-align: left; }
         th { background: #f9fafb; font-weight: 700; }
         .empty { color: #6b7280; font-size: 12px; margin-top: 6px; }

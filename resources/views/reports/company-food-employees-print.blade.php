@@ -33,8 +33,6 @@
         <thead>
             <tr>
                 <th style="width: 90px;">Date</th>
-                <th style="width: 120px;">List</th>
-                <th style="width: 100px;">Employee Order</th>
                 <th style="width: 160px;">Employee</th>
                 <th>Salad</th>
                 <th>Appetizer 1</th>
@@ -49,8 +47,6 @@
             @forelse ($orders as $order)
                 <tr>
                     <td>{{ $order->order_date?->format('Y-m-d') ?? '—' }}</td>
-                    <td>{{ $order->employeeList?->name ?? '—' }}</td>
-                    <td>{{ $order->employee_sort_order ?? '—' }}</td>
                     <td>{{ $order->employee_name }}</td>
                     <td>{{ $order->saladOption?->name ?? '—' }}</td>
                     <td>{{ $order->appetizerOption1?->name ?? '—' }}</td>
@@ -62,7 +58,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="11">No employee orders match the selected filters.</td>
+                    <td colspan="9">No employee orders match the selected filters.</td>
                 </tr>
             @endforelse
         </tbody>
