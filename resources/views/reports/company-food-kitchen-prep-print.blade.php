@@ -30,6 +30,9 @@
     <p class="meta">
         Project: {{ $project->name }} | Company: {{ $project->company_name }} | Date range:
         {{ $project->start_date->format('Y-m-d') }} to {{ $project->end_date->format('Y-m-d') }}
+        | Filter date: {{ $filters['order_date'] ?? 'All' }}
+        | Filter list: {{ $filters['employee_list_id'] ?? 'All' }}
+        | Filter location: {{ $filters['location_option_id'] ?? 'All' }}
     </p>
 
     @php

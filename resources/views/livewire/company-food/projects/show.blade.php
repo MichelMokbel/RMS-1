@@ -50,10 +50,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             'employeeLists' => fn ($q) => $q->with(['listCategories', 'employees'])->orderBy('sort_order'),
         ]);
 
+        $listSortOrderById = $this->project->employeeLists
+            ->mapWithKeys(fn ($list) => [(int) $list->id => (int) $list->sort_order])
+            ->all();
+        $employeeSortOrderByKey = [];
+        foreach ($this->project->employeeLists as $list) {
+            foreach ($list->employees as $employee) {
+                $employeeSortOrderByKey[(int) $list->id .'|'.mb_strtolower(trim((string) $employee->employee_name))] = (int) $employee->sort_order;
+            }
+        }
+
         $ordersQuery = CompanyFoodOrder::query()
             ->where('project_id', $this->project->id)
-            ->with(['employeeList', 'saladOption', 'appetizerOption1', 'appetizerOption2', 'mainOption', 'sweetOption', 'locationOption', 'soupOption'])
-            ->orderBy('employee_name');
+            ->with(['employeeList', 'saladOption', 'appetizerOption1', 'appetizerOption2', 'mainOption', 'sweetOption', 'locationOption', 'soupOption']);
 
         if ($this->filterLocationId) {
             $ordersQuery->where('location_option_id', $this->filterLocationId);
@@ -65,7 +74,17 @@ new #[Layout('components.layouts.app')] class extends Component {
             $ordersQuery->whereDate('order_date', $this->filterOrderDate);
         }
 
-        $orders = $ordersQuery->orderBy('order_date')->get();
+        $orders = $ordersQuery->get()
+            ->sortBy(function (CompanyFoodOrder $order) use ($listSortOrderById, $employeeSortOrderByKey): string {
+                $date = $order->order_date?->format('Y-m-d') ?? '9999-12-31';
+                $listSort = (int) ($listSortOrderById[(int) $order->employee_list_id] ?? 999999);
+                $employeeKey = (int) $order->employee_list_id.'|'.mb_strtolower(trim((string) $order->employee_name));
+                $employeeSort = (int) ($employeeSortOrderByKey[$employeeKey] ?? 999999);
+                $name = mb_strtolower(trim((string) $order->employee_name));
+
+                return $date.'|'.str_pad((string) $listSort, 6, '0', STR_PAD_LEFT).'|'.str_pad((string) $employeeSort, 6, '0', STR_PAD_LEFT).'|'.$name.'|'.str_pad((string) $order->id, 12, '0', STR_PAD_LEFT);
+            })
+            ->values();
 
         // Kitchen prep: grouped by order_date, then by list (respecting configured list order), then by location
         $employeeListIdsOrdered = $this->project->employeeLists->pluck('id')->map(fn ($id) => (int) $id)->all();
@@ -566,9 +585,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{ __('API URL') }}: {{ url('/api/public/company-food/' . $project->slug . '/options') }}
             </p>
         </div>
+        @php
+            $orderExportParams = array_filter([
+                'order_date' => $filterOrderDate,
+                'employee_list_id' => $filterListId,
+                'location_option_id' => $filterLocationId,
+            ], fn ($value) => $value !== null && $value !== '');
+        @endphp
         <div class="flex flex-wrap gap-2">
-            <flux:button :href="route('company-food.projects.export-employees-pdf', $project)" variant="ghost">{{ __('Employee List PDF') }}</flux:button>
-            <flux:button :href="route('company-food.projects.export-kitchen-prep-pdf', $project)" variant="ghost">{{ __('Kitchen Prep PDF') }}</flux:button>
+            <flux:button :href="route('company-food.projects.export-employees-pdf', array_merge(['project' => $project], $orderExportParams))" variant="ghost">{{ __('Employee List PDF') }}</flux:button>
+            <flux:button :href="route('company-food.projects.export-kitchen-prep-pdf', array_merge(['project' => $project], $orderExportParams))" variant="ghost">{{ __('Kitchen Prep PDF') }}</flux:button>
             <flux:button :href="route('company-food.projects.edit', $project)" wire:navigate variant="ghost">{{ __('Edit') }}</flux:button>
             <flux:button :href="route('company-food.projects.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
         </div>
@@ -615,7 +641,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @endforeach
                         </select>
                     </div>
-                    <flux:button :href="route('company-food.projects.export-csv', $project)" variant="ghost" size="sm">{{ __('Export CSV') }}</flux:button>
+                    <flux:button :href="route('company-food.projects.export-csv', array_merge(['project' => $project], $orderExportParams))" variant="ghost" size="sm">{{ __('Export CSV') }}</flux:button>
                 </div>
             </div>
             <div class="app-table-scroll">
