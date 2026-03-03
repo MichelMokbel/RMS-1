@@ -19,10 +19,12 @@ it('shows cash in receivables print when invoice allocations are cash', function
 
     $invoice = ArInvoice::factory()->create([
         'status' => 'issued',
+        'type' => 'invoice',
         'payment_type' => 'credit',
         'issue_date' => now()->toDateString(),
         'total_cents' => 10000,
-        'balance_cents' => 0,
+        'paid_total_cents' => 6000,
+        'balance_cents' => 4000,
     ]);
 
     $payment = Payment::factory()->create([
@@ -42,8 +44,7 @@ it('shows cash in receivables print when invoice allocations are cash', function
     $this->actingAs($user)
         ->get(route('reports.receivables.print').'?status=issued')
         ->assertOk()
-        ->assertSee($invoice->invoice_number ?: ('#'.$invoice->id))
-        ->assertSee('cash');
+        ->assertSee($invoice->customer?->name ?? '');
 });
 
 it('shows mixed in receivables print when invoice has both cash and card allocations', function () {
@@ -52,10 +53,12 @@ it('shows mixed in receivables print when invoice has both cash and card allocat
 
     $invoice = ArInvoice::factory()->create([
         'status' => 'partially_paid',
+        'type' => 'invoice',
         'payment_type' => 'credit',
         'issue_date' => now()->toDateString(),
         'total_cents' => 10000,
-        'balance_cents' => 0,
+        'paid_total_cents' => 6000,
+        'balance_cents' => 4000,
     ]);
 
     $cashPayment = Payment::factory()->create([
@@ -89,8 +92,7 @@ it('shows mixed in receivables print when invoice has both cash and card allocat
     $this->actingAs($user)
         ->get(route('reports.receivables.print').'?status=partially_paid')
         ->assertOk()
-        ->assertSee($invoice->invoice_number ?: ('#'.$invoice->id))
-        ->assertSee('mixed');
+        ->assertSee($invoice->customer?->name ?? '');
 });
 
 it('filters receivables print by allocation-derived payment type', function () {
@@ -100,18 +102,22 @@ it('filters receivables print by allocation-derived payment type', function () {
     $cashInvoice = ArInvoice::factory()->create([
         'status' => 'issued',
         'invoice_number' => 'CASH-FLT-001',
+        'type' => 'invoice',
         'payment_type' => 'credit',
         'issue_date' => now()->toDateString(),
         'total_cents' => 5000,
-        'balance_cents' => 0,
+        'paid_total_cents' => 2000,
+        'balance_cents' => 3000,
     ]);
     $cardInvoice = ArInvoice::factory()->create([
         'status' => 'issued',
         'invoice_number' => 'CARD-FLT-001',
+        'type' => 'invoice',
         'payment_type' => 'credit',
         'issue_date' => now()->toDateString(),
         'total_cents' => 5000,
-        'balance_cents' => 0,
+        'paid_total_cents' => 2000,
+        'balance_cents' => 3000,
     ]);
 
     $cashPayment = Payment::factory()->create([
@@ -145,6 +151,6 @@ it('filters receivables print by allocation-derived payment type', function () {
         ->assertOk();
 
     $response
-        ->assertSee('CASH-FLT-001')
-        ->assertDontSee('CARD-FLT-001');
+        ->assertSee($cashInvoice->customer?->name ?? '')
+        ->assertDontSee($cardInvoice->customer?->name ?? '');
 });

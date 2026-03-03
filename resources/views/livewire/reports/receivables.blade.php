@@ -3,6 +3,7 @@
 use App\Models\ArInvoice;
 use App\Support\Money\MinorUnits;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
@@ -34,8 +35,20 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function with(): array
     {
+        $rows = $this->customerReceivables();
+        $perPage = 15;
+        $page = LengthAwarePaginator::resolveCurrentPage();
+        $pageItems = $rows->forPage($page, $perPage)->values();
+        $receivables = new LengthAwarePaginator(
+            $pageItems,
+            $rows->count(),
+            $perPage,
+            $page,
+            ['path' => request()->url(), 'query' => request()->query()]
+        );
+
         return [
-            'invoices' => $this->query()->paginate(15),
+            'receivables' => $receivables,
             'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
             'exportParams' => $this->exportParams(),
         ];
@@ -46,14 +59,43 @@ new #[Layout('components.layouts.app')] class extends Component {
         $paymentType = $this->payment_type !== 'all' ? $this->payment_type : null;
 
         return ArInvoice::query()
-            ->with(['customer', 'paymentAllocations.payment'])
+            ->with(['customer:id,name,customer_code', 'paymentAllocations.payment'])
+            ->where('type', 'invoice')
+            ->where('balance_cents', '>', 0)
             ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id))
             ->when($this->status !== 'all', fn ($q) => $q->where('status', $this->status))
             ->when($paymentType !== null, fn (Builder $q) => $this->applyPaymentTypeFilter($q, $paymentType))
             ->when($this->date_from, fn ($q) => $q->whereDate('issue_date', '>=', $this->date_from))
             ->when($this->date_to, fn ($q) => $q->whereDate('issue_date', '<=', $this->date_to))
             ->orderByDesc('issue_date')
-            ->orderByDesc('id');
+            ->orderByDesc('id')
+            ->get();
+    }
+
+    private function customerReceivables()
+    {
+        return $this->query()
+            ->groupBy(fn (ArInvoice $invoice) => (int) $invoice->customer_id)
+            ->map(function ($group, $customerId) {
+                /** @var \Illuminate\Support\Collection<int, ArInvoice> $group */
+                $customer = $group->first()?->customer;
+                $latestIssueDate = $group
+                    ->pluck('issue_date')
+                    ->filter()
+                    ->sortDesc()
+                    ->first();
+
+                return [
+                    'customer_id' => (int) $customerId,
+                    'customer_name' => $customer?->name ?? '—',
+                    'customer_code' => $customer?->customer_code,
+                    'open_invoices' => $group->count(),
+                    'receivable_cents' => (int) $group->sum('balance_cents'),
+                    'last_invoice_date' => $latestIssueDate?->format('Y-m-d'),
+                ];
+            })
+            ->sortBy('customer_name', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values();
     }
 
     private function applyPaymentTypeFilter(Builder $query, string $paymentType): Builder
@@ -169,42 +211,37 @@ new #[Layout('components.layouts.app')] class extends Component {
         <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
-                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Invoice #') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Customer Code') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Customer') }}</th>
-                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Date') }}</th>
-                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Status') }}</th>
-                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Payment Type') }}</th>
-                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Total') }}</th>
-                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Balance') }}</th>
+                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Open Invoices') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Last Invoice Date') }}</th>
+                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Receivable') }}</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                @forelse ($invoices as $inv)
+                @forelse ($receivables as $row)
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
-                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $inv->invoice_number ?: ('#'.$inv->id) }}</td>
-                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $inv->customer?->name ?? '—' }}</td>
-                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $inv->issue_date?->format('Y-m-d') }}</td>
-                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $inv->status }}</td>
-                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $this->resolvedPaymentType($inv) }}</td>
-                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatCents($inv->total_cents) }}</td>
-                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatCents($inv->balance_cents) }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['customer_code'] ?: '—' }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $row['customer_name'] }}</td>
+                        <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $row['open_invoices'] }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['last_invoice_date'] ?: '—' }}</td>
+                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatCents($row['receivable_cents']) }}</td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="7" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No invoices found.') }}</td>
+                        <td colspan="5" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No receivables found.') }}</td>
                     </tr>
                 @endforelse
             </tbody>
-            @if ($invoices->count() > 0)
+            @if ($receivables->count() > 0)
                 <tfoot class="bg-neutral-50 dark:bg-neutral-800/90">
                     <tr>
-                        <td colspan="5" class="px-3 py-2 text-right text-sm font-semibold text-neutral-700 dark:text-neutral-200">{{ __('Total') }}</td>
-                        <td class="px-3 py-2 text-right text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatCents($invoices->getCollection()->sum('total_cents')) }}</td>
-                        <td class="px-3 py-2 text-right text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatCents($invoices->getCollection()->sum('balance_cents')) }}</td>
+                        <td colspan="4" class="px-3 py-2 text-right text-sm font-semibold text-neutral-700 dark:text-neutral-200">{{ __('Total Receivable') }}</td>
+                        <td class="px-3 py-2 text-right text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatCents($receivables->getCollection()->sum('receivable_cents')) }}</td>
                     </tr>
                 </tfoot>
             @endif
         </table>
     </div>
-    <div>{{ $invoices->links() }}</div>
+    <div>{{ $receivables->links() }}</div>
 </div>

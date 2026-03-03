@@ -9,6 +9,7 @@ use App\Support\Reports\PdfExport;
 use App\Support\Money\MinorUnits;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ReceivablesReportController extends Controller
@@ -18,14 +19,19 @@ class ReceivablesReportController extends Controller
         return MinorUnits::format((int) ($cents ?? 0));
     }
 
-    private function query(Request $request, int $limit = 500)
+    /**
+     * @return Collection<int, ArInvoice>
+     */
+    private function query(Request $request, int $limit = 500): Collection
     {
         $paymentType = $request->filled('payment_type') && $request->payment_type !== 'all'
             ? (string) $request->payment_type
             : null;
 
         return ArInvoice::query()
-            ->with(['customer', 'paymentAllocations.payment'])
+            ->with(['customer:id,name,customer_code', 'paymentAllocations.payment'])
+            ->where('type', 'invoice')
+            ->where('balance_cents', '>', 0)
             ->when($request->filled('branch_id') && $request->integer('branch_id') > 0, fn ($q) => $q->where('branch_id', $request->integer('branch_id')))
             ->when($request->filled('status') && $request->status !== 'all', fn ($q) => $q->where('status', $request->status))
             ->when($paymentType !== null, fn (Builder $q) => $this->applyPaymentTypeFilter($q, $paymentType))
@@ -35,6 +41,36 @@ class ReceivablesReportController extends Controller
             ->orderByDesc('id')
             ->limit($limit)
             ->get();
+    }
+
+    /**
+     * @return Collection<int, array{customer_id:int,customer_name:string,customer_code:?string,open_invoices:int,last_invoice_date:?string,receivable_cents:int}>
+     */
+    private function customerReceivables(Request $request, int $limit = 500): Collection
+    {
+        return $this->query($request, $limit)
+            ->groupBy(fn (ArInvoice $invoice) => (int) $invoice->customer_id)
+            ->map(function (Collection $group, int $customerId): array {
+                /** @var ArInvoice|null $first */
+                $first = $group->first();
+                $customer = $first?->customer;
+                $latestIssueDate = $group
+                    ->pluck('issue_date')
+                    ->filter()
+                    ->sortDesc()
+                    ->first();
+
+                return [
+                    'customer_id' => $customerId,
+                    'customer_name' => $customer?->name ?? '—',
+                    'customer_code' => $customer?->customer_code,
+                    'open_invoices' => $group->count(),
+                    'last_invoice_date' => $latestIssueDate?->format('Y-m-d'),
+                    'receivable_cents' => (int) $group->sum('balance_cents'),
+                ];
+            })
+            ->sortBy('customer_name', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values();
     }
 
     private function applyPaymentTypeFilter(Builder $query, string $paymentType): Builder
@@ -63,65 +99,29 @@ class ReceivablesReportController extends Controller
         };
     }
 
-    private function resolvedPaymentType(ArInvoice $invoice): string
-    {
-        $hasCash = false;
-        $hasCard = false;
-
-        foreach ($invoice->paymentAllocations as $allocation) {
-            $amount = max(0, (int) ($allocation->amount_cents ?? 0));
-            if ($amount <= 0) {
-                continue;
-            }
-
-            $method = strtolower((string) ($allocation->payment?->method ?? ''));
-            if ($method === 'cash') {
-                $hasCash = true;
-            } else {
-                // Non-cash settled methods are grouped under card at report level.
-                $hasCard = true;
-            }
-        }
-
-        if ($hasCash && $hasCard) {
-            return 'mixed';
-        }
-        if ($hasCash) {
-            return 'cash';
-        }
-        if ($hasCard) {
-            return 'card';
-        }
-
-        return strtolower((string) ($invoice->payment_type ?: 'credit'));
-    }
-
     public function print(Request $request)
     {
-        $invoices = $this->query($request);
+        $receivables = $this->customerReceivables($request);
         $filters = $request->only(['branch_id', 'status', 'payment_type', 'date_from', 'date_to']);
 
         return view('reports.receivables-print', [
-            'invoices' => $invoices,
+            'receivables' => $receivables,
             'filters' => $filters,
             'generatedAt' => now(),
             'formatCents' => fn ($c) => $this->formatCents($c),
-            'resolvedPaymentType' => fn (ArInvoice $invoice): string => $this->resolvedPaymentType($invoice),
         ]);
     }
 
     public function csv(Request $request): StreamedResponse
     {
-        $invoices = $this->query($request, 2000);
-        $headers = [__('Invoice #'), __('Customer'), __('Date'), __('Status'), __('Payment Type'), __('Total'), __('Balance')];
-        $rows = $invoices->map(fn ($inv) => [
-            $inv->invoice_number ?: ('#'.$inv->id),
-            $inv->customer?->name ?? '',
-            $inv->issue_date?->format('Y-m-d'),
-            $inv->status ?? '',
-            $this->resolvedPaymentType($inv),
-            $this->formatCents($inv->total_cents),
-            $this->formatCents($inv->balance_cents),
+        $receivables = $this->customerReceivables($request, 2000);
+        $headers = [__('Customer Code'), __('Customer'), __('Open Invoices'), __('Last Invoice Date'), __('Receivable')];
+        $rows = $receivables->map(fn ($row) => [
+            $row['customer_code'] ?? '',
+            $row['customer_name'],
+            $row['open_invoices'],
+            $row['last_invoice_date'],
+            $this->formatCents($row['receivable_cents']),
         ]);
 
         return CsvExport::stream($headers, $rows, 'receivables-report.csv');
@@ -129,15 +129,14 @@ class ReceivablesReportController extends Controller
 
     public function pdf(Request $request)
     {
-        $invoices = $this->query($request);
+        $receivables = $this->customerReceivables($request);
         $filters = $request->only(['branch_id', 'status', 'payment_type', 'date_from', 'date_to']);
 
         return PdfExport::download('reports.receivables-print', [
-            'invoices' => $invoices,
+            'receivables' => $receivables,
             'filters' => $filters,
             'generatedAt' => now(),
             'formatCents' => fn ($c) => $this->formatCents($c),
-            'resolvedPaymentType' => fn (ArInvoice $invoice): string => $this->resolvedPaymentType($invoice),
         ], 'receivables-report.pdf');
     }
 }

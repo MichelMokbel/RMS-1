@@ -29,36 +29,31 @@
     <table>
         <thead>
             <tr>
-                <th>Invoice #</th>
+                <th>Customer Code</th>
                 <th>Customer</th>
-                <th>Date</th>
-                <th>Status</th>
-                <th>Payment Type</th>
-                <th class="right">Total</th>
-                <th class="right">Balance</th>
+                <th class="right">Open Invoices</th>
+                <th>Last Invoice Date</th>
+                <th class="right">Receivable</th>
             </tr>
         </thead>
         <tbody>
-            @forelse ($invoices as $inv)
+            @forelse ($receivables as $row)
                 <tr>
-                    <td>{{ $inv->invoice_number ?: ('#'.$inv->id) }}</td>
-                    <td>{{ $inv->customer?->name ?? '—' }}</td>
-                    <td>{{ $inv->issue_date?->format('Y-m-d') }}</td>
-                    <td>{{ $inv->status }}</td>
-                    <td>{{ $resolvedPaymentType($inv) }}</td>
-                    <td class="right">{{ $formatCents($inv->total_cents) }}</td>
-                    <td class="right">{{ $formatCents($inv->balance_cents) }}</td>
+                    <td>{{ $row['customer_code'] ?: '—' }}</td>
+                    <td>{{ $row['customer_name'] }}</td>
+                    <td class="right">{{ $row['open_invoices'] }}</td>
+                    <td>{{ $row['last_invoice_date'] ?: '—' }}</td>
+                    <td class="right">{{ $formatCents($row['receivable_cents']) }}</td>
                 </tr>
             @empty
-                <tr><td colspan="7">No invoices found.</td></tr>
+                <tr><td colspan="5">No receivables found.</td></tr>
             @endforelse
         </tbody>
-        @if ($invoices->count() > 0)
+        @if ($receivables->count() > 0)
             <tfoot>
                 <tr>
-                    <td colspan="5">Total</td>
-                    <td class="right">{{ $formatCents($invoices->sum('total_cents')) }}</td>
-                    <td class="right">{{ $formatCents($invoices->sum('balance_cents')) }}</td>
+                    <td colspan="4">Total Receivable</td>
+                    <td class="right">{{ $formatCents($receivables->sum('receivable_cents')) }}</td>
                 </tr>
             </tfoot>
         @endif
