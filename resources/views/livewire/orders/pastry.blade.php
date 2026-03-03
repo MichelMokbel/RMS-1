@@ -32,14 +32,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div class="w-full max-w-7xl mx-auto px-4 space-y-6">
+<div class="app-page space-y-6">
     <div class="flex items-center justify-between">
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Pastry Board') }}</h1>
         <flux:button :href="route('orders.index')" wire:navigate variant="ghost">{{ __('Orders') }}</flux:button>
     </div>
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
-        <div class="flex flex-wrap items-end gap-3">
+        <div class="app-filter-grid">
             <flux:input wire:model.live="service_date" type="date" :label="__('Service Date')" />
             <flux:input wire:model.live="branch_id" type="number" :label="__('Branch ID')" class="w-24" />
             <div class="flex items-center gap-2 pt-6">

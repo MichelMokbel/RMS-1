@@ -63,6 +63,60 @@ select:focus[data-flux-control] {
 
 [x-cloak] { display: none !important; }
 
-/* \[:where(&)\]:size-4 {
-    @apply size-4;
-} */
+@layer components {
+    .app-page {
+        @apply w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+    }
+
+    .app-filter-grid {
+        @apply flex flex-wrap items-end gap-3;
+    }
+
+    .app-filter-grid > * {
+        @apply w-full min-w-0;
+        flex: 1 1 100%;
+    }
+
+    @media (min-width: 640px) {
+        .app-filter-grid > * {
+            width: auto;
+            flex: 1 1 14rem;
+        }
+    }
+
+    .app-table-shell {
+        @apply overflow-x-auto rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900;
+    }
+
+    .app-table-scroll {
+        @apply overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700;
+    }
+
+    .touch-target {
+        min-height: 44px;
+        min-width: 44px;
+        touch-action: manipulation;
+    }
+
+    .app-chip-row {
+        @apply flex gap-2 overflow-x-auto pb-1;
+    }
+
+    .responsive-drawer-panel {
+        width: min(56rem, 100%);
+        max-width: 100vw;
+        max-height: 100dvh;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+}
+
+@layer utilities {
+    .app-mobile-card-grid {
+        @apply grid grid-cols-1 gap-3 sm:hidden;
+    }
+
+    .app-desktop-table {
+        @apply hidden sm:block;
+    }
+}

@@ -22,7 +22,7 @@ class ReceivablesReportController extends Controller
     /**
      * @return Collection<int, ArInvoice>
      */
-    private function query(Request $request, int $limit = 500): Collection
+    private function query(Request $request): Collection
     {
         $paymentType = $request->filled('payment_type') && $request->payment_type !== 'all'
             ? (string) $request->payment_type
@@ -39,16 +39,15 @@ class ReceivablesReportController extends Controller
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('issue_date', '<=', $request->date_to))
             ->orderByDesc('issue_date')
             ->orderByDesc('id')
-            ->limit($limit)
             ->get();
     }
 
     /**
      * @return Collection<int, array{customer_id:int,customer_name:string,customer_code:?string,open_invoices:int,last_invoice_date:?string,receivable_cents:int}>
      */
-    private function customerReceivables(Request $request, int $limit = 500): Collection
+    private function customerReceivables(Request $request): Collection
     {
-        return $this->query($request, $limit)
+        return $this->query($request)
             ->groupBy(fn (ArInvoice $invoice) => (int) $invoice->customer_id)
             ->map(function (Collection $group, int $customerId): array {
                 /** @var ArInvoice|null $first */
@@ -114,7 +113,7 @@ class ReceivablesReportController extends Controller
 
     public function csv(Request $request): StreamedResponse
     {
-        $receivables = $this->customerReceivables($request, 2000);
+        $receivables = $this->customerReceivables($request);
         $headers = [__('Customer Code'), __('Customer'), __('Open Invoices'), __('Last Invoice Date'), __('Receivable')];
         $rows = $receivables->map(fn ($row) => [
             $row['customer_code'] ?? '',

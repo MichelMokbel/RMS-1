@@ -122,7 +122,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div class="w-full max-w-7xl mx-auto px-4 py-8 space-y-8">
+<div class="app-page py-8 space-y-8">
     {{-- Header --}}
     <header class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
         <div>

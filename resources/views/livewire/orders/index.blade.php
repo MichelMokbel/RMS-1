@@ -464,7 +464,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div class="w-full max-w-7xl mx-auto px-4 space-y-6">
+<div class="app-page space-y-6">
     @php
         $printParams = array_filter([
             'status' => $status,
@@ -476,7 +476,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         ], fn ($v) => $v !== null && $v !== '');
     @endphp
 
-    <div class="flex items-center justify-between">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Orders') }}</h1>
         <div class="flex flex-wrap gap-2">
             <flux:button type="button" wire:click="openCreateDrawer" variant="primary" class="min-h-[44px] min-w-[44px] touch-manipulation">{{ __('New Order') }}</flux:button>
@@ -502,7 +502,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     @endif
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
-        <div class="flex flex-wrap items-end gap-3">
+        <div class="app-filter-grid">
             <div class="min-w-[220px] flex-1">
                 <flux:input wire:model.live.debounce.300ms="search" :label="__('Search')" placeholder="{{ __('Search order number / customer') }}" />
             </div>
@@ -547,7 +547,75 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
-    <div class="overflow-x-auto overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+    <div class="app-mobile-card-grid">
+        @forelse ($orders as $order)
+            <article class="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
+                <div class="flex items-start justify-between gap-2">
+                    <div>
+                        <p class="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">{{ __('Order #') }}</p>
+                        <p class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $order->order_number }}</p>
+                    </div>
+                    <span class="rounded-full bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
+                        {{ $order->status }}
+                    </span>
+                </div>
+                <div class="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                        <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Source') }}</p>
+                        <p class="text-neutral-800 dark:text-neutral-100">
+                            {{ $order->source }}
+                            @if ($order->is_daily_dish)
+                                <span class="ml-1 inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-800 dark:bg-blue-900 dark:text-blue-100">DD</span>
+                            @endif
+                        </p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Branch') }}</p>
+                        <p class="text-neutral-800 dark:text-neutral-100">{{ $order->branch_id }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Customer') }}</p>
+                        <p class="text-neutral-800 dark:text-neutral-100">{{ $order->customer_name_snapshot ?? '—' }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Total') }}</p>
+                        <p class="font-semibold text-neutral-900 dark:text-neutral-100">{{ number_format((float) $order->total_amount, 3) }}</p>
+                    </div>
+                </div>
+                <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Scheduled') }}: {{ $order->scheduled_date?->format('Y-m-d') }} {{ $order->scheduled_time }}</p>
+                <div class="flex flex-wrap gap-2">
+                    @if ($order->status === 'Draft')
+                        <flux:button
+                            size="sm"
+                            type="button"
+                            variant="primary"
+                            wire:click="confirmOrder({{ $order->id }})"
+                            wire:loading.attr="disabled"
+                            class="touch-target"
+                        >{{ __('Confirm') }}</flux:button>
+                    @endif
+                    <flux:button size="sm" :href="route('orders.edit', $order)" wire:navigate class="touch-target">{{ __('Edit') }}</flux:button>
+                    @if (!in_array($order->status, ['Cancelled', 'Delivered'], true))
+                        <flux:button
+                            size="sm"
+                            type="button"
+                            variant="danger"
+                            wire:click="cancelOrder({{ $order->id }})"
+                            wire:confirm="{{ __('Cancel this order?') }}"
+                            wire:loading.attr="disabled"
+                            class="touch-target"
+                        >{{ __('Delete') }}</flux:button>
+                    @endif
+                </div>
+            </article>
+        @empty
+            <div class="rounded-xl border border-neutral-200 bg-white px-4 py-8 text-center text-sm text-neutral-600 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300">
+                {{ __('No orders found.') }}
+            </div>
+        @endforelse
+    </div>
+
+    <div class="app-desktop-table app-table-shell">
         <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
@@ -623,7 +691,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         .orders-create-drawer[data-open="1"] { pointer-events: auto; }
         .orders-create-drawer__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); opacity: 0; transition: opacity 200ms ease; }
         .orders-create-drawer[data-open="1"] .orders-create-drawer__backdrop { opacity: 1; }
-        .orders-create-drawer__panel { position: absolute; top: 0; right: 0; height: 100%; width: min(56rem, 100%); transform: translateX(100%); transition: transform 250ms ease; overflow-y: auto; overflow-x: hidden; background: #fff; box-shadow: -20px 0 60px rgba(0,0,0,.2); border-left: 1px solid rgba(0,0,0,.08); }
+        .orders-create-drawer__panel { position: absolute; top: 0; right: 0; height: 100%; transform: translateX(100%); transition: transform 250ms ease; background: #fff; box-shadow: -20px 0 60px rgba(0,0,0,.2); border-left: 1px solid rgba(0,0,0,.08); }
         .orders-create-drawer[data-open="1"] .orders-create-drawer__panel { transform: translateX(0); }
         .dark .orders-create-drawer__panel { background: rgb(23 23 23); border-left-color: rgba(255,255,255,.12); }
         .orders-create-drawer .touch-target { min-height: 44px; min-width: 44px; touch-action: manipulation; }
@@ -631,7 +699,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <div class="orders-create-drawer" data-open="{{ $showCreateDrawer ? '1' : '0' }}" role="dialog" aria-modal="true" @if(! $showCreateDrawer) inert @endif>
         <div class="orders-create-drawer__backdrop" wire:click="closeCreateDrawer"></div>
-        <div class="orders-create-drawer__panel">
+        <div class="orders-create-drawer__panel responsive-drawer-panel">
             <div class="sticky top-0 z-10 border-b border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/95">
                 <div class="flex items-center justify-between gap-3">
                     <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('New Order') }}</h2>
@@ -641,7 +709,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             @if ($showCreateDrawer)
             <form wire:submit="saveDrawerOrder" class="p-4 space-y-4">
                 {{-- Row 1: Branch, Type, Status, Daily Dish --}}
-                <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     @if ($drawer_branches->count())
                         <div>
                             <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Branch') }}</label>
@@ -683,7 +751,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
 
                 {{-- Row 2: Scheduled date, time --}}
-                <div class="grid grid-cols-2 gap-3 border-t border-neutral-200 pt-4 dark:border-neutral-700">
+                <div class="grid grid-cols-1 gap-3 border-t border-neutral-200 pt-4 sm:grid-cols-2 dark:border-neutral-700">
                     <flux:input wire:model="drawer_scheduled_date" type="date" :label="__('Scheduled Date')" class="touch-target" />
                     <flux:input wire:model="drawer_scheduled_time" type="time" :label="__('Scheduled Time')" class="touch-target" />
                 </div>
@@ -887,7 +955,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </div>
                         <div>
                             <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Order Discount') }}</label>
-                            <flux:input wire:model.live="drawer_order_discount_amount" type="number" step="0.001" class="w-32 touch-target" />
+                            <flux:input wire:model.live="drawer_order_discount_amount" type="number" step="0.001" class="w-full sm:w-32 touch-target" />
                         </div>
                     </div>
                 @endif

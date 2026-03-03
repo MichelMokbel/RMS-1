@@ -134,7 +134,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div class="w-full max-w-7xl mx-auto px-4 space-y-6" wire:poll.15s>
+<div class="app-page space-y-6" wire:poll.15s>
     @php
         $printParams = [
             'date' => $date,
@@ -159,7 +159,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div class="sticky top-0 z-10 rounded-lg border border-neutral-200 bg-white/95 p-4 shadow-sm backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/95 space-y-3">
-        <div class="flex flex-wrap items-end gap-3">
+        <div class="app-filter-grid">
             <flux:input wire:model.live="date" type="date" :label="__('Date')" />
             <flux:input wire:model.live="branchId" type="number" :label="__('Branch ID')" class="w-28" />
             <div class="flex flex-col gap-1">

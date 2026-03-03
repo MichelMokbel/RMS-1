@@ -100,7 +100,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div class="w-full max-w-7xl mx-auto px-4 space-y-6">
+<div class="app-page space-y-6">
     <div class="flex items-center justify-between">
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Subscription Details Report') }}</h1>
         <div class="flex gap-2">
@@ -111,7 +111,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
-        <div class="flex flex-wrap items-end gap-3">
+        <div class="app-filter-grid">
             <div class="min-w-[200px]">
                 <flux:input wire:model.live.debounce.300ms="search" :label="__('Search')" placeholder="{{ __('Subscription code / customer') }}" />
             </div>

@@ -58,7 +58,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div class="w-full max-w-7xl mx-auto px-4 space-y-6">
+<div class="app-page space-y-6">
     <div class="flex items-center justify-between">
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
             {{ __('Customers') }}
@@ -118,7 +118,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
-    <div class="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+    <div class="app-table-shell">
         <table class="w-full min-w-full table-fixed divide-y divide-neutral-200 dark:divide-neutral-800">
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>

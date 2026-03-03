@@ -395,10 +395,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div class="w-full max-w-6xl mx-auto px-4 space-y-6">
-    <div class="flex items-center justify-between">
+<div class="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Create Order') }}</h1>
-        <flux:button :href="route('orders.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
+        <flux:button :href="route('orders.index')" wire:navigate variant="ghost" class="touch-target">{{ __('Back') }}</flux:button>
     </div>
 
     @if (session('status'))
@@ -520,7 +520,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             @error('selected_items') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
 
-            <div class="overflow-x-auto">
+            <div class="app-table-shell">
                 @php
                     $subtotal = 0.0;
                     foreach ($selected_items as $row) {
@@ -641,7 +641,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                     <div class="flex items-center justify-between text-neutral-600 dark:text-neutral-300">
                         <label for="order_discount_amount" class="text-sm">{{ __('Order Discount') }}</label>
-                        <div class="w-32">
+                        <div class="w-full sm:w-32">
                             <flux:input
                                 id="order_discount_amount"
                                 wire:model.live.debounce.300ms="order_discount_amount"

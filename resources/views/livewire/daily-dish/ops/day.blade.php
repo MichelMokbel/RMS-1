@@ -160,7 +160,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div class="w-full max-w-7xl mx-auto px-4 space-y-6" wire:poll.12s>
+<div class="app-page space-y-6" wire:poll.12s>
     <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
             <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Daily Dish Ops') }}</p>
@@ -271,7 +271,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
 
         @if($mode === 'ByItemTotals')
-            <div class="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
+            <div class="app-table-scroll">
                 <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
                     <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                         <tr>

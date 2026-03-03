@@ -738,6 +738,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 <style>
     .pos-fixed-header { height: 64px; }
     .pos-fixed-footer { height: 140px; }
+    .pos-layout-left { width: clamp(300px, 32vw, 420px); }
+    .pos-layout-right { width: calc(100% - clamp(300px, 32vw, 420px)); }
     .pos-left-header { background: #2b3c4f; }
     .pos-tab-take { background: #2f80ed; }
     .pos-tab-dine { background: #eb5757; }
@@ -749,11 +751,132 @@ new #[Layout('components.layouts.app')] class extends Component {
     .pos-action-blue { background: #2f80ed; color: #fff; }
     .pos-action-green { background: #27ae60; color: #fff; }
     .pos-action-red { background: #eb5757; color: #fff; }
+    .pos-keypad-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .5rem; width: 100%; }
+    @media (max-width: 1023px) {
+        .pos-fixed-footer { height: 124px; }
+    }
 </style>
 
-<div class="pos-container flex h-screen flex-col pt-16 pb-[140px]" x-data="posHotkeys()" x-init="init()">
+<div class="pos-container min-h-[100dvh] bg-neutral-50" x-data="posHotkeys()" x-init="init()">
+    <div class="md:hidden flex min-h-[100dvh] flex-col">
+        <div class="sticky top-0 z-30 border-b border-neutral-200 bg-white">
+            <div class="flex items-center justify-between gap-2 px-3 py-2">
+                <flux:button type="button" variant="primary" wire:click="newSale" class="touch-target">{{ __('New') }} <span class="text-xs opacity-70">[F2]</span></flux:button>
+                <div class="flex items-center gap-2">
+                    <button type="button" class="touch-target rounded-md px-3 py-2 text-sm font-semibold text-white {{ $order_type === 'takeaway' ? 'pos-tab-take' : 'bg-neutral-500' }}" wire:click="setOrderType('takeaway')">
+                        {{ __('TakeAway') }} ({{ $takeawayOpen + $takeawayHeld }})
+                    </button>
+                    <button type="button" class="touch-target rounded-md px-3 py-2 text-sm font-semibold text-white {{ $order_type === 'dine_in' ? 'pos-tab-dine' : 'bg-neutral-500' }}" wire:click="setOrderType('dine_in')">
+                        {{ __('Dine In') }} ({{ $dineInOpen + $dineInHeld }})
+                    </button>
+                </div>
+            </div>
+            <div class="flex items-center justify-between gap-2 px-3 pb-2">
+                <button type="button" class="touch-target flex-1 rounded-md border border-neutral-200 px-3 py-2 text-left text-sm font-medium text-neutral-700" wire:click="$set('showCustomerModal', true)">
+                    {{ $customer_id && Schema::hasTable('customers') ? (Customer::find($customer_id)?->name ?? __('Cash Customer')) : __('Cash Customer') }} [F9]
+                </button>
+                <button type="button" class="touch-target rounded-md border border-neutral-200 px-3 py-2 text-sm text-neutral-700" wire:click="$set('showHeldModal', true)">
+                    {{ __('Held') }} ({{ $heldCount }})
+                </button>
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-3 space-y-3">
+            <div class="rounded-lg border border-neutral-200 bg-white p-3">
+                <div class="flex items-center gap-2 rounded-md border pos-search px-2 py-2">
+                    <svg class="h-4 w-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.3-4.3m1.8-5.2a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                    <input class="w-full bg-transparent text-sm text-neutral-700 outline-none"
+                        wire:model.live.debounce.200ms="search" wire:keydown.enter="searchAddItem"
+                        placeholder="Search for items [F6]" />
+                </div>
+            </div>
+
+            @if ($sale)
+                <div class="rounded-md pos-cart-summary p-3 text-white">
+                    <div class="flex items-center justify-between text-sm">
+                        <span>{{ $order_type === 'takeaway' ? __('Take Away') : __('Dine In') }}</span>
+                        <span>{{ __('Total') }} {{ config('pos.currency') }} {{ $this->formatMoney($sale->total_cents ?? 0) }}</span>
+                    </div>
+                    <div class="mt-2 flex items-center gap-2">
+                        <input class="w-full rounded border border-white/20 bg-white/10 px-2 py-1 text-xs text-white"
+                            wire:model.live="reference" placeholder="Ref:" />
+                    </div>
+                </div>
+            @endif
+
+            <div class="rounded-lg border border-neutral-200 bg-white p-3">
+                <div class="app-chip-row">
+                    @foreach ($categories as $cat)
+                        <button type="button"
+                            class="shrink-0 rounded-full px-4 py-1.5 text-sm font-medium {{ $category_id === $cat->id ? 'pos-pill-active' : 'pos-pill' }}"
+                            wire:click="setCategory({{ $cat->id }})">
+                            {{ $cat->name }}
+                            <span class="ml-2 rounded-full bg-white/20 px-2 text-xs">{{ $cat->count }}</span>
+                        </button>
+                    @endforeach
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                @foreach ($menuItems as $mi)
+                    <button type="button"
+                        class="flex min-h-[108px] flex-col items-center justify-center rounded-lg border border-neutral-200 bg-white p-3 transition hover:border-neutral-400"
+                        wire:click="addItem({{ $mi->id }})">
+                        <span class="text-center text-sm font-medium text-neutral-700 line-clamp-2">{{ $mi->name }}</span>
+                        @if ($mi->code)
+                            <span class="mt-1 text-xs text-neutral-400">{{ $mi->code }}</span>
+                        @endif
+                    </button>
+                @endforeach
+            </div>
+
+            <div class="rounded-lg border border-neutral-200 bg-white p-3">
+                @if (! $sale)
+                    <p class="py-6 text-center text-sm text-neutral-500 dark:text-neutral-400">{{ __('No active order. Tap New to start.') }}</p>
+                @else
+                    <ul class="space-y-2">
+                        @foreach ($sale->items as $row)
+                            <li class="rounded-lg border border-neutral-200 p-2">
+                                <div class="flex items-center justify-between gap-2">
+                                    <div class="min-w-0 flex-1">
+                                        <p class="truncate text-sm font-medium text-neutral-800">{{ $row->name_snapshot }}</p>
+                                        <p class="text-xs text-neutral-500">{{ $row->qty }} × {{ \App\Support\Money\MinorUnits::format((int) $row->unit_price_cents, null, false) }}</p>
+                                    </div>
+                                    <p class="text-sm font-semibold text-neutral-800">{{ $this->formatMoney($row->line_total_cents) }}</p>
+                                </div>
+                                <div class="mt-2 flex items-center gap-2">
+                                    <button type="button" class="touch-target rounded border border-neutral-200 px-2 py-1 text-xs" wire:click="adjustItemQty({{ $row->id }}, -1)">-</button>
+                                    <button type="button" class="touch-target rounded border border-neutral-200 px-2 py-1 text-xs" wire:click="adjustItemQty({{ $row->id }}, 1)">+</button>
+                                    <button type="button" class="touch-target rounded border border-rose-200 px-2 py-1 text-xs text-rose-700" wire:click="removeItem({{ $row->id }})">{{ __('Remove') }}</button>
+                                </div>
+                            </li>
+                        @endforeach
+                    </ul>
+                    @php $sale = $sale->fresh(); @endphp
+                    <div class="mt-3 border-t border-neutral-200 pt-3 text-sm">
+                        <div class="flex justify-between text-neutral-600"><span>{{ __('Subtotal') }}</span><span>{{ $this->formatMoney($sale->subtotal_cents) }}</span></div>
+                        <div class="flex justify-between text-neutral-600"><span>{{ __('Discount') }}</span><span>-{{ $this->formatMoney($sale->discount_total_cents) }}</span></div>
+                        <div class="flex justify-between pt-2 text-base font-semibold"><span>{{ __('Total') }}</span><span>{{ $this->formatMoney($sale->total_cents) }}</span></div>
+                    </div>
+                @endif
+            </div>
+        </div>
+
+        <div class="sticky bottom-0 z-20 border-t border-neutral-200 bg-white p-3">
+            <div class="grid grid-cols-3 gap-2">
+                <button type="button" class="touch-target rounded-md pos-action-blue px-2 py-2 text-sm" wire:click="quickPayCash">{{ __('Cash') }}</button>
+                <button type="button" class="touch-target rounded-md pos-action-blue px-2 py-2 text-sm" wire:click="quickPayCard">{{ __('Card') }}</button>
+                <button type="button" class="touch-target rounded-md pos-action-blue px-2 py-2 text-sm" wire:click="openPayModal">{{ __('Mixed') }}</button>
+                <button type="button" class="touch-target rounded-md pos-action-green px-2 py-2 text-sm" wire:click="checkoutCredit">{{ __('Credit') }}</button>
+                <button type="button" class="touch-target rounded-md border border-neutral-200 px-2 py-2 text-sm" wire:click="printKot">{{ __('KOT') }}</button>
+                <button type="button" class="touch-target rounded-md border border-neutral-200 px-2 py-2 text-sm" wire:click="printReceipt">{{ __('Receipt') }}</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="hidden md:flex h-screen flex-col pt-16 pb-[140px]">
     <div class="fixed top-0 left-0 right-0 z-50 flex pos-fixed-header border-b border-neutral-200 bg-white">
-        <div class="flex w-1/4 min-w-[280px] items-center pos-left-header text-white">
+        <div class="flex pos-layout-left items-center pos-left-header text-white">
             <div class="flex w-full items-center">
                 <div class="flex h-full items-center px-4 text-sm font-semibold">New Order <span class="ml-2 text-xs opacity-70">[F2]</span></div>
                 <button type="button"
@@ -768,7 +891,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </button>
             </div>
         </div>
-        <div class="flex w-3/4 items-center justify-between px-4">
+        <div class="flex pos-layout-right items-center justify-between px-4">
             <div class="flex items-center gap-2">
                 <span class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-sky-600 text-xs font-semibold text-white">C</span>
                 <button type="button" class="text-sm font-medium text-neutral-700" wire:click="$set('showCustomerModal', true)">
@@ -786,7 +909,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <div class="flex flex-1 min-h-0">
         {{-- Left order pane --}}
-        <div class="flex w-1/4 min-w-[280px] flex-col border-r border-neutral-200 bg-white">
+        <div class="flex pos-layout-left flex-col border-r border-neutral-200 bg-white">
             <div class="border-b border-neutral-200 p-3">
                 <div class="flex items-center gap-2 rounded-md border pos-search px-2 py-2">
                     <svg class="h-4 w-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.3-4.3m1.8-5.2a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
@@ -916,7 +1039,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <div class="fixed bottom-0 left-0 z-50 w-full pos-fixed-footer border-t border-neutral-200 bg-white">
                 <div class="flex h-full">
-                    <div class="flex w-1/4 min-w-[280px] items-center justify-between px-3">
+                    <div class="flex pos-layout-left items-center justify-between px-3">
                         <button type="button" class="pos-action-red flex h-12 w-12 items-center justify-center rounded-md" wire:click="newSale">X</button>
                         <button type="button" class="pos-action-blue flex h-12 w-16 items-center justify-center rounded-md" wire:click="printKot">KOT</button>
                         <button type="button" class="pos-action-blue flex h-12 w-12 items-center justify-center rounded-md" wire:click="printReceipt">
@@ -925,28 +1048,28 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <div class="flex h-12 w-12 items-center justify-center rounded-md bg-neutral-800 text-white">0</div>
                         <button type="button" class="pos-action-green flex h-12 w-12 items-center justify-center rounded-md" wire:click="$set('showHeldModal', true)">></button>
                     </div>
-                    <div class="flex w-3/4 items-center justify-between px-4">
-                        <div class="grid grid-cols-5 gap-2 text-sm">
-                            <button class="pos-key h-10 w-16">Split</button>
-                            <button class="pos-key h-10 w-16">Merge</button>
-                            <button class="pos-key h-10 w-16">7</button>
-                            <button class="pos-key h-10 w-16">8</button>
-                            <button class="pos-key h-10 w-16">9</button>
-                            <button class="pos-key h-10 w-16" wire:click="quickPayCash">Cash</button>
-                            <button class="pos-key h-10 w-16" wire:click="quickPayCard">Card</button>
-                            <button class="pos-key h-10 w-16">4</button>
-                            <button class="pos-key h-10 w-16">5</button>
-                            <button class="pos-key h-10 w-16">6</button>
-                            <button class="pos-key h-10 w-16" wire:click="checkoutCredit">Credit</button>
-                            <button class="pos-key h-10 w-16">Complement</button>
-                            <button class="pos-key h-10 w-16">1</button>
-                            <button class="pos-key h-10 w-16">2</button>
-                            <button class="pos-key h-10 w-16">3</button>
-                            <button class="pos-key h-10 w-16" wire:click="openPayModal">Mixed Pay</button>
-                            <button class="pos-key h-10 w-16">Return</button>
-                            <button class="pos-key h-10 w-16">0</button>
-                            <button class="pos-key h-10 w-16">.</button>
-                            <button class="pos-key h-10 w-16">C</button>
+                    <div class="flex pos-layout-right items-center justify-between px-4">
+                        <div class="pos-keypad-grid text-sm">
+                            <button class="pos-key h-10 w-full min-w-0">Split</button>
+                            <button class="pos-key h-10 w-full min-w-0">Merge</button>
+                            <button class="pos-key h-10 w-full min-w-0">7</button>
+                            <button class="pos-key h-10 w-full min-w-0">8</button>
+                            <button class="pos-key h-10 w-full min-w-0">9</button>
+                            <button class="pos-key h-10 w-full min-w-0" wire:click="quickPayCash">Cash</button>
+                            <button class="pos-key h-10 w-full min-w-0" wire:click="quickPayCard">Card</button>
+                            <button class="pos-key h-10 w-full min-w-0">4</button>
+                            <button class="pos-key h-10 w-full min-w-0">5</button>
+                            <button class="pos-key h-10 w-full min-w-0">6</button>
+                            <button class="pos-key h-10 w-full min-w-0" wire:click="checkoutCredit">Credit</button>
+                            <button class="pos-key h-10 w-full min-w-0">Complement</button>
+                            <button class="pos-key h-10 w-full min-w-0">1</button>
+                            <button class="pos-key h-10 w-full min-w-0">2</button>
+                            <button class="pos-key h-10 w-full min-w-0">3</button>
+                            <button class="pos-key h-10 w-full min-w-0" wire:click="openPayModal">Mixed Pay</button>
+                            <button class="pos-key h-10 w-full min-w-0">Return</button>
+                            <button class="pos-key h-10 w-full min-w-0">0</button>
+                            <button class="pos-key h-10 w-full min-w-0">.</button>
+                            <button class="pos-key h-10 w-full min-w-0">C</button>
                         </div>
                     </div>
                 </div>
@@ -954,7 +1077,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
 
         {{-- Right product pane --}}
-        <div class="flex w-3/4 flex-col min-w-0 bg-white">
+        <div class="flex pos-layout-right flex-col min-w-0 bg-white">
             <div class="flex items-center justify-between border-b border-neutral-200 p-2 dark:border-neutral-700">
                 <div class="flex items-center gap-2">
                     <button type="button" class="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm text-neutral-700"
@@ -972,7 +1095,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="border-b border-neutral-200 px-3 py-2">
                 <div class="flex items-center gap-2">
                     <button class="text-neutral-400">&lsaquo;</button>
-                    <div class="flex gap-2 overflow-x-auto pb-1">
+                    <div class="app-chip-row">
                         @foreach ($categories as $cat)
                             <button type="button"
                                 class="shrink-0 rounded-full px-4 py-1.5 text-sm font-medium {{ $category_id === $cat->id ? 'pos-pill-active' : 'pos-pill' }}"
@@ -1007,6 +1130,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         </div>
     </div>
+    </div>
 
     @if ($showPayModal)
         <div class="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
@@ -1016,15 +1140,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <flux:button type="button" variant="ghost" wire:click="$set('showPayModal', false)">{{ __('Close') }}</flux:button>
                 </div>
                 @foreach ($payments as $idx => $row)
-                    <div class="grid grid-cols-5 gap-2">
-                        <select wire:model="payments.{{ $idx }}.method" class="col-span-2 rounded-md border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800">
+                    <div class="grid grid-cols-1 gap-2 sm:grid-cols-5">
+                        <select wire:model="payments.{{ $idx }}.method" class="rounded-md border border-neutral-200 px-3 py-2 text-sm sm:col-span-2 dark:border-neutral-600 dark:bg-neutral-800">
                             <option value="cash">{{ __('Cash') }}</option>
                             <option value="card">{{ __('Card') }}</option>
                             <option value="online">{{ __('Online') }}</option>
                             <option value="bank">{{ __('Bank') }}</option>
                             <option value="voucher">{{ __('Voucher') }}</option>
                         </select>
-                        <flux:input wire:model="payments.{{ $idx }}.amount" class="col-span-2 !mb-0" />
+                        <flux:input wire:model="payments.{{ $idx }}.amount" class="!mb-0 sm:col-span-2" />
                         <flux:button size="xs" type="button" variant="ghost" wire:click="removePaymentRow({{ $idx }})">{{ __('×') }}</flux:button>
                     </div>
                 @endforeach

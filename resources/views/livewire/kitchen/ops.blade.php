@@ -91,7 +91,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div class="w-full max-w-7xl mx-auto px-4 space-y-6" wire:poll.12s>
+<div class="app-page space-y-6" wire:poll.12s>
     <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
             <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Kitchen Ops') }}</p>
@@ -106,7 +106,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div class="sticky top-0 z-10 rounded-lg border border-neutral-200 bg-white/95 p-4 shadow-sm backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/95 space-y-3">
-        <div class="flex flex-wrap items-end gap-3">
+        <div class="app-filter-grid">
             <flux:input wire:model.live="branch" type="number" min="1" :label="__('Branch')" class="w-28" />
             <flux:input wire:model.live="date" type="date" :label="__('Date')" />
             <div>
@@ -135,7 +135,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     @if($mode === 'ByItemTotals')
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-2">
             <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Prep Totals') }}</h2>
-            <div class="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
+            <div class="app-table-scroll">
                 <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
                     <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                         <tr>

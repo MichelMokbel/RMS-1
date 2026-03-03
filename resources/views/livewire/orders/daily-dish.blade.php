@@ -57,7 +57,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
-        <div class="flex flex-wrap items-end gap-3">
+        <div class="app-filter-grid">
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Service Date') }}</label>
                 <flux:input wire:model.live="service_date" type="date" />

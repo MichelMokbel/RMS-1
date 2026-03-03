@@ -72,7 +72,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
-        <div class="flex flex-wrap items-end gap-3">
+        <div class="app-filter-grid">
             <x-reports.date-range fromName="date_from" toName="date_to" />
         </div>
     </div>
@@ -92,7 +92,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
-    <div class="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+    <div class="app-table-shell">
         <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>

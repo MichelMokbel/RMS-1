@@ -51,11 +51,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div class="w-full max-w-7xl mx-auto px-4 space-y-6">
-    <div class="flex items-center justify-between">
+<div class="app-page space-y-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Invoices (AR)') }}</h1>
         <div class="flex items-center gap-2">
-            <flux:button :href="route('invoices.create')" wire:navigate variant="primary">{{ __('New Invoice') }}</flux:button>
+            <flux:button :href="route('invoices.create')" wire:navigate variant="primary" class="touch-target">{{ __('New Invoice') }}</flux:button>
         </div>
     </div>
 
@@ -71,7 +71,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     @endif
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
-        <div class="flex flex-wrap items-end gap-3">
+        <div class="app-filter-grid">
             <div class="min-w-[180px]">
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Branch') }}</label>
                 @if ($branches->count())
@@ -117,7 +117,52 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
-    <div class="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+    <div class="app-mobile-card-grid">
+        @forelse ($invoices as $inv)
+            <article class="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
+                <div class="flex items-start justify-between gap-2">
+                    <div>
+                        <p class="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">{{ __('Invoice') }}</p>
+                        <p class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $inv->invoice_number ?: ('#'.$inv->id) }}</p>
+                    </div>
+                    <span class="rounded-full bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">{{ $inv->status }}</span>
+                </div>
+                <div class="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                        <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Date') }}</p>
+                        <p class="text-neutral-800 dark:text-neutral-100">{{ $inv->issue_date?->toDateString() ?: '—' }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Customer') }}</p>
+                        <p class="text-neutral-800 dark:text-neutral-100">{{ $inv->customer?->name ?: '—' }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Total') }}</p>
+                        <p class="font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($inv->total_cents) }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Balance') }}</p>
+                        <p class="font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($inv->balance_cents) }}</p>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <flux:button size="sm" :href="route('invoices.show', $inv)" wire:navigate class="touch-target">{{ __('View') }}</flux:button>
+                    @if ($inv->status === 'draft')
+                        <flux:button size="sm" variant="ghost" :href="route('invoices.edit', $inv)" wire:navigate class="touch-target">{{ __('Edit') }}</flux:button>
+                    @endif
+                    @if (in_array($inv->status, ['issued', 'partially_paid', 'paid'], true))
+                        <flux:button size="sm" variant="ghost" :href="route('invoices.print', $inv)" target="_blank" class="touch-target">{{ __('Print') }}</flux:button>
+                    @endif
+                </div>
+            </article>
+        @empty
+            <div class="rounded-xl border border-neutral-200 bg-white px-4 py-6 text-center text-sm text-neutral-600 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300">
+                {{ __('No invoices found.') }}
+            </div>
+        @endforelse
+    </div>
+
+    <div class="app-desktop-table app-table-shell">
         <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>

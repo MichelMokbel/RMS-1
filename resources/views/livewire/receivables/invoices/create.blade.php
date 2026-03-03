@@ -582,12 +582,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div class="w-full max-w-5xl mx-auto px-4 space-y-6">
-    <div class="flex items-center justify-between">
+<div class="w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
             {{ $editing_invoice_id ? __('Edit Invoice') : __('Create Invoice') }}
         </h1>
-        <flux:button :href="route('invoices.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
+        <flux:button :href="route('invoices.index')" wire:navigate variant="ghost" class="touch-target">{{ __('Back') }}</flux:button>
     </div>
 
     @if (session('status'))
@@ -719,7 +719,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         @error('selected_items') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
 
-        <div class="overflow-x-auto">
+        <div class="app-table-shell">
         @php
             $moneyDigits = $this->moneyScaleDigits();
             $moneyStep = $this->moneyStep();
@@ -862,9 +862,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
-    <div class="flex justify-end gap-3">
-        <flux:button type="button" wire:click="saveDraft">{{ __('Save Draft') }}</flux:button>
-        <flux:button type="button" wire:click="saveAndIssue" variant="primary">{{ __('Save & Issue') }}</flux:button>
+    <div class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        <flux:button type="button" wire:click="saveDraft" class="touch-target">{{ __('Save Draft') }}</flux:button>
+        <flux:button type="button" wire:click="saveAndIssue" variant="primary" class="touch-target">{{ __('Save & Issue') }}</flux:button>
     </div>
 </div>
 

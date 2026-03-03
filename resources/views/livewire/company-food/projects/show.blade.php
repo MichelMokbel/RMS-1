@@ -556,7 +556,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 }; ?>
 
-<div class="w-full max-w-7xl mx-auto px-4 space-y-6">
+<div class="app-page space-y-6">
     <div class="flex items-center justify-between">
         <div>
             <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Company Food Project') }}</p>
@@ -618,7 +618,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <flux:button :href="route('company-food.projects.export-csv', $project)" variant="ghost" size="sm">{{ __('Export CSV') }}</flux:button>
                 </div>
             </div>
-            <div class="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
+            <div class="app-table-scroll">
                 <flux:table>
                     <flux:table.columns>
                         <flux:table.column>{{ __('Date') }}</flux:table.column>
@@ -699,7 +699,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="space-y-6">
                 <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
                     <h3 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-3">{{ __('Add List') }}</h3>
-                    <form wire:submit="addList" class="flex flex-wrap items-end gap-3">
+                    <form wire:submit="addList" class="app-filter-grid">
                         <div class="flex-1 min-w-[200px]">
                             <flux:input wire:model="newListName" :label="__('List name')" placeholder="{{ __('e.g. List 1') }}" />
                         </div>
@@ -710,7 +710,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @if($employeeLists->isNotEmpty())
                     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
                         <h3 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-3">{{ __('Add / Import Employees') }}</h3>
-                        <div class="flex flex-wrap items-end gap-3 mb-3">
+                        <div class="app-filter-grid mb-3">
                             <div>
                                 <label class="block text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">{{ __('Add to list') }}</label>
                                 <select wire:model.live="selectedListId" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
@@ -853,7 +853,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="space-y-6">
                 <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
                     <h3 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-3">{{ __('Add Option') }}</h3>
-                    <form wire:submit="addOption" class="flex flex-wrap items-end gap-3">
+                    <form wire:submit="addOption" class="app-filter-grid">
                         <div>
                             <label class="block text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">{{ __('Date') }}</label>
                             <input type="date" wire:model="newOptionDate" min="{{ $project->start_date->format('Y-m-d') }}" max="{{ $project->end_date->format('Y-m-d') }}" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" required />
