@@ -28,6 +28,7 @@
         th, td { border: 1px solid #e5e7eb; padding: 6px 8px; font-size: 11px; text-align: left; vertical-align: top; }
         th { background: #f9fafb; font-weight: 700; }
         @include('reports.print-header-styles')
+        .print-footer { border-top: none !important; }
         @page { margin: 8mm 10mm 14mm 10mm; }
         @media print {
             .no-print { display: none !important; }
