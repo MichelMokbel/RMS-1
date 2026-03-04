@@ -3,6 +3,8 @@
 use App\Models\InventoryItem;
 use App\Models\MenuItem;
 use App\Models\Order;
+use App\Models\PurchaseOrder;
+use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Http\Request;
@@ -430,7 +432,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operation
                 'location_option_id' => $locationOptionId > 0 ? $locationOptionId : null,
             ],
             'generatedAt' => now(),
-        ], 'company-food-kitchen-prep-' . $project->slug . '.pdf', 'a4', 'landscape');
+        ], 'company-food-kitchen-prep-' . $project->slug . '.pdf', 'a4', 'portrait');
     })->name('projects.export-kitchen-prep-pdf');
     Route::get('projects/{project}/export-csv', function (Request $request, \App\Models\CompanyFoodProject $project) {
         $project->load([
@@ -933,6 +935,94 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|c
 });
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|catalog.access|finance.access|operations.access'])->group(function () {
+    Route::get('purchase-orders/suppliers/search', function (Request $request) {
+        if (! Schema::hasTable('suppliers')) {
+            return response()->json([]);
+        }
+
+        $term = trim((string) $request->query('q', ''));
+        if ($term === '' || mb_strlen($term) < 2) {
+            return response()->json([]);
+        }
+
+        $like = '%'.$term.'%';
+        $query = Supplier::query()
+            ->where(function ($q) use ($like) {
+                $q->where('name', 'like', $like)
+                    ->orWhere('contact_person', 'like', $like)
+                    ->orWhere('email', 'like', $like)
+                    ->orWhere('phone', 'like', $like);
+            });
+
+        if (Schema::hasColumn('suppliers', 'status')) {
+            $query->where('status', 'active');
+        }
+
+        $suppliers = $query
+            ->orderBy('name')
+            ->select(['id', 'name', 'email', 'phone'])
+            ->limit(20)
+            ->get()
+            ->map(function (Supplier $supplier) {
+                $label = trim((string) $supplier->name);
+                if (! empty($supplier->email)) {
+                    $label .= ' ('.$supplier->email.')';
+                }
+
+                return [
+                    'id' => $supplier->id,
+                    'name' => $supplier->name,
+                    'email' => $supplier->email,
+                    'phone' => $supplier->phone,
+                    'label' => $label,
+                ];
+            })
+            ->values();
+
+        return response()->json($suppliers);
+    })->name('purchase-orders.suppliers.search');
+
+    Route::get('purchase-orders/items/search', function (Request $request) {
+        if (! Schema::hasTable('inventory_items')) {
+            return response()->json([]);
+        }
+
+        $term = trim((string) $request->query('q', ''));
+        if ($term === '' || mb_strlen($term) < 2) {
+            return response()->json([]);
+        }
+
+        $like = '%'.$term.'%';
+        $query = InventoryItem::query()
+            ->where(function ($q) use ($like) {
+                $q->where('item_code', 'like', $like)
+                    ->orWhere('name', 'like', $like);
+            });
+
+        if (Schema::hasColumn('inventory_items', 'status')) {
+            $query->where('status', 'active');
+        }
+
+        $items = $query
+            ->orderBy('name')
+            ->select(['id', 'name', 'item_code'])
+            ->limit(20)
+            ->get()
+            ->map(function (InventoryItem $item) {
+                $label = trim(($item->item_code ?? '').' '.$item->name);
+
+                return [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'code' => $item->item_code,
+                    'label' => $label,
+                ];
+            })
+            ->values();
+
+        return response()->json($items);
+    })->name('purchase-orders.items.search');
+
     Volt::route('menu-items/availability', 'menu-items.availability')->name('menu-items.availability');
     Volt::route('menu-items/categorize', 'menu-items.categorize')->name('menu-items.categorize');
     Volt::route('menu-items/create', 'menu-items.create')->name('menu-items.create');
@@ -947,6 +1037,11 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|catalog.a
 
     Volt::route('purchase-orders', 'purchase-orders.index')->name('purchase-orders.index');
     Volt::route('purchase-orders/create', 'purchase-orders.create')->name('purchase-orders.create');
+    Route::get('purchase-orders/{purchaseOrder}/print', function (PurchaseOrder $purchaseOrder) {
+        return view('purchase-orders.print', [
+            'purchaseOrder' => $purchaseOrder->load(['items.item', 'supplier', 'creator']),
+        ]);
+    })->name('purchase-orders.document-print');
     Volt::route('purchase-orders/{purchaseOrder}', 'purchase-orders.show')->name('purchase-orders.show');
     Volt::route('purchase-orders/{purchaseOrder}/edit', 'purchase-orders.edit')->name('purchase-orders.edit');
 

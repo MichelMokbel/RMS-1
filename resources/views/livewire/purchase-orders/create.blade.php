@@ -16,43 +16,55 @@ use Livewire\Volt\Component;
 new #[Layout('components.layouts.app')] class extends Component {
     public string $po_number = '';
     public ?int $supplier_id = null;
+    public string $supplier_search = '';
     public ?string $order_date = null;
     public ?string $expected_delivery_date = null;
     public ?string $notes = null;
     public ?string $payment_terms = null;
     public ?string $payment_type = null;
     public array $payment_term_options = ['Due on receipt', 'Credit', 'Net 15', 'Net 30', 'Net 60'];
-    public array $payment_type_options = ['Cash', 'Card', 'Bank Transfer', 'Cheque'];
+    public array $payment_type_options = ['Cash', 'Card', 'Bank Transfer', 'Cheque', 'Credit'];
     public ?string $new_payment_term = null;
     public ?string $new_payment_type = null;
     public array $lines = [];
     public array $items = [];
+    public array $lineSearch = [];
 
     public function mount(PurchaseOrderNumberService $numberService, PurchaseOrderFormQueryService $queryService): void
     {
         $this->po_number = $numberService->generate();
+        $this->order_date = now()->toDateString();
         $this->items = $queryService->inventoryItemsArray();
         $this->lines = [
             ['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0],
         ];
-    }
-
-    public function with(PurchaseOrderFormQueryService $queryService): array
-    {
-        return [
-            'suppliers' => $queryService->suppliers(),
-        ];
+        $this->lineSearch = [''];
     }
 
     public function addLine(): void
     {
         $this->lines[] = ['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0];
+        $this->lineSearch[] = '';
+    }
+
+    public function selectSupplier(int $supplierId, string $label = ''): void
+    {
+        $this->supplier_id = $supplierId;
+        $this->supplier_search = trim($label) !== '' ? $label : $this->resolveSupplierLabel($supplierId);
+    }
+
+    public function clearSupplier(): void
+    {
+        $this->supplier_id = null;
+        $this->supplier_search = '';
     }
 
     public function removeLine(int $index): void
     {
         unset($this->lines[$index]);
+        unset($this->lineSearch[$index]);
         $this->lines = array_values($this->lines);
+        $this->lineSearch = array_values($this->lineSearch);
     }
 
     public function updated($name, $value): void
@@ -90,15 +102,64 @@ new #[Layout('components.layouts.app')] class extends Component {
         $itemId = $this->lines[$index]['item_id'] ?? null;
         if ($itemId) {
             $this->syncUnitPriceFromItem((int) $itemId, $index);
+            $this->lineSearch[$index] = $this->resolveItemLabel((int) $itemId);
             $this->maybeAppendNewLine($index);
         }
+    }
+
+    public function selectLineItem(int $index, int $itemId, string $label = ''): void
+    {
+        if (! isset($this->lines[$index])) {
+            return;
+        }
+
+        $this->lines[$index]['item_id'] = $itemId;
+        $this->lineSearch[$index] = trim($label) !== '' ? $label : $this->resolveItemLabel($itemId);
+        $this->syncUnitPriceFromItem($itemId, $index);
+        $this->maybeAppendNewLine($index);
+    }
+
+    public function clearLineItem(int $index): void
+    {
+        if (! isset($this->lines[$index])) {
+            return;
+        }
+
+        $this->lines[$index]['item_id'] = null;
+        $this->lineSearch[$index] = '';
     }
 
     private function maybeAppendNewLine(int $index): void
     {
         if ($index === array_key_last($this->lines)) {
             $this->lines[] = ['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0];
+            $this->lineSearch[] = '';
         }
+    }
+
+    private function resolveItemLabel(int $itemId): string
+    {
+        $item = collect($this->items)->firstWhere('id', $itemId);
+        if (! is_array($item)) {
+            return '';
+        }
+
+        return trim('['.($item['item_code'] ?? '').'] '.($item['name'] ?? ''));
+    }
+
+    private function resolveSupplierLabel(int $supplierId): string
+    {
+        $supplier = Supplier::query()->select(['id', 'name', 'email'])->find($supplierId);
+        if (! $supplier) {
+            return '';
+        }
+
+        $label = trim((string) $supplier->name);
+        if (! empty($supplier->email)) {
+            $label .= ' ('.$supplier->email.')';
+        }
+
+        return $label;
     }
 
     public function saveDraft(PurchaseOrderPersistService $persist, PurchaseOrderRules $rules): void
@@ -183,12 +244,52 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <flux:input wire:model="po_number" :label="__('PO Number')" required maxlength="50" />
                 <div>
                     <label class="block text-sm font-medium text-neutral-800 dark:text-neutral-200 mb-1">{{ __('Supplier') }}</label>
-                    <select wire:model="supplier_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                        <option value="">{{ __('Select supplier') }}</option>
-                        @foreach ($suppliers as $supplier)
-                            <option value="{{ $supplier->id }}">{{ $supplier->name }}</option>
-                        @endforeach
-                    </select>
+                    <div
+                        class="relative"
+                        wire:ignore
+                        x-data="poSupplierLookup({
+                            initial: @js($supplier_search),
+                            selectedId: @js($supplier_id),
+                            searchUrl: '{{ route('purchase-orders.suppliers.search') }}'
+                        })"
+                        x-on:keydown.escape.stop="close()"
+                        x-on:click.outside="close()"
+                    >
+                        <input
+                            type="text"
+                            class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
+                            x-model="query"
+                            x-on:input.debounce.200ms="onInput()"
+                            x-on:focus="onInput(true)"
+                            placeholder="{{ __('Search supplier by name, email, phone') }}"
+                        />
+                        <template x-if="open">
+                            <div
+                                x-ref="panel"
+                                x-bind:style="panelStyle"
+                                class="mb-1 overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+                            >
+                                <div class="max-h-60 overflow-auto">
+                                    <template x-for="supplier in results" :key="supplier.id">
+                                        <button
+                                            type="button"
+                                            class="w-full px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-50 dark:text-neutral-100 dark:hover:bg-neutral-800/80"
+                                            x-on:click="choose(supplier)"
+                                        >
+                                            <div class="font-medium" x-text="supplier.name"></div>
+                                            <div class="text-xs text-neutral-500 dark:text-neutral-400" x-text="supplier.email || supplier.phone || ''"></div>
+                                        </button>
+                                    </template>
+                                    <div x-show="loading" class="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">
+                                        {{ __('Searching...') }}
+                                    </div>
+                                    <div x-show="!loading && hasSearched && results.length === 0" class="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">
+                                        {{ __('No suppliers found.') }}
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
                     @error('supplier_id') <p class="text-sm text-rose-600 mt-1">{{ $message }}</p> @enderror
                 </div>
                 <flux:input wire:model="order_date" type="date" :label="__('Order Date')" />
@@ -245,15 +346,58 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </thead>
                     <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                         @foreach ($lines as $index => $line)
-                            <tr class="align-top">
+                            <tr class="align-top" wire:key="po-create-line-{{ $index }}">
                                 <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $loop->iteration }}</td>
                                 <td class="px-3 py-3 text-sm">
-                                    <select wire:model="lines.{{ $index }}.item_id" wire:change="syncPrice({{ $index }})" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                                        <option value="">{{ __('Select item') }}</option>
-                                @foreach ($items as $item)
-                                    <option value="{{ $item['id'] }}">[{{ $item['item_code'] }}] {{ $item['name'] }}</option>
-                                @endforeach
-                            </select>
+                                    <div
+                                        class="relative"
+                                        wire:ignore
+                                        x-data="poItemLookup({
+                                            index: {{ $index }},
+                                            initial: @js($lineSearch[$index] ?? ''),
+                                            selectedId: @js($line['item_id'] ?? null),
+                                            searchUrl: '{{ route('purchase-orders.items.search') }}'
+                                        })"
+                                        x-on:keydown.escape.stop="close()"
+                                        x-on:click.outside="close()"
+                                    >
+                                        <input
+                                            type="text"
+                                            class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
+                                            x-model="query"
+                                            x-on:input.debounce.200ms="onInput()"
+                                            x-on:focus="onInput(true)"
+                                            placeholder="{{ __('Search item by code or name') }}"
+                                        />
+                                        <template x-if="open">
+                                            <div
+                                                x-ref="panel"
+                                                x-bind:style="panelStyle"
+                                                class="mb-1 overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+                                            >
+                                                <div class="max-h-60 overflow-auto">
+                                                    <template x-for="item in results" :key="item.id">
+                                                        <button
+                                                            type="button"
+                                                            class="w-full px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-50 dark:text-neutral-100 dark:hover:bg-neutral-800/80"
+                                                            x-on:click="choose(item)"
+                                                        >
+                                                            <div class="flex items-center justify-between gap-2">
+                                                                <span class="font-medium" x-text="item.name"></span>
+                                                                <span class="text-xs text-neutral-500 dark:text-neutral-400" x-show="item.code" x-text="item.code"></span>
+                                                            </div>
+                                                        </button>
+                                                    </template>
+                                                    <div x-show="loading" class="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">
+                                                        {{ __('Searching...') }}
+                                                    </div>
+                                                    <div x-show="!loading && hasSearched && results.length === 0" class="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">
+                                                        {{ __('No items found.') }}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
                                     @error("lines.$index.item_id") <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                                 </td>
                                 <td class="px-3 py-3 text-sm">
@@ -294,3 +438,218 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </form>
 </div>
+
+@once
+    <script>
+        if (!window.__purchaseOrderSupplierLookupBootstrapped) {
+            window.__purchaseOrderSupplierLookupBootstrapped = true;
+
+            window.registerPurchaseOrderSupplierLookup = () => {
+                Alpine.data('poSupplierLookup', ({ initial, selectedId, searchUrl }) => ({
+                    query: initial || '',
+                    selectedId: selectedId || null,
+                    selectedLabel: initial || '',
+                    searchUrl,
+                    results: [],
+                    loading: false,
+                    open: false,
+                    hasSearched: false,
+                    panelStyle: '',
+                    controller: null,
+                    onInput(force = false) {
+                        if (this.selectedId !== null && this.query !== this.selectedLabel) {
+                            this.selectedId = null;
+                            this.selectedLabel = '';
+                            this.$wire.clearSupplier();
+                        }
+
+                        const term = this.query.trim();
+                        if (!force && term.length < 2) {
+                            this.open = false;
+                            this.results = [];
+                            this.hasSearched = false;
+                            return;
+                        }
+                        if (term.length < 2) {
+                            this.open = false;
+                            this.results = [];
+                            this.hasSearched = false;
+                            return;
+                        }
+
+                        this.fetchResults(term);
+                    },
+                    fetchResults(term) {
+                        this.loading = true;
+                        this.hasSearched = true;
+                        this.open = true;
+                        if (this.controller) {
+                            this.controller.abort();
+                        }
+                        this.controller = new AbortController();
+                        const params = new URLSearchParams({ q: term });
+                        fetch(this.searchUrl + '?' + params.toString(), {
+                            headers: { 'Accept': 'application/json' },
+                            signal: this.controller.signal,
+                            credentials: 'same-origin',
+                        })
+                            .then((response) => response.ok ? response.json() : [])
+                            .then((data) => {
+                                this.results = Array.isArray(data) ? data : [];
+                                this.loading = false;
+                                this.$nextTick(() => this.positionDropdown());
+                            })
+                            .catch((error) => {
+                                if (error.name === 'AbortError') {
+                                    return;
+                                }
+                                this.loading = false;
+                                this.results = [];
+                            });
+                    },
+                    choose(supplier) {
+                        const label = supplier.label || supplier.name || '';
+                        this.query = label;
+                        this.selectedLabel = label;
+                        this.selectedId = supplier.id;
+                        this.open = false;
+                        this.results = [];
+                        this.loading = false;
+                        this.$wire.selectSupplier(supplier.id, label);
+                    },
+                    close() {
+                        this.open = false;
+                    },
+                    positionDropdown() {
+                        const input = this.$el.querySelector('input');
+                        if (!input) {
+                            return;
+                        }
+                        const rect = input.getBoundingClientRect();
+                        this.panelStyle = [
+                            'position: fixed',
+                            'left: ' + rect.left + 'px',
+                            'top: ' + rect.bottom + 'px',
+                            'width: ' + rect.width + 'px',
+                            'z-index: 9999',
+                        ].join('; ');
+                    },
+                }));
+            };
+
+            if (window.Alpine) {
+                window.registerPurchaseOrderSupplierLookup();
+            } else {
+                document.addEventListener('alpine:init', () => {
+                    window.registerPurchaseOrderSupplierLookup();
+                });
+            }
+        }
+
+        if (!window.__purchaseOrderItemLookupBootstrapped) {
+            window.__purchaseOrderItemLookupBootstrapped = true;
+
+            window.registerPurchaseOrderItemLookup = () => {
+                Alpine.data('poItemLookup', ({ index, initial, selectedId, searchUrl }) => ({
+                    index,
+                    query: initial || '',
+                    selectedId: selectedId || null,
+                    selectedLabel: initial || '',
+                    searchUrl,
+                    results: [],
+                    loading: false,
+                    open: false,
+                    hasSearched: false,
+                    panelStyle: '',
+                    controller: null,
+                    onInput(force = false) {
+                        if (this.selectedId !== null && this.query !== this.selectedLabel) {
+                            this.selectedId = null;
+                            this.selectedLabel = '';
+                            this.$wire.clearLineItem(this.index);
+                        }
+
+                        const term = this.query.trim();
+                        if (!force && term.length < 2) {
+                            this.open = false;
+                            this.results = [];
+                            this.hasSearched = false;
+                            return;
+                        }
+                        if (term.length < 2) {
+                            this.open = false;
+                            this.results = [];
+                            this.hasSearched = false;
+                            return;
+                        }
+
+                        this.fetchResults(term);
+                    },
+                    fetchResults(term) {
+                        this.loading = true;
+                        this.hasSearched = true;
+                        this.open = true;
+                        if (this.controller) {
+                            this.controller.abort();
+                        }
+                        this.controller = new AbortController();
+                        const params = new URLSearchParams({ q: term });
+                        fetch(this.searchUrl + '?' + params.toString(), {
+                            headers: { 'Accept': 'application/json' },
+                            signal: this.controller.signal,
+                            credentials: 'same-origin',
+                        })
+                            .then((response) => response.ok ? response.json() : [])
+                            .then((data) => {
+                                this.results = Array.isArray(data) ? data : [];
+                                this.loading = false;
+                                this.$nextTick(() => this.positionDropdown());
+                            })
+                            .catch((error) => {
+                                if (error.name === 'AbortError') {
+                                    return;
+                                }
+                                this.loading = false;
+                                this.results = [];
+                            });
+                    },
+                    choose(item) {
+                        const label = item.label || item.name || '';
+                        this.query = label;
+                        this.selectedLabel = label;
+                        this.selectedId = item.id;
+                        this.open = false;
+                        this.results = [];
+                        this.loading = false;
+                        this.$wire.selectLineItem(this.index, item.id, label);
+                    },
+                    close() {
+                        this.open = false;
+                    },
+                    positionDropdown() {
+                        const input = this.$el.querySelector('input');
+                        if (!input) {
+                            return;
+                        }
+                        const rect = input.getBoundingClientRect();
+                        this.panelStyle = [
+                            'position: fixed',
+                            'left: ' + rect.left + 'px',
+                            'top: ' + rect.bottom + 'px',
+                            'width: ' + rect.width + 'px',
+                            'z-index: 9999',
+                        ].join('; ');
+                    },
+                }));
+            };
+
+            if (window.Alpine) {
+                window.registerPurchaseOrderItemLookup();
+            } else {
+                document.addEventListener('alpine:init', () => {
+                    window.registerPurchaseOrderItemLookup();
+                });
+            }
+        }
+    </script>
+@endonce

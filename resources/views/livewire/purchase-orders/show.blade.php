@@ -90,6 +90,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             <flux:button :href="route('purchase-orders.index')" wire:navigate variant="ghost">
                 {{ __('Back') }}
             </flux:button>
+            <flux:button :href="route('purchase-orders.document-print', $purchaseOrder)" target="_blank" variant="ghost">
+                {{ __('Print') }}
+            </flux:button>
             @if($purchaseOrder->canEditLines())
                 <flux:button :href="route('purchase-orders.edit', $purchaseOrder)" wire:navigate>
                     {{ __('Edit') }}
