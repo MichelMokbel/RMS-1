@@ -2,6 +2,7 @@
 
 use App\Models\InventoryItem;
 use App\Models\User;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 use Livewire\Volt\Volt;
 
@@ -14,14 +15,14 @@ function adminInventoryUser(): User
     return $user;
 }
 
-it('admin can create item with unique code', function () {
+it('admin can create item with sequential auto-generated code', function () {
     $user = adminInventoryUser();
-    $item = InventoryItem::factory()->make();
+    InventoryItem::factory()->create(['item_code' => 'ITEM-009']);
+    $name = 'Auto Item '.Str::uuid();
 
     Volt::actingAs($user);
     Volt::test('inventory.create')
-        ->set('item_code', $item->item_code)
-        ->set('name', $item->name)
+        ->set('name', $name)
         ->set('units_per_package', 1)
         ->set('minimum_stock', 0)
         ->set('current_stock', 0)
@@ -29,7 +30,9 @@ it('admin can create item with unique code', function () {
         ->call('save')
         ->assertHasNoErrors();
 
-    expect(InventoryItem::where('item_code', $item->item_code)->exists())->toBeTrue();
+    $created = InventoryItem::query()->where('name', $name)->first();
+    expect($created)->not->toBeNull();
+    expect($created?->item_code)->toBe('ITEM-010');
 });
 
 it('initial stock creates adjustment and updates current stock', function () {
@@ -38,7 +41,6 @@ it('initial stock creates adjustment and updates current stock', function () {
 
     Volt::actingAs($user);
     Volt::test('inventory.create')
-        ->set('item_code', $item->item_code)
         ->set('name', $item->name)
         ->set('units_per_package', 1)
         ->set('minimum_stock', 0)
@@ -46,6 +48,6 @@ it('initial stock creates adjustment and updates current stock', function () {
         ->call('save')
         ->assertHasNoErrors();
 
-    $created = InventoryItem::where('item_code', $item->item_code)->first();
+    $created = InventoryItem::where('name', $item->name)->latest('id')->first();
     expect((float) $created->current_stock)->toBe(5.0);
 });

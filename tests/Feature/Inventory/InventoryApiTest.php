@@ -26,6 +26,19 @@ it('lists inventory items via api', function () {
     $res->assertOk()->assertJsonStructure(['data']);
 });
 
+it('lists inventory items sorted by item code', function () {
+    InventoryItem::factory()->create(['item_code' => 'ITEM-200', 'name' => 'Zeta']);
+    InventoryItem::factory()->create(['item_code' => 'ITEM-010', 'name' => 'Alpha']);
+    InventoryItem::factory()->create(['item_code' => 'ITEM-050', 'name' => 'Beta']);
+    $user = inventoryApiAdmin();
+
+    $res = actingAs($user)->getJson('/api/inventory?per_page=10');
+    $res->assertOk();
+
+    $codes = collect($res->json('data'))->pluck('item_code')->take(3)->values()->all();
+    expect($codes)->toBe(['ITEM-010', 'ITEM-050', 'ITEM-200']);
+});
+
 it('adjust endpoint updates stock', function () {
     $user = inventoryApiAdmin();
     $item = InventoryItem::factory()->create();

@@ -9,7 +9,10 @@ class InventoryItemRules
 {
     public function createRules(): array
     {
-        return $this->baseRules(ignoreId: null);
+        $rules = $this->baseRules(ignoreId: null);
+        unset($rules['item_code']);
+
+        return $rules;
     }
 
     public function updateRules(int $itemId): array
@@ -51,4 +54,3 @@ class InventoryItemRules
         ];
     }
 }
-

@@ -3,12 +3,11 @@
 use App\Models\InventoryItem;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
+use App\Services\Inventory\InventoryItemPersistService;
 use App\Services\Purchasing\PurchaseOrderNumberService;
 use App\Services\Purchasing\PurchaseOrderFormQueryService;
 use App\Services\Purchasing\PurchaseOrderPersistService;
 use App\Support\Purchasing\PurchaseOrderRules;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
@@ -31,6 +30,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     public array $lines = [];
     public array $items = [];
     public array $lineSearch = [];
+    public ?int $new_item_target_line_index = null;
+    public string $new_item_code = '';
+    public string $new_item_name = '';
+    public float $new_item_units_per_package = 1.0;
+    public ?string $new_item_unit_of_measure = null;
+    public ?float $new_item_cost_per_unit = null;
 
     public function mount(PurchaseOrderNumberService $numberService, PurchaseOrderFormQueryService $queryService): void
     {
@@ -228,6 +233,96 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->new_payment_type = null;
     }
 
+    public function openNewItemModal(?int $lineIndex = null): void
+    {
+        $this->resetValidation([
+            'new_item_name',
+            'new_item_units_per_package',
+            'new_item_unit_of_measure',
+            'new_item_cost_per_unit',
+        ]);
+
+        $target = $lineIndex;
+        if ($target === null || ! isset($this->lines[$target])) {
+            $target = $this->firstOpenLineIndex();
+        }
+        if ($target === null) {
+            $this->addLine();
+            $target = array_key_last($this->lines);
+        }
+
+        $this->new_item_target_line_index = $target;
+        $this->new_item_code = app(InventoryItemPersistService::class)->nextItemCode();
+        $this->new_item_name = '';
+        $this->new_item_units_per_package = 1.0;
+        $this->new_item_unit_of_measure = null;
+        $this->new_item_cost_per_unit = null;
+    }
+
+    public function createNewItem(InventoryItemPersistService $persist): void
+    {
+        $payload = $this->validate([
+            'new_item_name' => ['required', 'string', 'max:200'],
+            'new_item_units_per_package' => ['required', 'numeric', 'min:0.001'],
+            'new_item_unit_of_measure' => ['nullable', 'string', 'max:50'],
+            'new_item_cost_per_unit' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $created = $persist->createFromForm([
+            'name' => $payload['new_item_name'],
+            'description' => null,
+            'category_id' => null,
+            'supplier_id' => $this->supplier_id,
+            'branch_id' => null,
+            'units_per_package' => (float) $payload['new_item_units_per_package'],
+            'package_label' => null,
+            'unit_of_measure' => $payload['new_item_unit_of_measure'],
+            'minimum_stock' => 0,
+            'current_stock' => 0,
+            'cost_per_unit' => $payload['new_item_cost_per_unit'],
+            'location' => null,
+            'status' => 'active',
+        ], image: null, actorId: Auth::id());
+
+        $newItem = [
+            'id' => $created->id,
+            'item_code' => $created->item_code,
+            'name' => $created->name,
+            'cost_per_unit' => (float) ($created->cost_per_unit ?? 0),
+        ];
+
+        $this->items = collect($this->items)
+            ->push($newItem)
+            ->sortBy(fn ($item) => mb_strtolower((string) ($item['name'] ?? '')))
+            ->values()
+            ->all();
+
+        $target = $this->new_item_target_line_index;
+        if ($target === null || ! isset($this->lines[$target])) {
+            $target = $this->firstOpenLineIndex();
+        }
+        if ($target === null) {
+            $this->addLine();
+            $target = array_key_last($this->lines);
+        }
+
+        $label = trim('['.$created->item_code.'] '.$created->name);
+        $this->selectLineItem((int) $target, (int) $created->id, $label);
+
+        $this->dispatch('modal-close', name: 'create-po-item');
+    }
+
+    private function firstOpenLineIndex(): ?int
+    {
+        foreach ($this->lines as $index => $line) {
+            if (empty($line['item_id'])) {
+                return $index;
+            }
+        }
+
+        return null;
+    }
+
 }; ?>
 
 <div class="w-full max-w-5xl mx-auto px-4 space-y-6">
@@ -331,7 +426,15 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
             <div class="flex items-center justify-between">
                 <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Line Items') }}</h2>
-                <flux:button type="button" wire:click="addLine">{{ __('Add line') }}</flux:button>
+                <div class="flex items-center gap-2">
+                    <flux:button
+                        type="button"
+                        variant="ghost"
+                        x-data=""
+                        x-on:click.prevent="$wire.openNewItemModal(); $dispatch('modal-show', { name: 'create-po-item' })"
+                    >{{ __('Add New Item') }}</flux:button>
+                    <flux:button type="button" wire:click="addLine">{{ __('Add line') }}</flux:button>
+                </div>
             </div>
 
             <div class="overflow-x-auto">
@@ -439,6 +542,30 @@ new #[Layout('components.layouts.app')] class extends Component {
             <flux:button type="button" wire:click="submitPending" variant="primary">{{ __('Submit (Pending)') }}</flux:button>
         </div>
     </form>
+
+    <flux:modal name="create-po-item" focusable class="max-w-lg">
+        <form wire:submit="createNewItem" class="space-y-4">
+            <div class="space-y-1">
+                <flux:heading size="lg">{{ __('Create Inventory Item') }}</flux:heading>
+                <flux:subheading>{{ __('Add a new inventory item without leaving purchase order creation.') }}</flux:subheading>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4">
+                <flux:input wire:model="new_item_code" :label="__('Item Code')" readonly />
+                <flux:input wire:model="new_item_name" :label="__('Item Name')" required />
+                <flux:input wire:model="new_item_unit_of_measure" :label="__('Unit of Measure')" maxlength="50" />
+                <flux:input wire:model="new_item_units_per_package" type="number" min="0.001" step="0.001" :label="__('Units per Package')" />
+                <flux:input wire:model="new_item_cost_per_unit" type="number" step="0.01" min="0" :label="__('Package Cost')" />
+            </div>
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button variant="filled" type="button">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+                <flux:button variant="primary" type="submit">{{ __('Create Item') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
 </div>
 
 @once

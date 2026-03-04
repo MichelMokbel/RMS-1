@@ -38,6 +38,7 @@ class InventoryItemIndexQueryService
                         ->orWhere('location', 'like', '%'.$search.'%');
                 });
             })
+            ->orderBy('item_code')
             ->orderBy('name');
 
         // Prefer branch stock when branch filter is set, else show global stock (sum across branches)
@@ -67,4 +68,3 @@ class InventoryItemIndexQueryService
         return $query;
     }
 }
-

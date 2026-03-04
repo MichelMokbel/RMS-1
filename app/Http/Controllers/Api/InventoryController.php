@@ -54,6 +54,7 @@ class InventoryController extends Controller
                         ->orWhere('location', 'like', '%'.$search.'%');
                 });
             })
+            ->orderBy('item_code')
             ->orderBy('name');
 
         if ($branchId > 0) {

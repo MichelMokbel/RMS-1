@@ -30,6 +30,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function mount(): void
     {
         $this->branch_id = (int) config('inventory.default_branch_id', 1);
+        $this->item_code = app(InventoryItemPersistService::class)->nextItemCode();
     }
 
     public function with(InventoryItemFormQueryService $formQuery): array
@@ -63,7 +64,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <form wire:submit="save" class="space-y-5">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <flux:input wire:model="item_code" :label="__('Item Code')" required maxlength="50" />
+            <flux:input wire:model="item_code" :label="__('Item Code')" readonly maxlength="50" />
             <flux:input wire:model="name" :label="__('Name')" required maxlength="200" />
             <flux:input wire:model="package_label" :label="__('Package Label')" maxlength="50" />
             <flux:input wire:model="unit_of_measure" :label="__('Unit of Measure')" maxlength="50" />

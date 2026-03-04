@@ -4,6 +4,7 @@ namespace App\Services\Inventory;
 
 use App\Models\InventoryItem;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class InventoryItemPersistService
@@ -26,23 +27,27 @@ class InventoryItemPersistService
 
         $initialStock = (float) ($data['current_stock'] ?? 0);
 
-        unset($data['branch_id'], $data['current_stock'], $data['image']);
+        unset($data['branch_id'], $data['current_stock'], $data['image'], $data['item_code']);
 
-        if ($image) {
-            $data['image_path'] = $this->storeImage($image, (string) ($data['item_code'] ?? 'item'));
-        }
+        return DB::transaction(function () use ($data, $image, $actorId, $branchId, $initialStock): InventoryItem {
+            $data['item_code'] = $this->nextItemCode(lockForUpdate: true);
 
-        if (array_key_exists('cost_per_unit', $data) && $data['cost_per_unit'] !== null) {
-            $data['last_cost_update'] = now();
-        }
+            if ($image) {
+                $data['image_path'] = $this->storeImage($image, (string) $data['item_code']);
+            }
 
-        $item = InventoryItem::create($data);
+            if (array_key_exists('cost_per_unit', $data) && $data['cost_per_unit'] !== null) {
+                $data['last_cost_update'] = now();
+            }
 
-        if ($initialStock > 0.0005) {
-            $this->stockService->adjustStock($item->fresh(), $initialStock, __('Initial stock'), $actorId, $branchId);
-        }
+            $item = InventoryItem::create($data);
 
-        return $item->fresh();
+            if ($initialStock > 0.0005) {
+                $this->stockService->adjustStock($item->fresh(), $initialStock, __('Initial stock'), $actorId, $branchId);
+            }
+
+            return $item->fresh();
+        });
     }
 
     public function updateFromForm(InventoryItem $item, array $data, ?UploadedFile $image): InventoryItem
@@ -80,5 +85,49 @@ class InventoryItemPersistService
             'public'
         );
     }
-}
 
+    public function nextItemCode(bool $lockForUpdate = false): string
+    {
+        $query = InventoryItem::query()
+            ->select('item_code')
+            ->whereNotNull('item_code');
+
+        if ($lockForUpdate) {
+            $query->lockForUpdate();
+        }
+
+        $codes = $query->pluck('item_code');
+
+        $bestPrefix = '';
+        $bestNumber = null;
+        $bestDigits = 0;
+
+        foreach ($codes as $code) {
+            $code = (string) $code;
+
+            if (! preg_match('/^(\D*)(\d+)$/', $code, $matches)) {
+                continue;
+            }
+
+            $prefix = (string) $matches[1];
+            $numberPart = (string) $matches[2];
+            $number = (int) $numberPart;
+            $digits = strlen($numberPart);
+
+            if ($bestNumber === null || $number > $bestNumber || ($number === $bestNumber && $digits > $bestDigits)) {
+                $bestPrefix = $prefix;
+                $bestNumber = $number;
+                $bestDigits = $digits;
+            }
+        }
+
+        if ($bestNumber === null) {
+            return '1';
+        }
+
+        $next = $bestNumber + 1;
+        $nextPadded = str_pad((string) $next, $bestDigits, '0', STR_PAD_LEFT);
+
+        return $bestPrefix.$nextPadded;
+    }
+}
