@@ -117,7 +117,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
-    <div class="app-mobile-card-grid">
+    <div class="grid grid-cols-1 gap-3 sm:hidden">
         @forelse ($invoices as $inv)
             <article class="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
                 <div class="flex items-start justify-between gap-2">
@@ -162,7 +162,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endforelse
     </div>
 
-    <div class="app-desktop-table app-table-shell">
+    <div class="hidden sm:block overflow-x-auto rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
         <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
