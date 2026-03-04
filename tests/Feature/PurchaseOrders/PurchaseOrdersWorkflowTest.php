@@ -4,6 +4,7 @@ use App\Models\InventoryItem;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Services\Purchasing\PurchaseOrderPersistService;
 use App\Services\Purchasing\PurchaseOrderReceivingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -64,4 +65,59 @@ it('approves and receives purchase order', function () {
     expect($po->status)->toBe(PurchaseOrder::STATUS_APPROVED);
     $item->refresh();
     expect((float) $item->current_stock)->toBe(2.0);
+});
+
+it('allows approved purchase-order edits with incremental revision numbers', function () {
+    $supplier = Supplier::factory()->create();
+    $itemA = InventoryItem::factory()->create(['item_code' => 'ITM-A', 'cost_per_unit' => 10]);
+    $itemB = InventoryItem::factory()->create(['item_code' => 'ITM-B', 'cost_per_unit' => 20]);
+
+    $po = PurchaseOrder::factory()->approved()->create([
+        'po_number' => 'PO-900001',
+        'supplier_id' => $supplier->id,
+        'order_date' => now()->toDateString(),
+    ]);
+
+    $po->items()->create([
+        'item_id' => $itemA->id,
+        'quantity' => 1,
+        'unit_price' => 10,
+        'total_price' => 10,
+        'received_quantity' => 0,
+    ]);
+
+    /** @var PurchaseOrderPersistService $persist */
+    $persist = app(PurchaseOrderPersistService::class);
+
+    $first = $persist->update($po->fresh(), [
+        'po_number' => 'SHOULD-BE-IGNORED',
+        'supplier_id' => $supplier->id,
+        'order_date' => now()->toDateString(),
+        'expected_delivery_date' => now()->addDay()->toDateString(),
+        'notes' => 'edit-1',
+        'payment_terms' => 'Credit',
+        'payment_type' => 'Credit',
+        'lines' => [
+            ['item_id' => $itemA->id, 'quantity' => 2, 'unit_price' => 11],
+        ],
+    ], PurchaseOrder::STATUS_DRAFT);
+
+    expect($first->status)->toBe(PurchaseOrder::STATUS_APPROVED);
+    expect($first->po_number)->toBe('PO-900001V1');
+
+    $second = $persist->update($first->fresh(), [
+        'po_number' => 'SHOULD-BE-IGNORED-2',
+        'supplier_id' => $supplier->id,
+        'order_date' => now()->toDateString(),
+        'expected_delivery_date' => now()->addDays(2)->toDateString(),
+        'notes' => 'edit-2',
+        'payment_terms' => 'Credit',
+        'payment_type' => 'Credit',
+        'lines' => [
+            ['item_id' => $itemB->id, 'quantity' => 3, 'unit_price' => 20],
+        ],
+    ], PurchaseOrder::STATUS_PENDING);
+
+    expect($second->status)->toBe(PurchaseOrder::STATUS_APPROVED);
+    expect($second->po_number)->toBe('PO-900001V2');
 });

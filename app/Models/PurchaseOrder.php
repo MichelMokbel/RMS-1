@@ -67,7 +67,19 @@ class PurchaseOrder extends Model
 
     public function canEditLines(): bool
     {
-        return $this->status === self::STATUS_DRAFT || $this->status === self::STATUS_PENDING;
+        if ($this->status === self::STATUS_DRAFT || $this->status === self::STATUS_PENDING) {
+            return true;
+        }
+
+        if ($this->status !== self::STATUS_APPROVED) {
+            return false;
+        }
+
+        $received = $this->relationLoaded('items')
+            ? (float) $this->items->sum('received_quantity')
+            : (float) $this->items()->sum('received_quantity');
+
+        return $received <= 0.0005;
     }
 
     public function canApprove(): bool

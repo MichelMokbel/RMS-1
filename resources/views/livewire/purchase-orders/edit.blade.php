@@ -9,10 +9,12 @@ use App\Services\Purchasing\PurchaseOrderPersistService;
 use App\Support\Purchasing\PurchaseOrderRules;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
     public PurchaseOrder $purchaseOrder;
+    #[Locked]
     public string $po_number = '';
     public ?int $supplier_id = null;
     public string $supplier_search = '';
@@ -281,7 +283,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     <form wire:submit="saveDraft" class="space-y-6">
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
             <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <flux:input wire:model="po_number" :label="__('PO Number')" required maxlength="50" />
+                <flux:input wire:model="po_number" :label="__('PO Number')" required maxlength="50" readonly />
                 <div>
                     <label class="block text-sm font-medium text-neutral-800 dark:text-neutral-200 mb-1">{{ __('Supplier') }}</label>
                     <div
@@ -465,8 +467,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
 
         <div class="flex justify-end gap-3">
-            <flux:button type="button" wire:click="saveDraft">{{ __('Save Draft') }}</flux:button>
-            <flux:button type="button" wire:click="submitPending" variant="primary">{{ __('Submit (Pending)') }}</flux:button>
+            @if($purchaseOrder->isApproved())
+                <flux:button type="button" wire:click="saveDraft" variant="primary">{{ __('Save Changes') }}</flux:button>
+            @else
+                <flux:button type="button" wire:click="saveDraft">{{ __('Save Draft') }}</flux:button>
+                <flux:button type="button" wire:click="submitPending" variant="primary">{{ __('Submit (Pending)') }}</flux:button>
+            @endif
         </div>
     </form>
 </div>

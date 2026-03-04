@@ -7,8 +7,8 @@ use App\Http\Requests\PurchaseOrderReceiveRequest;
 use App\Http\Requests\PurchaseOrderStoreRequest;
 use App\Http\Requests\PurchaseOrderUpdateRequest;
 use App\Models\PurchaseOrder;
-use App\Models\PurchaseOrderItem;
 use App\Services\Purchasing\PurchaseOrderNumberService;
+use App\Services\Purchasing\PurchaseOrderPersistService;
 use App\Services\Purchasing\PurchaseOrderReceivingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -88,49 +88,19 @@ class PurchaseOrderController extends Controller
 
     public function update(
         PurchaseOrderUpdateRequest $request,
-        PurchaseOrder $purchaseOrder
+        PurchaseOrder $purchaseOrder,
+        PurchaseOrderPersistService $persist
     ): JsonResponse {
         $po = $purchaseOrder->load('items');
 
         if (! $po->canEditLines()) {
             throw ValidationException::withMessages([
-                'status' => __('Cannot edit a purchase order once approved/received/cancelled.'),
+                'status' => __('Cannot edit this purchase order in the current status.'),
             ]);
         }
 
         $data = $request->validated();
-
-        $po = DB::transaction(function () use ($po, $data) {
-            $po->update([
-                'po_number' => $data['po_number'],
-                'supplier_id' => $data['supplier_id'] ?? null,
-                'order_date' => $data['order_date'] ?? null,
-                'expected_delivery_date' => $data['expected_delivery_date'] ?? null,
-                'notes' => $data['notes'] ?? null,
-                'payment_terms' => $data['payment_terms'] ?? null,
-                'payment_type' => $data['payment_type'] ?? null,
-                'status' => $data['status'],
-            ]);
-
-            if (isset($data['lines'])) {
-                $po->items()->delete();
-                $total = 0;
-                foreach ($data['lines'] as $line) {
-                    $line['total_price'] = (float) $line['quantity'] * (float) $line['unit_price'];
-                    $total += $line['total_price'];
-                    $po->items()->create([
-                        'item_id' => $line['item_id'],
-                        'quantity' => $line['quantity'],
-                        'unit_price' => $line['unit_price'],
-                        'total_price' => $line['total_price'],
-                        'received_quantity' => 0,
-                    ]);
-                }
-                $po->update(['total_amount' => $total]);
-            }
-
-            return $po;
-        });
+        $po = $persist->update($po, $data, (string) $data['status']);
 
         return response()->json($po->fresh('items'));
     }
