@@ -93,7 +93,7 @@
         </tbody>
     </table>
 
-    @include('reports.print-footer')
+
 
     @if ($isBrowserPrint)
         <script>
