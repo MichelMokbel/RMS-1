@@ -28,8 +28,11 @@
         th, td { border: 1px solid #e5e7eb; padding: 6px 8px; font-size: 11px; text-align: left; vertical-align: top; }
         th { background: #f9fafb; font-weight: 700; }
         @include('reports.print-header-styles')
+        @page { margin: 8mm 10mm 14mm 10mm; }
         @media print {
             .no-print { display: none !important; }
+            body { padding-bottom: 20mm !important; }
+            .employee-orders-table { margin-bottom: 8mm; }
         }
     </style>
 </head>
@@ -54,7 +57,7 @@
         Filter location: {{ $filters['location_option_id'] ?: 'All' }}
     </p>
 
-    <table>
+    <table class="employee-orders-table">
         <thead>
             <tr>
                 <th style="width: 90px;">Date</th>
