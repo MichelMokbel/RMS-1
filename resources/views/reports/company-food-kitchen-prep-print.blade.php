@@ -1,3 +1,6 @@
+@php
+    $isBrowserPrint = (bool) ($browserPrint ?? false);
+@endphp
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,6 +11,19 @@
         :root { color-scheme: light; }
         body { font-family: Arial, sans-serif; color: #111827; margin: 10px; font-size: 11px; }
         .meta { font-size: 11px; color: #4b5563; margin: 0 0 8px; line-height: 1.35; }
+        .toolbar { margin: 0 0 10px; }
+        .btn {
+            display: inline-block;
+            padding: 7px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            background: #fff;
+            color: #111827;
+            text-decoration: none;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .btn:hover { background: #f3f4f6; }
         .section {
             margin-top: 10px;
             page-break-inside: avoid;
@@ -38,6 +54,7 @@
         @page { margin: 4mm 10mm 0 10mm; }
         @media print {
             body { margin: 0 !important; padding: 0 0 14mm 0 !important; }
+            .no-print { display: none !important; }
         }
         .report-header { margin-top: 0; margin-bottom: 5px; }
         .report-header-bottom {
@@ -56,6 +73,12 @@
     </style>
 </head>
 <body>
+    @if ($isBrowserPrint)
+        <div class="toolbar no-print">
+            <button type="button" class="btn" onclick="window.print()">Print</button>
+        </div>
+    @endif
+
     @include('reports.print-header', [
         'reportTitle' => 'Company Food Kitchen Prep',
         'generatedAt' => $generatedAt,
@@ -132,5 +155,15 @@
     @endforelse
 
     @include('reports.print-footer')
+
+    @if ($isBrowserPrint)
+        <script>
+            window.addEventListener('load', function () {
+                window.setTimeout(function () {
+                    window.print();
+                }, 150);
+            });
+        </script>
+    @endif
 </body>
 </html>

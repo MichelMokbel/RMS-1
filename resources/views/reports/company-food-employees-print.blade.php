@@ -1,3 +1,6 @@
+@php
+    $isBrowserPrint = (bool) ($browserPrint ?? false);
+@endphp
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,13 +11,35 @@
         :root { color-scheme: light; }
         body { font-family: Arial, sans-serif; color: #111827; margin: 20px; }
         .meta { font-size: 12px; color: #4b5563; margin: 0 0 12px; }
+        .toolbar { margin: 0 0 10px; }
+        .btn {
+            display: inline-block;
+            padding: 7px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            background: #fff;
+            color: #111827;
+            text-decoration: none;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .btn:hover { background: #f3f4f6; }
         table { width: 100%; border-collapse: collapse; margin-top: 6px; }
         th, td { border: 1px solid #e5e7eb; padding: 6px 8px; font-size: 11px; text-align: left; vertical-align: top; }
         th { background: #f9fafb; font-weight: 700; }
         @include('reports.print-header-styles')
+        @media print {
+            .no-print { display: none !important; }
+        }
     </style>
 </head>
 <body>
+    @if ($isBrowserPrint)
+        <div class="toolbar no-print">
+            <button type="button" class="btn" onclick="window.print()">Print</button>
+        </div>
+    @endif
+
     @include('reports.print-header', [
         'reportTitle' => 'Company Food Employee Orders',
         'generatedAt' => $generatedAt,
@@ -65,5 +90,15 @@
     </table>
 
     @include('reports.print-footer')
+
+    @if ($isBrowserPrint)
+        <script>
+            window.addEventListener('load', function () {
+                window.setTimeout(function () {
+                    window.print();
+                }, 150);
+            });
+        </script>
+    @endif
 </body>
 </html>

@@ -256,233 +256,227 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operation
 });
 
 // Company Food (standalone module)
-Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operations.access'])->prefix('company-food')->name('company-food.')->group(function () {
-    Volt::route('projects', 'company-food.projects.index')->name('projects.index');
-    Volt::route('projects/create', 'company-food.projects.create')->name('projects.create');
-    Route::get('projects/{project}/export-employees-pdf', function (Request $request, \App\Models\CompanyFoodProject $project) {
-        $project->load([
-            'employeeLists' => fn ($q) => $q->with([
-                'employees' => fn ($qq) => $qq->orderBy('sort_order')->orderBy('employee_name'),
-            ])->orderBy('sort_order'),
-        ]);
+$buildCompanyFoodEmployeeOrdersReportData = function (Request $request, \App\Models\CompanyFoodProject $project): array {
+    $project->load([
+        'employeeLists' => fn ($q) => $q->with([
+            'employees' => fn ($qq) => $qq->orderBy('sort_order')->orderBy('employee_name'),
+        ])->orderBy('sort_order'),
+    ]);
 
-        $ordersQuery = \App\Models\CompanyFoodOrder::query()
-            ->where('project_id', $project->id)
-            ->with(['employeeList', 'saladOption', 'appetizerOption1', 'appetizerOption2', 'mainOption', 'sweetOption', 'locationOption', 'soupOption'])
-            ->orderBy('employee_name')
-            ->orderBy('order_date');
+    $ordersQuery = \App\Models\CompanyFoodOrder::query()
+        ->where('project_id', $project->id)
+        ->with(['employeeList', 'saladOption', 'appetizerOption1', 'appetizerOption2', 'mainOption', 'sweetOption', 'locationOption', 'soupOption'])
+        ->orderBy('employee_name')
+        ->orderBy('order_date');
 
-        if ($request->filled('order_date')) {
-            $ordersQuery->whereDate('order_date', (string) $request->query('order_date'));
-        }
+    if ($request->filled('order_date')) {
+        $ordersQuery->whereDate('order_date', (string) $request->query('order_date'));
+    }
 
-        $employeeListId = (int) $request->query('employee_list_id');
-        if ($employeeListId > 0) {
-            $ordersQuery->where('employee_list_id', $employeeListId);
-        }
+    $employeeListId = (int) $request->query('employee_list_id');
+    if ($employeeListId > 0) {
+        $ordersQuery->where('employee_list_id', $employeeListId);
+    }
 
-        $locationOptionId = (int) $request->query('location_option_id');
-        if ($locationOptionId > 0) {
-            $ordersQuery->where('location_option_id', $locationOptionId);
-        }
+    $locationOptionId = (int) $request->query('location_option_id');
+    if ($locationOptionId > 0) {
+        $ordersQuery->where('location_option_id', $locationOptionId);
+    }
 
-        $orders = $ordersQuery->get();
+    $orders = $ordersQuery->get();
 
-        $employeeSortOrderByKey = \App\Models\CompanyFoodEmployee::query()
-            ->where('project_id', $project->id)
-            ->get()
-            ->mapWithKeys(function (\App\Models\CompanyFoodEmployee $employee): array {
-                return [
-                    $employee->employee_list_id.'|'.mb_strtolower(trim((string) $employee->employee_name)) => (int) $employee->sort_order,
-                ];
-            });
-
-        $orders->transform(function (\App\Models\CompanyFoodOrder $order) use ($employeeSortOrderByKey): \App\Models\CompanyFoodOrder {
-            $lookupKey = $order->employee_list_id.'|'.mb_strtolower(trim((string) $order->employee_name));
-            $order->employee_sort_order = $employeeSortOrderByKey->get($lookupKey);
-
-            return $order;
+    $employeeSortOrderByKey = \App\Models\CompanyFoodEmployee::query()
+        ->where('project_id', $project->id)
+        ->get()
+        ->mapWithKeys(function (\App\Models\CompanyFoodEmployee $employee): array {
+            return [
+                $employee->employee_list_id.'|'.mb_strtolower(trim((string) $employee->employee_name)) => (int) $employee->sort_order,
+            ];
         });
-        $listSortOrderById = $project->employeeLists
-            ->mapWithKeys(fn (\App\Models\CompanyFoodEmployeeList $list): array => [(int) $list->id => (int) $list->sort_order])
-            ->all();
-        $orders = $orders
-            ->sortBy(function (\App\Models\CompanyFoodOrder $order) use ($listSortOrderById): string {
-                $date = $order->order_date?->format('Y-m-d') ?? '9999-12-31';
-                $listSort = (int) ($listSortOrderById[(int) $order->employee_list_id] ?? 999999);
-                $employeeSort = (int) ($order->employee_sort_order ?? 999999);
-                $name = mb_strtolower(trim((string) $order->employee_name));
 
-                return $date.'|'.str_pad((string) $listSort, 6, '0', STR_PAD_LEFT).'|'.str_pad((string) $employeeSort, 6, '0', STR_PAD_LEFT).'|'.$name.'|'.str_pad((string) $order->id, 12, '0', STR_PAD_LEFT);
-            })
-            ->values();
+    $orders->transform(function (\App\Models\CompanyFoodOrder $order) use ($employeeSortOrderByKey): \App\Models\CompanyFoodOrder {
+        $lookupKey = $order->employee_list_id.'|'.mb_strtolower(trim((string) $order->employee_name));
+        $order->employee_sort_order = $employeeSortOrderByKey->get($lookupKey);
 
-        return \App\Support\Reports\PdfExport::download('reports.company-food-employees-print', [
-            'project' => $project,
-            'orders' => $orders,
-            'filters' => [
-                'order_date' => $request->query('order_date'),
-                'employee_list_id' => $employeeListId > 0 ? $employeeListId : null,
-                'location_option_id' => $locationOptionId > 0 ? $locationOptionId : null,
-            ],
-            'generatedAt' => now(),
-        ], 'company-food-employees-' . $project->slug . '.pdf', 'a4', 'landscape');
-    })->name('projects.export-employees-pdf');
-    Route::get('projects/{project}/export-kitchen-prep-pdf', function (Request $request, \App\Models\CompanyFoodProject $project) {
-        $project->load([
-            'options' => fn ($q) => $q->orderBy('menu_date')->orderBy('category')->orderBy('sort_order'),
-            'employeeLists' => fn ($q) => $q->with([
-                'listCategories' => fn ($qq) => $qq->orderBy('sort_order'),
-            ])->orderBy('sort_order'),
-        ]);
+        return $order;
+    });
 
-        $ordersQuery = \App\Models\CompanyFoodOrder::query()
-            ->where('project_id', $project->id)
-            ->with(['employeeList', 'saladOption', 'appetizerOption1', 'appetizerOption2', 'mainOption', 'sweetOption', 'locationOption', 'soupOption'])
-            ->orderBy('order_date')
-            ->orderBy('employee_name');
+    $listSortOrderById = $project->employeeLists
+        ->mapWithKeys(fn (\App\Models\CompanyFoodEmployeeList $list): array => [(int) $list->id => (int) $list->sort_order])
+        ->all();
 
-        if ($request->filled('order_date')) {
-            $ordersQuery->whereDate('order_date', (string) $request->query('order_date'));
-        }
+    $orders = $orders
+        ->sortBy(function (\App\Models\CompanyFoodOrder $order) use ($listSortOrderById): string {
+            $date = $order->order_date?->format('Y-m-d') ?? '9999-12-31';
+            $listSort = (int) ($listSortOrderById[(int) $order->employee_list_id] ?? 999999);
+            $employeeSort = (int) ($order->employee_sort_order ?? 999999);
+            $name = mb_strtolower(trim((string) $order->employee_name));
 
-        $employeeListId = (int) $request->query('employee_list_id');
-        if ($employeeListId > 0) {
-            $ordersQuery->where('employee_list_id', $employeeListId);
-        }
+            return $date.'|'.str_pad((string) $listSort, 6, '0', STR_PAD_LEFT).'|'.str_pad((string) $employeeSort, 6, '0', STR_PAD_LEFT).'|'.$name.'|'.str_pad((string) $order->id, 12, '0', STR_PAD_LEFT);
+        })
+        ->values();
 
-        $locationOptionId = (int) $request->query('location_option_id');
-        if ($locationOptionId > 0) {
-            $ordersQuery->where('location_option_id', $locationOptionId);
-        }
+    return [
+        'project' => $project,
+        'orders' => $orders,
+        'filters' => [
+            'order_date' => $request->query('order_date'),
+            'employee_list_id' => $employeeListId > 0 ? $employeeListId : null,
+            'location_option_id' => $locationOptionId > 0 ? $locationOptionId : null,
+        ],
+        'generatedAt' => now(),
+    ];
+};
 
-        $orders = $ordersQuery->get();
+$buildCompanyFoodKitchenPrepReportData = function (Request $request, \App\Models\CompanyFoodProject $project): array {
+    $project->load([
+        'options' => fn ($q) => $q->orderBy('menu_date')->orderBy('category')->orderBy('sort_order'),
+        'employeeLists' => fn ($q) => $q->with([
+            'listCategories' => fn ($qq) => $qq->orderBy('sort_order'),
+        ])->orderBy('sort_order'),
+    ]);
 
-        $employeeListsById = $project->employeeLists->keyBy('id');
-        $employeeListIdsOrdered = $project->employeeLists->pluck('id')->map(fn ($id) => (int) $id)->all();
-        $employeeListOrderLookup = array_fill_keys($employeeListIdsOrdered, true);
-        $optionNamesById = $project->options->pluck('name', 'id');
+    $ordersQuery = \App\Models\CompanyFoodOrder::query()
+        ->where('project_id', $project->id)
+        ->with(['employeeList', 'saladOption', 'appetizerOption1', 'appetizerOption2', 'mainOption', 'sweetOption', 'locationOption', 'soupOption'])
+        ->orderBy('order_date')
+        ->orderBy('employee_name');
 
-        $kitchenPrep = $orders->groupBy(fn ($o) => $o->order_date?->format('Y-m-d'))->map(function ($dateOrders) use ($employeeListsById, $employeeListIdsOrdered, $employeeListOrderLookup, $optionNamesById) {
-            $groupedByList = $dateOrders->groupBy('employee_list_id');
-            $orderedByList = collect();
+    if ($request->filled('order_date')) {
+        $ordersQuery->whereDate('order_date', (string) $request->query('order_date'));
+    }
 
-            foreach ($employeeListIdsOrdered as $listId) {
-                if ($groupedByList->has($listId)) {
-                    $orderedByList->put((string) $listId, $groupedByList->get($listId));
-                }
+    $employeeListId = (int) $request->query('employee_list_id');
+    if ($employeeListId > 0) {
+        $ordersQuery->where('employee_list_id', $employeeListId);
+    }
+
+    $locationOptionId = (int) $request->query('location_option_id');
+    if ($locationOptionId > 0) {
+        $ordersQuery->where('location_option_id', $locationOptionId);
+    }
+
+    $orders = $ordersQuery->get();
+
+    $employeeListsById = $project->employeeLists->keyBy('id');
+    $employeeListIdsOrdered = $project->employeeLists->pluck('id')->map(fn ($id) => (int) $id)->all();
+    $employeeListOrderLookup = array_fill_keys($employeeListIdsOrdered, true);
+    $optionNamesById = $project->options->pluck('name', 'id');
+
+    $kitchenPrep = $orders->groupBy(fn ($o) => $o->order_date?->format('Y-m-d'))->map(function ($dateOrders) use ($employeeListsById, $employeeListIdsOrdered, $employeeListOrderLookup, $optionNamesById) {
+        $groupedByList = $dateOrders->groupBy('employee_list_id');
+        $orderedByList = collect();
+
+        foreach ($employeeListIdsOrdered as $listId) {
+            if ($groupedByList->has($listId)) {
+                $orderedByList->put((string) $listId, $groupedByList->get($listId));
             }
+        }
 
-            foreach ($groupedByList as $listId => $listOrders) {
-                if (! isset($employeeListOrderLookup[(int) $listId])) {
-                    $orderedByList->put((string) $listId, $listOrders);
-                }
+        foreach ($groupedByList as $listId => $listOrders) {
+            if (! isset($employeeListOrderLookup[(int) $listId])) {
+                $orderedByList->put((string) $listId, $listOrders);
             }
+        }
 
-            return $orderedByList->map(function ($listOrders, $listId) use ($employeeListsById, $optionNamesById) {
-                $list = $employeeListsById->get((int) $listId);
-                $categories = $list
-                    ? $list->listCategories->pluck('category')->values()->all()
-                    : \App\Models\CompanyFoodOption::CATEGORIES;
+        return $orderedByList->map(function ($listOrders, $listId) use ($employeeListsById, $optionNamesById) {
+            $list = $employeeListsById->get((int) $listId);
+            $categories = $list
+                ? $list->listCategories->pluck('category')->values()->all()
+                : \App\Models\CompanyFoodOption::CATEGORIES;
 
-                $sections = $listOrders->groupBy('location_option_id')->map(function ($locOrders, $locId) use ($optionNamesById) {
-                    $locationName = $locOrders->first()?->locationOption?->name ?? ($locId ? __('Unknown') : __('No location'));
+            $sections = $listOrders->groupBy('location_option_id')->map(function ($locOrders, $locId) use ($optionNamesById) {
+                $locationName = $locOrders->first()?->locationOption?->name ?? ($locId ? __('Unknown') : __('No location'));
 
-                    $counts = [
-                        'salad' => $locOrders->groupBy('salad_option_id')->map->count(),
-                        'appetizer' => $locOrders->flatMap(fn ($o) => array_filter([$o->appetizer_option_id_1, $o->appetizer_option_id_2]))
-                            ->groupBy(fn ($id) => $id)->map->count(),
-                        'main' => $locOrders->groupBy('main_option_id')->map->count(),
-                        'sweet' => $locOrders->groupBy('sweet_option_id')->map->count(),
-                        'soup' => $locOrders->groupBy('soup_option_id')->map->count(),
-                    ];
+                $counts = [
+                    'salad' => $locOrders->groupBy('salad_option_id')->map->count(),
+                    'appetizer' => $locOrders->flatMap(fn ($o) => array_filter([$o->appetizer_option_id_1, $o->appetizer_option_id_2]))
+                        ->groupBy(fn ($id) => $id)->map->count(),
+                    'main' => $locOrders->groupBy('main_option_id')->map->count(),
+                    'sweet' => $locOrders->groupBy('sweet_option_id')->map->count(),
+                    'soup' => $locOrders->groupBy('soup_option_id')->map->count(),
+                ];
 
-                    $resolvedCounts = collect($counts)->map(function ($categoryCounts) use ($optionNamesById) {
-                        return $categoryCounts->filter(fn ($_, $id) => (bool) $id)
-                            ->map(function ($count, $id) use ($optionNamesById) {
-                                return [
-                                    'name' => $optionNamesById->get((int) $id, __('Option #:id', ['id' => $id])),
-                                    'count' => $count,
-                                ];
-                            })
-                            ->values()
-                            ->all();
-                    })->all();
-
-                    return [
-                        'name' => $locationName,
-                        'counts' => $resolvedCounts,
-                    ];
-                })->values()->all();
+                $resolvedCounts = collect($counts)->map(function ($categoryCounts) use ($optionNamesById) {
+                    return $categoryCounts->filter(fn ($_, $id) => (bool) $id)
+                        ->map(function ($count, $id) use ($optionNamesById) {
+                            return [
+                                'name' => $optionNamesById->get((int) $id, __('Option #:id', ['id' => $id])),
+                                'count' => $count,
+                            ];
+                        })
+                        ->values()
+                        ->all();
+                })->all();
 
                 return [
-                    'listName' => $list?->name ?? __('Unknown'),
-                    'sections' => $sections,
-                    'categories' => $categories,
+                    'name' => $locationName,
+                    'counts' => $resolvedCounts,
                 ];
             })->values()->all();
-        })->all();
 
-        return \App\Support\Reports\PdfExport::download('reports.company-food-kitchen-prep-print', [
-            'project' => $project,
-            'kitchenPrep' => $kitchenPrep,
-            'filters' => [
-                'order_date' => $request->query('order_date'),
-                'employee_list_id' => $employeeListId > 0 ? $employeeListId : null,
-                'location_option_id' => $locationOptionId > 0 ? $locationOptionId : null,
-            ],
-            'generatedAt' => now(),
-        ], 'company-food-kitchen-prep-' . $project->slug . '.pdf', 'a4', 'portrait');
+            return [
+                'listName' => $list?->name ?? __('Unknown'),
+                'sections' => $sections,
+                'categories' => $categories,
+            ];
+        })->values()->all();
+    })->all();
+
+    return [
+        'project' => $project,
+        'kitchenPrep' => $kitchenPrep,
+        'filters' => [
+            'order_date' => $request->query('order_date'),
+            'employee_list_id' => $employeeListId > 0 ? $employeeListId : null,
+            'location_option_id' => $locationOptionId > 0 ? $locationOptionId : null,
+        ],
+        'generatedAt' => now(),
+    ];
+};
+
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operations.access'])->prefix('company-food')->name('company-food.')->group(function () use ($buildCompanyFoodEmployeeOrdersReportData, $buildCompanyFoodKitchenPrepReportData) {
+    Volt::route('projects', 'company-food.projects.index')->name('projects.index');
+    Volt::route('projects/create', 'company-food.projects.create')->name('projects.create');
+    Route::get('projects/{project}/export-employees-pdf', function (Request $request, \App\Models\CompanyFoodProject $project) use ($buildCompanyFoodEmployeeOrdersReportData) {
+        $reportData = $buildCompanyFoodEmployeeOrdersReportData($request, $project);
+
+        return \App\Support\Reports\PdfExport::download(
+            'reports.company-food-employees-print',
+            $reportData,
+            'company-food-employees-' . $project->slug . '.pdf',
+            'a4',
+            'landscape'
+        );
+    })->name('projects.export-employees-pdf');
+    Route::get('projects/{project}/print-employee-orders', function (Request $request, \App\Models\CompanyFoodProject $project) use ($buildCompanyFoodEmployeeOrdersReportData) {
+        $reportData = $buildCompanyFoodEmployeeOrdersReportData($request, $project);
+
+        return view('reports.company-food-employees-print', array_merge($reportData, [
+            'browserPrint' => true,
+        ]));
+    })->name('projects.print-employee-orders');
+    Route::get('projects/{project}/export-kitchen-prep-pdf', function (Request $request, \App\Models\CompanyFoodProject $project) use ($buildCompanyFoodKitchenPrepReportData) {
+        $reportData = $buildCompanyFoodKitchenPrepReportData($request, $project);
+
+        return \App\Support\Reports\PdfExport::download(
+            'reports.company-food-kitchen-prep-print',
+            $reportData,
+            'company-food-kitchen-prep-' . $project->slug . '.pdf',
+            'a4',
+            'portrait'
+        );
     })->name('projects.export-kitchen-prep-pdf');
-    Route::get('projects/{project}/export-csv', function (Request $request, \App\Models\CompanyFoodProject $project) {
-        $project->load([
-            'employeeLists' => fn ($q) => $q->with([
-                'employees' => fn ($qq) => $qq->orderBy('sort_order')->orderBy('employee_name'),
-            ])->orderBy('sort_order'),
-        ]);
+    Route::get('projects/{project}/print-kitchen-prep', function (Request $request, \App\Models\CompanyFoodProject $project) use ($buildCompanyFoodKitchenPrepReportData) {
+        $reportData = $buildCompanyFoodKitchenPrepReportData($request, $project);
 
-        $ordersQuery = \App\Models\CompanyFoodOrder::query()
-            ->where('project_id', $project->id)
-            ->with(['employeeList', 'saladOption', 'appetizerOption1', 'appetizerOption2', 'mainOption', 'sweetOption', 'locationOption', 'soupOption'])
-            ->orderBy('employee_name');
-
-        if ($request->filled('order_date')) {
-            $ordersQuery->whereDate('order_date', (string) $request->query('order_date'));
-        }
-
-        $employeeListId = (int) $request->query('employee_list_id');
-        if ($employeeListId > 0) {
-            $ordersQuery->where('employee_list_id', $employeeListId);
-        }
-
-        $locationOptionId = (int) $request->query('location_option_id');
-        if ($locationOptionId > 0) {
-            $ordersQuery->where('location_option_id', $locationOptionId);
-        }
-
-        $orders = $ordersQuery->get();
-        $listSortOrderById = $project->employeeLists
-            ->mapWithKeys(fn (\App\Models\CompanyFoodEmployeeList $list): array => [(int) $list->id => (int) $list->sort_order])
-            ->all();
-        $employeeSortOrderByKey = \App\Models\CompanyFoodEmployee::query()
-            ->where('project_id', $project->id)
-            ->get()
-            ->mapWithKeys(function (\App\Models\CompanyFoodEmployee $employee): array {
-                return [
-                    $employee->employee_list_id.'|'.mb_strtolower(trim((string) $employee->employee_name)) => (int) $employee->sort_order,
-                ];
-            });
-        $orders = $orders
-            ->sortBy(function (\App\Models\CompanyFoodOrder $order) use ($listSortOrderById, $employeeSortOrderByKey): string {
-                $date = $order->order_date?->format('Y-m-d') ?? '9999-12-31';
-                $listSort = (int) ($listSortOrderById[(int) $order->employee_list_id] ?? 999999);
-                $employeeKey = (int) $order->employee_list_id.'|'.mb_strtolower(trim((string) $order->employee_name));
-                $employeeSort = (int) ($employeeSortOrderByKey[$employeeKey] ?? 999999);
-                $name = mb_strtolower(trim((string) $order->employee_name));
-
-                return $date.'|'.str_pad((string) $listSort, 6, '0', STR_PAD_LEFT).'|'.str_pad((string) $employeeSort, 6, '0', STR_PAD_LEFT).'|'.$name.'|'.str_pad((string) $order->id, 12, '0', STR_PAD_LEFT);
-            })
-            ->values();
+        return view('reports.company-food-kitchen-prep-print', array_merge($reportData, [
+            'browserPrint' => true,
+        ]));
+    })->name('projects.print-kitchen-prep');
+    Route::get('projects/{project}/export-csv', function (Request $request, \App\Models\CompanyFoodProject $project) use ($buildCompanyFoodEmployeeOrdersReportData) {
+        $reportData = $buildCompanyFoodEmployeeOrdersReportData($request, $project);
+        $orders = $reportData['orders'];
 
         return response()->streamDownload(function () use ($orders) {
             $out = fopen('php://output', 'w');

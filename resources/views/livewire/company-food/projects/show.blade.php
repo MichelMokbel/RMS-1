@@ -593,8 +593,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             ], fn ($value) => $value !== null && $value !== '');
         @endphp
         <div class="flex flex-wrap gap-2">
-            <flux:button :href="route('company-food.projects.export-employees-pdf', array_merge(['project' => $project], $orderExportParams))" variant="ghost">{{ __('Employee List PDF') }}</flux:button>
+            <flux:button :href="route('company-food.projects.export-employees-pdf', array_merge(['project' => $project], $orderExportParams))" variant="ghost">{{ __('Employee Orders PDF') }}</flux:button>
+            <flux:button :href="route('company-food.projects.print-employee-orders', array_merge(['project' => $project], $orderExportParams))" target="_blank" variant="ghost">{{ __('Employee Orders Print') }}</flux:button>
             <flux:button :href="route('company-food.projects.export-kitchen-prep-pdf', array_merge(['project' => $project], $orderExportParams))" variant="ghost">{{ __('Kitchen Prep PDF') }}</flux:button>
+            <flux:button :href="route('company-food.projects.print-kitchen-prep', array_merge(['project' => $project], $orderExportParams))" target="_blank" variant="ghost">{{ __('Kitchen Prep Print') }}</flux:button>
             <flux:button :href="route('company-food.projects.edit', $project)" wire:navigate variant="ghost">{{ __('Edit') }}</flux:button>
             <flux:button :href="route('company-food.projects.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
         </div>
