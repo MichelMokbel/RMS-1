@@ -150,6 +150,8 @@ def load_statement(
         die(f"Statement CSV file not found: {statement_csv}")
 
     rows: List[StatementRow] = []
+    skipped_missing_document_no_rows = 0
+
     with statement_csv.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         if reader.fieldnames is None:
@@ -167,7 +169,8 @@ def load_statement(
             if document_no == "" and customer_name == "":
                 continue
             if document_no == "":
-                die(f"Missing Document No in statement row {source_row_num}.")
+                skipped_missing_document_no_rows += 1
+                continue
 
             statement_date = parse_statement_datetime(row["Date"]).isoformat(sep=" ")
             amount_cents = money_to_cents(parse_decimal(row["Amount"]))
@@ -207,6 +210,7 @@ def load_statement(
         "statement_distinct_docs": len(statement_docs),
         "statement_nonzero_paid_rows": sum(1 for r in rows if r.statement_paid_cents != 0),
         "overlap_with_sales_docs": len(statement_docs.intersection(sales_docs)),
+        "skipped_missing_document_no_rows": skipped_missing_document_no_rows,
     }
 
     if strict_facts:
@@ -239,6 +243,7 @@ def render_sql(
             f"-- Distinct statement documents: {facts['statement_distinct_docs']}",
             f"-- Statement rows with non-zero paid: {facts['statement_nonzero_paid_rows']}",
             f"-- Overlap with sales import docs: {facts['overlap_with_sales_docs']}",
+            f"-- Skipped rows with missing Document No: {facts['skipped_missing_document_no_rows']}",
             "-- Reconciliation rule: statement-listed invoices stay unpaid/partially-paid by statement intent; all other in-scope invoices become paid",
             "",
             "START TRANSACTION;",
@@ -514,6 +519,7 @@ def main() -> None:
     print(f"Distinct docs: {facts['statement_distinct_docs']}")
     print(f"Non-zero paid rows: {facts['statement_nonzero_paid_rows']}")
     print(f"Overlap with sales docs: {facts['overlap_with_sales_docs']}")
+    print(f"Skipped missing Document No rows: {facts['skipped_missing_document_no_rows']}")
 
 
 if __name__ == "__main__":

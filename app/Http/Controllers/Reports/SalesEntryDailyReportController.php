@@ -20,6 +20,20 @@ class SalesEntryDailyReportController extends Controller
         return MinorUnits::format((int) ($cents ?? 0));
     }
 
+    private function formatInvoiceDateTime(ArInvoice $invoice): ?string
+    {
+        if (! $invoice->issue_date) {
+            return null;
+        }
+
+        $dateTime = $invoice->issue_date->copy();
+        if ($invoice->created_at) {
+            $dateTime->setTimeFrom($invoice->created_at);
+        }
+
+        return $dateTime->format('Y-m-d H:i:s');
+    }
+
     /**
      * @return array{0: Carbon, 1: Carbon}
      */
@@ -67,7 +81,7 @@ class SalesEntryDailyReportController extends Controller
 
             return [
                 'si' => $index + 1,
-                'date' => ($inv->created_at ?? $inv->issue_date)?->format('Y-m-d H:i:s'),
+                'date' => $this->formatInvoiceDateTime($inv),
                 'invoice_number' => $inv->invoice_number ?: ('#'.$inv->id),
                 'pos_ref' => $inv->pos_reference,
                 'customer' => $inv->customer?->name,

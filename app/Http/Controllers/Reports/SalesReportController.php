@@ -17,6 +17,20 @@ class SalesReportController extends Controller
         return MinorUnits::format((int) ($cents ?? 0));
     }
 
+    private function formatInvoiceDateTime(ArInvoice $invoice): ?string
+    {
+        if (! $invoice->issue_date) {
+            return null;
+        }
+
+        $dateTime = $invoice->issue_date->copy();
+        if ($invoice->created_at) {
+            $dateTime->setTimeFrom($invoice->created_at);
+        }
+
+        return $dateTime->format('Y-m-d H:i:s');
+    }
+
     private function query(Request $request, int $limit = 500)
     {
         return ArInvoice::query()
@@ -47,7 +61,7 @@ class SalesReportController extends Controller
         $rows = $sales->map(fn ($s) => [
             $s->invoice_number ?: ('#'.$s->id),
             $s->pos_reference ?? '',
-            ($s->created_at ?? $s->issue_date)?->format('Y-m-d H:i:s'),
+            $this->formatInvoiceDateTime($s),
             $s->status,
             $this->formatCents($s->total_cents),
         ]);

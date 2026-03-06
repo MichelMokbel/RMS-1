@@ -1,7 +1,7 @@
 -- Generated SQL: AR invoices upsert from sales-entry CSV
 -- Source file: /Users/mohamadsafar/Desktop/Layla Kitchen/RMS-1/docs/csv/Sales_entry_dailyreport_2026-03-02_11_07PM.csv
--- Generated at: 2026-03-02T21:53:07
--- Date range (inclusive): 2026-02-16 to 2026-03-02
+-- Generated at: 2026-03-06T12:27:55
+-- Date range (inclusive): 2026-03-01 to 2026-03-02
 -- Branch ID: 1
 -- Total CSV rows: 42
 -- Filtered rows in range: 41
@@ -278,7 +278,8 @@ SET
   ai.paid_total_cents = s.paid_total_cents,
   ai.balance_cents = s.balance_cents,
   ai.pos_reference = s.pos_reference,
-  ai.updated_at = NOW();
+  ai.created_at = COALESCE(STR_TO_DATE(LEFT(REPLACE(s.source_timestamp, 'T', ' '), 19), '%Y-%m-%d %H:%i:%s'), ai.created_at),
+  ai.updated_at = COALESCE(STR_TO_DATE(LEFT(REPLACE(s.source_timestamp, 'T', ' '), 19), '%Y-%m-%d %H:%i:%s'), ai.updated_at);
 SET @updated_invoice_rows := ROW_COUNT();
 
 INSERT INTO ar_invoices (
@@ -328,8 +329,8 @@ SELECT
   s.balance_cents,
   s.pos_reference,
   'Imported from Sales Entry Daily Report' AS notes,
-  NOW() AS created_at,
-  NOW() AS updated_at
+  COALESCE(STR_TO_DATE(LEFT(REPLACE(s.source_timestamp, 'T', ' '), 19), '%Y-%m-%d %H:%i:%s'), NOW()) AS created_at,
+  COALESCE(STR_TO_DATE(LEFT(REPLACE(s.source_timestamp, 'T', ' '), 19), '%Y-%m-%d %H:%i:%s'), NOW()) AS updated_at
 FROM tmp_invoice_resolution r
 JOIN tmp_sales_source s ON s.source_row_num = r.source_row_num
 WHERE r.resolution_status = 'insert'
@@ -381,8 +382,8 @@ SELECT
   0 AS discount_cents,
   0 AS tax_cents,
   s.total_cents AS line_total_cents,
-  NOW() AS created_at,
-  NOW() AS updated_at
+  COALESCE(STR_TO_DATE(LEFT(REPLACE(s.source_timestamp, 'T', ' '), 19), '%Y-%m-%d %H:%i:%s'), NOW()) AS created_at,
+  COALESCE(STR_TO_DATE(LEFT(REPLACE(s.source_timestamp, 'T', ' '), 19), '%Y-%m-%d %H:%i:%s'), NOW()) AS updated_at
 FROM tmp_target_invoice_ids t
 JOIN tmp_sales_source s ON s.source_row_num = t.source_row_num
 ORDER BY t.source_row_num;

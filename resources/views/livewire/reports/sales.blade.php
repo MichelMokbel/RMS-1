@@ -101,10 +101,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             </thead>
             <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                 @forelse ($sales as $sale)
+                    @php
+                        $saleDateTime = $sale->issue_date?->copy();
+                        if ($saleDateTime && $sale->created_at) {
+                            $saleDateTime->setTimeFrom($sale->created_at);
+                        }
+                    @endphp
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
                         <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $sale->invoice_number ?: ('#'.$sale->id) }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $sale->pos_reference ?: '—' }}</td>
-                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ ($sale->created_at ?? $sale->issue_date)?->format('Y-m-d H:i:s') }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $saleDateTime?->format('Y-m-d H:i:s') }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $sale->status }}</td>
                         <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($sale->total_cents) }}</td>
                     </tr>

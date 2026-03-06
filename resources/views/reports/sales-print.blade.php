@@ -38,10 +38,16 @@
         </thead>
         <tbody>
             @forelse ($sales as $s)
+                @php
+                    $saleDateTime = $s->issue_date?->copy();
+                    if ($saleDateTime && $s->created_at) {
+                        $saleDateTime->setTimeFrom($s->created_at);
+                    }
+                @endphp
                 <tr>
                     <td>{{ $s->invoice_number ?: ('#'.$s->id) }}</td>
                     <td>{{ $s->pos_reference ?? '—' }}</td>
-                    <td>{{ ($s->created_at ?? $s->issue_date)?->format('Y-m-d H:i:s') }}</td>
+                    <td>{{ $saleDateTime?->format('Y-m-d H:i:s') }}</td>
                     <td>{{ $s->status }}</td>
                     <td class="right">{{ $formatCents($s->total_cents) }}</td>
                 </tr>

@@ -321,6 +321,7 @@ def render_sql(
     branch_id: int,
 ) -> str:
     generated_at = dt.datetime.now().replace(microsecond=0).isoformat()
+    source_ts_expr = "STR_TO_DATE(LEFT(REPLACE(s.source_timestamp, 'T', ' '), 19), '%Y-%m-%d %H:%i:%s')"
     out: List[str] = []
 
     out.extend(
@@ -617,7 +618,8 @@ def render_sql(
             "  ai.paid_total_cents = s.paid_total_cents,",
             "  ai.balance_cents = s.balance_cents,",
             "  ai.pos_reference = s.pos_reference,",
-            "  ai.updated_at = NOW();",
+            f"  ai.created_at = COALESCE({source_ts_expr}, ai.created_at),",
+            f"  ai.updated_at = COALESCE({source_ts_expr}, ai.updated_at);",
             "SET @updated_invoice_rows := ROW_COUNT();",
             "",
             "INSERT INTO ar_invoices (",
@@ -667,8 +669,8 @@ def render_sql(
             "  s.balance_cents,",
             "  s.pos_reference,",
             "  'Imported from Sales Entry Daily Report' AS notes,",
-            "  NOW() AS created_at,",
-            "  NOW() AS updated_at",
+            f"  COALESCE({source_ts_expr}, NOW()) AS created_at,",
+            f"  COALESCE({source_ts_expr}, NOW()) AS updated_at",
             "FROM tmp_invoice_resolution r",
             "JOIN tmp_sales_source s ON s.source_row_num = r.source_row_num",
             "WHERE r.resolution_status = 'insert'",
@@ -720,8 +722,8 @@ def render_sql(
             "  0 AS discount_cents,",
             "  0 AS tax_cents,",
             "  s.total_cents AS line_total_cents,",
-            "  NOW() AS created_at,",
-            "  NOW() AS updated_at",
+            f"  COALESCE({source_ts_expr}, NOW()) AS created_at,",
+            f"  COALESCE({source_ts_expr}, NOW()) AS updated_at",
             "FROM tmp_target_invoice_ids t",
             "JOIN tmp_sales_source s ON s.source_row_num = t.source_row_num",
             "ORDER BY t.source_row_num;",
