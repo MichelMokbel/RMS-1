@@ -27,6 +27,7 @@
     </div>
     @include('reports.print-header', ['reportTitle' => 'Receivables Summary'])
     <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} | Filters: {{ json_encode($filters) }}</div>
+    @php $statusRows = collect($summary['by_status'] ?? []); @endphp
     <div class="cards">
         <div class="card">Total Invoiced: {{ $formatCents($summary['total_invoiced_cents']) }}</div>
         <div class="card">Total Balance: {{ $formatCents($summary['total_balance_cents']) }}</div>
@@ -42,7 +43,7 @@
             </tr>
         </thead>
         <tbody>
-            @forelse ($summary['by_status'] as $row)
+            @forelse ($statusRows as $row)
                 <tr>
                     <td>{{ $row['status'] }}</td>
                     <td class="right">{{ $row['count'] }}</td>
@@ -53,6 +54,14 @@
                 <tr><td colspan="4">No data found.</td></tr>
             @endforelse
         </tbody>
+        <tfoot>
+            <tr>
+                <td><strong>Total</strong></td>
+                <td class="right"><strong>{{ (int) $statusRows->sum('count') }}</strong></td>
+                <td class="right"><strong>{{ $formatCents((int) $statusRows->sum('total_cents')) }}</strong></td>
+                <td class="right"><strong>{{ $formatCents((int) $statusRows->sum('balance_cents')) }}</strong></td>
+            </tr>
+        </tfoot>
     </table>
     @include('reports.print-footer')
 </body>

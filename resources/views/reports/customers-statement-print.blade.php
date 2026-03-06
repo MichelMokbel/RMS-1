@@ -48,6 +48,15 @@
                 <tr><td colspan="5">No customers found.</td></tr>
             @endforelse
         </tbody>
+        <tfoot>
+            <tr>
+                <td><strong>Total</strong></td>
+                <td class="right"><strong>{{ $formatCents((int) $rows->sum('opening')) }}</strong></td>
+                <td class="right"><strong>{{ $formatCents((int) $rows->sum('invoices')) }}</strong></td>
+                <td class="right"><strong>{{ $formatCents((int) $rows->sum('payments')) }}</strong></td>
+                <td class="right"><strong>{{ $formatCents((int) $rows->sum('closing')) }}</strong></td>
+            </tr>
+        </tfoot>
     </table>
     @include('reports.print-footer')
 </body>

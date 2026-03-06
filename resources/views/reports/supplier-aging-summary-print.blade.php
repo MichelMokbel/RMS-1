@@ -52,6 +52,17 @@
                 <tr><td colspan="7">No aging data found.</td></tr>
             @endforelse
         </tbody>
+        <tfoot>
+            <tr>
+                <td><strong>Total</strong></td>
+                <td class="right"><strong>{{ $formatMoney((float) $rows->sum('current')) }}</strong></td>
+                <td class="right"><strong>{{ $formatMoney((float) $rows->sum('bucket_1_30')) }}</strong></td>
+                <td class="right"><strong>{{ $formatMoney((float) $rows->sum('bucket_31_60')) }}</strong></td>
+                <td class="right"><strong>{{ $formatMoney((float) $rows->sum('bucket_61_90')) }}</strong></td>
+                <td class="right"><strong>{{ $formatMoney((float) $rows->sum('bucket_90_plus')) }}</strong></td>
+                <td class="right"><strong>{{ $formatMoney((float) $rows->sum('total')) }}</strong></td>
+            </tr>
+        </tfoot>
     </table>
     @include('reports.print-footer')
 </body>

@@ -48,6 +48,12 @@
                 <tr><td colspan="5">No invoices found.</td></tr>
             @endforelse
         </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="4"><strong>Total</strong></td>
+                <td class="right"><strong>{{ $formatCents((int) $invoices->sum('total_cents')) }}</strong></td>
+            </tr>
+        </tfoot>
     </table>
     @include('reports.print-footer')
 </body>

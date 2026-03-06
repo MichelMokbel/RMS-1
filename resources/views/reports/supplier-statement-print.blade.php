@@ -57,6 +57,14 @@
                 <tr><td colspan="5">No statement entries found.</td></tr>
             @endforelse
         </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="2"><strong>Total</strong></td>
+                <td class="right"><strong>{{ $formatMoney((float) collect($statement['entries'] ?? [])->sum('debit')) }}</strong></td>
+                <td class="right"><strong>{{ $formatMoney((float) collect($statement['entries'] ?? [])->sum('credit')) }}</strong></td>
+                <td class="right"><strong>{{ $formatMoney((float) $balance) }}</strong></td>
+            </tr>
+        </tfoot>
     </table>
     @include('reports.print-footer')
 </body>

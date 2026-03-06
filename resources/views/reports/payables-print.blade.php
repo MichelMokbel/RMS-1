@@ -40,6 +40,7 @@
     @endif
 
     @if ($tab === 'invoices')
+        @php $invoiceRows = $invoicePage->getCollection(); @endphp
         <h2>Invoice Register</h2>
         <table>
             <thead>
@@ -54,7 +55,7 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach ($invoicePage->getCollection() as $inv)
+                @forelse ($invoiceRows as $inv)
                     @php $outstanding = max((float) $inv->total_amount - (float) ($inv->paid_sum ?? 0), 0); @endphp
                     <tr>
                         <td>{{ $inv->invoice_number }}</td>
@@ -65,12 +66,22 @@
                         <td class="right">{{ $formatMoney($inv->total_amount) }}</td>
                         <td class="right">{{ $formatMoney($outstanding) }}</td>
                     </tr>
-                @endforeach
+                @empty
+                    <tr><td colspan="7">No invoices found.</td></tr>
+                @endforelse
             </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="5"><strong>Total</strong></td>
+                    <td class="right"><strong>{{ $formatMoney((float) $invoiceRows->sum('total_amount')) }}</strong></td>
+                    <td class="right"><strong>{{ $formatMoney((float) $invoiceRows->sum(fn ($inv) => max((float) $inv->total_amount - (float) ($inv->paid_sum ?? 0), 0))) }}</strong></td>
+                </tr>
+            </tfoot>
         </table>
     @endif
 
     @if ($tab === 'payments')
+        @php $paymentRows = $paymentPage->getCollection(); @endphp
         <h2>Payment Register</h2>
         <table>
             <thead>
@@ -83,7 +94,7 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach ($paymentPage->getCollection() as $pay)
+                @forelse ($paymentRows as $pay)
                     <tr>
                         <td>{{ $pay->id }}</td>
                         <td>{{ $pay->supplier?->name ?? '—' }}</td>
@@ -91,8 +102,16 @@
                         <td>{{ $pay->payment_method ?? '—' }}</td>
                         <td class="right">{{ $formatMoney($pay->amount ?? 0) }}</td>
                     </tr>
-                @endforeach
+                @empty
+                    <tr><td colspan="5">No payments found.</td></tr>
+                @endforelse
             </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="4"><strong>Total</strong></td>
+                    <td class="right"><strong>{{ $formatMoney((float) $paymentRows->sum('amount')) }}</strong></td>
+                </tr>
+            </tfoot>
         </table>
     @endif
     @include('reports.print-footer')

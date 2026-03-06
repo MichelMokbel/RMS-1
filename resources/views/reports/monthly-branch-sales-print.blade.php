@@ -44,6 +44,13 @@
                 <tr><td colspan="4">No sales found.</td></tr>
             @endforelse
         </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="2"><strong>Total</strong></td>
+                <td class="right"><strong>{{ (int) $rows->sum('count') }}</strong></td>
+                <td class="right"><strong>{{ $formatCents((int) $rows->sum('total_cents')) }}</strong></td>
+            </tr>
+        </tfoot>
     </table>
     @include('reports.print-footer')
 </body>

@@ -54,6 +54,14 @@
                 <tr><td colspan="8">No sessions found.</td></tr>
             @endforelse
         </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="5"><strong>Total</strong></td>
+                <td class="right"><strong>{{ $formatCents((int) $rows->sum('closing_card_cents')) }}</strong></td>
+                <td class="right"><strong>{{ (int) $rows->sum('invoice_count') }}</strong></td>
+                <td class="right"><strong>{{ $formatCents((int) $rows->sum('total_cents')) }}</strong></td>
+            </tr>
+        </tfoot>
     </table>
     @include('reports.print-footer')
 </body>

@@ -25,6 +25,7 @@
     </div>
     @include('reports.print-header', ['reportTitle' => 'Costing Report'])
     <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} | Filters: {{ json_encode($filters) }}</div>
+    @php $validCostings = collect($costingByRecipe)->filter(fn ($c) => is_array($c)); @endphp
     <table>
         <thead>
             <tr>
@@ -55,6 +56,16 @@
                 <tr><td colspan="6">No recipes found.</td></tr>
             @endforelse
         </tbody>
+        <tfoot>
+            <tr>
+                <td><strong>Total</strong></td>
+                <td class="right"><strong>{{ number_format((float) $validCostings->sum('base_cost_total'), 3) }}</strong></td>
+                <td class="right"><strong>{{ number_format((float) $validCostings->sum('total_cost_with_overhead'), 3) }}</strong></td>
+                <td class="right"><strong>—</strong></td>
+                <td class="right"><strong>—</strong></td>
+                <td class="right"><strong>—</strong></td>
+            </tr>
+        </tfoot>
     </table>
     @include('reports.print-footer')
 </body>

@@ -57,6 +57,15 @@
                 <tr><td colspan="9">No purchase order items found.</td></tr>
             @endforelse
         </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="5"><strong>Total</strong></td>
+                <td class="right"><strong>{{ number_format((float) $items->sum('quantity'), 3) }}</strong></td>
+                <td class="right"></td>
+                <td class="right"><strong>{{ $formatMoney((float) $items->sum('total_price')) }}</strong></td>
+                <td class="right"><strong>{{ number_format((float) $items->sum('received_quantity'), 3) }}</strong></td>
+            </tr>
+        </tfoot>
     </table>
     @include('reports.print-footer')
 </body>
