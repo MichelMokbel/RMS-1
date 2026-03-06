@@ -51,6 +51,27 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
+<style>
+    .ar-invoices-mobile-cards {
+        display: grid;
+        gap: 0.75rem;
+    }
+
+    .ar-invoices-desktop-table {
+        display: none;
+    }
+
+    @media (min-width: 640px) {
+        .ar-invoices-mobile-cards {
+            display: none;
+        }
+
+        .ar-invoices-desktop-table {
+            display: block;
+        }
+    }
+</style>
+
 <div class="app-page space-y-6">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Invoices (AR)') }}</h1>
@@ -117,7 +138,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
-    <div class="grid grid-cols-1 gap-3 sm:hidden">
+    <div class="ar-invoices-mobile-cards">
         @forelse ($invoices as $inv)
             <article class="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
                 <div class="flex items-start justify-between gap-2">
@@ -162,7 +183,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endforelse
     </div>
 
-    <div class="hidden sm:block overflow-x-auto rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+    <div class="ar-invoices-desktop-table overflow-x-auto rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
         <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
