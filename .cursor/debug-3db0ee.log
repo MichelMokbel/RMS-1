@@ -1,0 +1,9 @@
+{"sessionId":"3db0ee","hypothesisId":"H1","location":"invoices\/index:mount","message":"mount","data":{"search":"","filter_search":""},"timestamp":1772882352880}
+{"sessionId":"3db0ee","hypothesisId":"H4","location":"invoices\/index:with","message":"with","data":{"search_used":""},"timestamp":1772882352880}
+{"sessionId":"3db0ee","hypothesisId":"H4","location":"invoices\/index:with","message":"with","data":{"search_used":""},"timestamp":1772882352890}
+{"sessionId":"3db0ee","hypothesisId":"H1","location":"invoices\/index:mount","message":"mount","data":{"search":"","filter_search":""},"timestamp":1772882727409}
+{"sessionId":"3db0ee","hypothesisId":"H4","location":"invoices\/index:with","message":"with","data":{"search_used":""},"timestamp":1772882727410}
+{"sessionId":"3db0ee","hypothesisId":"H4","location":"invoices\/index:with","message":"with","data":{"search_used":""},"timestamp":1772882727420}
+{"sessionId":"3db0ee","hypothesisId":"H1","location":"invoices\/index:mount","message":"mount","data":{"search":"","filter_search":""},"timestamp":1772885079889}
+{"sessionId":"3db0ee","hypothesisId":"H4","location":"invoices\/index:with","message":"with","data":{"search_used":""},"timestamp":1772885079890}
+{"sessionId":"3db0ee","hypothesisId":"H4","location":"invoices\/index:with","message":"with","data":{"search_used":""},"timestamp":1772885079905}

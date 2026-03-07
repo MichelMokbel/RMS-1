@@ -21,7 +21,11 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
-        $this->branch_id = (int) config('inventory.default_branch_id', 1) ?: 1;
+        $defaultBranch = (int) config('inventory.default_branch_id', 1) ?: 1;
+        $this->branch_id = (int) request()->query('branch_id', $defaultBranch);
+        $this->status = (string) request()->query('status', 'all');
+        $this->payment_type = (string) request()->query('payment_type', 'all');
+        $this->search = trim((string) request()->query('search', ''));
         $this->filter_branch_id = $this->branch_id;
         $this->filter_status = $this->status;
         $this->filter_payment_type = $this->payment_type;
@@ -86,6 +90,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
     }
 
+    public function updatedFilterSearch(): void
+    {
+        $this->search = trim($this->filter_search);
+    }
+
     public function applyFilters(): void
     {
         $this->branch_id = (int) $this->filter_branch_id;
@@ -100,6 +109,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->filter_status = 'all';
         $this->filter_payment_type = 'all';
         $this->filter_search = '';
+        $this->search = '';
         $this->applyFilters();
     }
 
@@ -149,12 +159,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     @endif
 
-    <form wire:submit.prevent="applyFilters" class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+    <form wire:submit.prevent="applyFilters" method="get" action="{{ request()->url() }}" class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
         <div class="app-filter-grid items-end">
             <div class="min-w-[180px]">
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Branch') }}</label>
                 @if ($branches->count())
-                    <select wire:model.defer="filter_branch_id" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                    <select name="branch_id" wire:model.defer="filter_branch_id" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                         @foreach ($branches as $b)
                             <option value="{{ $b->id }}">{{ $b->name }}</option>
                         @endforeach
@@ -165,7 +175,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <div class="min-w-[200px]">
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Status') }}</label>
-                <select wire:model.defer="filter_status" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                <select name="status" wire:model.defer="filter_status" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                     <option value="all">{{ __('All') }}</option>
                     <option value="draft">{{ __('Draft') }}</option>
                     <option value="issued">{{ __('Issued') }}</option>
@@ -176,7 +186,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <div class="min-w-[200px]">
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Payment Type') }}</label>
-                <select wire:model.defer="filter_payment_type" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                <select name="payment_type" wire:model.defer="filter_payment_type" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                     <option value="all">{{ __('All') }}</option>
                     <option value="credit">{{ __('Credit') }}</option>
                     <option value="cash">{{ __('Cash') }}</option>
@@ -188,7 +198,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Search') }}</label>
                 <input
                     type="text"
-                    wire:model.defer="filter_search"
+                    name="search"
+                    wire:model.live.debounce.500ms="filter_search"
                     wire:keydown.enter.prevent="applyFilters"
                     placeholder="{{ __('Invoice #, POS Ref, Customer') }}"
                     class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
