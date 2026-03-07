@@ -216,6 +216,21 @@ Response payload sections (200):
     "money_scale": "int (config pos.money_scale, default 100)"
   },
   "terminal": { "id": "int", "code": "string", "branch_id": "int" },
+  "receipt_profile": {
+    "brand_name_en": "string",
+    "brand_name_ar": "string",
+    "legal_name_en": "string",
+    "legal_name_ar": "string",
+    "branch_name_en": "string (falls back to terminal branch name when unset)",
+    "branch_name_ar": "string",
+    "address_lines_en": ["string"],
+    "address_lines_ar": ["string"],
+    "phone": "string",
+    "logo_url": "string",
+    "footer_note_en": "string",
+    "footer_note_ar": "string",
+    "timezone": "string (falls back to app timezone when unset)"
+  },
   "categories": [
     { "id": "int", "name": "string", "description": "string|null", "parent_id": "int|null", "updated_at": "string|null (ISO8601)" }
   ],
@@ -405,7 +420,9 @@ ACK schema
 
   "server_entity_type": "string (present when ok=true)",
   "server_entity_id": "int (present when ok=true)",
-  "applied_at": "string (present when ok=true; UTC; format YYYY-MM-DDTHH:mm:ssZ)"
+  "applied_at": "string (present when ok=true; UTC; format YYYY-MM-DDTHH:mm:ssZ)",
+  "invoice_no": "string (present only when ok=true and server_entity_type=ar_invoice)",
+  "ref_no": "string (present only when ok=true and server_entity_type=ar_invoice; echoes ar_invoices.pos_reference)"
 }
 ```
 
@@ -803,6 +820,8 @@ Example ACK:
   "ok": true,
   "server_entity_type": "ar_invoice",
   "server_entity_id": 501,
+  "invoice_no": "INV2026-000501",
+  "ref_no": "T01-20260204-000123",
   "applied_at": "2026-02-04T09:15:01Z"
 }
 ```

@@ -2,6 +2,7 @@
 
 namespace App\Services\POS;
 
+use App\Models\Branch;
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\ExpenseCategory;
@@ -159,6 +160,8 @@ class PosBootstrapService
             ])
             ->values();
 
+        $receiptProfile = $this->buildReceiptProfile($terminal);
+
         return [
             'settings' => [
                 'currency' => (string) config('pos.currency', 'QAR'),
@@ -169,6 +172,7 @@ class PosBootstrapService
                 'code' => (string) $terminal->code,
                 'branch_id' => (int) $terminal->branch_id,
             ],
+            'receipt_profile' => $receiptProfile,
             'categories' => $categories,
             'menu_items' => $menuItems,
             'customers' => $customers,
@@ -179,6 +183,51 @@ class PosBootstrapService
             'expense_categories' => $expenseCategories,
             'server_timestamp' => now()->utc()->toISOString(),
         ];
+    }
+
+    private function buildReceiptProfile($terminal): array
+    {
+        $configured = (array) config('pos.receipt_profile', []);
+        $branchId = (int) ($terminal->branch_id ?? 0);
+        $branchNameFromDb = (string) (Branch::query()->whereKey($branchId)->value('name') ?? '');
+
+        $branchNameEn = trim((string) ($configured['branch_name_en'] ?? ''));
+        if ($branchNameEn === '') {
+            $branchNameEn = $branchNameFromDb;
+        }
+
+        $timezone = trim((string) ($configured['timezone'] ?? ''));
+        if ($timezone === '') {
+            $timezone = (string) config('app.timezone', 'UTC');
+        }
+
+        return [
+            'brand_name_en' => (string) ($configured['brand_name_en'] ?? ''),
+            'brand_name_ar' => (string) ($configured['brand_name_ar'] ?? ''),
+            'legal_name_en' => (string) ($configured['legal_name_en'] ?? ''),
+            'legal_name_ar' => (string) ($configured['legal_name_ar'] ?? ''),
+            'branch_name_en' => $branchNameEn,
+            'branch_name_ar' => (string) ($configured['branch_name_ar'] ?? ''),
+            'address_lines_en' => $this->normalizeReceiptLines($configured['address_lines_en'] ?? []),
+            'address_lines_ar' => $this->normalizeReceiptLines($configured['address_lines_ar'] ?? []),
+            'phone' => (string) ($configured['phone'] ?? ''),
+            'logo_url' => (string) ($configured['logo_url'] ?? ''),
+            'footer_note_en' => (string) ($configured['footer_note_en'] ?? ''),
+            'footer_note_ar' => (string) ($configured['footer_note_ar'] ?? ''),
+            'timezone' => $timezone,
+        ];
+    }
+
+    private function normalizeReceiptLines($lines): array
+    {
+        if (! is_array($lines)) {
+            $lines = explode('|', (string) $lines);
+        }
+
+        return array_values(array_filter(
+            array_map(static fn ($line) => trim((string) $line), $lines),
+            static fn (string $line) => $line !== ''
+        ));
     }
 
     private function whereUpdatedSince($query, string $table, Carbon $sinceAt)

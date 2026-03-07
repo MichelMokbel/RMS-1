@@ -99,6 +99,63 @@ test('sequence reservation produces non-overlapping ranges', function () {
     expect((int) $row->last_number)->toBe(10);
 });
 
+test('bootstrap includes receipt_profile with normalized lines and fallbacks', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    seedPosTerminal('DEV-A', 'T01', 1);
+    $token = posToken($user, 'DEV-A');
+
+    config()->set('pos.receipt_profile', [
+        'brand_name_en' => 'Layla Kitchen',
+        'brand_name_ar' => '',
+        'legal_name_en' => 'LAYLA KITCHEN W.L.L',
+        'legal_name_ar' => '',
+        'branch_name_en' => '',
+        'branch_name_ar' => '',
+        'address_lines_en' => [' Line A ', '', 'Line B '],
+        'address_lines_ar' => ' AR1 | | AR2 ',
+        'phone' => '44413660',
+        'logo_url' => 'https://example.com/logo.png',
+        'footer_note_en' => 'Powered by qsale.qa',
+        'footer_note_ar' => '',
+        'timezone' => '',
+    ]);
+
+    $resp = $this->withToken($token)
+        ->getJson('/api/pos/bootstrap')
+        ->assertOk()
+        ->json();
+
+    $profile = (array) ($resp['receipt_profile'] ?? []);
+    $expectedKeys = [
+        'brand_name_en',
+        'brand_name_ar',
+        'legal_name_en',
+        'legal_name_ar',
+        'branch_name_en',
+        'branch_name_ar',
+        'address_lines_en',
+        'address_lines_ar',
+        'phone',
+        'logo_url',
+        'footer_note_en',
+        'footer_note_ar',
+        'timezone',
+    ];
+    foreach ($expectedKeys as $key) {
+        expect(array_key_exists($key, $profile))->toBeTrue();
+    }
+
+    expect((string) $profile['brand_name_en'])->toBe('Layla Kitchen');
+    expect((string) $profile['legal_name_en'])->toBe('LAYLA KITCHEN W.L.L');
+    expect((string) $profile['branch_name_en'])->toBe('Branch 1');
+    expect($profile['address_lines_en'])->toBe(['Line A', 'Line B']);
+    expect($profile['address_lines_ar'])->toBe(['AR1', 'AR2']);
+    expect((string) $profile['phone'])->toBe('44413660');
+    expect((string) $profile['logo_url'])->toBe('https://example.com/logo.png');
+    expect((string) $profile['footer_note_en'])->toBe('Powered by qsale.qa');
+    expect((string) $profile['timezone'])->toBe((string) config('app.timezone', 'UTC'));
+});
+
 test('invoice.finalize is idempotent by client_uuid and by (branch_id, pos_reference)', function () {
     $user = User::factory()->create(['status' => 'active']);
     seedPosTerminal('DEV-A', 'T01', 1);
@@ -162,6 +219,12 @@ test('invoice.finalize is idempotent by client_uuid and by (branch_id, pos_refer
     $invoiceId = (int) ($resp1['acks'][0]['server_entity_id'] ?? 0);
     expect($invoiceId)->toBeGreaterThan(0);
     expect(ArInvoice::query()->where('pos_reference', $posReference)->count())->toBe(1);
+    $invoice = ArInvoice::query()->whereKey($invoiceId)->firstOrFail();
+    $expectedInvoiceNo = (string) ($invoice->invoice_number ?: $invoiceId);
+
+    expect((string) ($resp1['acks'][0]['server_entity_type'] ?? ''))->toBe('ar_invoice');
+    expect((string) ($resp1['acks'][0]['invoice_no'] ?? ''))->toBe($expectedInvoiceNo);
+    expect((string) ($resp1['acks'][0]['ref_no'] ?? ''))->toBe($posReference);
 
     // Same invoice client_uuid, different sync event client_uuid.
     $event2Uuid = (string) Str::uuid();
@@ -181,6 +244,9 @@ test('invoice.finalize is idempotent by client_uuid and by (branch_id, pos_refer
     ])->assertOk()->json();
 
     expect($resp2['acks'][0]['ok'])->toBeTrue();
+    expect((string) ($resp2['acks'][0]['server_entity_type'] ?? ''))->toBe('ar_invoice');
+    expect((string) ($resp2['acks'][0]['invoice_no'] ?? ''))->toBe($expectedInvoiceNo);
+    expect((string) ($resp2['acks'][0]['ref_no'] ?? ''))->toBe($posReference);
     expect(ArInvoice::query()->where('pos_reference', $posReference)->count())->toBe(1);
 
     // Same pos_reference, different invoice client_uuid should still be treated as success with existing invoice.
@@ -204,6 +270,9 @@ test('invoice.finalize is idempotent by client_uuid and by (branch_id, pos_refer
     ])->assertOk()->json();
 
     expect($resp3['acks'][0]['ok'])->toBeTrue();
+    expect((string) ($resp3['acks'][0]['server_entity_type'] ?? ''))->toBe('ar_invoice');
+    expect((string) ($resp3['acks'][0]['invoice_no'] ?? ''))->toBe($expectedInvoiceNo);
+    expect((string) ($resp3['acks'][0]['ref_no'] ?? ''))->toBe($posReference);
     expect(ArInvoice::query()->where('pos_reference', $posReference)->count())->toBe(1);
 });
 

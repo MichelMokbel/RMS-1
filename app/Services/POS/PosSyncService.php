@@ -374,13 +374,28 @@ class PosSyncService
 
     private function ackOk(string $eventId, string $entityType, int $entityId, Carbon $appliedAt): array
     {
-        return [
+        $ack = [
             'event_id' => $eventId,
             'ok' => true,
             'server_entity_type' => $entityType,
             'server_entity_id' => $entityId,
             'applied_at' => $appliedAt->copy()->utc()->format('Y-m-d\\TH:i:s\\Z'),
         ];
+
+        if ($entityType !== 'ar_invoice') {
+            return $ack;
+        }
+
+        $invoice = ArInvoice::query()
+            ->select(['id', 'invoice_number', 'pos_reference'])
+            ->whereKey($entityId)
+            ->first();
+
+        $invoiceNo = trim((string) ($invoice?->invoice_number ?? ''));
+        $ack['invoice_no'] = $invoiceNo !== '' ? $invoiceNo : (string) $entityId;
+        $ack['ref_no'] = (string) ($invoice?->pos_reference ?? '');
+
+        return $ack;
     }
 
     private function markEventFailed(int $terminalId, string $eventId, string $clientUuid, string $type, string $errorCode, string $errorMessage): void

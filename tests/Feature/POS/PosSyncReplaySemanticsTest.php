@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Customer;
+use App\Models\MenuItem;
 use App\Models\PosSyncEvent;
 use App\Models\PosTerminal;
 use App\Models\User;
@@ -204,4 +205,92 @@ test('test_duplicate_event_after_success_returns_ok_with_same_entity', function 
     expect((string) ($resp2['acks'][0]['applied_at'] ?? ''))->toBe($appliedAt);
 
     expect(Customer::query()->count())->toBe(1);
+});
+
+test('invoice replay ack includes invoice_no and ref_no', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    seedPosTerminalForSync('DEV-A', 'T01', 1);
+    $token = posTokenForDevice($user, 'DEV-A');
+
+    $customer = Customer::factory()->create(['is_active' => true]);
+    $menu = MenuItem::factory()->create(['is_active' => true]);
+
+    $eventUuid = (string) Str::uuid();
+    $invoiceUuid = (string) Str::uuid();
+    $posReference = 'T01-20260204-000555';
+
+    $payload = [
+        'pos_reference' => $posReference,
+        'client_uuid' => $invoiceUuid,
+        'payment_type' => 'cash',
+        'customer_id' => $customer->id,
+        'issue_date' => '2026-02-04',
+        'lines' => [
+            [
+                'menu_item_id' => $menu->id,
+                'qty' => '1.000',
+                'unit_price_cents' => 1500,
+                'line_discount_cents' => 0,
+                'line_total_cents' => 1500,
+            ],
+        ],
+        'totals' => [
+            'subtotal_cents' => 1500,
+            'discount_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 1500,
+        ],
+        'payments' => [
+            [
+                'client_uuid' => (string) Str::uuid(),
+                'method' => 'cash',
+                'amount_cents' => 1500,
+                'received_at' => now()->toISOString(),
+            ],
+        ],
+    ];
+
+    $resp1 = $this->withToken($token)->postJson('/api/pos/sync', [
+        'device_id' => 'DEV-A',
+        'terminal_code' => 'T01',
+        'branch_id' => 1,
+        'last_pulled_at' => null,
+        'events' => [
+            [
+                'event_id' => 'evt-inv-1',
+                'type' => 'invoice.finalize',
+                'client_uuid' => $eventUuid,
+                'payload' => $payload,
+            ],
+        ],
+    ])->assertOk()->json();
+
+    expect($resp1['acks'][0]['ok'])->toBeTrue();
+    expect((string) ($resp1['acks'][0]['server_entity_type'] ?? ''))->toBe('ar_invoice');
+    expect((string) ($resp1['acks'][0]['ref_no'] ?? ''))->toBe($posReference);
+    $invoiceId = (int) ($resp1['acks'][0]['server_entity_id'] ?? 0);
+    $invoiceNo = (string) ($resp1['acks'][0]['invoice_no'] ?? '');
+    expect($invoiceId)->toBeGreaterThan(0);
+    expect($invoiceNo)->not()->toBe('');
+
+    $resp2 = $this->withToken($token)->postJson('/api/pos/sync', [
+        'device_id' => 'DEV-A',
+        'terminal_code' => 'T01',
+        'branch_id' => 1,
+        'last_pulled_at' => null,
+        'events' => [
+            [
+                'event_id' => 'evt-inv-1-replay',
+                'type' => 'invoice.finalize',
+                'client_uuid' => $eventUuid,
+                'payload' => $payload,
+            ],
+        ],
+    ])->assertOk()->json();
+
+    expect($resp2['acks'][0]['ok'])->toBeTrue();
+    expect((string) ($resp2['acks'][0]['server_entity_type'] ?? ''))->toBe('ar_invoice');
+    expect((int) ($resp2['acks'][0]['server_entity_id'] ?? 0))->toBe($invoiceId);
+    expect((string) ($resp2['acks'][0]['invoice_no'] ?? ''))->toBe($invoiceNo);
+    expect((string) ($resp2['acks'][0]['ref_no'] ?? ''))->toBe($posReference);
 });

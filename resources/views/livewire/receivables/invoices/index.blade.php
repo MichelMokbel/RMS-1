@@ -2,6 +2,7 @@
 
 use App\Models\ArInvoice;
 use App\Support\Money\MinorUnits;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
@@ -20,17 +21,36 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function with(): array
     {
+        $search = trim($this->search);
+        $searchTokens = collect(preg_split('/\s+/u', mb_strtolower($search)) ?: [])
+            ->map(fn ($token) => trim((string) $token))
+            ->filter()
+            ->values()
+            ->all();
+        $searchCompact = str_replace(' ', '', mb_strtolower($search));
+
         $invoices = ArInvoice::query()
             ->with(['customer', 'creator'])
             ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id))
             ->when($this->status !== 'all', fn ($q) => $q->where('status', $this->status))
             ->when($this->payment_type !== 'all', fn ($q) => $q->where('payment_type', $this->payment_type))
-            ->when(trim($this->search) !== '', function ($q): void {
-                $term = '%'.trim($this->search).'%';
-                $q->where(function ($qq) use ($term): void {
+            ->when($search !== '', function ($q) use ($search, $searchTokens, $searchCompact): void {
+                $term = '%'.$search.'%';
+                $q->where(function ($qq) use ($term, $searchTokens, $searchCompact): void {
                     $qq->where('invoice_number', 'like', $term)
                         ->orWhere('pos_reference', 'like', $term)
-                        ->orWhereHas('customer', fn ($cq) => $cq->where('name', 'like', $term));
+                        ->orWhereHas('customer', function (Builder $cq) use ($term, $searchTokens, $searchCompact): void {
+                            $cq->where('name', 'like', $term)
+                                ->orWhere('phone', 'like', $term)
+                                ->orWhere('customer_code', 'like', $term)
+                                ->orWhereRaw('LOWER(REPLACE(name, " ", "")) like ?', ['%'.$searchCompact.'%']);
+
+                            foreach ($searchTokens as $token) {
+                                $cq->orWhere('name', 'like', '%'.$token.'%')
+                                    ->orWhere('phone', 'like', '%'.$token.'%')
+                                    ->orWhere('customer_code', 'like', '%'.$token.'%');
+                            }
+                        });
                 });
             })
             ->orderByDesc('id')
@@ -104,7 +124,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     @endif
 
-    <form wire:submit.prevent="applyFilters" class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+    <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
         <div class="app-filter-grid items-end">
             <div class="min-w-[180px]">
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Branch') }}</label>
@@ -144,13 +164,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <input
                     type="text"
                     wire:model.live.debounce.300ms="search"
+                    wire:keydown.enter.prevent="applyFilters"
                     placeholder="{{ __('Invoice #, POS Ref, Customer') }}"
                     class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
                 />
             </div>
             <div class="min-w-[260px]">
                 <div class="flex items-center gap-2">
-                    <flux:button type="submit" variant="primary" class="w-full touch-target" wire:loading.attr="disabled" wire:target="applyFilters">
+                    <flux:button type="button" wire:click="applyFilters" variant="primary" class="w-full touch-target" wire:loading.attr="disabled" wire:target="applyFilters">
                         <span wire:loading.remove wire:target="applyFilters">{{ __('Apply Filters') }}</span>
                         <span wire:loading.inline-flex wire:target="applyFilters" class="items-center gap-2">
                             <svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
@@ -167,7 +188,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
             </div>
         </div>
-    </form>
+    </div>
 
     <div wire:loading.flex wire:target="search,branch_id,status,payment_type,applyFilters,resetFilters" class="items-center gap-2 rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-700 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
         <svg class="h-4 w-4 animate-spin text-neutral-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
