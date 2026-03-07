@@ -171,20 +171,32 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <div class="min-w-[260px]">
                 <div class="flex items-center gap-2">
-                    <flux:button type="button" wire:click="applyFilters" variant="primary" class="w-full touch-target" wire:loading.attr="disabled" wire:target="applyFilters">
-                        <span wire:loading.remove wire:target="applyFilters">{{ __('Apply Filters') }}</span>
+                    <button
+                        type="button"
+                        wire:click.prevent="applyFilters"
+                        wire:loading.attr="disabled"
+                        wire:target="applyFilters"
+                        class="w-full touch-target inline-flex items-center justify-center rounded-md border border-neutral-900 bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-neutral-800 dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                        <span wire:loading.remove wire:target="applyFilters">{{ __('Search') }}</span>
                         <span wire:loading.inline-flex wire:target="applyFilters" class="items-center gap-2">
                             <svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
                                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z"></path>
                             </svg>
-                            <span>{{ __('Applying...') }}</span>
+                            <span>{{ __('Searching...') }}</span>
                         </span>
-                    </flux:button>
-                    <flux:button type="button" variant="ghost" class="w-full touch-target" wire:click="resetFilters" wire:loading.attr="disabled" wire:target="resetFilters">
+                    </button>
+                    <button
+                        type="button"
+                        wire:click.prevent="resetFilters"
+                        wire:loading.attr="disabled"
+                        wire:target="resetFilters"
+                        class="w-full touch-target inline-flex items-center justify-center rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
                         <span wire:loading.remove wire:target="resetFilters">{{ __('Reset Filters') }}</span>
                         <span wire:loading wire:target="resetFilters">{{ __('Resetting...') }}</span>
-                    </flux:button>
+                    </button>
                 </div>
             </div>
         </div>
