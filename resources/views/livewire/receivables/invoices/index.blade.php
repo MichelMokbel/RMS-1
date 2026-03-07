@@ -104,23 +104,23 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     @endif
 
-    <form wire:submit="applyFilters" class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+    <form wire:submit.prevent="applyFilters" class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
         <div class="app-filter-grid items-end">
             <div class="min-w-[180px]">
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Branch') }}</label>
                 @if ($branches->count())
-                    <select wire:model.defer="branch_id" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                    <select wire:model.live="branch_id" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                         @foreach ($branches as $b)
                             <option value="{{ $b->id }}">{{ $b->name }}</option>
                         @endforeach
                     </select>
                 @else
-                    <flux:input wire:model.defer="branch_id" type="number" :label="__('Branch ID')" />
+                    <flux:input wire:model.live="branch_id" type="number" :label="__('Branch ID')" />
                 @endif
             </div>
             <div class="min-w-[200px]">
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Status') }}</label>
-                <select wire:model.defer="status" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                <select wire:model.live="status" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                     <option value="all">{{ __('All') }}</option>
                     <option value="draft">{{ __('Draft') }}</option>
                     <option value="issued">{{ __('Issued') }}</option>
@@ -131,7 +131,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <div class="min-w-[200px]">
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Payment Type') }}</label>
-                <select wire:model.defer="payment_type" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                <select wire:model.live="payment_type" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                     <option value="all">{{ __('All') }}</option>
                     <option value="credit">{{ __('Credit') }}</option>
                     <option value="cash">{{ __('Cash') }}</option>
@@ -143,7 +143,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Search') }}</label>
                 <input
                     type="text"
-                    wire:model.defer="search"
+                    wire:model.live.debounce.300ms="search"
                     placeholder="{{ __('Invoice #, POS Ref, Customer') }}"
                     class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
                 />
@@ -169,7 +169,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </form>
 
-    <div wire:loading.flex wire:target="applyFilters,resetFilters" class="items-center gap-2 rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-700 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
+    <div wire:loading.flex wire:target="search,branch_id,status,payment_type,applyFilters,resetFilters" class="items-center gap-2 rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-700 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
         <svg class="h-4 w-4 animate-spin text-neutral-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z"></path>
@@ -177,7 +177,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <span>{{ __('Loading invoices...') }}</span>
     </div>
 
-    <div wire:loading.remove wire:target="applyFilters,resetFilters" class="ar-invoices-mobile-cards">
+    <div wire:loading.remove wire:target="search,branch_id,status,payment_type,applyFilters,resetFilters" class="ar-invoices-mobile-cards">
         @forelse ($invoices as $inv)
             <article class="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
                 <div class="flex items-start justify-between gap-2">
@@ -222,7 +222,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endforelse
     </div>
 
-    <div wire:loading.remove wire:target="applyFilters,resetFilters" class="ar-invoices-desktop-table overflow-x-auto rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+    <div wire:loading.remove wire:target="search,branch_id,status,payment_type,applyFilters,resetFilters" class="ar-invoices-desktop-table overflow-x-auto rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
         <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
