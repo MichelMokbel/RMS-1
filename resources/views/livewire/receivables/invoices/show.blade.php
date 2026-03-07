@@ -330,6 +330,64 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     @endif
 
+    @php
+        $customer = $invoice->customer;
+        $creditLimit = $customer && $customer->credit_limit !== null
+            ? number_format((float) $customer->credit_limit, $this->moneyScaleDigits(), '.', '')
+            : null;
+    @endphp
+    <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
+        <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Customer Details') }}</h2>
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4 text-sm">
+            <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
+                <div class="text-neutral-500 dark:text-neutral-400">{{ __('Code') }}</div>
+                <div class="font-medium text-neutral-900 dark:text-neutral-100">{{ $customer?->customer_code ?: '—' }}</div>
+            </div>
+            <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
+                <div class="text-neutral-500 dark:text-neutral-400">{{ __('Name') }}</div>
+                <div class="font-medium text-neutral-900 dark:text-neutral-100">{{ $customer?->name ?: '—' }}</div>
+            </div>
+            <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
+                <div class="text-neutral-500 dark:text-neutral-400">{{ __('Phone') }}</div>
+                <div class="font-medium text-neutral-900 dark:text-neutral-100">{{ $customer?->phone ?: '—' }}</div>
+            </div>
+            <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
+                <div class="text-neutral-500 dark:text-neutral-400">{{ __('Credit Limit') }}</div>
+                <div class="font-medium text-neutral-900 dark:text-neutral-100">
+                    {{ $creditLimit !== null ? $creditLimit.' '.strtoupper((string) config('pos.currency', 'QAR')) : '—' }}
+                </div>
+            </div>
+            <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
+                <div class="text-neutral-500 dark:text-neutral-400">{{ __('Type') }}</div>
+                <div class="font-medium text-neutral-900 dark:text-neutral-100">{{ $customer?->customer_type ?: '—' }}</div>
+            </div>
+            <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
+                <div class="text-neutral-500 dark:text-neutral-400">{{ __('Credit Status') }}</div>
+                <div class="font-medium text-neutral-900 dark:text-neutral-100">{{ $customer?->credit_status ?: '—' }}</div>
+            </div>
+            <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
+                <div class="text-neutral-500 dark:text-neutral-400">{{ __('Credit Terms (Days)') }}</div>
+                <div class="font-medium text-neutral-900 dark:text-neutral-100">{{ $customer?->credit_terms_days ?? '—' }}</div>
+            </div>
+            <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
+                <div class="text-neutral-500 dark:text-neutral-400">{{ __('Email') }}</div>
+                <div class="font-medium text-neutral-900 dark:text-neutral-100">{{ $customer?->email ?: '—' }}</div>
+            </div>
+        </div>
+        @if ($customer?->billing_address || $customer?->delivery_address)
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2 text-sm">
+                <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
+                    <div class="text-neutral-500 dark:text-neutral-400">{{ __('Billing Address') }}</div>
+                    <div class="font-medium text-neutral-900 dark:text-neutral-100">{{ $customer?->billing_address ?: '—' }}</div>
+                </div>
+                <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
+                    <div class="text-neutral-500 dark:text-neutral-400">{{ __('Delivery Address') }}</div>
+                    <div class="font-medium text-neutral-900 dark:text-neutral-100">{{ $customer?->delivery_address ?: '—' }}</div>
+                </div>
+            </div>
+        @endif
+    </div>
+
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
         <div class="grid grid-cols-1 gap-3 md:grid-cols-3 text-sm">
             <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">

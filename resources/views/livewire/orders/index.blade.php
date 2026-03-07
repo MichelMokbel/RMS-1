@@ -977,13 +977,16 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     @once
         <script>
-            document.addEventListener('alpine:init', function() {
+            const registerOrdersMenuItemLookup = () => {
+                if (!window.Alpine) {
+                    return;
+                }
                 if (window.__ordersMenuItemLookupRegistered) {
                     return;
                 }
                 window.__ordersMenuItemLookupRegistered = true;
 
-                Alpine.data('menuItemLookup', ({ index, initial, selectedId, searchUrl, branchId }) => ({
+                window.Alpine.data('menuItemLookup', ({ index, initial, selectedId, searchUrl, branchId }) => ({
                     index,
                     query: initial || '',
                     selectedId: selectedId || null,
@@ -1050,7 +1053,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                         this.panelStyle = 'position:fixed;left:' + rect.left + 'px;top:' + rect.bottom + 'px;width:' + rect.width + 'px;z-index:9999;';
                     },
                 }));
-            });
+            };
+
+            if (window.Alpine) {
+                registerOrdersMenuItemLookup();
+            } else {
+                document.addEventListener('alpine:init', registerOrdersMenuItemLookup, { once: true });
+            }
         </script>
     @endonce
 </div>

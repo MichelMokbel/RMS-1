@@ -869,8 +869,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 </div>
 
 <script>
-document.addEventListener('alpine:init', () => {
-    Alpine.data('menuItemLookup', ({ index, initial, selectedId, searchUrl, branchId }) => ({
+const registerInvoiceMenuItemLookup = () => {
+    if (!window.Alpine || window.__invoiceMenuItemLookupRegistered) {
+        return;
+    }
+    window.__invoiceMenuItemLookupRegistered = true;
+
+    window.Alpine.data('menuItemLookup', ({ index, initial, selectedId, searchUrl, branchId }) => ({
         index,
         query: initial || '',
         selectedId: selectedId || null,
@@ -961,5 +966,11 @@ document.addEventListener('alpine:init', () => {
             this.panelStyle = `position: fixed; top: ${top}px; left: ${left}px; width: ${width}px;`;
         },
     }));
-});
+};
+
+if (window.Alpine) {
+    registerInvoiceMenuItemLookup();
+} else {
+    document.addEventListener('alpine:init', registerInvoiceMenuItemLookup, { once: true });
+}
 </script>
