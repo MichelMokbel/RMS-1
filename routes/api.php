@@ -209,7 +209,6 @@ Route::prefix('pos')->group(function () {
     Route::post('login', [PosAuthController::class, 'login']);
 
     Route::middleware(['auth:sanctum'])->group(function () {
-        Route::post('print-jobs', [PosPrintJobController::class, 'store']);
         Route::get('print-terminals/{terminal_code}/status', [PosPrintTerminalStatusController::class, 'show']);
 
         Route::middleware(['pos.token'])->group(function () {
@@ -218,6 +217,8 @@ Route::prefix('pos')->group(function () {
             Route::post('sequences/reserve', [PosSequenceController::class, 'reserve']);
             Route::post('sync', PosSyncController::class);
 
+            Route::post('print-jobs', [PosPrintJobController::class, 'store']);
+            Route::get('print-jobs/stream', [PosPrintJobController::class, 'stream']);
             Route::get('print-jobs/pull', [PosPrintJobController::class, 'pull']);
             Route::post('print-jobs/{job_id}/ack', [PosPrintJobController::class, 'ack'])->whereNumber('job_id');
         });

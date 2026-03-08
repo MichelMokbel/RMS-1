@@ -20,6 +20,7 @@ use App\Console\Commands\FinanceLockDate;
 use App\Console\Commands\BackfillMenuItemBranches;
 use App\Console\Commands\ExportMenuItemsMissingArabic;
 use App\Console\Commands\ImportMenuItemArabicNames;
+use App\Console\Commands\PrunePosPrintStreamEvents;
 use App\Services\Orders\SubscriptionOrderGenerationService;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
@@ -42,26 +43,32 @@ return Application::configure(basePath: dirname(__DIR__))
         BackfillMenuItemBranches::class,
         ExportMenuItemsMissingArabic::class,
         ImportMenuItemArabicNames::class,
+        PrunePosPrintStreamEvents::class,
     ])
     ->withSchedule(function (Schedule $schedule) {
         if (! (bool) config('subscriptions.auto_generate', false)) {
-            return;
+            // Keep scheduling below even when subscriptions automation is disabled.
+        } else {
+            $time = config('subscriptions.generation_time', '06:00');
+            $schedule->call(function () {
+                $service = app(SubscriptionOrderGenerationService::class);
+                $actorId = (int) config('app.system_user_id');
+                if (! $actorId) {
+                    logger()->warning('SYSTEM_USER_ID missing; subscription order generation skipped.');
+                    return;
+                }
+                $branches = DB::table('meal_subscriptions')->distinct()->pluck('branch_id');
+                $date = now()->toDateString();
+                foreach ($branches as $branchId) {
+                    $service->generateForDate($date, (int) $branchId, $actorId, false);
+                }
+            })->dailyAt($time);
         }
 
-        $time = config('subscriptions.generation_time', '06:00');
-        $schedule->call(function () {
-            $service = app(SubscriptionOrderGenerationService::class);
-            $actorId = (int) config('app.system_user_id');
-            if (! $actorId) {
-                logger()->warning('SYSTEM_USER_ID missing; subscription order generation skipped.');
-                return;
-            }
-            $branches = DB::table('meal_subscriptions')->distinct()->pluck('branch_id');
-            $date = now()->toDateString();
-            foreach ($branches as $branchId) {
-                $service->generateForDate($date, (int) $branchId, $actorId, false);
-            }
-        })->dailyAt($time);
+        $retentionHours = max(1, (int) config('pos.print_jobs.stream_event_retention_hours', 24));
+        $schedule->command("pos:prune-print-stream-events --hours={$retentionHours}")
+            ->hourly()
+            ->withoutOverlapping();
     })
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [

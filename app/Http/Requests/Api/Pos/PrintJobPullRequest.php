@@ -14,7 +14,8 @@ class PrintJobPullRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'wait_seconds' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:60'],
+            'wait_seconds' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:60'],
+            'limit' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:100'],
         ];
     }
 }

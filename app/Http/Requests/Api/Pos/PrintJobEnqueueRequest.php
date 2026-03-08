@@ -15,12 +15,12 @@ class PrintJobEnqueueRequest extends FormRequest
     {
         return [
             'client_job_id' => ['required', 'string', 'max:100'],
-            'branch_id' => ['required', 'integer', 'min:1'],
             'target_terminal_code' => ['required', 'string', 'max:20', 'regex:/^[A-Za-z0-9._-]+$/'],
-            'job_type' => ['sometimes', 'nullable', 'string', 'max:60'],
-            'payload' => ['required', 'array'],
+            'target' => ['required', 'string', 'max:100'],
+            'doc_type' => ['required', 'string', 'max:60'],
+            'payload_base64' => ['required', 'string'],
+            'created_at' => ['required', 'date'],
             'metadata' => ['sometimes', 'nullable', 'array'],
-            'max_attempts' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:20'],
         ];
     }
 }

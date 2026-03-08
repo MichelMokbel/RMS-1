@@ -8,6 +8,7 @@ use App\Models\MenuItem;
 use App\Models\PettyCashWallet;
 use App\Models\PosDocumentSequence;
 use App\Models\PosPrintJob;
+use App\Models\PosPrintStreamEvent;
 use App\Models\PosTerminal;
 use App\Models\RestaurantArea;
 use App\Models\RestaurantTable;
@@ -15,6 +16,7 @@ use App\Models\RestaurantTableSession;
 use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -101,74 +103,80 @@ test('sequence reservation produces non-overlapping ranges', function () {
     expect((int) $row->last_number)->toBe(10);
 });
 
-test('print job enqueue is idempotent by client_job_id', function () {
+test('print job enqueue is idempotent by source terminal + client_job_id', function () {
     $user = User::factory()->create(['status' => 'active']);
-    seedPosTerminal('PRINT-DEV-A', 'T01', 1);
+    $source = seedPosTerminal('PRINT-DEV-A', 'T01', 1);
+    seedPosTerminal('PRINT-DEV-A-TARGET', 'T02', 1);
     $token = posToken($user, 'PRINT-DEV-A');
 
     $clientJobId = (string) Str::uuid();
-    $payload = [
-        'document' => 'receipt',
-        'content' => 'Invoice #123',
+    $requestBody = [
+        'client_job_id' => $clientJobId,
+        'target_terminal_code' => 'T02',
+        'target' => 'receipt_printer',
+        'doc_type' => 'receipt',
+        'payload_base64' => base64_encode('Invoice #123'),
+        'created_at' => now()->toISOString(),
+        'metadata' => ['order_number' => 'INV-123'],
     ];
 
-    $r1 = $this->withToken($token)->postJson('/api/pos/print-jobs', [
-        'client_job_id' => $clientJobId,
-        'branch_id' => 1,
-        'target_terminal_code' => 'T01',
-        'job_type' => 'receipt',
-        'payload' => $payload,
-    ])->assertCreated()->json();
+    $r1 = $this->withToken($token)->postJson('/api/pos/print-jobs', $requestBody)->assertOk()->json();
+    expect((string) ($r1['status'] ?? ''))->toBe(PosPrintJob::STATUS_QUEUED);
+    $jobId = (int) ($r1['job_id'] ?? 0);
+    expect($jobId)->toBeGreaterThan(0);
 
-    expect((bool) ($r1['created'] ?? false))->toBeTrue();
-    expect((bool) ($r1['idempotent'] ?? false))->toBeFalse();
-    expect((string) ($r1['job']['status'] ?? ''))->toBe(PosPrintJob::STATUS_PENDING);
+    $r2 = $this->withToken($token)->postJson('/api/pos/print-jobs', $requestBody)->assertOk()->json();
+    expect((int) ($r2['job_id'] ?? 0))->toBe($jobId);
 
-    $r2 = $this->withToken($token)->postJson('/api/pos/print-jobs', [
-        'client_job_id' => $clientJobId,
-        'branch_id' => 1,
-        'target_terminal_code' => 'T01',
-        'job_type' => 'receipt',
-        'payload' => $payload,
-    ])->assertOk()->json();
-
-    expect((bool) ($r2['created'] ?? true))->toBeFalse();
-    expect((bool) ($r2['idempotent'] ?? false))->toBeTrue();
-    expect((int) ($r2['job']['id'] ?? 0))->toBe((int) ($r1['job']['id'] ?? 0));
-
-    expect(PosPrintJob::query()->where('client_job_id', $clientJobId)->count())->toBe(1);
+    expect(PosPrintJob::query()
+        ->where('source_terminal_id', (int) $source->id)
+        ->where('client_job_id', $clientJobId)
+        ->count())->toBe(1);
+    $targetTerminal = PosTerminal::query()
+        ->where('branch_id', 1)
+        ->where('code', 'T02')
+        ->firstOrFail();
+    expect(PosPrintStreamEvent::query()->where('terminal_id', (int) $targetTerminal->id)->count())->toBe(1);
 });
 
-test('print job pull claims and ack completes the job and updates terminal status', function () {
+test('print job pull claims and ack prints the job and updates terminal status', function () {
     $user = User::factory()->create(['status' => 'active']);
     seedPosTerminal('PRINT-DEV-B', 'T02', 1);
     $token = posToken($user, 'PRINT-DEV-B');
 
     $enqueue = $this->withToken($token)->postJson('/api/pos/print-jobs', [
         'client_job_id' => (string) Str::uuid(),
-        'branch_id' => 1,
         'target_terminal_code' => 'T02',
-        'job_type' => 'receipt',
-        'payload' => ['content' => 'ticket body'],
-    ])->assertCreated()->json();
+        'target' => 'receipt_printer',
+        'doc_type' => 'receipt',
+        'payload_base64' => base64_encode('ticket body'),
+        'created_at' => now()->toISOString(),
+        'metadata' => ['source' => 'test'],
+    ])->assertOk()->json();
 
-    $jobId = (int) ($enqueue['job']['id'] ?? 0);
+    $jobId = (int) ($enqueue['job_id'] ?? 0);
     expect($jobId)->toBeGreaterThan(0);
 
-    $pull = $this->withToken($token)->getJson('/api/pos/print-jobs/pull?wait_seconds=1')
+    $pull = $this->withToken($token)->getJson('/api/pos/print-jobs/pull?wait_seconds=0&limit=20')
         ->assertOk()
         ->json();
 
-    expect((int) ($pull['job']['id'] ?? 0))->toBe($jobId);
-    expect((string) ($pull['job']['status'] ?? ''))->toBe(PosPrintJob::STATUS_CLAIMED);
-    expect((int) ($pull['job']['attempt_count'] ?? 0))->toBe(1);
+    expect((array) ($pull['jobs'] ?? []))->toHaveCount(1);
+    expect((int) ($pull['jobs'][0]['job_id'] ?? 0))->toBe($jobId);
+    expect((string) ($pull['jobs'][0]['claim_token'] ?? ''))->not->toBe('');
+    expect((int) ($pull['jobs'][0]['attempt_count'] ?? 0))->toBe(1);
 
     $ack = $this->withToken($token)->postJson("/api/pos/print-jobs/{$jobId}/ack", [
-        'ok' => true,
+        'claim_token' => (string) ($pull['jobs'][0]['claim_token'] ?? ''),
+        'status' => 'printed',
+        'processing_ms' => 54,
     ])->assertOk()->json();
 
-    expect((string) ($ack['job']['status'] ?? ''))->toBe(PosPrintJob::STATUS_COMPLETED);
-    expect((bool) ($ack['retry_scheduled'] ?? true))->toBeFalse();
+    expect((int) ($ack['job_id'] ?? 0))->toBe($jobId);
+    expect((string) ($ack['final_status'] ?? ''))->toBe(PosPrintJob::STATUS_PRINTED);
+    expect((int) ($ack['attempt_count'] ?? 0))->toBe(1);
+    expect(array_key_exists('next_retry_at', $ack))->toBeTrue();
+    expect($ack['next_retry_at'])->toBeNull();
 
     $terminal = PosTerminal::query()->where('device_id', 'PRINT-DEV-B')->firstOrFail();
     expect($terminal->print_agent_seen_at)->not->toBeNull();
@@ -177,7 +185,8 @@ test('print job pull claims and ack completes the job and updates terminal statu
         ->assertOk()
         ->json();
 
-    expect((bool) ($status['print_agent_online'] ?? false))->toBeTrue();
+    expect((bool) ($status['online'] ?? false))->toBeTrue();
+    expect($status['last_seen_at'] ?? null)->toBe($status['print_agent_seen_at'] ?? null);
     expect((int) ($status['pending_jobs'] ?? 1))->toBe(0);
 });
 
@@ -188,46 +197,59 @@ test('print job ack failure schedules retry and fails terminally at max attempts
 
     $enqueue = $this->withToken($token)->postJson('/api/pos/print-jobs', [
         'client_job_id' => (string) Str::uuid(),
-        'branch_id' => 1,
         'target_terminal_code' => 'T03',
-        'job_type' => 'receipt',
-        'payload' => ['content' => 'retry ticket'],
-        'max_attempts' => 2,
-    ])->assertCreated()->json();
-
-    $jobId = (int) ($enqueue['job']['id'] ?? 0);
-    expect($jobId)->toBeGreaterThan(0);
-
-    $this->withToken($token)->getJson('/api/pos/print-jobs/pull?wait_seconds=1')->assertOk();
-
-    $ack1 = $this->withToken($token)->postJson("/api/pos/print-jobs/{$jobId}/ack", [
-        'ok' => false,
-        'error_code' => 'PAPER_JAM',
-        'error_message' => 'Printer jam',
+        'target' => 'receipt_printer',
+        'doc_type' => 'receipt',
+        'payload_base64' => base64_encode('retry ticket'),
+        'created_at' => now()->toISOString(),
+        'metadata' => [],
     ])->assertOk()->json();
 
-    expect((string) ($ack1['job']['status'] ?? ''))->toBe(PosPrintJob::STATUS_PENDING);
-    expect((bool) ($ack1['retry_scheduled'] ?? false))->toBeTrue();
-    expect((string) ($ack1['job']['last_error_code'] ?? ''))->toBe('PAPER_JAM');
+    $jobId = (int) ($enqueue['job_id'] ?? 0);
+    expect($jobId)->toBeGreaterThan(0);
 
-    $job = PosPrintJob::query()->findOrFail($jobId);
-    $job->forceFill(['next_retry_at' => now()->subSecond()])->save();
+    PosPrintJob::query()->whereKey($jobId)->update(['max_attempts' => 2]);
 
-    $pull2 = $this->withToken($token)->getJson('/api/pos/print-jobs/pull?wait_seconds=1')
+    $pull1 = $this->withToken($token)->getJson('/api/pos/print-jobs/pull?wait_seconds=0&limit=20')
         ->assertOk()
         ->json();
+    $claim1 = (string) ($pull1['jobs'][0]['claim_token'] ?? '');
+    expect($claim1)->not->toBe('');
 
-    expect((int) ($pull2['job']['id'] ?? 0))->toBe($jobId);
-    expect((int) ($pull2['job']['attempt_count'] ?? 0))->toBe(2);
+    $ack1 = $this->withToken($token)->postJson("/api/pos/print-jobs/{$jobId}/ack", [
+        'claim_token' => $claim1,
+        'status' => 'failed',
+        'error_code' => 'PAPER_JAM',
+        'error_message' => 'Printer jam',
+        'processing_ms' => 100,
+    ])->assertOk()->json();
+
+    expect((string) ($ack1['final_status'] ?? ''))->toBe(PosPrintJob::STATUS_FAILED);
+    expect((string) ($ack1['next_retry_at'] ?? ''))->not->toBe('');
+
+    $job = PosPrintJob::query()->findOrFail($jobId);
+    expect((string) $job->status)->toBe(PosPrintJob::STATUS_QUEUED);
+    $job->forceFill(['next_retry_at' => now()->subSecond()])->save();
+
+    $pull2 = $this->withToken($token)->getJson('/api/pos/print-jobs/pull?wait_seconds=0&limit=20')
+        ->assertOk()
+        ->json();
+    $claim2 = (string) ($pull2['jobs'][0]['claim_token'] ?? '');
+
+    expect((int) ($pull2['jobs'][0]['job_id'] ?? 0))->toBe($jobId);
+    expect((int) ($pull2['jobs'][0]['attempt_count'] ?? 0))->toBe(2);
 
     $ack2 = $this->withToken($token)->postJson("/api/pos/print-jobs/{$jobId}/ack", [
-        'ok' => false,
+        'claim_token' => $claim2,
+        'status' => 'failed',
         'error_code' => 'OUT_OF_PAPER',
         'error_message' => 'No paper',
     ])->assertOk()->json();
 
-    expect((string) ($ack2['job']['status'] ?? ''))->toBe(PosPrintJob::STATUS_FAILED);
-    expect((bool) ($ack2['retry_scheduled'] ?? true))->toBeFalse();
+    expect((string) ($ack2['final_status'] ?? ''))->toBe(PosPrintJob::STATUS_FAILED);
+    expect(array_key_exists('next_retry_at', $ack2))->toBeTrue();
+    expect($ack2['next_retry_at'])->toBeNull();
+    expect((string) PosPrintJob::query()->findOrFail($jobId)->status)->toBe(PosPrintJob::STATUS_FAILED);
 });
 
 test('pull reclaims expired claims automatically', function () {
@@ -237,8 +259,13 @@ test('pull reclaims expired claims automatically', function () {
 
     $job = PosPrintJob::query()->create([
         'client_job_id' => (string) Str::uuid(),
+        'source_terminal_id' => (int) $terminal->id,
         'branch_id' => 1,
         'target_terminal_id' => (int) $terminal->id,
+        'target' => 'receipt_printer',
+        'doc_type' => 'receipt',
+        'payload_base64' => base64_encode('expired claim'),
+        'client_created_at' => now(),
         'job_type' => 'receipt',
         'payload' => ['content' => 'expired claim'],
         'metadata' => [],
@@ -247,20 +274,92 @@ test('pull reclaims expired claims automatically', function () {
         'max_attempts' => 5,
         'next_retry_at' => null,
         'claimed_at' => now()->subMinute(),
+        'claimed_by_terminal_id' => (int) $terminal->id,
+        'claim_token' => 'expired-token',
         'claim_expires_at' => now()->subSecond(),
         'acked_at' => null,
+        'processing_ms' => null,
         'last_error_code' => null,
         'last_error_message' => null,
         'created_by' => (int) $user->id,
     ]);
 
-    $pull = $this->withToken($token)->getJson('/api/pos/print-jobs/pull?wait_seconds=1')
+    $pull = $this->withToken($token)->getJson('/api/pos/print-jobs/pull?wait_seconds=0&limit=20')
         ->assertOk()
         ->json();
 
-    expect((int) ($pull['job']['id'] ?? 0))->toBe((int) $job->id);
-    expect((string) ($pull['job']['status'] ?? ''))->toBe(PosPrintJob::STATUS_CLAIMED);
-    expect((int) ($pull['job']['attempt_count'] ?? 0))->toBe(2);
+    expect((int) ($pull['jobs'][0]['job_id'] ?? 0))->toBe((int) $job->id);
+    expect((int) ($pull['jobs'][0]['attempt_count'] ?? 0))->toBe(2);
+    expect((string) ($pull['jobs'][0]['claim_token'] ?? ''))->not->toBe('expired-token');
+});
+
+test('print pull returns 200 with empty jobs array when queue is empty', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    seedPosTerminal('PRINT-DEV-EMPTY', 'T05', 1);
+    $token = posToken($user, 'PRINT-DEV-EMPTY');
+
+    $resp = $this->withToken($token)->getJson('/api/pos/print-jobs/pull?wait_seconds=0&limit=20')
+        ->assertOk()
+        ->json();
+
+    expect($resp['jobs'] ?? null)->toBeArray()->toBe([]);
+    expect((string) ($resp['server_timestamp'] ?? ''))->not->toBe('');
+});
+
+test('print stream emits ready, job_available, keepalive and terminal_status', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    seedPosTerminal('PRINT-DEV-SSE', 'T06', 1);
+    $token = posToken($user, 'PRINT-DEV-SSE');
+
+    config()->set('pos.print_jobs.stream_heartbeat_seconds', 1);
+    config()->set('pos.print_jobs.stream_max_seconds', 2);
+    config()->set('pos.print_jobs.stream_idle_sleep_ms', 50);
+
+    $this->withToken($token)->postJson('/api/pos/print-jobs', [
+        'client_job_id' => (string) Str::uuid(),
+        'target_terminal_code' => 'T06',
+        'target' => 'receipt_printer',
+        'doc_type' => 'receipt',
+        'payload_base64' => base64_encode('sse ticket'),
+        'created_at' => now()->toISOString(),
+        'metadata' => [],
+    ])->assertOk();
+
+    $response = $this->withToken($token)->get('/api/pos/print-jobs/stream');
+    $response->assertOk();
+    expect((string) $response->headers->get('content-type'))->toContain('text/event-stream');
+
+    $content = $response->streamedContent();
+    expect($content)->toContain('event: ready');
+    expect($content)->toContain('event: job_available');
+    expect($content)->toContain('event: keepalive');
+    expect($content)->toContain('event: terminal_status');
+});
+
+test('print stream requires authentication', function () {
+    $this->getJson('/api/pos/print-jobs/stream')->assertStatus(401);
+});
+
+test('prune print stream events command removes old rows', function () {
+    $terminal = seedPosTerminal('PRINT-DEV-PRUNE', 'T07', 1);
+
+    $oldEvent = PosPrintStreamEvent::query()->create([
+        'terminal_id' => (int) $terminal->id,
+        'event_type' => PosPrintStreamEvent::EVENT_JOB_AVAILABLE,
+        'payload_json' => ['a' => 1],
+        'created_at' => now()->subHours(30),
+    ]);
+    $recentEvent = PosPrintStreamEvent::query()->create([
+        'terminal_id' => (int) $terminal->id,
+        'event_type' => PosPrintStreamEvent::EVENT_JOB_AVAILABLE,
+        'payload_json' => ['b' => 2],
+        'created_at' => now()->subHour(),
+    ]);
+
+    Artisan::call('pos:prune-print-stream-events', ['--hours' => 24]);
+
+    expect(PosPrintStreamEvent::query()->whereKey($oldEvent->id)->exists())->toBeFalse();
+    expect(PosPrintStreamEvent::query()->whereKey($recentEvent->id)->exists())->toBeTrue();
 });
 
 test('bootstrap includes receipt_profile with normalized lines and fallbacks', function () {
