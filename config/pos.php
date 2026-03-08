@@ -16,6 +16,15 @@ $parseReceiptLines = static function ($value): array {
 return [
     'currency' => env('POS_CURRENCY', 'QAR'),
     'money_scale' => (int) env('POS_MONEY_SCALE', 100),
+    'print_jobs' => [
+        'pull_wait_seconds' => (int) env('POS_PRINT_PULL_WAIT_SECONDS', 20),
+        'pull_idle_sleep_ms' => (int) env('POS_PRINT_PULL_IDLE_SLEEP_MS', 250),
+        'claim_ttl_seconds' => (int) env('POS_PRINT_CLAIM_TTL_SECONDS', 45),
+        'retry_base_seconds' => (int) env('POS_PRINT_RETRY_BASE_SECONDS', 2),
+        'retry_max_seconds' => (int) env('POS_PRINT_RETRY_MAX_SECONDS', 60),
+        'max_attempts' => (int) env('POS_PRINT_MAX_ATTEMPTS', 5),
+        'online_window_seconds' => (int) env('POS_PRINT_ONLINE_WINDOW_SECONDS', 45),
+    ],
     'receipt_profile' => [
         'brand_name_en' => (string) env('POS_RECEIPT_BRAND_NAME_EN', env('APP_NAME', 'Laravel')),
         'brand_name_ar' => (string) env('POS_RECEIPT_BRAND_NAME_AR', ''),

@@ -18,14 +18,15 @@ class PosTerminal extends Model
         'device_id',
         'active',
         'last_seen_at',
+        'print_agent_seen_at',
     ];
 
     protected $casts = [
         'branch_id' => 'integer',
         'active' => 'boolean',
         'last_seen_at' => 'datetime',
+        'print_agent_seen_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
 }
-

@@ -22,6 +22,8 @@ use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\SupplierController;
 use App\Http\Controllers\Api\Pos\AuthController as PosAuthController;
 use App\Http\Controllers\Api\Pos\BootstrapController as PosBootstrapController;
+use App\Http\Controllers\Api\Pos\PrintJobController as PosPrintJobController;
+use App\Http\Controllers\Api\Pos\PrintTerminalStatusController as PosPrintTerminalStatusController;
 use App\Http\Controllers\Api\Pos\SequenceController as PosSequenceController;
 use App\Http\Controllers\Api\Pos\SyncController as PosSyncController;
 use App\Http\Controllers\Api\Spend\ExpenseController as SpendExpenseController;
@@ -206,10 +208,18 @@ Route::prefix('pos')->group(function () {
     Route::post('setup/terminals/register', [PosAuthController::class, 'registerTerminal']);
     Route::post('login', [PosAuthController::class, 'login']);
 
-    Route::middleware(['auth:sanctum', 'pos.token'])->group(function () {
-        Route::post('logout', [PosAuthController::class, 'logout']);
-        Route::get('bootstrap', PosBootstrapController::class);
-        Route::post('sequences/reserve', [PosSequenceController::class, 'reserve']);
-        Route::post('sync', PosSyncController::class);
+    Route::middleware(['auth:sanctum'])->group(function () {
+        Route::post('print-jobs', [PosPrintJobController::class, 'store']);
+        Route::get('print-terminals/{terminal_code}/status', [PosPrintTerminalStatusController::class, 'show']);
+
+        Route::middleware(['pos.token'])->group(function () {
+            Route::post('logout', [PosAuthController::class, 'logout']);
+            Route::get('bootstrap', PosBootstrapController::class);
+            Route::post('sequences/reserve', [PosSequenceController::class, 'reserve']);
+            Route::post('sync', PosSyncController::class);
+
+            Route::get('print-jobs/pull', [PosPrintJobController::class, 'pull']);
+            Route::post('print-jobs/{job_id}/ack', [PosPrintJobController::class, 'ack'])->whereNumber('job_id');
+        });
     });
 });
