@@ -1,0 +1,901 @@
+# RMS-1 Complete System Documentation
+
+## 1. SYSTEM OVERVIEW
+
+### High-level description of the system
+RMS-1 is a production-grade restaurant and finance management platform built as a Laravel modular monolith. It supports operations (orders, kitchen, daily dish, subscriptions, inventory), finance (AR, AP, spend approvals, petty cash, ledger), public ordering channels, and offline-first POS synchronization.
+
+### Business goals of the platform
+- Centralize restaurant operations and finance in one platform.
+- Improve process control and auditability across departments.
+- Support branch-based access and governance.
+- Enable reliable offline POS workflows with server reconciliation.
+- Provide management-ready reporting and exports.
+
+### Key problems the system solves
+- Fragmented order/inventory/finance workflows.
+- Lack of end-to-end financial traceability from operations.
+- Weak role governance and branch segregation.
+- Manual reconciliation and duplicated data entry.
+- Uncontrolled expense approvals and poor audit trails.
+
+### Core features
+- Identity and Access Management (roles, permissions, branch allowlists).
+- Order lifecycle and kitchen workflow management.
+- Daily Dish and subscription-based meal operations.
+- Company Food standalone project ordering module.
+- Inventory management with adjustments, transfers, and transaction history.
+- Purchasing and receiving workflows with AP integration.
+- AP invoice/payment lifecycle and aging summaries.
+- Spend module with staged approvals and settlement.
+- Petty cash wallet, issues, and reconciliation workflows.
+- AR invoice/payment lifecycle for receivables.
+- Offline-first POS bootstrap/sequence/sync APIs.
+- Reporting with screen/print/CSV/PDF outputs.
+- Ledger and finance lock controls.
+
+### Target users
+- Administrators
+- Managers
+- Cashiers
+- Waiters
+- Kitchen users
+- Finance/Staff users
+- External public users (website ordering)
+
+### System capabilities
+- Multi-branch operations with branch-level enforcement.
+- Token-based and session-based authentication.
+- Event idempotency for POS sync.
+- Public API integration for website channels.
+- Config-driven reporting and pricing rules.
+
+### Constraints and assumptions
+- Single application and shared relational database.
+- No separate mobile codebase inside this repository (POS client is external).
+- Current schema is migration-driven; `schema.sql` may lag latest migrations.
+- Legacy expenses API has been deprecated in favor of Spend/AP workflow.
+
+---
+
+## 2. SYSTEM ARCHITECTURE
+
+### Architecture style
+Modular monolith (single Laravel deployment with domain-segmented services/modules).
+
+### High level architecture diagram description
+- Web users access Blade/Livewire pages.
+- Internal APIs serve authenticated module operations.
+- Public APIs serve daily dish/company food external channels.
+- POS clients use dedicated `/api/pos/*` endpoints with offline sync.
+- Shared services persist to MySQL and write accounting/audit records.
+
+```mermaid
+flowchart LR
+A[Backoffice Users] --> B[Laravel Web UI]
+C[POS Client] --> D[POS API]
+E[Public Website] --> F[Public API]
+B --> G[Domain Services]
+D --> G
+F --> G
+G --> H[(MySQL/MariaDB)]
+G --> I[Queue]
+G --> J[Storage]
+G --> K[Mail/Recaptcha]
+```
+
+### Core architectural principles
+- Service-layer business logic.
+- Validation-first request handling.
+- Transactional state transitions.
+- Defense in depth for authz (role + permission + branch).
+- Idempotent POS event processing via UUID keys.
+- Immutable rules for posted accounting artifacts.
+
+### Infrastructure overview
+- Laravel 12 app runtime (PHP 8.2+).
+- Vite/Tailwind asset pipeline.
+- MySQL/MariaDB data store.
+- Database queue/cache defaults.
+- Filesystem abstraction (local/public/S3).
+
+### Service interactions
+- Controllers delegate to services for workflows.
+- Services coordinate cross-domain updates (e.g., PO receive -> inventory + AP draft).
+- POS sync service dispatches type-specific handlers and returns ACK + deltas.
+
+### Data flow overview
+1. Request arrives via web/internal API/public API/POS API.
+2. Auth + middleware enforcement.
+3. Request validation.
+4. Service-layer workflow execution (transactional).
+5. Persistence + optional accounting events.
+6. Response payload / exports / ACK and deltas.
+
+### External dependencies
+- SMTP mail provider.
+- Google reCAPTCHA verification endpoint (optional).
+- Optional AWS S3-compatible storage.
+- External website integration via public APIs and proxy scripts.
+
+### Scalability considerations
+- Horizontal app scaling with stateless web nodes.
+- Dedicated queue workers for background processing.
+- POS/event-heavy paths use row locking for consistency.
+- Read-heavy reports rely on indexing and can be moved to replicas.
+
+### Security architecture
+- Fortify login with rate limiting.
+- Sanctum token auth for POS and selected APIs.
+- Spatie roles/permissions and middleware enforcement.
+- Branch access middleware for data scoping.
+- POS token middleware validates device/terminal/branch alignment.
+
+---
+
+## 3. TECH STACK
+
+| Layer | Technology | Why used |
+|---|---|---|
+| Frontend | Blade + Livewire Volt + Flux + Tailwind + Vite | Fast server-driven UI with low SPA complexity |
+| Backend | Laravel 12, PHP 8.2+, domain services | Mature framework, strong ecosystem, maintainability |
+| Mobile/POS | External Flutter client integrated via POS API | Offline-first POS support with sync contracts |
+| Database | MySQL/MariaDB (SQLite support) | Transactional integrity for finance/operations |
+| Cloud/Infra | App server + DB + workers (+ optional Redis) | Fits modular monolith deployment model |
+| Authentication | Fortify (web), Sanctum (token), custom POS token middleware | Secure user and device-bound API access |
+| File storage | Laravel Filesystems (`local`,`public`,`s3`) | Portable storage backend support |
+| Messaging/queues | Laravel Queue (database default) | Async processing and workflow decoupling |
+| Monitoring | Monolog/Laravel logging (+ optional Nightwatch package) | Operational visibility and diagnostics |
+| CI/CD | GitHub Actions, Pest, Pint | Automated testing and style quality gates |
+
+---
+
+## 4. MODULE ARCHITECTURE
+
+### Authentication & IAM
+- **Purpose:** Centralize identity, role, and permission governance.
+- **Responsibilities:** User lifecycle, role assignment, direct permissions, branch allowlists, POS eligibility.
+- **Internal components:** `IamUserService`, `RolePermissionService`, `SafetyPolicyService`, IAM pages.
+- **Inputs/Outputs:** User/role payloads -> persisted access model and enforcement outcomes.
+- **Dependencies:** Spatie Permission, branch access middleware.
+- **Data handled:** `users`, `roles`, `permissions`, `user_branch_access`.
+- **APIs exposed:** IAM is primarily web-admin; auth effects apply platform-wide.
+
+### Users, Customers, Suppliers
+- **Purpose:** Master data management for parties.
+- **Responsibilities:** CRUD, activation/deactivation, search, import.
+- **Internal components:** Customer/Supplier controllers and services.
+- **Inputs/Outputs:** Form/API payloads -> normalized customer/supplier records.
+- **Dependencies:** AR/AP/orders.
+- **Data handled:** `customers`, `suppliers`.
+- **APIs:** `/api/customers`, `/api/suppliers`.
+
+### Catalog & Recipes
+- **Purpose:** Define sellable/menu entities and composition.
+- **Responsibilities:** Category/menu item CRUD, recipe management, branch availability.
+- **Components:** Category/MenuItem/Recipe screens and menu services.
+- **Data:** `categories`, `menu_items`, `recipes`, `recipe_items`, `menu_item_branches`.
+- **APIs:** `/api/categories`, `/api/menu-items`.
+
+### Orders & Kitchen
+- **Purpose:** Execute and track order fulfillment lifecycle.
+- **Responsibilities:** Order creation, item progression, cancellation, daily dish handling.
+- **Components:** `OrderCreateService`, `OrderWorkflowService`, kitchen/day ops pages.
+- **Data:** `orders`, `order_items`, `ops_events`.
+- **APIs:** Primarily web workflows + dependent finance integrations.
+
+### Daily Dish
+- **Purpose:** Date- and branch-based curated menus.
+- **Responsibilities:** Menu upsert/publish/unpublish/clone, ops view support.
+- **Components:** `DailyDishMenuService`, daily dish controllers/pages.
+- **Data:** `daily_dish_menus`, `daily_dish_menu_items`.
+- **APIs:** `/api/daily-dish/menus`, `/api/public/daily-dish/*`.
+
+### Subscriptions
+- **Purpose:** Manage recurring meal subscriptions.
+- **Responsibilities:** CRUD, pause/resume/cancel, scheduled generation.
+- **Components:** `MealSubscriptionService`, `SubscriptionOrderGenerationService`.
+- **Data:** `meal_subscriptions`, days/pauses/orders/run tables.
+- **APIs:** `/api/subscriptions`.
+
+### Company Food
+- **Purpose:** Standalone project-style public selection workflow.
+- **Responsibilities:** Per-date option matrix, employee lists, secure edit token updates.
+- **Components:** Company Food services/controllers/views.
+- **Data:** `company_food_projects`, `company_food_options`, `company_food_orders`, list/employee tables.
+- **APIs:** `/api/public/company-food/{projectSlug}/*`.
+
+### Inventory
+- **Purpose:** Stock visibility and movement control.
+- **Responsibilities:** Item CRUD, stock adjustments, transfers, branch availability.
+- **Components:** Inventory services (`InventoryStockService`, `InventoryTransferService`).
+- **Data:** `inventory_items`, `inventory_stocks`, `inventory_transactions`, transfer tables.
+- **APIs:** `/api/inventory`, `/api/inventory/transfers`.
+
+### Purchasing
+- **Purpose:** Procure inventory with controlled PO flow.
+- **Responsibilities:** PO create/update/submit/approve/receive/cancel.
+- **Components:** PO services and receive workflow services.
+- **Data:** `purchase_orders`, `purchase_order_items`.
+- **APIs:** `/api/purchase-orders`.
+
+### AP (Payables)
+- **Purpose:** Manage supplier liabilities.
+- **Responsibilities:** AP invoices, posting/voiding, payments, allocations, aging.
+- **Components:** AP controllers/services.
+- **Data:** `ap_invoices`, items, payments, allocations.
+- **APIs:** `/api/ap/*`.
+
+### Spend & Petty Cash
+- **Purpose:** Govern expense lifecycle and cash float operations.
+- **Responsibilities:** Submit/approve/reject/post/settle spend, wallet issue/reconciliation.
+- **Components:** `ExpenseWorkflowService`, petty cash services.
+- **Data:** `expense_profiles`, `expense_events`, `petty_cash_wallets/issues/reconciliations`.
+- **APIs:** `/api/spend/*`, `/api/petty-cash/*`.
+
+### AR & Receivables
+- **Purpose:** Manage customer invoicing and collection.
+- **Responsibilities:** Draft/issue invoices, receive payments, allocate advances.
+- **Components:** AR invoice/payment/allocation services.
+- **Data:** `ar_invoices`, `ar_invoice_items`, `payments`, `payment_allocations`.
+- **APIs:** Web receivables + POS-integrated AR event handling.
+
+### POS Sync & Terminal Management
+- **Purpose:** Enable secure offline-first POS.
+- **Responsibilities:** setup branches, terminal registration, login, bootstrap, sequence reservation, sync.
+- **Components:** POS auth/bootstrap/sequence/sync services.
+- **Data:** `pos_terminals`, `pos_shifts`, `pos_document_sequences`, `pos_sync_events`, restaurant table/session tables.
+- **APIs:** `/api/pos/*`.
+
+### Reporting
+- **Purpose:** Provide operational/financial insights.
+- **Responsibilities:** Unified report catalog, filter-driven datasets, exports.
+- **Components:** report controllers + `config/reports.php`.
+- **Data:** Cross-domain reads.
+- **APIs:** report endpoints (web export routes).
+
+### Administration & Integrations
+- **Purpose:** Platform settings and external integration points.
+- **Responsibilities:** finance settings, payment terms, POS terminals, public API integration.
+- **Data:** settings/config-driven metadata and operational states.
+
+---
+
+## 5. DATABASE DESIGN
+
+### Database type
+- Relational database (MySQL/MariaDB primary).
+
+### Schema overview
+Major domains in schema:
+- IAM and access
+- Catalog and recipes
+- Orders and daily dish/subscriptions
+- Inventory and purchasing
+- AP/AR and payments
+- Spend/petty cash
+- POS synchronization and table management
+- Ledger and reporting support
+
+### Entity Relationship explanation
+```mermaid
+erDiagram
+USERS ||--o{ USER_BRANCH_ACCESS : has
+BRANCHES ||--o{ USER_BRANCH_ACCESS : grants
+ORDERS ||--o{ ORDER_ITEMS : contains
+MENU_ITEMS ||--o{ ORDER_ITEMS : referenced_by
+PURCHASE_ORDERS ||--o{ PURCHASE_ORDER_ITEMS : contains
+AP_INVOICES ||--o{ AP_INVOICE_ITEMS : contains
+AP_PAYMENTS ||--o{ AP_PAYMENT_ALLOCATIONS : allocates
+AR_INVOICES ||--o{ AR_INVOICE_ITEMS : contains
+PAYMENTS ||--o{ PAYMENT_ALLOCATIONS : allocates
+POS_TERMINALS ||--o{ POS_SYNC_EVENTS : emits
+RESTAURANT_TABLES ||--o{ RESTAURANT_TABLE_SESSIONS : has
+```
+
+### Tables and fields
+Representative critical tables:
+- `users`: identity, `status`, `pos_enabled`
+- `user_branch_access`: user-to-branch permissions
+- `orders` / `order_items`: operational ordering and status data
+- `inventory_items` / `inventory_stocks` / `inventory_transactions`
+- `purchase_orders` / `purchase_order_items`
+- `ap_invoices` / `ap_invoice_items` / `ap_payments` / `ap_payment_allocations`
+- `ar_invoices` / `ar_invoice_items` / `payments` / `payment_allocations`
+- `expense_profiles` / `expense_events`
+- `pos_terminals` / `pos_shifts` / `pos_document_sequences` / `pos_sync_events`
+- `ledger_accounts` / `subledger_entries` / `subledger_lines` / `gl_batches` / `gl_batch_lines`
+
+### Key relationships
+- Users to roles/permissions via Spatie polymorphic tables.
+- Non-admin users to branches via `user_branch_access`.
+- PO receive updates inventory and can auto-create AP invoice draft.
+- POS invoices map into AR invoices and payment allocations.
+
+### Indexing strategy
+- Unique and composite indexes for lookup and integrity.
+- Search-focused indexes on names/codes/contact fields.
+- Event idempotency uniques (`pos_sync_events.client_uuid`).
+- POS sequence uniqueness per terminal and business date.
+
+### Data lifecycle
+- Active/inactive toggles for many records.
+- Controlled status transitions for operational and finance entities.
+- Immutability rules after posting/issuing for key financial documents.
+- Legacy expense tables removed by cutover migration.
+
+### Example records
+```json
+{
+  "user": {"id": 7, "username": "manager1", "status": "active", "pos_enabled": true},
+  "order": {"id": 245, "status": "Confirmed", "branch_id": 1, "source": "Backoffice"},
+  "ap_invoice": {"id": 81, "invoice_number": "SUP-2026-110", "status": "posted", "total_amount": "560.00"},
+  "pos_sync_event": {"event_id": "evt-001", "client_uuid": "uuid", "status": "applied"}
+}
+```
+
+---
+
+## 6. API DOCUMENTATION
+
+### API standards
+- Base path: `/api`
+- Content type: `application/json` (except multipart upload endpoints)
+- Standard errors: `401`, `403`, `404`, `422`, and module-specific `410` deprecations
+- Public throttles:
+  - `GET /api/public/daily-dish/menus` => `60/min`
+  - `POST /api/public/daily-dish/orders` => `20/min`
+
+### 6.1 Catalog / CRM APIs
+
+#### Categories
+- **GET** `/api/categories` - list categories
+- **POST** `/api/categories` - create category (`admin|manager`)
+- **PUT** `/api/categories/{category}` - update (`admin|manager`)
+- **DELETE** `/api/categories/{category}` - delete if not in use (`admin|manager`)
+
+Example request (POST):
+```json
+{"name":"Main Dishes","description":"Core meals","parent_id":null}
+```
+
+#### Suppliers
+- **GET** `/api/suppliers` - list/search suppliers
+- **POST** `/api/suppliers` - create (`admin`)
+- **PUT** `/api/suppliers/{supplier}` - update (`admin`)
+- **DELETE** `/api/suppliers/{supplier}` - deactivate/archive (`admin`)
+
+#### Customers
+- **GET** `/api/customers` - list/search
+- **GET** `/api/customers/{customer}` - detail
+- **POST** `/api/customers` - create (`admin|manager`)
+- **PUT** `/api/customers/{customer}` - update (`admin|manager`)
+- **DELETE** `/api/customers/{customer}` - deactivate (`admin|manager`)
+
+### 6.2 Inventory APIs
+- **GET** `/api/inventory`
+- **GET** `/api/inventory/{item}`
+- **POST** `/api/inventory` (`admin|manager`)
+- **PUT** `/api/inventory/{item}` (`admin|manager`)
+- **POST** `/api/inventory/{item}/adjustments` (`admin|manager`)
+- **POST** `/api/inventory/{item}/availability` (`admin|manager`)
+- **POST** `/api/inventory/transfers` (`admin|manager`)
+
+Example adjustment request:
+```json
+{"direction":"decrease","quantity":2.5,"branch_id":1,"notes":"Damaged stock"}
+```
+
+### 6.3 Menu Item APIs
+- **GET** `/api/menu-items`
+- **GET** `/api/menu-items/{menuItem}`
+- **POST** `/api/menu-items` (`admin|manager`)
+- **PUT** `/api/menu-items/{menuItem}` (`admin|manager`)
+- **DELETE** `/api/menu-items/{menuItem}` (`admin|manager`, deactivates if allowed)
+
+### 6.4 Purchasing APIs
+- **GET** `/api/purchase-orders`
+- **GET** `/api/purchase-orders/{purchaseOrder}`
+- **POST** `/api/purchase-orders` (`admin|manager`)
+- **PUT** `/api/purchase-orders/{purchaseOrder}` (`admin|manager`)
+- **POST** `/api/purchase-orders/{purchaseOrder}/submit` (`admin|manager`)
+- **POST** `/api/purchase-orders/{purchaseOrder}/approve` (`admin|manager`)
+- **POST** `/api/purchase-orders/{purchaseOrder}/receive` (`admin|manager`)
+- **POST** `/api/purchase-orders/{purchaseOrder}/cancel` (`admin|manager`)
+
+### 6.5 AP APIs
+- **GET** `/api/ap/invoices`
+- **GET** `/api/ap/invoices/{invoice}`
+- **POST** `/api/ap/invoices` (`admin|manager`)
+- **PUT** `/api/ap/invoices/{invoice}` (`admin|manager`)
+- **POST** `/api/ap/invoices/{invoice}/post` (`admin|manager`)
+- **POST** `/api/ap/invoices/{invoice}/void` (`admin|manager`)
+- **GET** `/api/ap/payments`
+- **GET** `/api/ap/payments/{payment}`
+- **POST** `/api/ap/payments` (`admin|manager`)
+- **GET** `/api/ap/aging`
+
+### 6.6 Spend and Petty Cash APIs
+- **GET** `/api/spend/expenses`
+- **GET** `/api/spend/expenses/{invoice}`
+- **POST** `/api/spend/expenses` (`admin|manager|staff`)
+- **POST** `/api/spend/expenses/{invoice}/submit` (`admin|manager|staff`)
+- **POST** `/api/spend/expenses/{invoice}/approve` (`admin|manager|finance.access`)
+- **POST** `/api/spend/expenses/{invoice}/reject` (`admin|manager|finance.access`)
+- **POST** `/api/spend/expenses/{invoice}/post` (`admin|finance.access`)
+- **POST** `/api/spend/expenses/{invoice}/settle` (`admin|finance.access`)
+- **POST** `/api/spend/expenses/{invoice}/attachments` (`admin|manager|staff`)
+
+Petty cash:
+- **GET** `/api/petty-cash/wallets`
+- **POST** `/api/petty-cash/wallets`
+- **PUT** `/api/petty-cash/wallets/{id}`
+- **GET** `/api/petty-cash/issues`
+- **POST** `/api/petty-cash/issues`
+- **POST** `/api/petty-cash/reconciliations`
+
+Legacy endpoints (deprecated): `/api/expenses*` and `/api/expense-attachments/*` return `410`.
+
+### 6.7 Daily Dish and Subscription APIs (Sanctum)
+Daily Dish:
+- **GET** `/api/daily-dish/menus`
+- **GET** `/api/daily-dish/menus/{menu}`
+- **PUT** `/api/daily-dish/menus/{branchId}/{serviceDate}`
+- **POST** `/api/daily-dish/menus/{menu}/publish`
+- **POST** `/api/daily-dish/menus/{menu}/unpublish`
+- **POST** `/api/daily-dish/menus/{menu}/clone`
+
+Subscriptions:
+- **GET** `/api/subscriptions`
+- **GET** `/api/subscriptions/{subscription}`
+- **POST** `/api/subscriptions`
+- **PUT** `/api/subscriptions/{subscription}`
+- **POST** `/api/subscriptions/{subscription}/pause`
+- **POST** `/api/subscriptions/{subscription}/resume`
+- **POST** `/api/subscriptions/{subscription}/cancel`
+
+### 6.8 Public APIs
+Daily Dish public:
+- **GET** `/api/public/daily-dish/menus`
+- **POST** `/api/public/daily-dish/orders`
+
+Company Food public:
+- **GET** `/api/public/company-food/{projectSlug}/options`
+- **GET** `/api/public/company-food/{projectSlug}/orders`
+- **POST** `/api/public/company-food/{projectSlug}/orders`
+- **GET** `/api/public/company-food/{projectSlug}/orders/{id}`
+- **PUT** `/api/public/company-food/{projectSlug}/orders/{id}`
+
+### 6.9 POS APIs
+Setup/auth:
+- **POST** `/api/pos/setup/branches`
+- **POST** `/api/pos/setup/terminals/register`
+- **POST** `/api/pos/login`
+- **POST** `/api/pos/logout` (auth:sanctum + pos.token)
+
+Runtime:
+- **GET** `/api/pos/bootstrap`
+- **POST** `/api/pos/sequences/reserve`
+- **POST** `/api/pos/sync`
+
+POS sync supported event types:
+- `shift.open`
+- `shift.close`
+- `shift.opening_cash.update`
+- `table_session.open`
+- `table_session.close`
+- `invoice.finalize`
+- `petty_cash.expense.create`
+- `customer.upsert`
+- `category.upsert`
+- `customer.payment.create`
+- `customer.advance.create`
+- `customer.advance.apply`
+- `supplier.payment.create`
+- `restaurant_area.upsert`
+- `restaurant_table.upsert`
+
+---
+
+## 7. USER ROLES & PERMISSIONS
+
+### Defined roles
+- Admin
+- Manager
+- Cashier
+- Waiter
+- Kitchen
+- Staff
+
+### Role permissions summary
+| Role | Allowed actions | Restricted actions |
+|---|---|---|
+| Admin | Full platform access, IAM, finance, operations | None (except safety guardrails) |
+| Manager | Operations + finance + reports + POS terminal settings | Admin-only IAM and supplier-admin APIs |
+| Cashier | POS/login, orders, catalog, operations flows | No IAM and limited finance management |
+| Waiter | POS/login, order/catalog flows | No finance/admin modules |
+| Kitchen | Kitchen and operations access | No finance/IAM/admin controls |
+| Staff | Finance/reporting and spend workflows | No broad admin/operations management |
+
+### Safety policies
+- Last active admin cannot be removed/deactivated.
+- User cannot self-remove IAM capability.
+- Non-admin users are constrained by branch allowlists.
+
+---
+
+## 8. WORKFLOWS
+
+### User onboarding
+1. Admin creates user in IAM.
+2. Admin assigns role/permissions/branch access.
+3. Active user signs in via login screen.
+4. Access is controlled by role + permission + branch middleware.
+
+### Project creation (Company Food)
+1. Admin creates project (`name`, `company_name`, `slug`, date range).
+2. Admin configures employee lists and categories.
+3. Admin adds date-based options.
+4. Public users submit/edit orders with `edit_token`.
+
+### Task/Order assignment and execution
+1. Order is created (backoffice, website, subscription).
+2. Workflow transitions: Draft -> Confirmed -> InProduction -> Ready -> OutForDelivery -> Delivered.
+3. Item-level statuses are updated and logged.
+
+### Inventory updates
+1. Item created with optional initial stock.
+2. Adjustments and transfers modify branch stocks.
+3. Inventory transactions provide historical traceability.
+
+### File uploads
+1. User uploads AP/Spend attachment.
+2. File validation (type/size) is enforced.
+3. File stored via configured storage disk and DB attachment record saved.
+
+### Notifications
+- Daily Dish order submission triggers admin/customer emails (mail settings permitting).
+
+### Reporting
+1. User selects report and filters.
+2. Data generated via report services/controllers.
+3. Output rendered as screen/print/CSV/PDF.
+
+---
+
+## 9. FRONTEND STRUCTURE
+
+### Application layout
+- Shared app shell with role-aware sidebar and header.
+- Module-grouped navigation: Platform, Administration, Orders, Catalog, Operations, Receivables, Finance, Reports.
+
+### Major screens
+- Dashboard and IAM screens
+- Customers/suppliers/categories/menu items/recipes
+- Orders and kitchen operations
+- Inventory and purchase orders
+- Payables, spend, petty cash
+- Receivables and payments
+- Company Food administration
+- Reports and exports
+
+### Components
+- Blade layout components and Flux UI elements.
+- Livewire Volt route-driven pages under `resources/views/livewire`.
+
+### State management
+- Primarily server-side via Livewire.
+- URL/query parameter-driven filtering and pagination.
+
+### Navigation structure
+- Route-level middleware enforces access.
+- Sidebar visibility also uses role checks.
+
+### UI data flow
+User action -> server validation -> service execution -> persistence -> reactive page update/export.
+
+---
+
+## 10. MOBILE APP STRUCTURE
+
+### Screen hierarchy (POS client)
+1. Setup branches
+2. Register terminal
+3. Login
+4. Bootstrap data load
+5. Shift controls
+6. Table/session management
+7. Sales/finalization
+8. Sync status
+
+### Offline support
+- Local outbox model expected in POS client.
+- Server supports idempotent event reprocessing and delta pulls.
+
+### Sync mechanisms
+- `POST /api/pos/sync` with event list and `last_pulled_at`.
+- Server returns ACKs plus delta datasets.
+
+### Upload workflows
+- POS channel is transaction-event based; attachments are handled in backoffice spend flow.
+
+### Notifications
+- No dedicated push-notification subsystem in repository; POS client is expected to display sync status locally.
+
+---
+
+## 11. SECURITY MODEL
+
+### Authentication method
+- Fortify for web session auth.
+- Sanctum for token-based API auth.
+
+### Authorization
+- Role and permission middleware (`role`, `role_or_permission`).
+- Branch-level scope middleware.
+
+### Token handling
+- POS tokens include `pos:*` and `device:{device_id}` abilities.
+- Middleware cross-checks token, terminal, device, and branch access.
+
+### Data protection
+- Password hashing and validated inputs.
+- Transactional consistency and immutable posted financial states.
+
+### File security
+- Allowed extension checks and max-size checks.
+- Files stored through filesystem abstraction.
+
+### API protection
+- Public throttling on daily dish endpoints.
+- Validation-heavy POS sync and deterministic error/ack handling.
+
+### Logging
+- Monolog via Laravel channels and environment-driven levels.
+
+### Audit trails
+- `ops_events`, `expense_events`, `pos_sync_events`.
+- Subledger entries for financial posting history.
+
+---
+
+## 12. DEPLOYMENT ARCHITECTURE
+
+### Production infrastructure
+- Load balancer/reverse proxy.
+- Multiple PHP app nodes.
+- Queue workers and scheduler process.
+- MySQL/MariaDB database.
+- Optional Redis and S3.
+
+### Environment structure
+- Local
+- Staging
+- Production
+
+### Containers/services
+- Web app
+- Worker
+- Scheduler
+- Database
+- Optional cache service
+
+### Load balancing
+- Stateless scaling for web layer.
+- Shared session backend recommended at scale.
+
+### Storage
+- Public and private storage via Laravel disks.
+- Optional S3 for durable object storage.
+
+### Backup strategy
+- Scheduled DB backups and restore drills.
+- Backup retention by environment policy.
+
+### Scaling strategy
+- Horizontal web and worker scaling.
+- Query/index optimization for report-heavy workloads.
+
+---
+
+## 13. DEVOPS & CI/CD
+
+### Code workflow
+- Feature branches -> PR -> CI validation -> merge to `develop`/`main`.
+
+### Branch strategy
+- CI workflows are configured for `develop` and `main`.
+
+### Testing pipeline
+- GitHub Actions `tests.yml`
+- PHP 8.4 + Node 22
+- Build assets and run Pest tests
+
+### Deployment pipeline
+- Not fully defined in repo workflows.
+- Recommended: build -> migrate -> cache warmup -> deploy -> worker restart.
+
+### Environment promotion
+- Validate in staging branch path, then promote to main with release controls.
+
+---
+
+## 14. MONITORING & LOGGING
+
+### Metrics
+- API latency/error rates
+- Queue throughput and failures
+- POS sync ACK failure ratio
+- Posting and settlement counts
+- DB query performance
+
+### Alerts
+- High 5xx/4xx spikes
+- Queue failure threshold breaches
+- POS sync recurring server/validation failures
+
+### Logging system
+- Laravel logging channels (`stack`, `single`, `daily`, etc.)
+
+### Error tracking
+- External APM/error tooling can be integrated (not hardwired in repo).
+
+### Performance monitoring
+- Report generation latency
+- POS sync and finance API response percentiles
+
+---
+
+## 15. EXTENSIBILITY & FUTURE MODULES
+
+### New modules
+- Add route group + request validation + service layer + views.
+- Reuse existing auth/middleware patterns.
+
+### Plugins
+- Infrastructure abstractions (storage, queue, mail) enable pluggable providers.
+
+### Third-party integrations
+- Public APIs for website integration already present.
+- Future webhook and ERP connectors can be added via queue-driven adapters.
+
+### API extensions
+- Keep backward compatibility and explicit versioning for breaking changes.
+- Preserve idempotency patterns for write operations.
+
+---
+
+## 16. USER MANUAL
+
+### Getting started
+1. Open system URL.
+2. Enter username/password.
+3. Use left menu to access allowed modules.
+
+### Creating an account
+- Accounts are created by administrators in IAM.
+
+### Navigating the system
+- Use module groups in sidebar.
+- Use filters on listing pages.
+- Open detail pages for full record actions.
+
+### Performing main tasks
+- Create and manage orders.
+- Track inventory and transfers.
+- Create/approve purchase orders.
+- Submit and track expenses.
+- Review receivables/payables.
+
+### Uploading files
+- Attach files in Spend/AP invoice contexts.
+- Allowed: images/PDF within configured limits.
+
+### Managing projects
+- In Company Food module, create project, configure lists/options, and review submissions.
+
+### Using reports
+- Select report, set filters, then view or export.
+
+---
+
+## 17. ADMIN MANUAL
+
+### Manage users
+- Create/edit users and assign role/permissions.
+- Manage branch access and POS eligibility.
+
+### Configure permissions
+- Use IAM roles/permissions pages.
+- Apply least-privilege role design.
+
+### Manage modules
+- Configure finance settings, payment terms, POS terminals.
+- Maintain master data (categories, suppliers, customers).
+
+### Monitor system health
+- Review logs, queue failures, sync issues.
+- Check report and finance workflow health.
+
+### Manage integrations
+- Configure SMTP and reCAPTCHA.
+- Configure storage provider and public endpoint dependencies.
+
+---
+
+## 18. INSTALLATION GUIDE
+
+### Requirements
+- PHP 8.2+
+- Composer 2
+- Node.js/npm
+- MySQL/MariaDB
+
+### Setup steps
+```bash
+composer install
+npm install
+cp .env.example .env
+php artisan key:generate
+php artisan migrate
+npm run build
+php artisan storage:link
+```
+
+### Environment variables
+Configure at minimum:
+- `APP_*`
+- `DB_*`
+- `SESSION_DRIVER`, `QUEUE_CONNECTION`, `CACHE_STORE`
+- `MAIL_*`
+- `SYSTEM_USER_ID`
+- `POS_*`
+- `SPEND_*`
+- optional `AWS_*`, `RECAPTCHA_*`
+
+### Database setup
+- Create DB/schema/user.
+- Apply migrations.
+- Seed optional data as needed.
+
+### Running services
+```bash
+php artisan serve
+php artisan queue:listen --tries=1
+npm run dev
+```
+Or run combined dev script:
+```bash
+composer dev
+```
+
+---
+
+## 19. TROUBLESHOOTING GUIDE
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Login fails | inactive user or wrong credentials | activate user/reset password/check rate limits |
+| 401/403 on APIs | auth or permission mismatch | verify guard, token/session, roles, branch access |
+| Upload rejected | invalid type/size or storage issue | validate file format/size and disk config |
+| DB errors | schema mismatch or connection errors | verify env, run migrations, inspect logs |
+| POS sync errors | payload shape mismatch, terminal mismatch, validation failure | inspect ACK `error_code` and fix client payload/state |
+| Public order failure | recaptcha or menu/date validation fails | verify recaptcha config and published menus |
+| Spend posting blocked | workflow stage not satisfied | move through submit/approve/post flow with proper role |
+
+---
+
+## 20. GLOSSARY
+
+- **AP:** Accounts Payable.
+- **AR:** Accounts Receivable.
+- **Branch access:** User restriction to permitted branches.
+- **Daily Dish:** Date-based meal menu system.
+- **Idempotency:** Safe retry behavior without duplicate effects.
+- **POS token:** Device-bound Sanctum token.
+- **Sync ACK:** Result entry for each POS event.
+- **Spend profile:** Approval metadata for expense invoices.
+- **Subledger:** Detailed accounting event ledger.
+- **GL batch:** Aggregated posting batch to general ledger.
+- **Void:** Controlled reversal of posted financial records.
+- **Edit token:** Public order secret for retrieving/updating Company Food submissions.

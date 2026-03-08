@@ -298,6 +298,17 @@ class PosSyncService
 
             return $this->ackError($eventId, self::ERROR_VALIDATION, $msg);
         } catch (\Throwable $e) {
+            report($e);
+
+            logger()->error('POS sync unhandled server error', [
+                'terminal_id' => (int) $terminal->id,
+                'event_id' => $eventId,
+                'client_uuid' => $clientUuid,
+                'type' => $type,
+                'message' => $e->getMessage(),
+                'exception' => $e,
+            ]);
+
             $this->markEventFailed(
                 terminalId: (int) $terminal->id,
                 eventId: $eventId,
