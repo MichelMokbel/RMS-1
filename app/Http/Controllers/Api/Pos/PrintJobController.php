@@ -10,6 +10,7 @@ use App\Models\PosPrintJob;
 use App\Services\POS\PosPrintJobService;
 use App\Services\Security\BranchAccessService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Response;
 
 class PrintJobController extends Controller
 {
@@ -42,7 +43,7 @@ class PrintJobController extends Controller
         ], $created ? 201 : 200);
     }
 
-    public function pull(PrintJobPullRequest $request): JsonResponse
+    public function pull(PrintJobPullRequest $request): Response|JsonResponse
     {
         $terminal = $request->attributes->get('pos_terminal');
         if (! $terminal) {
