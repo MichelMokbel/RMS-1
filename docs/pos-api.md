@@ -421,8 +421,8 @@ ACK schema
   "server_entity_type": "string (present when ok=true)",
   "server_entity_id": "int (present when ok=true)",
   "applied_at": "string (present when ok=true; UTC; format YYYY-MM-DDTHH:mm:ssZ)",
-  "invoice_no": "string (present only when ok=true and server_entity_type=ar_invoice)",
-  "ref_no": "string (present only when ok=true and server_entity_type=ar_invoice; echoes ar_invoices.pos_reference)"
+  "invoice_no": "string (present only when ok=true and server_entity_type=ar_invoice; non-empty printable number)",
+  "ref_no": "string (present only when ok=true and server_entity_type=ar_invoice; non-empty printable reference, typically pos_reference)"
 }
 ```
 
@@ -760,6 +760,10 @@ Validation rules / business rules:
   - `totals.*` must match the computed sums.
 - Non-credit payments integrity:
   - Sum of `payments.amount_cents` must equal `ar_invoices.total_cents` or validation fails.
+- ACK display numbering fields:
+  - `invoice_no` is always returned as a non-empty string for successful `ar_invoice` ACKs.
+  - `ref_no` is always returned as a non-empty string for successful `ar_invoice` ACKs.
+  - `invoice_no` is stable for the invoice once issued (stored invoice number, fallback to invoice id if legacy data has null invoice_number).
 
 Server side effects (successful apply):
 - Inserts into `ar_invoices` and `ar_invoice_items` via `ArInvoiceService::createDraft()` then issues invoice:

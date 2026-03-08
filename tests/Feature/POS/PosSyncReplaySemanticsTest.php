@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Customer;
+use App\Models\ArInvoice;
 use App\Models\MenuItem;
 use App\Models\PosSyncEvent;
 use App\Models\PosTerminal;
@@ -293,4 +294,51 @@ test('invoice replay ack includes invoice_no and ref_no', function () {
     expect((int) ($resp2['acks'][0]['server_entity_id'] ?? 0))->toBe($invoiceId);
     expect((string) ($resp2['acks'][0]['invoice_no'] ?? ''))->toBe($invoiceNo);
     expect((string) ($resp2['acks'][0]['ref_no'] ?? ''))->toBe($posReference);
+});
+
+test('applied invoice replay ack keeps invoice_no and ref_no non-empty when legacy fields are null', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    $terminal = seedPosTerminalForSync('DEV-A', 'T01', 1);
+    $token = posTokenForDevice($user, 'DEV-A');
+
+    $customer = Customer::factory()->create(['is_active' => true]);
+    $invoice = ArInvoice::factory()->create([
+        'branch_id' => 1,
+        'customer_id' => $customer->id,
+        'status' => 'issued',
+        'invoice_number' => null,
+        'pos_reference' => null,
+    ]);
+
+    $eventUuid = (string) Str::uuid();
+    PosSyncEvent::create([
+        'terminal_id' => (int) $terminal->id,
+        'event_id' => 'evt-inv-legacy',
+        'client_uuid' => $eventUuid,
+        'type' => 'invoice.finalize',
+        'status' => 'applied',
+        'server_entity_type' => 'ar_invoice',
+        'server_entity_id' => (int) $invoice->id,
+        'applied_at' => now(),
+    ]);
+
+    $resp = $this->withToken($token)->postJson('/api/pos/sync', [
+        'device_id' => 'DEV-A',
+        'terminal_code' => 'T01',
+        'branch_id' => 1,
+        'last_pulled_at' => null,
+        'events' => [
+            [
+                'event_id' => 'evt-inv-legacy-replay',
+                'type' => 'invoice.finalize',
+                'client_uuid' => $eventUuid,
+                'payload' => ['noop' => true],
+            ],
+        ],
+    ])->assertOk()->json();
+
+    expect($resp['acks'][0]['ok'])->toBeTrue();
+    expect((string) ($resp['acks'][0]['server_entity_type'] ?? ''))->toBe('ar_invoice');
+    expect((string) ($resp['acks'][0]['invoice_no'] ?? ''))->toBe((string) $invoice->id);
+    expect((string) ($resp['acks'][0]['ref_no'] ?? ''))->toBe((string) $invoice->id);
 });

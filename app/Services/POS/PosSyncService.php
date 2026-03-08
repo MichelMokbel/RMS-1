@@ -266,7 +266,13 @@ class PosSyncService
                     'error_message' => null,
                 ]);
 
-                return $this->ackOk($eventId, $entityType, $entityId, $appliedAt);
+                return $this->ackOk(
+                    eventId: $eventId,
+                    entityType: $entityType,
+                    entityId: $entityId,
+                    appliedAt: $appliedAt,
+                    extras: $this->invoiceAckExtrasFromHandlerResult($result, $entityType, $entityId),
+                );
             }, 3);
         } catch (PosSyncException $e) {
             $this->markEventFailed(
@@ -376,7 +382,7 @@ class PosSyncService
         ];
     }
 
-    private function ackOk(string $eventId, string $entityType, int $entityId, Carbon $appliedAt): array
+    private function ackOk(string $eventId, string $entityType, int $entityId, Carbon $appliedAt, array $extras = []): array
     {
         $ack = [
             'event_id' => $eventId,
@@ -390,16 +396,71 @@ class PosSyncService
             return $ack;
         }
 
-        $invoice = ArInvoice::query()
-            ->select(['id', 'invoice_number', 'pos_reference'])
-            ->whereKey($entityId)
-            ->first();
+        if ($extras === []) {
+            $invoice = ArInvoice::query()
+                ->select(['id', 'invoice_number', 'pos_reference'])
+                ->whereKey($entityId)
+                ->first();
 
-        $invoiceNo = trim((string) ($invoice?->invoice_number ?? ''));
-        $ack['invoice_no'] = $invoiceNo !== '' ? $invoiceNo : (string) $entityId;
-        $ack['ref_no'] = (string) ($invoice?->pos_reference ?? '');
+            $extras = $this->invoiceAckFields($invoice, $entityId, null);
+        } else {
+            $extras = $this->invoiceAckFields(
+                invoice: null,
+                entityId: $entityId,
+                fallbackRefNo: (string) ($extras['ref_no'] ?? ''),
+                explicitInvoiceNo: (string) ($extras['invoice_no'] ?? ''),
+                explicitRefNo: (string) ($extras['ref_no'] ?? ''),
+            );
+        }
+
+        $ack['invoice_no'] = $extras['invoice_no'];
+        $ack['ref_no'] = $extras['ref_no'];
 
         return $ack;
+    }
+
+    private function invoiceAckExtrasFromHandlerResult(array $result, string $entityType, int $entityId): array
+    {
+        if ($entityType !== 'ar_invoice') {
+            return [];
+        }
+
+        return [
+            'invoice_no' => (string) ($result['invoice_no'] ?? ''),
+            'ref_no' => (string) ($result['ref_no'] ?? ''),
+        ];
+    }
+
+    private function invoiceAckFields(
+        ?ArInvoice $invoice,
+        int $entityId,
+        ?string $fallbackRefNo,
+        ?string $explicitInvoiceNo = null,
+        ?string $explicitRefNo = null
+    ): array {
+        $invoiceNo = trim((string) ($explicitInvoiceNo ?? ''));
+        if ($invoiceNo === '') {
+            $invoiceNo = trim((string) ($invoice?->invoice_number ?? ''));
+        }
+        if ($invoiceNo === '') {
+            $invoiceNo = (string) $entityId;
+        }
+
+        $refNo = trim((string) ($explicitRefNo ?? ''));
+        if ($refNo === '') {
+            $refNo = trim((string) ($invoice?->pos_reference ?? ''));
+        }
+        if ($refNo === '') {
+            $refNo = trim((string) ($fallbackRefNo ?? ''));
+        }
+        if ($refNo === '') {
+            $refNo = $invoiceNo;
+        }
+
+        return [
+            'invoice_no' => $invoiceNo,
+            'ref_no' => $refNo,
+        ];
     }
 
     private function markEventFailed(int $terminalId, string $eventId, string $clientUuid, string $type, string $errorCode, string $errorMessage): void
@@ -842,7 +903,15 @@ class PosSyncService
 
         $existing = ArInvoice::query()->where('client_uuid', $invoiceClientUuid)->first();
         if ($existing) {
-            return ['entity_type' => 'ar_invoice', 'entity_id' => (int) $existing->id];
+            return [
+                'entity_type' => 'ar_invoice',
+                'entity_id' => (int) $existing->id,
+                ...$this->invoiceAckFields(
+                    invoice: $existing,
+                    entityId: (int) $existing->id,
+                    fallbackRefNo: (string) $v['pos_reference'],
+                ),
+            ];
         }
 
         $existingByRef = ArInvoice::query()
@@ -851,7 +920,15 @@ class PosSyncService
             ->first();
 
         if ($existingByRef) {
-            return ['entity_type' => 'ar_invoice', 'entity_id' => (int) $existingByRef->id];
+            return [
+                'entity_type' => 'ar_invoice',
+                'entity_id' => (int) $existingByRef->id,
+                ...$this->invoiceAckFields(
+                    invoice: $existingByRef,
+                    entityId: (int) $existingByRef->id,
+                    fallbackRefNo: (string) $v['pos_reference'],
+                ),
+            ];
         }
 
         $customer = Customer::find((int) $v['customer_id']);
@@ -995,7 +1072,15 @@ class PosSyncService
             $this->allocations->recalcStatus($invoice->fresh());
         }
 
-        return ['entity_type' => 'ar_invoice', 'entity_id' => (int) $invoice->id];
+        return [
+            'entity_type' => 'ar_invoice',
+            'entity_id' => (int) $invoice->id,
+            ...$this->invoiceAckFields(
+                invoice: $invoice,
+                entityId: (int) $invoice->id,
+                fallbackRefNo: (string) $v['pos_reference'],
+            ),
+        ];
     }
 
     private function handlePettyCashExpenseCreate($terminal, $user, array $payload): array
