@@ -1,16 +1,17 @@
 <?php
 
 use App\Models\ArInvoice;
+use App\Models\ApInvoice;
 use App\Models\Customer;
 use App\Models\ExpenseCategory;
 use App\Models\MenuItem;
-use App\Models\PettyCashExpense;
 use App\Models\PettyCashWallet;
 use App\Models\PosDocumentSequence;
 use App\Models\PosTerminal;
 use App\Models\RestaurantArea;
 use App\Models\RestaurantTable;
 use App\Models\RestaurantTableSession;
+use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
@@ -349,6 +350,8 @@ test('petty cash expense create is idempotent by client_uuid', function () {
     $user = User::factory()->create(['status' => 'active']);
     seedPosTerminal('DEV-A', 'T01', 1);
     $token = posToken($user, 'DEV-A');
+    $supplier = Supplier::factory()->create();
+    config()->set('spend.petty_cash_internal_supplier_id', $supplier->id);
 
     $wallet = PettyCashWallet::factory()->create(['active' => true, 'balance' => 100.00]);
     $category = ExpenseCategory::factory()->create(['active' => true]);
@@ -380,7 +383,17 @@ test('petty cash expense create is idempotent by client_uuid', function () {
     ])->assertOk()->json();
 
     expect($r1['acks'][0]['ok'])->toBeTrue();
-    expect(PettyCashExpense::query()->where('client_uuid', $expenseUuid)->count())->toBe(1);
+    expect((string) ($r1['acks'][0]['server_entity_type'] ?? ''))->toBe('ap_invoice');
+
+    $invoiceNumber = 'POS-PC-'.strtoupper(substr(str_replace('-', '', $expenseUuid), 0, 20));
+    expect(ApInvoice::query()->where('invoice_number', $invoiceNumber)->where('is_expense', true)->count())->toBe(1);
+    $invoice = ApInvoice::query()->where('invoice_number', $invoiceNumber)->firstOrFail();
+
+    $this->assertDatabaseHas('expense_profiles', [
+        'invoice_id' => $invoice->id,
+        'channel' => 'petty_cash',
+        'approval_status' => 'submitted',
+    ]);
 
     $r2 = $this->withToken($token)->postJson('/api/pos/sync', [
         'device_id' => 'DEV-A',
@@ -398,7 +411,8 @@ test('petty cash expense create is idempotent by client_uuid', function () {
     ])->assertOk()->json();
 
     expect($r2['acks'][0]['ok'])->toBeTrue();
-    expect(PettyCashExpense::query()->where('client_uuid', $expenseUuid)->count())->toBe(1);
+    expect((string) ($r2['acks'][0]['server_entity_type'] ?? ''))->toBe('ap_invoice');
+    expect(ApInvoice::query()->where('invoice_number', $invoiceNumber)->where('is_expense', true)->count())->toBe(1);
 });
 
 test('pos login requires device_id bound to a terminal', function () {

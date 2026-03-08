@@ -17,7 +17,7 @@ class ApPaymentStoreRequest extends FormRequest
             'supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
             'payment_date' => ['required', 'date'],
             'amount' => ['required', 'numeric', 'min:0.01'],
-            'payment_method' => ['nullable', 'in:cash,bank_transfer,card,cheque,other'],
+            'payment_method' => ['nullable', 'in:cash,bank_transfer,card,cheque,other,petty_cash'],
             'reference' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string'],
             'allocations' => ['sometimes', 'array'],

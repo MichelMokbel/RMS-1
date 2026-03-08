@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Reports;
 
 use App\Http\Controllers\Controller;
-use App\Models\Expense;
+use App\Services\Spend\SpendReportService;
 use App\Support\Reports\CsvExport;
 use App\Support\Reports\PdfExport;
 use Illuminate\Http\Request;
@@ -13,25 +13,25 @@ class ExpensesReportController extends Controller
 {
     private function query(Request $request, int $limit = 500)
     {
-        return Expense::query()
-            ->with(['supplier', 'category'])
-            ->withSum('payments as paid_sum', 'amount')
-            ->when($request->filled('search'), fn ($q) => $q->where(fn ($sub) => $sub->where('description', 'like', '%'.$request->search.'%')->orWhere('reference', 'like', '%'.$request->search.'%')))
-            ->when($request->filled('supplier_id'), fn ($q) => $q->where('supplier_id', $request->integer('supplier_id')))
-            ->when($request->filled('category_id'), fn ($q) => $q->where('category_id', $request->integer('category_id')))
-            ->when($request->filled('payment_status') && $request->payment_status !== 'all', fn ($q) => $q->where('payment_status', $request->payment_status))
-            ->when($request->filled('payment_method') && $request->payment_method !== 'all', fn ($q) => $q->where('payment_method', $request->payment_method))
-            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('expense_date', '>=', $request->date_from))
-            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('expense_date', '<=', $request->date_to))
-            ->orderByDesc('expense_date')
-            ->limit($limit)
-            ->get();
+        return app(SpendReportService::class)->collect(
+            filters: [
+                'search' => $request->input('search'),
+                'source' => $request->input('source', 'all'),
+                'supplier_id' => $request->integer('supplier_id') ?: null,
+                'category_id' => $request->integer('category_id') ?: null,
+                'payment_status' => $request->input('payment_status', 'all'),
+                'payment_method' => $request->input('payment_method', 'all'),
+                'date_from' => $request->input('date_from'),
+                'date_to' => $request->input('date_to'),
+            ],
+            limit: $limit
+        );
     }
 
     public function print(Request $request)
     {
         $expenses = $this->query($request);
-        $filters = $request->only(['search', 'supplier_id', 'category_id', 'payment_status', 'payment_method', 'date_from', 'date_to']);
+        $filters = $request->only(['search', 'source', 'supplier_id', 'category_id', 'payment_status', 'payment_method', 'date_from', 'date_to']);
 
         return view('reports.expenses-print', ['expenses' => $expenses, 'filters' => $filters, 'generatedAt' => now()]);
     }
@@ -39,15 +39,16 @@ class ExpensesReportController extends Controller
     public function csv(Request $request): StreamedResponse
     {
         $expenses = $this->query($request, 2000);
-        $headers = [__('Date'), __('Reference'), __('Description'), __('Supplier'), __('Category'), __('Status'), __('Amount')];
+        $headers = [__('Date'), __('Reference'), __('Source'), __('Description'), __('Supplier'), __('Category'), __('Status'), __('Amount')];
         $rows = $expenses->map(fn ($e) => [
-            $e->expense_date?->format('Y-m-d'),
-            $e->reference ?? '',
-            $e->description ?? '',
-            $e->supplier?->name ?? '',
-            $e->category?->name ?? '',
-            $e->payment_status ?? '',
-            number_format((float) $e->total_amount, 3, '.', ''),
+            $e['date'] ?? '',
+            $e['reference'] ?? '',
+            $e['source'] ?? '',
+            $e['description'] ?? '',
+            $e['supplier'] ?? '',
+            $e['category'] ?? '',
+            $e['status'] ?? '',
+            number_format((float) ($e['amount'] ?? 0), 3, '.', ''),
         ]);
 
         return CsvExport::stream($headers, $rows, 'expenses-report.csv');
@@ -56,7 +57,7 @@ class ExpensesReportController extends Controller
     public function pdf(Request $request)
     {
         $expenses = $this->query($request);
-        $filters = $request->only(['search', 'supplier_id', 'category_id', 'payment_status', 'payment_method', 'date_from', 'date_to']);
+        $filters = $request->only(['search', 'source', 'supplier_id', 'category_id', 'payment_status', 'payment_method', 'date_from', 'date_to']);
 
         return PdfExport::download('reports.expenses-print', ['expenses' => $expenses, 'filters' => $filters, 'generatedAt' => now()], 'expenses-report.pdf');
     }

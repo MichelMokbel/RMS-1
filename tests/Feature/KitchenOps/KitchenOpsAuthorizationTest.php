@@ -2,9 +2,29 @@
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
+
+function grantBranchAccessForKitchen(User $user, int $branchId = 1): void
+{
+    DB::table('branches')->insertOrIgnore([
+        'id' => $branchId,
+        'name' => 'Branch '.$branchId,
+        'code' => 'B'.$branchId,
+        'is_active' => 1,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    DB::table('user_branch_access')->insertOrIgnore([
+        'user_id' => (int) $user->id,
+        'branch_id' => $branchId,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
 
 beforeEach(function () {
     Role::findOrCreate('admin', 'web');
@@ -20,6 +40,7 @@ it('redirects guests from kitchen ops', function () {
 it('allows kitchen to view kitchen ops', function () {
     $user = User::factory()->create(['status' => 'active']);
     $user->assignRole('kitchen');
+    grantBranchAccessForKitchen($user);
 
     $this->actingAs($user)
         ->get('/kitchen/ops/1/2025-01-10')
@@ -33,5 +54,4 @@ it('forbids non-privileged user from kitchen ops', function () {
         ->get('/kitchen/ops/1/2025-01-10')
         ->assertStatus(403);
 });
-
 

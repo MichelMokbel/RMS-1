@@ -2,10 +2,13 @@
 
 use App\Models\ApInvoice;
 use App\Models\ApInvoiceItem;
+use App\Models\ExpenseCategory;
+use App\Models\PettyCashWallet;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
 use App\Services\AP\ApInvoicePostingService;
 use App\Services\AP\ApInvoiceTotalsService;
+use App\Services\Spend\ExpenseWorkflowService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
@@ -17,6 +20,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?int $purchase_order_id = null;
     public bool $is_expense = false;
     public ?int $category_id = null;
+    public string $expense_channel = 'vendor';
+    public ?int $wallet_id = null;
     public string $invoice_number = '';
     public ?string $invoice_date = null;
     public ?string $due_date = null;
@@ -29,6 +34,19 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->invoice_date = now()->toDateString();
         $this->due_date = now()->addDays(30)->toDateString();
         $this->lines = [['description' => '', 'quantity' => 1, 'unit_price' => 0]];
+        $this->is_expense = request()->boolean('is_expense', false);
+        $requestedChannel = (string) request()->query('channel', 'vendor');
+        $this->expense_channel = in_array($requestedChannel, ['vendor', 'petty_cash', 'reimbursement'], true)
+            ? $requestedChannel
+            : 'vendor';
+        $requestedWalletId = request()->integer('wallet_id');
+        if ($requestedWalletId > 0) {
+            $this->wallet_id = $requestedWalletId;
+        }
+        $queryCategoryId = request()->integer('category_id');
+        if ($queryCategoryId > 0) {
+            $this->category_id = $queryCategoryId;
+        }
     }
 
     public function addLine(): void
@@ -148,6 +166,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
 
             $totalsService->recalc($invoice);
+            if ((bool) $data['is_expense']) {
+                app(ExpenseWorkflowService::class)->initializeProfile(
+                    $invoice,
+                    (string) ($data['expense_channel'] ?? 'vendor'),
+                    isset($data['wallet_id']) ? (int) $data['wallet_id'] : null
+                );
+            }
+
             return $invoice->fresh(['items']);
         });
 
@@ -167,6 +193,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_order_id' => ['nullable', 'integer', 'exists:purchase_orders,id'],
             'category_id' => ['nullable', 'integer'],
             'is_expense' => ['required', 'boolean'],
+            'expense_channel' => ['required_if:is_expense,1', 'in:vendor,petty_cash,reimbursement'],
+            'wallet_id' => ['nullable', 'integer', 'exists:petty_cash_wallets,id'],
             'invoice_number' => [
                 'required',
                 'string',
@@ -190,6 +218,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             if ($this->is_expense && Schema::hasTable('expense_categories') && empty($this->category_id)) {
                 $v->errors()->add('category_id', __('Category is required for expenses.'));
             }
+
+            if ($this->is_expense && $this->expense_channel === 'petty_cash' && empty($this->wallet_id)) {
+                $v->errors()->add('wallet_id', __('Wallet is required for petty cash expenses.'));
+            }
         });
     }
 
@@ -206,6 +238,25 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         return PurchaseOrder::orderByDesc('id')
             ->when($this->supplier_id, fn ($q) => $q->where('supplier_id', $this->supplier_id))
+            ->get();
+    }
+
+    public function categories()
+    {
+        return Schema::hasTable('expense_categories')
+            ? ExpenseCategory::orderBy('name')->get()
+            : collect();
+    }
+
+    public function wallets()
+    {
+        if (! Schema::hasTable('petty_cash_wallets')) {
+            return collect();
+        }
+
+        return PettyCashWallet::query()
+            ->where('active', 1)
+            ->orderBy('driver_name')
             ->get();
     }
 }; ?>
@@ -246,9 +297,39 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <flux:input wire:model="invoice_date" type="date" :label="__('Invoice Date')" />
                 <flux:input wire:model="due_date" type="date" :label="__('Due Date')" />
             </div>
-            <div class="flex items-center gap-3">
-                <flux:checkbox wire:model="is_expense" :label="__('Expense')" />
-                <flux:input wire:model="category_id" type="number" :label="__('Category ID (optional)')" />
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
+                <div class="flex items-center">
+                    <flux:checkbox wire:model="is_expense" :label="__('Expense')" />
+                </div>
+                <div>
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Expense Channel') }}</label>
+                    <select wire:model="expense_channel" @disabled(! $is_expense) class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                        <option value="vendor">{{ __('Vendor') }}</option>
+                        <option value="petty_cash">{{ __('Petty Cash') }}</option>
+                        <option value="reimbursement">{{ __('Reimbursement') }}</option>
+                    </select>
+                    @error('expense_channel') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                </div>
+                <div>
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Category') }}</label>
+                    <select wire:model="category_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                        <option value="">{{ __('Select category') }}</option>
+                        @foreach($this->categories() as $category)
+                            <option value="{{ $category->id }}">{{ $category->name }}</option>
+                        @endforeach
+                    </select>
+                    @error('category_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                </div>
+                <div>
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Petty Cash Wallet') }}</label>
+                    <select wire:model="wallet_id" @disabled(! $is_expense || $expense_channel !== 'petty_cash') class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                        <option value="">{{ __('Select wallet') }}</option>
+                        @foreach($this->wallets() as $wallet)
+                            <option value="{{ $wallet->id }}">{{ $wallet->driver_name ?: $wallet->driver_id }}</option>
+                        @endforeach
+                    </select>
+                    @error('wallet_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                </div>
             </div>
             <flux:textarea wire:model="notes" :label="__('Notes')" rows="2" />
         </div>

@@ -15,7 +15,7 @@ test('users can log in with username', function () {
         'password' => 'password',
     ]);
 
-    $response->assertRedirect(route('dashboard'));
+    $response->assertRedirect(route('home'));
     expect(auth()->user()->is($user))->toBeTrue();
 });
 

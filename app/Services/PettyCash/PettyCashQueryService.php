@@ -2,8 +2,8 @@
 
 namespace App\Services\PettyCash;
 
+use App\Models\ApInvoice;
 use App\Models\ExpenseCategory;
-use App\Models\PettyCashExpense;
 use App\Models\PettyCashIssue;
 use App\Models\PettyCashReconciliation;
 use App\Models\PettyCashWallet;
@@ -52,17 +52,24 @@ class PettyCashQueryService
         ?string $from = null,
         ?string $to = null
     ): Collection {
-        if (! Schema::hasTable('petty_cash_expenses')) {
+        if (! Schema::hasTable('ap_invoices') || ! Schema::hasTable('expense_profiles')) {
             return collect();
         }
 
-        return PettyCashExpense::with(['wallet', 'category', 'submitter', 'approver'])
-            ->when($walletId, fn ($q) => $q->where('wallet_id', $walletId))
+        return ApInvoice::query()
+            ->where('is_expense', true)
+            ->whereHas('expenseProfile', fn ($q) => $q->where('channel', 'petty_cash'))
+            ->with(['expenseProfile.wallet', 'category', 'supplier'])
+            ->when($walletId, fn ($q) => $q->whereHas('expenseProfile', fn ($sub) => $sub->where('wallet_id', $walletId)))
             ->when($categoryId, fn ($q) => $q->where('category_id', $categoryId))
-            ->when($status !== 'all', fn ($q) => $q->where('status', $status))
-            ->when($from, fn ($q) => $q->whereDate('expense_date', '>=', $from))
-            ->when($to, fn ($q) => $q->whereDate('expense_date', '<=', $to))
-            ->orderByDesc('expense_date')
+            ->when($status !== 'all', function ($q) use ($status) {
+                if (in_array($status, ['draft', 'submitted', 'manager_approved', 'approved', 'rejected'], true)) {
+                    $q->whereHas('expenseProfile', fn ($sub) => $sub->where('approval_status', $status));
+                }
+            })
+            ->when($from, fn ($q) => $q->whereDate('invoice_date', '>=', $from))
+            ->when($to, fn ($q) => $q->whereDate('invoice_date', '<=', $to))
+            ->orderByDesc('invoice_date')
             ->limit(50)
             ->get();
     }
@@ -89,4 +96,3 @@ class PettyCashQueryService
         return ExpenseCategory::orderBy('name')->get();
     }
 }
-

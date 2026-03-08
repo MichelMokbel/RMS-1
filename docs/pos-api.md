@@ -65,7 +65,7 @@ Evidence:
   - `applied_at`
 - Some handlers also have **domain idempotency**:
   - `invoice.finalize`: treated as success if an `ar_invoices` row exists by `client_uuid` OR by `(branch_id, pos_reference)`.
-  - `petty_cash.expense.create`: treated as success if a `petty_cash_expenses` row exists by `client_uuid`.
+  - `petty_cash.expense.create`: treated as success if an `ap_invoices` expense row exists by deterministic invoice number derived from payload `client_uuid`.
 
 Evidence:
 - Sync event table + uniqueness: `database/migrations/2026_02_04_000004_create_pos_sync_events_table.php`
@@ -838,7 +838,7 @@ When POS sends it:
 Payload JSON schema:
 ```json
 {
-  "client_uuid": "string (required, regex ^[0-9a-fA-F-]{36}$; used as petty_cash_expenses.client_uuid)",
+  "client_uuid": "string (required, regex ^[0-9a-fA-F-]{36}$; used to derive deterministic AP invoice number)",
   "wallet_id": "int (required, min 1)",
   "category_id": "int (required, min 1)",
   "expense_date": "string (required, YYYY-MM-DD)",
@@ -849,29 +849,28 @@ Payload JSON schema:
 ```
 
 Validation rules / business rules:
-- Idempotent by `petty_cash_expenses.client_uuid`:
-  - If existing expense found: returns success with that ID.
-- On creation, workflow submits then approves:
-  - Wallet must be active (otherwise validation error).
+- Requires `SPEND_PETTY_CASH_INTERNAL_SUPPLIER_ID` to be configured.
+- Idempotent by deterministic invoice number (`POS-PC-...`) derived from payload `client_uuid`.
+- On creation, workflow submits (does not auto-approve).
 
 Server side effects:
-- Inserts into `petty_cash_expenses`:
-  - `client_uuid`, `terminal_id`, `pos_shift_id`, `wallet_id`, `category_id`, `expense_date`, `description`
-  - `amount`, `tax_amount='0.00'`, `total_amount`
-  - `status` transitions: `draft` → `submitted` → `approved`
-  - `submitted_by`, `approved_by`, `approved_at`
-- Updates petty cash wallet balance and posts subledger entries (ledger integration).
+- Inserts into `ap_invoices` (`is_expense=1`) and `ap_invoice_items`.
+- Inserts into `expense_profiles` with:
+  - `channel='petty_cash'`
+  - `wallet_id` from payload
+  - `approval_status='submitted'`
+- Returns `server_entity_type='ap_invoice'`.
 
 Idempotency keys:
 - Sync-level: `events[*].client_uuid`
-- Domain-level: `payload.client_uuid` (expense UUID)
+- Domain-level: deterministic AP invoice number from `payload.client_uuid`
 
 Common errors:
 - `VALIDATION_ERROR` (wallet inactive, bad schema, etc.)
 
 Evidence:
 - Handler: `app/Services/POS/PosSyncService.php::handlePettyCashExpenseCreate()`
-- Workflow: `app/Services/PettyCash/PettyCashExpenseWorkflowService.php::submit()` and `::approve()`
+- Workflow: `app/Services/Spend/ExpenseWorkflowService.php::submit()`
 
 ### customer.upsert
 
@@ -1244,7 +1243,7 @@ Evidence:
 - Sync request rule: `app/Http/Requests/Api/Pos/SyncRequest.php`
 - Domain UUID usage:
   - invoice: `ar_invoices.client_uuid`
-  - petty cash expense: `petty_cash_expenses.client_uuid`
+  - petty cash expense event: deterministic mapping from payload `client_uuid` to AP expense invoice number
   - payment: `payments.client_uuid`
 
 ### Enumerations
@@ -1589,10 +1588,11 @@ Request event:
 }
 ```
 
-Expected ACK: `server_entity_type="petty_cash_expense"`.
+Expected ACK: `server_entity_type="ap_invoice"`.
 
 DB expectations:
-- `petty_cash_expenses` created and approved (status `approved`).
+- `ap_invoices` expense row created (`is_expense=1`).
+- `expense_profiles` row created with `channel='petty_cash'` and `approval_status='submitted'`.
 
 ### Step 15) Close table session
 

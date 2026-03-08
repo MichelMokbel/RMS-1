@@ -32,5 +32,5 @@ test('two factor challenge can be rendered', function () {
     $this->post(route('login.store'), [
         'username' => $user->username,
         'password' => 'password',
-    ])->assertRedirect(route('dashboard'));
+    ])->assertRedirect(route('home'));
 });

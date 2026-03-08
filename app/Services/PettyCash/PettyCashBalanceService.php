@@ -2,7 +2,6 @@
 
 namespace App\Services\PettyCash;
 
-use App\Models\PettyCashExpense;
 use App\Models\PettyCashIssue;
 use App\Models\PettyCashReconciliation;
 use App\Models\PettyCashWallet;
@@ -39,7 +38,7 @@ class PettyCashBalanceService
         $lockedWallet->save();
     }
 
-    public function applyApprovedExpense(PettyCashWallet $wallet, PettyCashExpense $expense): void
+    public function applyApprovedExpenseAmount(PettyCashWallet $wallet, float $amount): void
     {
         $lockedWallet = $this->lockWallet($wallet->id);
 
@@ -47,13 +46,11 @@ class PettyCashBalanceService
             throw ValidationException::withMessages(['wallet_id' => __('Wallet is inactive.')]);
         }
 
-        if ($expense->status !== 'approved') {
-            throw ValidationException::withMessages(['status' => __('Expense must be approved to affect balance.')]);
+        if ($amount <= 0) {
+            throw ValidationException::withMessages(['amount' => __('Amount must be greater than zero.')]);
         }
 
-        $delta = -1 * (float) $expense->total_amount;
-        $newBalance = round((float) $lockedWallet->balance + $delta, 2);
-
+        $newBalance = round((float) $lockedWallet->balance - $amount, 2);
         if (! config('petty_cash.allow_negative_wallet_balance', false) && $newBalance < 0) {
             throw ValidationException::withMessages(['balance' => __('Balance cannot go negative.')]);
         }

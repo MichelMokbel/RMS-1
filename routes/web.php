@@ -1039,18 +1039,17 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|catalog.a
     Volt::route('purchase-orders/{purchaseOrder}', 'purchase-orders.show')->name('purchase-orders.show');
     Volt::route('purchase-orders/{purchaseOrder}/edit', 'purchase-orders.edit')->name('purchase-orders.edit');
 
-    // Expenses
-    Volt::route('expenses', 'expenses.index')->name('expenses.index');
-    Volt::route('expenses/create', 'expenses.create')->name('expenses.create');
-    // Categories (place before parameterized expense routes to avoid collisions)
-    Volt::route('expenses/categories', 'expenses.categories')->name('expenses.categories');
-    Volt::route('expenses/{expense}', 'expenses.show')->name('expenses.show');
-    Volt::route('expenses/{expense}/edit', 'expenses.edit')->name('expenses.edit');
+    // Expenses legacy pages are cut over to Spend hub.
+    Route::get('expenses', fn () => redirect()->route('spend.index', ['tab' => 'vendor']))->name('expenses.index');
+    Route::get('expenses/create', fn () => redirect()->route('spend.index', ['tab' => 'vendor']))->name('expenses.create');
+    Route::get('expenses/categories', fn () => redirect()->route('spend.index', ['tab' => 'vendor']))->name('expenses.categories');
+    Route::get('expenses/{expense}', fn () => redirect()->route('spend.index', ['tab' => 'vendor']))->name('expenses.show');
+    Route::get('expenses/{expense}/edit', fn () => redirect()->route('spend.index', ['tab' => 'vendor']))->name('expenses.edit');
 });
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|finance.access'])->group(function () {
-    // Use the richer petty cash Volt page component
-    Volt::route('petty-cash', 'petty-cash.page')->name('petty-cash.index');
+    Volt::route('spend', 'spend.index')->name('spend.index');
+    Route::get('petty-cash', fn () => redirect()->route('spend.index', ['tab' => 'petty']))->name('petty-cash.index');
 });
 
 // POS Android app download

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Expenses Report</title>
+    <title>Spend Report</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 24px; }
         h1 { font-size: 22px; margin: 0 0 8px; }
@@ -23,13 +23,14 @@
         <button class="btn" onclick="window.print()">Print</button>
         <a class="btn" href="{{ route('reports.expenses') }}">Back to Report</a>
     </div>
-    @include('reports.print-header', ['reportTitle' => 'Expenses Report'])
+    @include('reports.print-header', ['reportTitle' => 'Spend Report'])
     <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} | Filters: {{ json_encode($filters) }}</div>
     <table>
         <thead>
             <tr>
                 <th>Date</th>
                 <th>Reference</th>
+                <th>Source</th>
                 <th>Description</th>
                 <th>Supplier</th>
                 <th>Category</th>
@@ -40,23 +41,24 @@
         <tbody>
             @forelse ($expenses as $e)
                 <tr>
-                    <td>{{ $e->expense_date?->format('Y-m-d') }}</td>
-                    <td>{{ $e->reference ?? '—' }}</td>
-                    <td>{{ \Illuminate\Support\Str::limit($e->description, 50) }}</td>
-                    <td>{{ $e->supplier?->name ?? '—' }}</td>
-                    <td>{{ $e->category?->name ?? '—' }}</td>
-                    <td>{{ $e->payment_status ?? '—' }}</td>
-                    <td style="text-align: right;">{{ number_format((float) $e->total_amount, 3) }}</td>
+                    <td>{{ $e['date'] ?? '—' }}</td>
+                    <td>{{ $e['reference'] ?? '—' }}</td>
+                    <td>{{ $e['source'] ?? '—' }}</td>
+                    <td>{{ \Illuminate\Support\Str::limit((string) ($e['description'] ?? ''), 50) }}</td>
+                    <td>{{ $e['supplier'] ?? '—' }}</td>
+                    <td>{{ $e['category'] ?? '—' }}</td>
+                    <td>{{ $e['status'] ?? '—' }}</td>
+                    <td style="text-align: right;">{{ number_format((float) ($e['amount'] ?? 0), 3) }}</td>
                 </tr>
             @empty
-                <tr><td colspan="7">No expenses found.</td></tr>
+                <tr><td colspan="8">No spend records found.</td></tr>
             @endforelse
         </tbody>
         @if ($expenses->count() > 0)
             <tfoot>
                 <tr>
-                    <td colspan="6">Total</td>
-                    <td style="text-align: right;">{{ number_format($expenses->sum('total_amount'), 3) }}</td>
+                    <td colspan="7">Total</td>
+                    <td style="text-align: right;">{{ number_format($expenses->sum('amount'), 3) }}</td>
                 </tr>
             </tfoot>
         @endif

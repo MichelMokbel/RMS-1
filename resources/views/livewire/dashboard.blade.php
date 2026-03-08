@@ -3,11 +3,11 @@
 use App\Models\Order;
 use App\Models\MealSubscription;
 use App\Models\Customer;
-use App\Models\Expense;
 use App\Models\ApInvoice;
 use App\Models\ArInvoice;
 use App\Models\PurchaseOrder;
 use App\Support\Money\MinorUnits;
+use App\Services\Spend\SpendReportService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
@@ -83,12 +83,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         // Expenses this month
-        $expensesThisMonth = 0;
-        if (Schema::hasTable('expenses')) {
-            $expensesThisMonth = Expense::whereDate('expense_date', '>=', $startOfMonth)
-                ->whereDate('expense_date', '<=', $endOfMonth)
-                ->sum('total_amount');
-        }
+        $expensesThisMonth = app(SpendReportService::class)->totalForMonth($startOfMonth, $endOfMonth);
 
         // Pending purchase orders
         $pendingPOs = 0;
@@ -200,7 +195,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="mt-2 text-xs text-zinc-500 dark:text-zinc-500">{{ __('Overdue') }}: {{ number_format($payablesOverdue, 3) }}</p>
         </a>
 
-        <a href="{{ route('expenses.index') }}" wire:navigate class="group relative overflow-hidden rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm transition hover:border-zinc-300 hover:shadow dark:border-zinc-700/80 dark:bg-zinc-900 dark:hover:border-zinc-600">
+        <a href="{{ route('spend.index', ['tab' => 'vendor']) }}" wire:navigate class="group relative overflow-hidden rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm transition hover:border-zinc-300 hover:shadow dark:border-zinc-700/80 dark:bg-zinc-900 dark:hover:border-zinc-600">
             <div class="flex items-start justify-between">
                 <div class="flex size-11 items-center justify-center rounded-xl bg-orange-50 text-orange-600 dark:bg-orange-950 dark:text-orange-400">
                     <flux:icon name="currency-dollar" class="size-6" />

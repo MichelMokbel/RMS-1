@@ -7,5 +7,5 @@ test('returns a successful response', function () {
 
     $response = $this->actingAs($user)->get(route('home'));
 
-    $response->assertRedirect(route('dashboard'));
+    $response->assertRedirect(route('profile.edit'));
 });

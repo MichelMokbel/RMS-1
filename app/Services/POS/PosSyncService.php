@@ -4,12 +4,14 @@ namespace App\Services\POS;
 
 use App\Models\ArInvoice;
 use App\Models\ArInvoiceItem;
+use App\Models\ApInvoice;
+use App\Models\ApInvoiceItem;
 use App\Models\Category;
 use App\Models\Customer;
+use App\Models\ExpenseProfile;
 use App\Models\MenuItem;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
-use App\Models\PettyCashExpense;
 use App\Models\PosShift;
 use App\Models\PosSyncEvent;
 use App\Models\RestaurantArea;
@@ -17,11 +19,12 @@ use App\Models\RestaurantTable;
 use App\Models\RestaurantTableSession;
 use App\Services\POS\Exceptions\PosSyncException;
 use App\Services\AP\ApAllocationService;
+use App\Services\AP\ApInvoiceTotalsService;
 use App\Services\AR\ArAllocationService;
 use App\Services\AR\ArInvoiceService;
 use App\Services\AR\ArPaymentService;
 use App\Services\Ledger\SubledgerService;
-use App\Services\PettyCash\PettyCashExpenseWorkflowService;
+use App\Services\Spend\ExpenseWorkflowService;
 use App\Support\Money\MinorUnits;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
@@ -47,7 +50,8 @@ class PosSyncService
         protected ArAllocationService $allocations,
         protected ArPaymentService $arPayments,
         protected ApAllocationService $apAllocations,
-        protected PettyCashExpenseWorkflowService $pettyCashWorkflow,
+        protected ApInvoiceTotalsService $apInvoiceTotals,
+        protected ExpenseWorkflowService $expenseWorkflow,
         protected SubledgerService $subledger,
         protected PosBootstrapService $bootstrap,
     ) {
@@ -1010,32 +1014,60 @@ class PosSyncService
             throw ValidationException::withMessages(['client_uuid' => 'Expense client_uuid is required.']);
         }
 
-        $existing = PettyCashExpense::query()->where('client_uuid', $clientUuid)->first();
+        $supplierId = (int) config('spend.petty_cash_internal_supplier_id', 0);
+        if ($supplierId <= 0) {
+            throw ValidationException::withMessages(['supplier_id' => 'SPEND_PETTY_CASH_INTERNAL_SUPPLIER_ID must be configured for POS petty cash expense sync.']);
+        }
+
+        $invoiceNumber = 'POS-PC-'.strtoupper(substr(str_replace('-', '', $clientUuid), 0, 20));
+
+        $existing = ApInvoice::query()
+            ->where('is_expense', true)
+            ->where('supplier_id', $supplierId)
+            ->where('invoice_number', $invoiceNumber)
+            ->first();
         if ($existing) {
-            return ['entity_type' => 'petty_cash_expense', 'entity_id' => (int) $existing->id];
+            return ['entity_type' => 'ap_invoice', 'entity_id' => (int) $existing->id];
         }
 
         $amountDecimal = MinorUnits::format((int) $v['amount_cents'], MinorUnits::posScale(), false);
-
-        $expense = PettyCashExpense::create([
-            'client_uuid' => $clientUuid,
-            'terminal_id' => (int) $terminal->id,
-            'pos_shift_id' => $v['pos_shift_id'] ?? null,
-            'wallet_id' => (int) $v['wallet_id'],
+        $invoice = ApInvoice::create([
+            'supplier_id' => $supplierId,
+            'purchase_order_id' => null,
             'category_id' => (int) $v['category_id'],
-            'expense_date' => (string) $v['expense_date'],
-            'description' => (string) $v['description'],
-            'amount' => $amountDecimal,
-            'tax_amount' => '0.00',
-            'total_amount' => $amountDecimal,
+            'is_expense' => true,
+            'invoice_number' => $invoiceNumber,
+            'invoice_date' => (string) $v['expense_date'],
+            'due_date' => (string) $v['expense_date'],
+            'subtotal' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
             'status' => 'draft',
-            'submitted_by' => (int) $user->id,
-            'created_at' => now(),
+            'notes' => 'POS petty cash: '.$v['description'].' [client_uuid='.$clientUuid.'; terminal_id='.(int) $terminal->id.']',
+            'created_by' => (int) $user->id,
         ]);
 
-        $expense = $this->pettyCashWorkflow->submit($expense, (int) $user->id);
+        ApInvoiceItem::create([
+            'invoice_id' => (int) $invoice->id,
+            'description' => (string) $v['description'],
+            'quantity' => 1,
+            'unit_price' => $amountDecimal,
+            'line_total' => $amountDecimal,
+        ]);
 
-        return ['entity_type' => 'petty_cash_expense', 'entity_id' => (int) $expense->id];
+        $this->apInvoiceTotals->recalc($invoice);
+
+        ExpenseProfile::create([
+            'invoice_id' => (int) $invoice->id,
+            'channel' => 'petty_cash',
+            'wallet_id' => (int) $v['wallet_id'],
+            'approval_status' => 'draft',
+            'requires_finance_approval' => false,
+        ]);
+
+        $invoice = $this->expenseWorkflow->submit($invoice, (int) $user->id);
+
+        return ['entity_type' => 'ap_invoice', 'entity_id' => (int) $invoice->id];
     }
 
     private function handleCustomerUpsert($terminal, $user, array $payload): array

@@ -5,7 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class ExpenseCategory extends Model
@@ -25,32 +24,12 @@ class ExpenseCategory extends Model
 
     public function expenses(): HasMany
     {
-        return $this->hasMany(Expense::class, 'category_id');
+        return $this->hasMany(ApInvoice::class, 'category_id')
+            ->where('is_expense', true);
     }
 
     public function isInUse(): bool
     {
-        if (Schema::hasTable('expenses') && $this->expenses()->exists()) {
-            return true;
-        }
-
-        if (Schema::hasTable('petty_cash_expenses')) {
-            $exists = DB::table('petty_cash_expenses')->where('category_id', $this->id)->exists();
-            if ($exists) {
-                return true;
-            }
-        }
-
-        if (Schema::hasTable('ap_invoices')) {
-            $exists = DB::table('ap_invoices')
-                ->where('is_expense', 1)
-                ->where('category_id', $this->id)
-                ->exists();
-            if ($exists) {
-                return true;
-            }
-        }
-
-        return false;
+        return Schema::hasTable('ap_invoices') && $this->expenses()->exists();
     }
 }

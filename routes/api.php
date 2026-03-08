@@ -11,12 +11,10 @@ use App\Http\Controllers\Api\PublicCompanyFoodOrderController;
 use App\Http\Controllers\Api\PublicDailyDishController;
 use App\Http\Controllers\Api\PublicDailyDishOrderController;
 use App\Http\Controllers\Api\Expenses\ExpenseCategoryController;
-use App\Http\Controllers\Api\Expenses\ExpenseController as ApiExpenseController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\InventoryTransferController;
 use App\Http\Controllers\Api\MealSubscriptionController;
 use App\Http\Controllers\Api\MenuItemController;
-use App\Http\Controllers\Api\PettyCash\ExpenseController as PettyCashExpenseController;
 use App\Http\Controllers\Api\PettyCash\IssueController as PettyCashIssueController;
 use App\Http\Controllers\Api\PettyCash\ReconciliationController as PettyCashReconciliationController;
 use App\Http\Controllers\Api\PettyCash\WalletController as PettyCashWalletController;
@@ -26,6 +24,7 @@ use App\Http\Controllers\Api\Pos\AuthController as PosAuthController;
 use App\Http\Controllers\Api\Pos\BootstrapController as PosBootstrapController;
 use App\Http\Controllers\Api\Pos\SequenceController as PosSequenceController;
 use App\Http\Controllers\Api\Pos\SyncController as PosSyncController;
+use App\Http\Controllers\Api\Spend\ExpenseController as SpendExpenseController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum'])->group(function () {
@@ -130,18 +129,38 @@ Route::middleware(['api', $apiAuthMiddleware])->group(function () {
     Route::get('ap/payments/{payment}', [ApPaymentController::class, 'show'])->name('api.ap.payments.show');
     Route::get('ap/aging', [ApReportsController::class, 'aging'])->name('api.ap.aging');
 
-    // Expenses
-    Route::get('expenses', [ApiExpenseController::class, 'index'])->name('api.expenses.index');
-    Route::get('expenses/{expense}', [ApiExpenseController::class, 'show'])->name('api.expenses.show');
+    // Spend (AP expense invoices)
+    Route::get('spend/expenses', [SpendExpenseController::class, 'index'])->name('api.spend.expenses.index');
+    Route::get('spend/expenses/{invoice}', [SpendExpenseController::class, 'show'])->name('api.spend.expenses.show');
+
+    // Legacy expenses API is cut over to Spend AP expense flow.
+    Route::get('expenses', fn () => response()->json([
+        'message' => __('Legacy expenses API is deprecated. Use /api/spend/expenses.'),
+    ], 410))->name('api.expenses.index');
+    Route::get('expenses/{expense}', fn () => response()->json([
+        'message' => __('Legacy expenses API is deprecated. Use /api/spend/expenses/{invoice}.'),
+    ], 410))->name('api.expenses.show');
     Route::get('expense-categories', [ExpenseCategoryController::class, 'index'])->name('api.expense-categories.index');
 
     Route::middleware(['role:admin|manager'])->group(function () {
-        Route::post('expenses', [ApiExpenseController::class, 'store'])->name('api.expenses.store');
-        Route::put('expenses/{expense}', [ApiExpenseController::class, 'update'])->name('api.expenses.update');
-        Route::delete('expenses/{expense}', [ApiExpenseController::class, 'destroy'])->name('api.expenses.destroy');
-        Route::post('expenses/{expense}/payments', [ApiExpenseController::class, 'storePayment'])->name('api.expenses.payments.store');
-        Route::post('expenses/{expense}/attachments', [ApiExpenseController::class, 'storeAttachment'])->name('api.expenses.attachments.store');
-        Route::delete('expense-attachments/{attachment}', [ApiExpenseController::class, 'destroyAttachment'])->name('api.expenses.attachments.destroy');
+        Route::post('expenses', fn () => response()->json([
+            'message' => __('Legacy expenses API is deprecated. Use /api/spend/expenses.'),
+        ], 410))->name('api.expenses.store');
+        Route::put('expenses/{expense}', fn () => response()->json([
+            'message' => __('Legacy expenses API is deprecated. Use /api/spend/expenses/{invoice}.'),
+        ], 410))->name('api.expenses.update');
+        Route::delete('expenses/{expense}', fn () => response()->json([
+            'message' => __('Legacy expenses API is deprecated.'),
+        ], 410))->name('api.expenses.destroy');
+        Route::post('expenses/{expense}/payments', fn () => response()->json([
+            'message' => __('Legacy expenses API is deprecated. Use /api/spend/expenses/{invoice}/settle.'),
+        ], 410))->name('api.expenses.payments.store');
+        Route::post('expenses/{expense}/attachments', fn () => response()->json([
+            'message' => __('Legacy expenses API is deprecated. Use /api/spend/expenses/{invoice}/attachments.'),
+        ], 410))->name('api.expenses.attachments.store');
+        Route::delete('expense-attachments/{attachment}', fn () => response()->json([
+            'message' => __('Legacy expenses API is deprecated.'),
+        ], 410))->name('api.expenses.attachments.destroy');
 
         Route::post('expense-categories', [ExpenseCategoryController::class, 'store'])->name('api.expense-categories.store');
         Route::put('expense-categories/{category}', [ExpenseCategoryController::class, 'update'])->name('api.expense-categories.update');
@@ -152,7 +171,6 @@ Route::middleware(['api', $apiAuthMiddleware])->group(function () {
     Route::middleware(['role:admin|manager|staff'])->group(function () {
         Route::get('petty-cash/wallets', [PettyCashWalletController::class, 'index'])->name('api.petty-cash.wallets.index');
         Route::get('petty-cash/issues', [PettyCashIssueController::class, 'index'])->name('api.petty-cash.issues.index');
-        Route::get('petty-cash/expenses', [PettyCashExpenseController::class, 'index'])->name('api.petty-cash.expenses.index');
     });
 
     Route::middleware(['role:admin|manager'])->group(function () {
@@ -165,9 +183,21 @@ Route::middleware(['api', $apiAuthMiddleware])->group(function () {
     });
 
     Route::middleware(['role:admin|manager|staff'])->group(function () {
-        Route::post('petty-cash/expenses', [PettyCashExpenseController::class, 'store'])->name('api.petty-cash.expenses.store');
-        Route::post('petty-cash/expenses/{id}', [PettyCashExpenseController::class, 'update'])->name('api.petty-cash.expenses.update');
+        Route::post('spend/expenses', [SpendExpenseController::class, 'store'])->name('api.spend.expenses.store');
+        Route::post('spend/expenses/{invoice}/submit', [SpendExpenseController::class, 'submit'])->name('api.spend.expenses.submit');
+        Route::post('spend/expenses/{invoice}/attachments', [SpendExpenseController::class, 'storeAttachment'])->name('api.spend.expenses.attachments.store');
     });
+
+    Route::middleware(['role_or_permission:admin|manager|finance.access'])->group(function () {
+        Route::post('spend/expenses/{invoice}/approve', [SpendExpenseController::class, 'approve'])->name('api.spend.expenses.approve');
+        Route::post('spend/expenses/{invoice}/reject', [SpendExpenseController::class, 'reject'])->name('api.spend.expenses.reject');
+    });
+
+    Route::middleware(['role_or_permission:admin|finance.access'])->group(function () {
+        Route::post('spend/expenses/{invoice}/post', [SpendExpenseController::class, 'post'])->name('api.spend.expenses.post');
+        Route::post('spend/expenses/{invoice}/settle', [SpendExpenseController::class, 'settle'])->name('api.spend.expenses.settle');
+    });
+
 });
 
 // POS (Flutter desktop) - offline-first endpoints.

@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Models\Supplier;
+use App\Models\ExpenseCategory;
 use App\Models\PurchaseOrder;
 use App\Models\User;
 use Illuminate\Validation\ValidationException;
@@ -92,6 +93,11 @@ class ApInvoice extends Model
         return $this->belongsTo(Supplier::class, 'supplier_id');
     }
 
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(ExpenseCategory::class, 'category_id');
+    }
+
     public function purchaseOrder(): BelongsTo
     {
         return $this->belongsTo(PurchaseOrder::class, 'purchase_order_id');
@@ -111,6 +117,21 @@ class ApInvoice extends Model
     public function allAllocations(): HasMany
     {
         return $this->hasMany(ApPaymentAllocation::class, 'invoice_id');
+    }
+
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(ApInvoiceAttachment::class, 'invoice_id');
+    }
+
+    public function expenseProfile(): BelongsTo
+    {
+        return $this->belongsTo(ExpenseProfile::class, 'id', 'invoice_id');
+    }
+
+    public function expenseEvents(): HasMany
+    {
+        return $this->hasMany(ExpenseEvent::class, 'invoice_id');
     }
 
     public function createdBy(): BelongsTo

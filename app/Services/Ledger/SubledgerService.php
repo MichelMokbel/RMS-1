@@ -8,11 +8,9 @@ use App\Models\ApPaymentAllocation;
 use App\Models\ArInvoice;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
-use App\Models\ExpensePayment;
 use App\Models\InventoryTransaction;
 use App\Models\InventoryTransfer;
 use App\Models\LedgerAccount;
-use App\Models\PettyCashExpense;
 use App\Models\PettyCashIssue;
 use App\Models\PettyCashReconciliation;
 use App\Models\SubledgerEntry;
@@ -521,45 +519,6 @@ class SubledgerService
         );
     }
 
-    public function recordExpensePayment(ExpensePayment $payment, ?int $userId = null): ?SubledgerEntry
-    {
-        if (! $this->canPost()) {
-            return null;
-        }
-
-        $amount = (float) ($payment->amount ?? 0);
-        if ($amount <= 0) {
-            return null;
-        }
-
-        $lines = [
-            [
-                'account' => $this->mapKey('expense_default'),
-                'debit' => $amount,
-                'credit' => 0,
-                'memo' => 'Expense payment',
-            ],
-            [
-                'account' => $this->mapKey('expense_cash'),
-                'debit' => 0,
-                'credit' => $amount,
-                'memo' => 'Cash payment',
-            ],
-        ];
-
-        $date = optional($payment->payment_date)->toDateString() ?? now()->toDateString();
-
-        return $this->recordEntry(
-            sourceType: 'expense_payment',
-            sourceId: $payment->id,
-            event: 'payment',
-            entryDate: $date,
-            description: 'Expense payment '.$payment->id,
-            lines: $lines,
-            userId: $userId
-        );
-    }
-
     public function recordPettyCashIssue(PettyCashIssue $issue, ?int $userId = null): ?SubledgerEntry
     {
         if (! $this->canPost()) {
@@ -594,51 +553,6 @@ class SubledgerService
             event: 'issue',
             entryDate: $date,
             description: 'Petty cash issue '.$issue->id,
-            lines: $lines,
-            userId: $userId
-        );
-    }
-
-    public function recordPettyCashExpense(PettyCashExpense $expense, ?int $userId = null): ?SubledgerEntry
-    {
-        if (! $this->canPost()) {
-            return null;
-        }
-
-        if ($expense->status !== 'approved') {
-            return null;
-        }
-
-        $amount = (float) ($expense->total_amount ?? 0);
-        if ($amount <= 0) {
-            return null;
-        }
-
-        $lines = [
-            [
-                'account' => $this->mapKey('petty_cash_expense'),
-                'debit' => $amount,
-                'credit' => 0,
-                'memo' => 'Petty cash expense',
-            ],
-            [
-                'account' => $this->mapKey('petty_cash_asset'),
-                'debit' => 0,
-                'credit' => $amount,
-                'memo' => 'Reduce petty cash',
-            ],
-        ];
-
-        $date = optional($expense->approved_at)->toDateString()
-            ?? optional($expense->expense_date)->toDateString()
-            ?? now()->toDateString();
-
-        return $this->recordEntry(
-            sourceType: 'petty_cash_expense',
-            sourceId: $expense->id,
-            event: 'approve',
-            entryDate: $date,
-            description: 'Petty cash expense '.$expense->id,
             lines: $lines,
             userId: $userId
         );

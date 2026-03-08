@@ -37,7 +37,8 @@ class PettyCashWallet extends Model
 
     public function expenses(): HasMany
     {
-        return $this->hasMany(PettyCashExpense::class, 'wallet_id');
+        return $this->hasMany(ExpenseProfile::class, 'wallet_id')
+            ->where('channel', 'petty_cash');
     }
 
     public function reconciliations(): HasMany

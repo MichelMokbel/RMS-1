@@ -33,7 +33,7 @@ class PettyCashWalletService
     public function deactivate(PettyCashWallet $wallet): PettyCashWallet
     {
         $hasOpenExpenses = $wallet->expenses()
-            ->whereIn('status', ['submitted'])
+            ->whereIn('approval_status', ['submitted', 'manager_approved'])
             ->exists();
 
         if ($hasOpenExpenses) {
