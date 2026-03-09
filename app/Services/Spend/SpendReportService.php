@@ -20,6 +20,11 @@ class SpendReportService
 
     public function totalForMonth(\DateTimeInterface $start, \DateTimeInterface $end): float
     {
+        return $this->totalForRange($start, $end);
+    }
+
+    public function totalForRange(\DateTimeInterface $start, \DateTimeInterface $end): float
+    {
         $startDate = $start->format('Y-m-d');
         $endDate = $end->format('Y-m-d');
 
