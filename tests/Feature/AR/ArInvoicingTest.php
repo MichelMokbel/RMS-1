@@ -7,8 +7,11 @@ use App\Models\User;
 use App\Services\AR\ArAllocationService;
 use App\Services\AR\ArInvoiceService;
 use App\Services\AR\ArPaymentService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Spatie\Permission\Models\Role;
+
+uses(RefreshDatabase::class);
 
 beforeEach(function () {
     Role::findOrCreate('admin');
@@ -16,13 +19,23 @@ beforeEach(function () {
     Role::findOrCreate('cashier');
 });
 
-it('issues invoices with sequential, concurrency-safe numbers per branch/year', function () {
+it('issues invoices with sequential INV numbers continuing from existing numeric invoice numbers', function () {
     Carbon::setTestNow(Carbon::create(2026, 1, 29, 12, 0, 0));
 
     $user = User::factory()->create();
     $user->assignRole('manager');
 
     $customer = Customer::factory()->corporate()->create(['credit_terms_days' => 30]);
+
+    ArInvoice::factory()->create([
+        'branch_id' => 1,
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'issued',
+        'invoice_number' => 'INV7819',
+        'issue_date' => now()->toDateString(),
+        'due_date' => now()->toDateString(),
+    ]);
 
     /** @var ArInvoiceService $svc */
     $svc = app(ArInvoiceService::class);
@@ -47,12 +60,8 @@ it('issues invoices with sequential, concurrency-safe numbers per branch/year', 
     );
     $b = $svc->issue($b, $user->id);
 
-    expect($a->invoice_number)->toStartWith('INV2026-');
-    expect($b->invoice_number)->toStartWith('INV2026-');
-
-    $na = (int) substr((string) $a->invoice_number, -6);
-    $nb = (int) substr((string) $b->invoice_number, -6);
-    expect($nb)->toBe($na + 1);
+    expect($a->invoice_number)->toBe('INV7820');
+    expect($b->invoice_number)->toBe('INV7821');
 });
 
 it('applies partial and full payments and updates invoice balance/status', function () {

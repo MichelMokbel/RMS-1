@@ -414,9 +414,9 @@ class ArInvoiceService
                 }
                 $locked->invoice_number = $candidate;
             } else {
-                $year = now()->format('Y');
-                $seq = $this->sequences->next('ar_invoice', (int) $locked->branch_id, $year);
-                $locked->invoice_number = 'INV'.$year.'-'.str_pad((string) $seq, 6, '0', STR_PAD_LEFT);
+                $seed = $this->maxNumericInvoiceSequence((int) $locked->branch_id);
+                $seq = $this->sequences->nextWithSeed('ar_invoice_numeric', (int) $locked->branch_id, '0000', $seed);
+                $locked->invoice_number = 'INV'.$seq;
             }
 
             $issueDate = $locked->issue_date ? $locked->issue_date->toDateString() : now()->toDateString();
@@ -622,6 +622,27 @@ class ArInvoiceService
         });
     }
 
+    private function maxNumericInvoiceSequence(int $branchId): int
+    {
+        $max = 0;
+
+        $numbers = ArInvoice::query()
+            ->where('branch_id', $branchId)
+            ->whereNotNull('invoice_number')
+            ->where('invoice_number', 'like', 'INV%')
+            ->pluck('invoice_number');
+
+        foreach ($numbers as $number) {
+            if (! preg_match('/^INV(\d+)$/', (string) $number, $matches)) {
+                continue;
+            }
+
+            $max = max($max, (int) $matches[1]);
+        }
+
+        return $max;
+    }
+
     private function duplicateBaseInvoiceNumber(?string $invoiceNumber): ?string
     {
         $number = trim((string) ($invoiceNumber ?? ''));
@@ -629,7 +650,11 @@ class ArInvoiceService
             return null;
         }
 
-        return preg_replace('/V\\d+$/', '', $number) ?: $number;
+        if (preg_match('/V\\d+$/', $number) === 1 && substr_count($number, 'V') >= 2) {
+            return preg_replace('/V\\d+$/', '', $number) ?: $number;
+        }
+
+        return $number;
     }
 
     private function voidInvoiceAllocations(ArInvoice $invoice, int $actorId, ?string $reason = null): void
