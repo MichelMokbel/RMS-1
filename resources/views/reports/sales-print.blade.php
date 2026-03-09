@@ -29,10 +29,14 @@
     <table>
         <thead>
             <tr>
-                <th>Invoice #</th>
-                <th>POS Ref</th>
+                <th>S.I</th>
                 <th>Date & Time</th>
+                <th>Branch</th>
+                <th>Invoice #</th>
+                <th>POS REF</th>
+                <th>Customer</th>
                 <th>Status</th>
+                <th>Payment Type</th>
                 <th class="right">Total</th>
             </tr>
         </thead>
@@ -45,25 +49,31 @@
                     }
                 @endphp
                 <tr>
+                    <td>{{ $loop->iteration }}</td>
+                    <td>{{ $saleDateTime?->format('Y-m-d H:i:s') }}</td>
+                    <td>{{ $branchNames[(int) $s->branch_id] ?? ('Branch '.$s->branch_id) }}</td>
                     <td>{{ $s->invoice_number ?: ('#'.$s->id) }}</td>
                     <td>{{ $s->pos_reference ?? '—' }}</td>
-                    <td>{{ $saleDateTime?->format('Y-m-d H:i:s') }}</td>
+                    <td>{{ $s->customer?->name ?: '—' }}</td>
                     <td>{{ $s->status }}</td>
+                    <td>{{ $paymentTypeLabel($s) }}</td>
                     <td class="right">{{ $formatCents($s->total_cents) }}</td>
                 </tr>
             @empty
-                <tr><td colspan="5">No sales found.</td></tr>
+                <tr><td colspan="9">No sales found.</td></tr>
             @endforelse
         </tbody>
-        @if ($sales->count() > 0)
-            <tfoot>
-                <tr>
-                    <td colspan="4">Total</td>
-                    <td class="right">{{ $formatCents($sales->sum('total_cents')) }}</td>
-                </tr>
-            </tfoot>
-        @endif
     </table>
+    @if ($sales->count() > 0)
+        <table>
+            <tbody>
+                <tr>
+                    <td style="border: 0; text-align: right; font-weight: 700;">Total</td>
+                    <td class="right" style="font-weight: 700;">{{ $formatCents($sales->sum('total_cents')) }}</td>
+                </tr>
+            </tbody>
+        </table>
+    @endif
     @include('reports.print-footer')
 </body>
 </html>

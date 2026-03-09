@@ -18,6 +18,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     protected $paginationTheme = 'tailwind';
 
+    public function mount(): void
+    {
+        $this->date_from = now()->startOfMonth()->toDateString();
+        $this->date_to = now()->endOfMonth()->toDateString();
+    }
+
     public function updating($name): void
     {
         if (in_array($name, ['branch_id', 'status', 'date_from', 'date_to'], true)) {
@@ -27,9 +33,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function with(): array
     {
+        $branches = Schema::hasTable('branches')
+            ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
+            : collect();
+
         return [
             'sales' => $this->query()->paginate(15),
-            'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
+            'branches' => $branches,
+            'branchNames' => $branches->pluck('name', 'id'),
             'exportParams' => $this->exportParams(),
         ];
     }
@@ -37,6 +48,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function query()
     {
         return ArInvoice::query()
+            ->with(['customer:id,name', 'paymentAllocations.payment'])
             ->where('type', 'invoice')
             ->whereIn('status', ['issued', 'partially_paid', 'paid', 'voided'])
             ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id))
@@ -45,6 +57,43 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->date_to, fn ($q) => $q->whereDate('issue_date', '<=', $this->date_to))
             ->orderByDesc('issue_date')
             ->orderByDesc('id');
+    }
+
+    public function paymentTypeLabel(ArInvoice $invoice): string
+    {
+        $methods = collect($invoice->paymentAllocations)
+            ->map(fn ($allocation) => strtolower((string) ($allocation->payment?->method ?? '')))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($methods->count() > 1) {
+            return 'Mixed';
+        }
+
+        if ($methods->count() === 1) {
+            return $this->formatPaymentMethod($methods->first());
+        }
+
+        return $this->formatPaymentMethod((string) ($invoice->payment_type ?: 'credit'));
+    }
+
+    private function formatPaymentMethod(string $method): string
+    {
+        $normalized = strtolower(trim($method));
+        if ($normalized === '') {
+            return 'Credit';
+        }
+
+        return match ($normalized) {
+            'cash' => 'Cash',
+            'card' => 'Card',
+            'credit' => 'Credit',
+            'bank_transfer', 'bank' => 'Bank Transfer',
+            'cheque' => 'Cheque',
+            'voucher' => 'Voucher',
+            default => ucwords(str_replace(['_', '-'], ' ', $normalized)),
+        };
     }
 
     public function exportParams(): array
@@ -92,10 +141,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('S.I') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Date & Time') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Branch') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Invoice #') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('POS Ref') }}</th>
-                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Date & Time') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Customer') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Status') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Payment Type') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Total') }}</th>
                 </tr>
             </thead>
@@ -108,22 +161,26 @@ new #[Layout('components.layouts.app')] class extends Component {
                         }
                     @endphp
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
+                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $sales->firstItem() + $loop->index }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $saleDateTime?->format('Y-m-d H:i:s') }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $branchNames[$sale->branch_id] ?? __('Branch :id', ['id' => $sale->branch_id]) }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $sale->invoice_number ?: ('#'.$sale->id) }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $sale->pos_reference ?: '—' }}</td>
-                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $saleDateTime?->format('Y-m-d H:i:s') }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $sale->customer?->name ?: '—' }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $sale->status }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $this->paymentTypeLabel($sale) }}</td>
                         <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($sale->total_cents) }}</td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="5" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No sales found.') }}</td>
+                        <td colspan="9" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No sales found.') }}</td>
                     </tr>
                 @endforelse
             </tbody>
             @if ($sales->count() > 0)
                 <tfoot class="bg-neutral-50 dark:bg-neutral-800/90">
                     <tr>
-                        <td colspan="4" class="px-3 py-2 text-right text-sm font-semibold text-neutral-700 dark:text-neutral-200">{{ __('Total') }}</td>
+                        <td colspan="8" class="px-3 py-2 text-right text-sm font-semibold text-neutral-700 dark:text-neutral-200">{{ __('Total') }}</td>
                         <td class="px-3 py-2 text-right text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($sales->getCollection()->sum('total_cents')) }}</td>
                     </tr>
                 </tfoot>

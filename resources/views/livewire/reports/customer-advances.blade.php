@@ -23,6 +23,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function mount(): void
     {
         $this->branch_id = (int) config('inventory.default_branch_id', 1) ?: 1;
+        $this->date_from = now()->startOfMonth()->toDateString();
+        $this->date_to = now()->endOfMonth()->toDateString();
     }
 
     public function updating($name): void

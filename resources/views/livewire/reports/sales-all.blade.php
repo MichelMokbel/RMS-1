@@ -20,6 +20,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     protected $paginationTheme = 'tailwind';
 
+    public function mount(): void
+    {
+        $this->date_from = now()->startOfMonth()->toDateString();
+        $this->date_to = now()->endOfMonth()->toDateString();
+    }
+
     public function updating($name): void
     {
         if (in_array($name, ['branch_id', 'customer_id', 'customer_search', 'date_from', 'date_to'], true)) {

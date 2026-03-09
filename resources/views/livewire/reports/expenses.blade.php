@@ -22,6 +22,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?string $date_from = null;
     public ?string $date_to = null;
 
+    public function mount(): void
+    {
+        $this->date_from = now()->startOfMonth()->toDateString();
+        $this->date_to = now()->endOfMonth()->toDateString();
+    }
+
     public function updating($name): void
     {
         $this->resetPage();

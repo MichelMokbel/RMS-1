@@ -7,6 +7,7 @@ use App\Models\ArInvoice;
 use App\Support\Reports\CsvExport;
 use App\Support\Reports\PdfExport;
 use App\Support\Money\MinorUnits;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -20,10 +21,30 @@ class ReceivablesReportController extends Controller
     }
 
     /**
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    private function resolvedRange(Request $request): array
+    {
+        $monthStart = now()->startOfMonth();
+        $monthEnd = now()->endOfMonth();
+
+        $from = $request->filled('date_from')
+            ? Carbon::parse((string) $request->input('date_from'))->startOfDay()
+            : $monthStart->copy()->startOfDay();
+        $to = $request->filled('date_to')
+            ? Carbon::parse((string) $request->input('date_to'))->endOfDay()
+            : $monthEnd->copy()->endOfDay();
+
+        return [$from, $to];
+    }
+
+    /**
      * @return Collection<int, ArInvoice>
      */
     private function query(Request $request): Collection
     {
+        [$from, $to] = $this->resolvedRange($request);
+
         $paymentType = $request->filled('payment_type') && $request->payment_type !== 'all'
             ? (string) $request->payment_type
             : null;
@@ -35,8 +56,8 @@ class ReceivablesReportController extends Controller
             ->when($request->filled('branch_id') && $request->integer('branch_id') > 0, fn ($q) => $q->where('branch_id', $request->integer('branch_id')))
             ->when($request->filled('status') && $request->status !== 'all', fn ($q) => $q->where('status', $request->status))
             ->when($paymentType !== null, fn (Builder $q) => $this->applyPaymentTypeFilter($q, $paymentType))
-            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('issue_date', '>=', $request->date_from))
-            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('issue_date', '<=', $request->date_to))
+            ->whereDate('issue_date', '>=', $from->toDateString())
+            ->whereDate('issue_date', '<=', $to->toDateString())
             ->orderByDesc('issue_date')
             ->orderByDesc('id')
             ->get();
@@ -68,7 +89,19 @@ class ReceivablesReportController extends Controller
                     'receivable_cents' => (int) $group->sum('balance_cents'),
                 ];
             })
-            ->sortBy('customer_name', SORT_NATURAL | SORT_FLAG_CASE)
+            ->sort(function (array $a, array $b): int {
+                $amountCmp = ($b['receivable_cents'] <=> $a['receivable_cents']);
+                if ($amountCmp !== 0) {
+                    return $amountCmp;
+                }
+
+                $nameCmp = strnatcasecmp((string) $a['customer_name'], (string) $b['customer_name']);
+                if ($nameCmp !== 0) {
+                    return $nameCmp;
+                }
+
+                return ((int) $a['customer_id']) <=> ((int) $b['customer_id']);
+            })
             ->values();
     }
 
@@ -101,7 +134,11 @@ class ReceivablesReportController extends Controller
     public function print(Request $request)
     {
         $receivables = $this->customerReceivables($request);
-        $filters = $request->only(['branch_id', 'status', 'payment_type', 'date_from', 'date_to']);
+        [$from, $to] = $this->resolvedRange($request);
+        $filters = array_merge(
+            $request->only(['branch_id', 'status', 'payment_type']),
+            ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()]
+        );
 
         return view('reports.receivables-print', [
             'receivables' => $receivables,
@@ -129,7 +166,11 @@ class ReceivablesReportController extends Controller
     public function pdf(Request $request)
     {
         $receivables = $this->customerReceivables($request);
-        $filters = $request->only(['branch_id', 'status', 'payment_type', 'date_from', 'date_to']);
+        [$from, $to] = $this->resolvedRange($request);
+        $filters = array_merge(
+            $request->only(['branch_id', 'status', 'payment_type']),
+            ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()]
+        );
 
         return PdfExport::download('reports.receivables-print', [
             'receivables' => $receivables,

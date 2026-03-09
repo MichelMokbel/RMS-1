@@ -43,6 +43,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function with(): array
     {
+        $branches = Schema::hasTable('branches')
+            ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
+            : collect();
+
         $customers = collect();
         if (Schema::hasTable('customers') && $this->customer_id === null && trim($this->customer_search) !== '') {
             $customers = Customer::query()
@@ -54,7 +58,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         return [
             'rows' => $this->query(),
-            'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
+            'branches' => $branches,
             'customers' => $customers,
             'exportParams' => $this->exportParams(),
         ];
@@ -73,12 +77,32 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->orderByDesc('issue_date')
             ->get();
 
+        $branchNames = Schema::hasTable('branches')
+            ? DB::table('branches')
+                ->whereIn('id', $rows->pluck('branch_id')->filter()->unique()->values())
+                ->pluck('name', 'id')
+            : collect();
+
         return $rows
-            ->groupBy(fn ($inv) => $inv->issue_date?->format('Y-m') ?? '')
-            ->map(fn ($group, $month) => [
-                'month' => $month,
-                'count' => $group->count(),
-                'total_cents' => (int) $group->sum('total_cents'),
+            ->groupBy(function ($inv) {
+                $month = $inv->issue_date?->format('Y-m') ?? '';
+                return $month.'|'.(int) ($inv->branch_id ?? 0);
+            })
+            ->map(function ($group, $key) use ($branchNames) {
+                [$month, $branchId] = array_pad(explode('|', (string) $key, 2), 2, '0');
+                $branchId = (int) $branchId;
+
+                return [
+                    'month' => $month,
+                    'branch_id' => $branchId,
+                    'branch' => (string) ($branchNames[$branchId] ?? ('Branch '.$branchId)),
+                    'count' => $group->count(),
+                    'total_cents' => (int) $group->sum('total_cents'),
+                ];
+            })
+            ->sortBy([
+                ['month', 'asc'],
+                ['branch', 'asc'],
             ])
             ->values();
     }
@@ -146,6 +170,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Month') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Branch') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Count') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Total') }}</th>
                 </tr>
@@ -154,13 +179,23 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @forelse ($rows as $row)
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
                         <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $row['month'] }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['branch'] }}</td>
                         <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $row['count'] }}</td>
                         <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($row['total_cents']) }}</td>
                     </tr>
                 @empty
-                    <tr><td colspan="3" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No sales found.') }}</td></tr>
+                    <tr><td colspan="4" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No sales found.') }}</td></tr>
                 @endforelse
             </tbody>
+            @if ($rows->count() > 0)
+                <tfoot class="bg-neutral-50 dark:bg-neutral-800/90">
+                    <tr>
+                        <td colspan="2" class="px-3 py-2 text-sm font-semibold text-neutral-700 dark:text-neutral-200">{{ __('Total') }}</td>
+                        <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-700 dark:text-neutral-200">{{ (int) $rows->sum('count') }}</td>
+                        <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney((int) $rows->sum('total_cents')) }}</td>
+                    </tr>
+                </tfoot>
+            @endif
         </table>
     </div>
 </div>

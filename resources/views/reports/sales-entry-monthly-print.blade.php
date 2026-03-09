@@ -27,6 +27,7 @@
         <thead>
             <tr>
                 <th>Month</th>
+                <th>Branch</th>
                 <th class="right">Count</th>
                 <th class="right">Total</th>
             </tr>
@@ -35,16 +36,17 @@
             @forelse ($months as $row)
                 <tr>
                     <td>{{ $row['month'] }}</td>
+                    <td>{{ $row['branch'] }}</td>
                     <td class="right">{{ $row['count'] }}</td>
                     <td class="right">{{ $formatCents($row['total_cents']) }}</td>
                 </tr>
             @empty
-                <tr><td colspan="3">No sales found.</td></tr>
+                <tr><td colspan="4">No sales found.</td></tr>
             @endforelse
         </tbody>
         <tfoot>
             <tr>
-                <td><strong>Total</strong></td>
+                <td colspan="2"><strong>Total</strong></td>
                 <td class="right"><strong>{{ (int) $months->sum('count') }}</strong></td>
                 <td class="right"><strong>{{ $formatCents((int) $months->sum('total_cents')) }}</strong></td>
             </tr>

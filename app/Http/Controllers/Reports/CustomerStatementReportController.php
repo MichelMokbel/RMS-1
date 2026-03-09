@@ -10,6 +10,7 @@ use App\Models\Payment;
 use App\Support\Money\MinorUnits;
 use App\Support\Reports\CsvExport;
 use App\Support\Reports\PdfExport;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -19,6 +20,24 @@ class CustomerStatementReportController extends Controller
     private function formatCents(?int $cents): string
     {
         return MinorUnits::format((int) ($cents ?? 0));
+    }
+
+    /**
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    private function resolvedRange(Request $request): array
+    {
+        $monthStart = now()->startOfMonth();
+        $monthEnd = now()->endOfMonth();
+
+        $from = $request->filled('date_from')
+            ? Carbon::parse((string) $request->input('date_from'))->startOfDay()
+            : $monthStart->copy()->startOfDay();
+        $to = $request->filled('date_to')
+            ? Carbon::parse((string) $request->input('date_to'))->endOfDay()
+            : $monthEnd->copy()->endOfDay();
+
+        return [$from, $to];
     }
 
     /**
@@ -32,8 +51,7 @@ class CustomerStatementReportController extends Controller
         }
 
         $branchId = $request->integer('branch_id') ?? 0;
-        $dateFrom = $request->filled('date_from') ? now()->parse($request->date_from)->startOfDay() : null;
-        $dateTo = $request->filled('date_to') ? now()->parse($request->date_to)->endOfDay() : null;
+        [$dateFrom, $dateTo] = $this->resolvedRange($request);
 
         $invoiceBase = ArInvoice::query()
             ->where('customer_id', $customerId)
@@ -46,15 +64,15 @@ class CustomerStatementReportController extends Controller
             ->where('customer_id', $customerId)
             ->when($branchId > 0, fn ($q) => $q->where('branch_id', $branchId));
 
-        $openingInvoices = $dateFrom ? (int) $invoiceBase->clone()->whereDate('issue_date', '<', $dateFrom)->sum('total_cents') : 0;
-        $openingPayments = $dateFrom ? (int) $paymentBase->clone()->whereDate('received_at', '<', $dateFrom)->sum('amount_cents') : 0;
+        $openingInvoices = (int) $invoiceBase->clone()->whereDate('issue_date', '<', $dateFrom)->sum('total_cents');
+        $openingPayments = (int) $paymentBase->clone()->whereDate('received_at', '<', $dateFrom)->sum('amount_cents');
         $opening = $openingInvoices - $openingPayments;
 
         $entries = collect();
 
         $invoiceRange = $invoiceBase->clone()
-            ->when($dateFrom, fn ($q) => $q->whereDate('issue_date', '>=', $dateFrom))
-            ->when($dateTo, fn ($q) => $q->whereDate('issue_date', '<=', $dateTo))
+            ->whereDate('issue_date', '>=', $dateFrom)
+            ->whereDate('issue_date', '<=', $dateTo)
             ->get()
             ->map(function (ArInvoice $inv) {
                 $amount = (int) ($inv->total_cents ?? 0);
@@ -73,8 +91,8 @@ class CustomerStatementReportController extends Controller
             });
 
         $paymentRange = $paymentBase->clone()
-            ->when($dateFrom, fn ($q) => $q->whereDate('received_at', '>=', $dateFrom))
-            ->when($dateTo, fn ($q) => $q->whereDate('received_at', '<=', $dateTo))
+            ->whereDate('received_at', '>=', $dateFrom)
+            ->whereDate('received_at', '<=', $dateTo)
             ->get()
             ->map(function (Payment $pay) {
                 $amount = (int) ($pay->amount_cents ?? 0);
@@ -103,17 +121,16 @@ class CustomerStatementReportController extends Controller
         }
 
         $branchId = $request->integer('branch_id') ?? 0;
-        $dateFrom = $request->filled('date_from') ? now()->parse($request->date_from)->startOfDay() : null;
-        $dateTo = $request->filled('date_to') ? now()->parse($request->date_to)->endOfDay() : null;
-        $asOf = $dateTo ? $dateTo->copy() : now();
+        [$dateFrom, $dateTo] = $this->resolvedRange($request);
+        $asOf = $dateTo->copy();
 
         $invoices = ArInvoice::query()
             ->where('customer_id', $customerId)
             ->where('type', 'invoice')
             ->whereIn('status', ['issued', 'partially_paid', 'paid'])
             ->when($branchId > 0, fn ($q) => $q->where('branch_id', $branchId))
-            ->when($dateFrom, fn ($q) => $q->whereDate('issue_date', '>=', $dateFrom))
-            ->when($dateTo, fn ($q) => $q->whereDate('issue_date', '<=', $dateTo))
+            ->whereDate('issue_date', '>=', $dateFrom)
+            ->whereDate('issue_date', '<=', $dateTo)
             ->orderBy('issue_date')
             ->orderBy('id')
             ->get();
@@ -164,7 +181,7 @@ class CustomerStatementReportController extends Controller
         }
 
         $branchId = $request->integer('branch_id') ?? 0;
-        $asOf = $request->filled('date_to') ? now()->parse($request->date_to)->endOfDay() : now();
+        [, $asOf] = $this->resolvedRange($request);
 
         $invoices = ArInvoice::query()
             ->where('customer_id', $customerId)
@@ -218,14 +235,14 @@ class CustomerStatementReportController extends Controller
     {
         $customerId = (int) ($request->integer('customer_id') ?? 0);
         $branchId = $request->integer('branch_id') ?? 0;
-        $dateFrom = $request->filled('date_from') ? now()->parse($request->date_from)->startOfDay() : null;
+        [$dateFrom] = $this->resolvedRange($request);
 
         $periodAmount = (int) $rows->sum('amount_cents');
         $periodPaid = (int) $rows->sum('paid_cents');
         $periodBalance = (int) $rows->sum('balance_cents');
 
         $previousBalance = 0;
-        if ($customerId > 0 && $dateFrom) {
+        if ($customerId > 0) {
             $previousBalance = (int) ArInvoice::query()
                 ->where('customer_id', $customerId)
                 ->where('type', 'invoice')
@@ -248,7 +265,11 @@ class CustomerStatementReportController extends Controller
     public function print(Request $request)
     {
         $statement = $this->buildStatement($request);
-        $filters = $request->only(['branch_id', 'customer_id', 'date_from', 'date_to']);
+        [$from, $to] = $this->resolvedRange($request);
+        $filters = array_merge(
+            $request->only(['branch_id', 'customer_id']),
+            ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()]
+        );
         $customer = $request->filled('customer_id') ? Customer::find($request->integer('customer_id')) : null;
         $rows = $this->buildPrintRows($request);
         $summary = $this->buildPrintSummary($request, $rows);
@@ -291,7 +312,11 @@ class CustomerStatementReportController extends Controller
     public function pdf(Request $request)
     {
         $statement = $this->buildStatement($request);
-        $filters = $request->only(['branch_id', 'customer_id', 'date_from', 'date_to']);
+        [$from, $to] = $this->resolvedRange($request);
+        $filters = array_merge(
+            $request->only(['branch_id', 'customer_id']),
+            ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()]
+        );
         $customer = $request->filled('customer_id') ? Customer::find($request->integer('customer_id')) : null;
         $rows = $this->buildPrintRows($request);
         $summary = $this->buildPrintSummary($request, $rows);

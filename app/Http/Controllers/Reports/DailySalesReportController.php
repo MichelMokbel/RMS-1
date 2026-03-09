@@ -25,13 +25,14 @@ class DailySalesReportController extends Controller
      */
     private function resolvedDailyRange(Request $request): array
     {
-        $today = now();
+        $monthStart = now()->startOfMonth();
+        $monthEnd = now()->endOfMonth();
         $from = $request->filled('date_from')
             ? Carbon::parse((string) $request->input('date_from'))->startOfDay()
-            : $today->copy()->startOfDay();
+            : $monthStart->copy()->startOfDay();
         $to = $request->filled('date_to')
             ? Carbon::parse((string) $request->input('date_to'))->endOfDay()
-            : $today->copy()->endOfDay();
+            : $monthEnd->copy()->endOfDay();
 
         return [$from, $to];
     }

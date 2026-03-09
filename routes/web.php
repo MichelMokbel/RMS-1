@@ -1111,7 +1111,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|receivabl
 });
 
 // Reports (manager/staff)
-Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|reports.access'])->prefix('reports')->name('reports.')->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|reports.access', 'reports.default-dates'])->prefix('reports')->name('reports.')->group(function () {
     Volt::route('/', 'reports.index')->name('index');
     Volt::route('orders', 'reports.orders')->name('orders');
     Volt::route('purchase-orders', 'reports.purchase-orders')->name('purchase-orders');

@@ -1,9 +1,8 @@
 <?php
 
 use App\Models\ArInvoice;
-use App\Models\Customer;
-use App\Models\Payment;
 use App\Support\Money\MinorUnits;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
@@ -14,84 +13,112 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?string $date_from = null;
     public ?string $date_to = null;
 
+    public function mount(): void
+    {
+        $this->date_from = now()->startOfMonth()->toDateString();
+        $this->date_to = now()->endOfMonth()->toDateString();
+    }
+
     public function with(): array
     {
+        $sections = $this->sections();
+
         return [
-            'rows' => $this->query(),
+            'sections' => $sections,
+            'grandTotals' => $this->grandTotals($sections),
             'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
             'exportParams' => $this->exportParams(),
         ];
     }
 
-    private function query()
+    /**
+     * @return Collection<int, array{customer_id:int,customer_name:string,customer_code:?string,rows:Collection<int,array<string,int|string>>,summary:array{period_amount_cents:int,period_paid_cents:int,period_balance_cents:int}}>
+     */
+    private function sections(): Collection
     {
-        $dateFrom = $this->date_from ? now()->parse($this->date_from)->startOfDay() : null;
-        $dateTo = $this->date_to ? now()->parse($this->date_to)->endOfDay() : null;
+        $dateFrom = $this->date_from ? now()->parse($this->date_from)->startOfDay() : now()->startOfMonth()->startOfDay();
+        $dateTo = $this->date_to ? now()->parse($this->date_to)->endOfDay() : now()->endOfMonth()->endOfDay();
 
-        $invoiceBase = ArInvoice::query()
+        $invoices = ArInvoice::query()
+            ->with(['customer:id,name,customer_code'])
+            ->where('type', 'invoice')
             ->whereIn('status', ['issued', 'partially_paid', 'paid'])
-            ->whereIn('type', ['invoice', 'credit_note'])
-            ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id));
+            ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id))
+            ->whereDate('issue_date', '>=', $dateFrom)
+            ->whereDate('issue_date', '<=', $dateTo)
+            ->orderBy('customer_id')
+            ->orderBy('issue_date')
+            ->orderBy('id')
+            ->get();
 
-        $paymentBase = Payment::query()
-            ->where('source', 'ar')
-            ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id));
+        if ($invoices->isEmpty()) {
+            return collect();
+        }
 
-        $invoiceBefore = $dateFrom
-            ? $invoiceBase->clone()
-                ->whereDate('issue_date', '<', $dateFrom)
-                ->selectRaw('customer_id, SUM(total_cents) as total')
-                ->groupBy('customer_id')
-                ->pluck('total', 'customer_id')
+        $branchNames = Schema::hasTable('branches')
+            ? DB::table('branches')
+                ->whereIn('id', $invoices->pluck('branch_id')->filter()->unique()->values())
+                ->pluck('name', 'id')
             : collect();
 
-        $invoiceRange = $invoiceBase->clone()
-            ->when($dateFrom, fn ($q) => $q->whereDate('issue_date', '>=', $dateFrom))
-            ->when($dateTo, fn ($q) => $q->whereDate('issue_date', '<=', $dateTo))
-            ->selectRaw('customer_id, SUM(total_cents) as total')
-            ->groupBy('customer_id')
-            ->pluck('total', 'customer_id');
+        $asOf = $dateTo->copy();
 
-        $paymentBefore = $dateFrom
-            ? $paymentBase->clone()
-                ->whereDate('received_at', '<', $dateFrom)
-                ->selectRaw('customer_id, SUM(amount_cents) as total')
-                ->groupBy('customer_id')
-                ->pluck('total', 'customer_id')
-            : collect();
+        return $invoices
+            ->groupBy(fn (ArInvoice $invoice) => (int) $invoice->customer_id)
+            ->map(function (Collection $group, int $customerId) use ($branchNames, $asOf): array {
+                /** @var ArInvoice|null $first */
+                $first = $group->first();
+                $customer = $first?->customer;
 
-        $paymentRange = $paymentBase->clone()
-            ->when($dateFrom, fn ($q) => $q->whereDate('received_at', '>=', $dateFrom))
-            ->when($dateTo, fn ($q) => $q->whereDate('received_at', '<=', $dateTo))
-            ->selectRaw('customer_id, SUM(amount_cents) as total')
-            ->groupBy('customer_id')
-            ->pluck('total', 'customer_id');
+                $rows = $group->values()->map(function (ArInvoice $invoice, int $index) use ($branchNames, $asOf): array {
+                    $dueDate = $invoice->due_date ?: $invoice->issue_date;
+                    $days = $dueDate ? max(0, (int) floor((float) $dueDate->diffInDays($asOf, false))) : 0;
+                    $paymentType = strtolower((string) ($invoice->payment_type ?? 'credit'));
 
-        $customerIds = collect()
-            ->merge($invoiceBefore->keys())
-            ->merge($invoiceRange->keys())
-            ->merge($paymentBefore->keys())
-            ->merge($paymentRange->keys())
-            ->unique()
+                    return [
+                        'line_no' => $index + 1,
+                        'document_no' => $invoice->invoice_number ?: (string) $invoice->id,
+                        'document_type' => 'AR Invoice',
+                        'location' => (string) ($branchNames[(int) $invoice->branch_id] ?? ('Branch '.$invoice->branch_id)),
+                        'type' => $paymentType === 'credit' ? 'On Credit' : ucfirst((string) ($invoice->payment_type ?: 'Credit')),
+                        'date' => $invoice->issue_date?->format('d-M-Y') ?? '-',
+                        'due_date' => $dueDate?->format('d-M-Y') ?? '-',
+                        'reference_no' => $invoice->lpo_reference ?: ($invoice->pos_reference ?: '-'),
+                        'amount_cents' => (int) ($invoice->total_cents ?? 0),
+                        'paid_cents' => (int) ($invoice->paid_total_cents ?? 0),
+                        'balance_cents' => (int) ($invoice->balance_cents ?? 0),
+                        'aging_label' => $days.' Days',
+                        'payment_no' => '-',
+                    ];
+                });
+
+                return [
+                    'customer_id' => $customerId,
+                    'customer_name' => (string) ($customer?->name ?? '—'),
+                    'customer_code' => $customer?->customer_code,
+                    'rows' => $rows,
+                    'summary' => [
+                        'period_amount_cents' => (int) $rows->sum('amount_cents'),
+                        'period_paid_cents' => (int) $rows->sum('paid_cents'),
+                        'period_balance_cents' => (int) $rows->sum('balance_cents'),
+                    ],
+                ];
+            })
+            ->sortBy('customer_name', SORT_NATURAL | SORT_FLAG_CASE)
             ->values();
+    }
 
-        $customers = Customer::whereIn('id', $customerIds)->get()->keyBy('id');
-
-        return $customerIds->map(function ($customerId) use ($customers, $invoiceBefore, $invoiceRange, $paymentBefore, $paymentRange) {
-            $opening = (int) ($invoiceBefore[$customerId] ?? 0) - (int) ($paymentBefore[$customerId] ?? 0);
-            $invoices = (int) ($invoiceRange[$customerId] ?? 0);
-            $payments = (int) ($paymentRange[$customerId] ?? 0);
-            $closing = $opening + $invoices - $payments;
-
-            return [
-                'customer_id' => (int) $customerId,
-                'customer_name' => $customers[$customerId]->name ?? '—',
-                'opening' => $opening,
-                'invoices' => $invoices,
-                'payments' => $payments,
-                'closing' => $closing,
-            ];
-        });
+    /**
+     * @param  Collection<int, array{summary:array{period_amount_cents:int,period_paid_cents:int,period_balance_cents:int}}>  $sections
+     * @return array{period_amount_cents:int,period_paid_cents:int,period_balance_cents:int}
+     */
+    private function grandTotals(Collection $sections): array
+    {
+        return [
+            'period_amount_cents' => (int) $sections->sum(fn (array $section) => (int) ($section['summary']['period_amount_cents'] ?? 0)),
+            'period_paid_cents' => (int) $sections->sum(fn (array $section) => (int) ($section['summary']['period_paid_cents'] ?? 0)),
+            'period_balance_cents' => (int) $sections->sum(fn (array $section) => (int) ($section['summary']['period_balance_cents'] ?? 0)),
+        ];
     }
 
     public function exportParams(): array
@@ -127,30 +154,86 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
-    <div class="app-table-shell">
-        <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
-            <thead class="bg-neutral-50 dark:bg-neutral-800/90">
-                <tr>
-                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Customer') }}</th>
-                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Opening') }}</th>
-                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Invoices') }}</th>
-                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Payments') }}</th>
-                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Closing') }}</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                @forelse ($rows as $row)
-                    <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
-                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $row['customer_name'] }}</td>
-                        <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney($row['opening']) }}</td>
-                        <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney($row['invoices']) }}</td>
-                        <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney($row['payments']) }}</td>
-                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($row['closing']) }}</td>
-                    </tr>
-                @empty
-                    <tr><td colspan="5" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No customers found.') }}</td></tr>
-                @endforelse
-            </tbody>
-        </table>
-    </div>
+    @forelse ($sections as $section)
+        <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 class="text-base font-semibold text-neutral-900 dark:text-neutral-100">{{ $section['customer_name'] }}</h2>
+                <span class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Code') }}: {{ $section['customer_code'] ?: '-' }}</span>
+            </div>
+
+            <div class="app-table-shell">
+                <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
+                    <thead class="bg-neutral-50 dark:bg-neutral-800/90">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('#') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('No') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Document Type') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Location') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Type') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Date') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Due Date') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Reference No') }}</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Amount') }}</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Paid') }}</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Balance') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Aging') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Payment No') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                        @foreach ($section['rows'] as $row)
+                            <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
+                                <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $row['line_no'] }}</td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['document_no'] }}</td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['document_type'] }}</td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['location'] }}</td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['type'] }}</td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['date'] }}</td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['due_date'] }}</td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['reference_no'] }}</td>
+                                <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($row['amount_cents']) }}</td>
+                                <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($row['paid_cents']) }}</td>
+                                <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($row['balance_cents']) }}</td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['aging_label'] }}</td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['payment_no'] }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                    <tfoot class="bg-neutral-50 dark:bg-neutral-800/90">
+                        <tr>
+                            <td colspan="8" class="px-3 py-2 text-right text-sm font-semibold text-neutral-700 dark:text-neutral-200">{{ __('Total Amount') }}</td>
+                            <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($section['summary']['period_amount_cents']) }}</td>
+                            <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($section['summary']['period_paid_cents']) }}</td>
+                            <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($section['summary']['period_balance_cents']) }}</td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    @empty
+        <div class="rounded-lg border border-neutral-200 bg-white p-6 text-center text-sm text-neutral-600 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300">
+            {{ __('No customers found.') }}
+        </div>
+    @endforelse
+
+    @if ($sections->count() > 0)
+        <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+            <h2 class="text-base font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Grand Total') }}</h2>
+            <div class="mt-3 grid gap-3 sm:grid-cols-3">
+                <div>
+                    <div class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Amount') }}</div>
+                    <div class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($grandTotals['period_amount_cents']) }}</div>
+                </div>
+                <div>
+                    <div class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Paid') }}</div>
+                    <div class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($grandTotals['period_paid_cents']) }}</div>
+                </div>
+                <div>
+                    <div class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Balance') }}</div>
+                    <div class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($grandTotals['period_balance_cents']) }}</div>
+                </div>
+            </div>
+        </div>
+    @endif
 </div>

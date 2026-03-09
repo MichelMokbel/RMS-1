@@ -22,6 +22,16 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     protected $paginationTheme = 'tailwind';
 
+    public function mount(): void
+    {
+        $monthStart = now()->startOfMonth()->toDateString();
+        $monthEnd = now()->endOfMonth()->toDateString();
+        $this->invoice_date_from = $monthStart;
+        $this->invoice_date_to = $monthEnd;
+        $this->payment_date_from = $monthStart;
+        $this->payment_date_to = $monthEnd;
+    }
+
     public function updating($name): void
     {
         $this->resetPage();

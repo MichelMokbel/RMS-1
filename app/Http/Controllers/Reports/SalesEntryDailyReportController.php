@@ -39,13 +39,14 @@ class SalesEntryDailyReportController extends Controller
      */
     private function resolvedDailyRange(Request $request): array
     {
-        $today = now();
+        $monthStart = now()->startOfMonth();
+        $monthEnd = now()->endOfMonth();
         $from = $request->filled('date_from')
             ? Carbon::parse((string) $request->input('date_from'))->startOfDay()
-            : $today->copy()->startOfDay();
+            : $monthStart->copy()->startOfDay();
         $to = $request->filled('date_to')
             ? Carbon::parse((string) $request->input('date_to'))->endOfDay()
-            : $today->copy()->endOfDay();
+            : $monthEnd->copy()->endOfDay();
 
         return [$from, $to];
     }
@@ -53,7 +54,7 @@ class SalesEntryDailyReportController extends Controller
     private function query(Request $request, Carbon $from, Carbon $to, int $limit = 500): Collection
     {
         return ArInvoice::query()
-            ->with(['customer', 'salesPerson', 'paymentAllocations.payment'])
+            ->with(['customer', 'salesPerson', 'creator', 'paymentAllocations.payment'])
             ->where('type', 'invoice')
             ->whereIn('status', ['issued', 'partially_paid', 'paid'])
             ->when($request->filled('branch_id') && $request->integer('branch_id') > 0, fn ($q) => $q->where('branch_id', $request->integer('branch_id')))
@@ -72,20 +73,28 @@ class SalesEntryDailyReportController extends Controller
      */
     private function buildRows(Collection $invoices): Collection
     {
-        return $invoices->values()->map(function (ArInvoice $inv, int $index): array {
+        $branchNames = Branch::query()
+            ->whereIn('id', $invoices->pluck('branch_id')->filter()->unique()->values())
+            ->pluck('name', 'id');
+
+        return $invoices->values()->map(function (ArInvoice $inv, int $index) use ($branchNames): array {
             $tradeRevenue = (int) ($inv->subtotal_cents ?? 0);
             $discount = (int) ($inv->discount_total_cents ?? 0);
             $netAmount = (int) ($inv->total_cents ?? 0);
             ['cash_cents' => $cash, 'card_cents' => $card, 'credit_cents' => $credit] = $this->paymentBreakdownCents($inv, $netAmount);
-            $totalCollection = $cash + $card + $credit;
+            $totalCollection = $cash + $card;
 
             return [
                 'si' => $index + 1,
                 'date' => $this->formatInvoiceDateTime($inv),
+                'branch' => (string) ($branchNames[(int) $inv->branch_id] ?? ('Branch '.$inv->branch_id)),
                 'invoice_number' => $inv->invoice_number ?: ('#'.$inv->id),
                 'pos_ref' => $inv->pos_reference,
                 'customer' => $inv->customer?->name,
-                'sales_person' => $inv->salesPerson?->username ?: ($inv->salesPerson?->name ?: null),
+                'sales_person' => $inv->salesPerson?->username
+                    ?: ($inv->salesPerson?->name
+                        ?: ($inv->creator?->username
+                            ?: ($inv->creator?->name ?: null))),
                 'trade_revenue_cents' => $tradeRevenue,
                 'discount_cents' => $discount,
                 'net_amount_cents' => $netAmount,
@@ -103,6 +112,7 @@ class SalesEntryDailyReportController extends Controller
     private function paymentBreakdownCents(ArInvoice $invoice, int $netAmount): array
     {
         $paymentType = strtolower((string) ($invoice->payment_type ?? 'credit'));
+        $paidTotal = max(0, min((int) ($invoice->paid_total_cents ?? 0), $netAmount));
         $cash = 0;
         $card = 0;
         $hasAllocations = false;
@@ -126,9 +136,9 @@ class SalesEntryDailyReportController extends Controller
 
         if (! $hasAllocations) {
             return [
-                'cash_cents' => $paymentType === 'cash' ? $netAmount : 0,
-                'card_cents' => in_array($paymentType, ['card', 'mixed'], true) ? $netAmount : 0,
-                'credit_cents' => $paymentType === 'credit' ? $netAmount : 0,
+                'cash_cents' => $paymentType === 'cash' ? $paidTotal : 0,
+                'card_cents' => $paymentType !== 'cash' ? $paidTotal : 0,
+                'credit_cents' => max(0, $netAmount - $paidTotal),
             ];
         }
 
@@ -200,6 +210,7 @@ class SalesEntryDailyReportController extends Controller
         $headers = [
             __('S.I'),
             __('Date & Time'),
+            __('Branch'),
             __('Invoice Number'),
             __('POS Ref'),
             __('Customer'),
@@ -215,6 +226,7 @@ class SalesEntryDailyReportController extends Controller
         $data = $rows->map(fn ($row) => [
             $row['si'],
             $row['date'],
+            $row['branch'] ?? '',
             $row['invoice_number'],
             $row['pos_ref'] ?? '',
             $row['customer'] ?? '',

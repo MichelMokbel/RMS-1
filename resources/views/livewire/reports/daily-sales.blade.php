@@ -14,9 +14,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
-        $today = now()->toDateString();
-        $this->date_from = $today;
-        $this->date_to = $today;
+        $this->date_from = now()->startOfMonth()->toDateString();
+        $this->date_to = now()->endOfMonth()->toDateString();
     }
 
     public function with(): array
@@ -103,6 +102,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <tr><td colspan="3" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No sales found.') }}</td></tr>
                 @endforelse
             </tbody>
+            @if ($rows->count() > 0)
+                <tfoot class="bg-neutral-50 dark:bg-neutral-800/90">
+                    <tr>
+                        <td class="px-3 py-2 text-sm font-semibold text-neutral-700 dark:text-neutral-200">{{ __('Total') }}</td>
+                        <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-700 dark:text-neutral-200">{{ (int) $rows->sum('count') }}</td>
+                        <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney((int) $rows->sum('total_cents')) }}</td>
+                    </tr>
+                </tfoot>
+            @endif
         </table>
     </div>
 </div>

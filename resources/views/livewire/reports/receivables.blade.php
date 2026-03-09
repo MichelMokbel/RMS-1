@@ -24,6 +24,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function mount(): void
     {
         $this->branch_id = (int) config('inventory.default_branch_id', 1) ?: 1;
+        $this->date_from = now()->startOfMonth()->toDateString();
+        $this->date_to = now()->endOfMonth()->toDateString();
     }
 
     public function updating($name): void
@@ -36,7 +38,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function with(): array
     {
         $rows = $this->customerReceivables();
-        $perPage = 15;
+        $perPage = 50;
         $page = LengthAwarePaginator::resolveCurrentPage();
         $pageItems = $rows->forPage($page, $perPage)->values();
         $receivables = new LengthAwarePaginator(
@@ -94,7 +96,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'last_invoice_date' => $latestIssueDate?->format('Y-m-d'),
                 ];
             })
-            ->sortBy('customer_name', SORT_NATURAL | SORT_FLAG_CASE)
+            ->sort(function (array $a, array $b): int {
+                $amountCmp = ($b['receivable_cents'] <=> $a['receivable_cents']);
+                if ($amountCmp !== 0) {
+                    return $amountCmp;
+                }
+
+                $nameCmp = strnatcasecmp((string) $a['customer_name'], (string) $b['customer_name']);
+                if ($nameCmp !== 0) {
+                    return $nameCmp;
+                }
+
+                return ((int) $a['customer_id']) <=> ((int) $b['customer_id']);
+            })
             ->values();
     }
 

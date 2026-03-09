@@ -16,6 +16,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $group_by = 'category';
     public array $category_groups = [];
 
+    public function mount(): void
+    {
+        $this->date_from = now()->startOfMonth()->toDateString();
+        $this->date_to = now()->endOfMonth()->toDateString();
+    }
+
     public function with(): array
     {
         return [

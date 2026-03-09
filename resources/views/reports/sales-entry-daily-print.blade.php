@@ -30,6 +30,7 @@
             <tr>
                 <th class="center">S.I</th>
                 <th>Date & Time</th>
+                <th>Branch</th>
                 <th>Invoice Number</th>
                 <th>POS Ref</th>
                 <th>Customer</th>
@@ -48,6 +49,7 @@
                 <tr>
                     <td class="center">{{ $row['si'] }}</td>
                     <td>{{ $row['date'] }}</td>
+                    <td>{{ $row['branch'] ?? '-' }}</td>
                     <td>{{ $row['invoice_number'] }}</td>
                     <td>{{ $row['pos_ref'] ?? '-' }}</td>
                     <td>{{ $row['customer'] ?? '—' }}</td>
@@ -61,11 +63,11 @@
                     <td class="right">{{ $formatCents((int) ($row['total_collection_cents'] ?? 0)) }}</td>
                 </tr>
             @empty
-                <tr><td colspan="13">No invoices found.</td></tr>
+                <tr><td colspan="14">No invoices found.</td></tr>
             @endforelse
             @if (($totals ?? []) !== [])
                 <tr class="totals-row">
-                    <td colspan="6" class="right">TOTAL</td>
+                    <td colspan="7" class="right">TOTAL</td>
                     <td class="right">{{ $formatCents($totals['trade_revenue_cents'] ?? 0) }}</td>
                     <td class="right">{{ $formatCents($totals['discount_cents'] ?? 0) }}</td>
                     <td class="right">{{ $formatCents($totals['net_amount_cents'] ?? 0) }}</td>
