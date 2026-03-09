@@ -1,0 +1,21 @@
+﻿Invoice No,POS Ref.No,Date,Customer Name,Phone No,Warehouse,Payment Type,Notes,Category Name,Item Name,Unit,Quantity,Unit Price,Total Sales,Discount
+INV7801,1037824,2026-03-09 13:05:00.153,Chirine Ayache, ,Branch 1,Credit,,Events,Catering Event,EA,6,150,900,0
+INV7801,1037824,2026-03-09 13:05:00.153,Chirine Ayache, ,Branch 1,Credit,,Extras,Delivery Charge,EA,1,50,50,0
+INV7802,1037825,2026-03-09 13:05:56.712,jackie,97455872034,Branch 1,Credit,,Daily Dish,Daily Dish 1,EA,2,55,110,0
+INV7803,1037826,2026-03-09 13:06:04.697,Fadi El Jam,33588316,Branch 1,Credit,,Daily Dish,Daily dish M.S.,EA,1,40,40,0
+INV7804,1037827,2026-03-09 13:06:13.237,PIA,66458801,Branch 1,Credit,,Daily Dish,Main Dish 1 Portion,EA,1,200,200,0
+INV7805,1037828,2026-03-09 13:06:21.35,Antonio, ,Branch 1,Credit,,Daily Dish,Daily dish M.S.,EA,1,40,40,0
+INV7806,1037829,2026-03-09 13:06:29.958,GHADA MAALOUF,9613960175,Branch 1,Credit,,Daily Dish,Daily Dish 1,EA,2,55,110,0
+INV7807,1037830,2026-03-09 13:06:37.338,Roger Abou Malhab,66855997,Branch 1,Credit,,Daily Dish,Daily Dish Monthly 26 Days,EA,1,42.3,42.3,0
+INV7808,1037831,2026-03-09 13:06:47.643,St Georges And Isaac Church, ,Branch 1,Credit,,Daily Dish,Daily Dish 2,EA,4,35,140,0
+INV7809,1037832,2026-03-09 13:07:04.826,Eliane Daccache, ,Branch 1,Credit,,Daily Dish,Daily dish M.S.,EA,1,40,40,0
+INV7810,1037833,2026-03-09 13:07:14.373,Wael Fattouh,77451387,Branch 1,Credit,,Daily Dish,Daily dish M.S.,EA,1,40,40,0
+INV7811,1037834,2026-03-09 13:07:24.529,Mohamad Al Jamal,70569016,Branch 1,Credit,,Meals,Iftar Box,EA,1,45,45,0
+INV7812,1037835,2026-03-09 13:07:33.655,Youssef R,,Branch 1,Credit,,Daily Dish,Daily dish M.S.,EA,1,40,40,0
+INV7813,1037836,2026-03-09 13:07:40.151,Melody R,,Branch 1,Credit,,Daily Dish,Daily dish M.S.,EA,1,40,40,0
+INV7814,1037837,2026-03-09 13:07:53.41,Ramzi Joukhadar,55536459,Branch 1,Credit,,Daily Dish,Daily dish M.S.,EA,1,40,40,0
+INV7815,1037838,2026-03-09 13:08:00.799,Ghinwa Bou Abdallah,66166804,Branch 1,Credit,,Daily Dish,Daily dish M.S.,EA,1,40,40,0
+INV7816,1037839,2026-03-09 13:08:07.221,chady,,Branch 1,Credit,,Daily Dish,Daily Dish 1,EA,2,55,110,0
+INV7817,1037840,2026-03-09 13:08:20.552,waad, ,Branch 1,Credit,,Main Dish,Warak 3inab Meat,EA,1,320,320,0
+INV7818,1037841,2026-03-09 13:08:53.752,alaa,0097433609688,Branch 1,Credit,,Main Dish,Warak 3inab Meat,EA,2,150,300,0
+INV7819,1037842,2026-03-09 13:09:03.928,Saeed Zeidan,,Branch 1,Credit,,Daily Dish,Daily dish M.S.,EA,1,40,40,0
