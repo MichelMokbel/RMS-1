@@ -17,6 +17,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $yield_unit = '';
     public float $overhead_pct = 0.0;
     public ?float $selling_price_per_unit = null;
+    public string $status = 'published';
 
     public array $items = [];
 
@@ -30,6 +31,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->yield_unit = $this->recipe->yield_unit;
         $this->overhead_pct = (float) $this->recipe->overhead_pct;
         $this->selling_price_per_unit = $this->recipe->selling_price_per_unit !== null ? (float) $this->recipe->selling_price_per_unit : null;
+        $this->status = (string) ($this->recipe->status ?? 'published');
 
         $this->items = $this->recipe->items->map(function ($item) {
             return [
@@ -67,19 +69,38 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
     }
 
+    public function saveDraft(RecipePersistService $persist, RecipeRules $rules): void
+    {
+        $this->persistWithStatus($persist, $rules, 'draft');
+    }
+
     public function save(RecipePersistService $persist, RecipeRules $rules): void
     {
+        $this->persistWithStatus($persist, $rules, 'published');
+    }
+
+    private function persistWithStatus(RecipePersistService $persist, RecipeRules $rules, string $status): void
+    {
         $data = $this->validate($rules->rules());
+        $data['status'] = $status;
         $recipe = $persist->update($this->recipe, $data);
 
-        session()->flash('status', __('Recipe updated.'));
+        session()->flash(
+            'status',
+            $status === 'draft' ? __('Recipe saved as draft.') : __('Recipe updated.')
+        );
         $this->redirectRoute('recipes.show', $recipe, navigate: true);
     }
 }; ?>
 
 <div class="w-full max-w-5xl mx-auto px-4 space-y-6">
     <div class="flex items-center justify-between">
-        <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Edit Recipe') }}</h1>
+        <div class="flex items-center gap-2">
+            <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Edit Recipe') }}</h1>
+            <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ $status === 'draft' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100' }}">
+                {{ ucfirst($status) }}
+            </span>
+        </div>
         <flux:button :href="route('recipes.show', $recipe)" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
     </div>
 
@@ -174,7 +195,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <div class="flex justify-end gap-3">
         <flux:button :href="route('recipes.show', $recipe)" wire:navigate variant="ghost">{{ __('Cancel') }}</flux:button>
-        <flux:button type="button" wire:click="save" variant="primary">{{ __('Save Changes') }}</flux:button>
+        <flux:button type="button" wire:click="saveDraft" variant="filled">{{ __('Save Draft') }}</flux:button>
+        <flux:button type="button" wire:click="save" variant="primary">{{ __('Save & Publish') }}</flux:button>
     </div>
 </div>
-

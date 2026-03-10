@@ -136,7 +136,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @forelse ($recipes as $recipe)
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
                         <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">
-                            {{ $recipe->name }}
+                            <div class="flex items-center gap-2">
+                                <span>{{ $recipe->name }}</span>
+                                <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ (($recipe->status ?? 'published') === 'draft') ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100' }}">
+                                    {{ ucfirst((string) ($recipe->status ?? 'published')) }}
+                                </span>
+                            </div>
                         </td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
                             {{ $recipe->category?->name ?? '—' }}
@@ -154,9 +159,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <div class="flex flex-wrap justify-end gap-2">
                                 <flux:button size="xs" :href="route('recipes.show', $recipe)" wire:navigate>{{ __('View') }}</flux:button>
 
-                                <flux:button size="xs" type="button" wire:click="openProduce({{ $recipe->id }})">
-                                    {{ __('Produce') }}
-                                </flux:button>
+                                @if (($recipe->status ?? 'published') !== 'draft')
+                                    <flux:button size="xs" type="button" wire:click="openProduce({{ $recipe->id }})">
+                                        {{ __('Produce') }}
+                                    </flux:button>
+                                @endif
                             </div>
                         </td>
                     </tr>
@@ -204,4 +211,3 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     @endif
 </div>
-

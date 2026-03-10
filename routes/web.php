@@ -215,6 +215,74 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|catalog.a
     Volt::route('recipes/create', 'recipes.create')->name('recipes.create');
     Volt::route('recipes/{recipe}', 'recipes.show')->name('recipes.show');
     Volt::route('recipes/{recipe}/edit', 'recipes.edit')->name('recipes.edit');
+
+    Route::get('recipes/menu-items/search', function (Request $request) {
+        $term = trim((string) $request->query('q', ''));
+        if ($term === '' || strlen($term) < 2) {
+            return response()->json([]);
+        }
+
+        $prefix = $term.'%';
+        $items = MenuItem::query()
+            ->active()
+            ->where(function ($q) use ($prefix) {
+                $q->where('code', 'like', $prefix)
+                    ->orWhere('name', 'like', $prefix)
+                    ->orWhere('arabic_name', 'like', $prefix);
+            })
+            ->orderBy('name')
+            ->select(['id', 'name', 'code', 'selling_price_per_unit'])
+            ->limit(12)
+            ->get()
+            ->map(function (MenuItem $item) {
+                $price = $item->selling_price_per_unit !== null ? (float) $item->selling_price_per_unit : null;
+
+                return [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'code' => $item->code,
+                    'label' => $item->name,
+                    'price' => $price,
+                    'price_formatted' => $price !== null ? number_format($price, 3, '.', '') : null,
+                ];
+            })
+            ->values();
+
+        return response()->json($items);
+    })->name('recipes.menu-items.search');
+
+    Route::get('recipes/inventory-items/search', function (Request $request) {
+        $term = trim((string) $request->query('q', ''));
+        if ($term === '' || strlen($term) < 2) {
+            return response()->json([]);
+        }
+
+        $prefix = $term.'%';
+        $items = InventoryItem::query()
+            ->where('status', 'active')
+            ->where(function ($q) use ($prefix) {
+                $q->where('item_code', 'like', $prefix)
+                    ->orWhere('name', 'like', $prefix);
+            })
+            ->orderBy('name')
+            ->select(['id', 'name', 'item_code', 'unit_of_measure'])
+            ->limit(12)
+            ->get()
+            ->map(function (InventoryItem $item) {
+                $label = trim((string) ($item->item_code ?? '').' '.(string) $item->name);
+
+                return [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'code' => $item->item_code,
+                    'unit' => $item->unit_of_measure,
+                    'label' => $label !== '' ? $label : (string) $item->name,
+                ];
+            })
+            ->values();
+
+        return response()->json($items);
+    })->name('recipes.inventory-items.search');
 });
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|operations.access'])->group(function () {

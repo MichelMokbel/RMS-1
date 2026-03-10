@@ -21,6 +21,7 @@ class Recipe extends Model
         'yield_unit',
         'overhead_pct',
         'selling_price_per_unit',
+        'status',
     ];
 
     protected $casts = [
@@ -58,5 +59,10 @@ class Recipe extends Model
     public function yieldIsValid(): bool
     {
         return (float) ($this->yield_quantity ?? 0) > 0;
+    }
+
+    public function isDraft(): bool
+    {
+        return (string) ($this->status ?? 'published') === 'draft';
     }
 }

@@ -19,7 +19,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="flex items-center justify-between">
         <div>
             <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Recipes') }}</p>
-            <h1 class="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{{ $recipe->name }}</h1>
+            <div class="flex items-center gap-2">
+                <h1 class="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{{ $recipe->name }}</h1>
+                <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ (($recipe->status ?? 'published') === 'draft') ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100' }}">
+                    {{ ucfirst((string) ($recipe->status ?? 'published')) }}
+                </span>
+            </div>
         </div>
         <div class="flex gap-2">
             <flux:button :href="route('recipes.edit', $recipe)" wire:navigate>{{ __('Edit') }}</flux:button>
@@ -181,4 +186,3 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 </div>
-

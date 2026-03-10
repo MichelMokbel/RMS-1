@@ -14,6 +14,7 @@ class RecipeRules
             'yield_unit' => ['required', 'string', 'max:50'],
             'overhead_pct' => ['required', 'numeric', 'min:0'],
             'selling_price_per_unit' => ['nullable', 'numeric', 'min:0'],
+            'status' => ['nullable', 'in:draft,published'],
             'items' => ['array', 'min:1'],
             'items.*.inventory_item_id' => ['required', 'integer', 'exists:inventory_items,id'],
             'items.*.quantity' => ['required', 'numeric', 'min:0.001'],
@@ -23,4 +24,3 @@ class RecipeRules
         ];
     }
 }
-

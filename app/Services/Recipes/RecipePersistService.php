@@ -19,6 +19,7 @@ class RecipePersistService
                 'yield_unit' => $data['yield_unit'],
                 'overhead_pct' => $data['overhead_pct'],
                 'selling_price_per_unit' => $data['selling_price_per_unit'] ?? null,
+                'status' => $data['status'] ?? 'published',
             ]);
 
             foreach (($data['items'] ?? []) as $item) {
@@ -47,6 +48,7 @@ class RecipePersistService
                 'yield_unit' => $data['yield_unit'],
                 'overhead_pct' => $data['overhead_pct'],
                 'selling_price_per_unit' => $data['selling_price_per_unit'] ?? null,
+                'status' => $data['status'] ?? ((string) ($recipe->status ?? 'published')),
             ]);
 
             // simplest sync: delete and recreate items
@@ -67,4 +69,3 @@ class RecipePersistService
         });
     }
 }
-

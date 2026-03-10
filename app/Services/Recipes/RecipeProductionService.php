@@ -20,6 +20,9 @@ class RecipeProductionService
     public function produce(Recipe $recipe, array $payload, int $userId): RecipeProduction
     {
         $recipe->loadMissing(['items.inventoryItem']);
+        if ((string) ($recipe->status ?? 'published') === 'draft') {
+            throw ValidationException::withMessages(['status' => __('Draft recipes cannot be produced.')]);
+        }
 
         $producedQty = (float) ($payload['produced_quantity'] ?? 0);
         if (! $recipe->yieldIsValid()) {
