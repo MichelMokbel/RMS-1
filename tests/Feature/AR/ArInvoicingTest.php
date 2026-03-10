@@ -19,7 +19,7 @@ beforeEach(function () {
     Role::findOrCreate('cashier');
 });
 
-it('issues invoices with sequential INV numbers continuing from existing numeric invoice numbers', function () {
+it('issues invoices with one global INV sequence across branches', function () {
     Carbon::setTestNow(Carbon::create(2026, 1, 29, 12, 0, 0));
 
     $user = User::factory()->create();
@@ -33,6 +33,15 @@ it('issues invoices with sequential INV numbers continuing from existing numeric
         'type' => 'invoice',
         'status' => 'issued',
         'invoice_number' => 'INV7819',
+        'issue_date' => now()->toDateString(),
+        'due_date' => now()->toDateString(),
+    ]);
+    ArInvoice::factory()->create([
+        'branch_id' => 2,
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'issued',
+        'invoice_number' => 'INV7892',
         'issue_date' => now()->toDateString(),
         'due_date' => now()->toDateString(),
     ]);
@@ -51,7 +60,7 @@ it('issues invoices with sequential INV numbers continuing from existing numeric
     $a = $svc->issue($a, $user->id);
 
     $b = $svc->createDraft(
-        branchId: 1,
+        branchId: 2,
         customerId: $customer->id,
         items: [
             ['description' => 'Item B', 'qty' => '1.000', 'unit_price_cents' => 5000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 5000],
@@ -60,8 +69,8 @@ it('issues invoices with sequential INV numbers continuing from existing numeric
     );
     $b = $svc->issue($b, $user->id);
 
-    expect($a->invoice_number)->toBe('INV7820');
-    expect($b->invoice_number)->toBe('INV7821');
+    expect($a->invoice_number)->toBe('INV7893');
+    expect($b->invoice_number)->toBe('INV7894');
 });
 
 it('applies partial and full payments and updates invoice balance/status', function () {

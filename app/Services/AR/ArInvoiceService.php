@@ -414,8 +414,9 @@ class ArInvoiceService
                 }
                 $locked->invoice_number = $candidate;
             } else {
-                $seed = $this->maxNumericInvoiceSequence((int) $locked->branch_id);
-                $seq = $this->sequences->nextWithSeed('ar_invoice_numeric', (int) $locked->branch_id, '0000', $seed);
+                $seed = $this->maxNumericInvoiceSequence();
+                // Keep one global INV sequence across all branches.
+                $seq = $this->sequences->nextWithSeed('ar_invoice_numeric', 1, '0000', $seed);
                 $locked->invoice_number = 'INV'.$seq;
             }
 
@@ -622,12 +623,11 @@ class ArInvoiceService
         });
     }
 
-    private function maxNumericInvoiceSequence(int $branchId): int
+    private function maxNumericInvoiceSequence(): int
     {
         $max = 0;
 
         $numbers = ArInvoice::query()
-            ->where('branch_id', $branchId)
             ->whereNotNull('invoice_number')
             ->where('invoice_number', 'like', 'INV%')
             ->pluck('invoice_number');
