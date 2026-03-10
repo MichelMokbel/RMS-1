@@ -94,12 +94,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         $digits = MinorUnits::scaleDigits(MinorUnits::posScale());
         foreach ($invoice->items as $item) {
             $menuItemId = $item->sellable_type === MenuItem::class ? (int) ($item->sellable_id ?? 0) : null;
+            $qtyMilli = max(1, MinorUnits::parseQtyMilli((string) $item->qty));
+            $discountPerUnitCents = (int) round(((int) ($item->discount_cents ?? 0) * 1000) / $qtyMilli);
             $this->selected_items[] = [
                 'menu_item_id' => $menuItemId,
                 'quantity' => (string) $item->qty,
                 'unit' => (string) ($item->unit ?? ''),
                 'unit_price' => number_format((float) MinorUnits::format((int) $item->unit_price_cents), $digits, '.', ''),
-                'discount_amount' => number_format((float) MinorUnits::format((int) $item->discount_cents), $digits, '.', ''),
+                'discount_amount' => number_format((float) MinorUnits::format($discountPerUnitCents), $digits, '.', ''),
                 'line_notes' => $item->line_notes,
                 'sort_order' => count($this->selected_items),
             ];
@@ -224,13 +226,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $menuItem = $item->menuItem;
                 $unitPrice = (float) ($item->unit_price ?? 0);
                 $discount = (float) ($item->discount_amount ?? 0);
+                $qty = (float) ($item->quantity ?? 0);
+                $discountPerUnit = $qty > 0 ? ($discount / $qty) : 0.0;
 
                 $this->selected_items[] = [
                     'menu_item_id' => $menuItem?->id,
                     'quantity' => (string) $item->quantity,
                     'unit' => $menuItem?->unit ?? '',
                     'unit_price' => number_format($unitPrice, $digits, '.', ''),
-                    'discount_amount' => number_format($discount, $digits, '.', ''),
+                    'discount_amount' => number_format($discountPerUnit, $digits, '.', ''),
                     'line_notes' => null,
                     'sort_order' => count($this->selected_items),
                 ];
@@ -432,21 +436,22 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
 
             try {
-                $discountCents = MinorUnits::parsePos($discountStr);
+                $discountPerUnitCents = MinorUnits::parsePos($discountStr);
             } catch (\InvalidArgumentException $e) {
                 $this->addError("selected_items.$idx.discount_amount", __('Invalid discount.'));
                 return;
             }
 
             $lineSubtotal = MinorUnits::mulQty($unitCents, $qtyMilli);
-            $lineTotal = max(0, $lineSubtotal - $discountCents);
+            $lineDiscountCents = min($lineSubtotal, MinorUnits::mulQty($discountPerUnitCents, $qtyMilli));
+            $lineTotal = max(0, $lineSubtotal - $lineDiscountCents);
 
             $items[] = [
                 'description' => $desc,
                 'qty' => $qty,
                 'unit' => $unit,
                 'unit_price_cents' => $unitCents,
-                'discount_cents' => $discountCents,
+                'discount_cents' => $lineDiscountCents,
                 'tax_cents' => 0,
                 'line_total_cents' => $lineTotal,
                 'sellable_type' => MenuItem::class,
@@ -731,7 +736,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     $discount = (float) ($row['discount_amount'] ?? 0);
                     $lineSubtotal = $qty * $price;
                     $subtotal += $lineSubtotal;
-                    $discountTotal += $discount;
+                    $discountTotal += ($discount * $qty);
                 }
                 $invoiceDiscount = $invoice_discount_type === 'percent'
                     ? max(0, (($subtotal - $discountTotal) * ((float) $invoice_discount_value / 100)))
@@ -745,7 +750,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100 w-20">{{ __('Qty') }}</th>
                         <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100 w-20">{{ __('Unit') }}</th>
                         <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100 w-24">{{ __('Price') }}</th>
-                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100 w-24">{{ __('Discount') }}</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100 w-24">{{ __('Discount / Unit') }}</th>
                         <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100 w-24">{{ __('Total') }}</th>
                         <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100 w-56">{{ __('Notes') }}</th>
                         <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100 w-16">{{ __('Action') }}</th>
@@ -757,7 +762,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             $qty = (float) ($row['quantity'] ?? 0);
                             $price = (float) ($row['unit_price'] ?? 0);
                             $discount = (float) ($row['discount_amount'] ?? 0);
-                            $lineTotal = max(0, ($qty * $price) - $discount);
+                            $lineTotal = max(0, ($qty * $price) - ($discount * $qty));
                         @endphp
                         <tr class="align-top">
                             <td class="px-3 py-3 text-sm">

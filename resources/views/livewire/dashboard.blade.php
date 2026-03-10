@@ -21,6 +21,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
+        $this->branch_id = max(0, (int) request()->integer('branch_id', $this->branch_id));
         $this->date_from = now()->startOfMonth()->toDateString();
         $this->date_to = now()->endOfMonth()->toDateString();
     }
@@ -31,7 +32,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         [$from, $to] = $this->normalizedRange();
         [$previousFrom, $previousTo] = $this->previousRange($from, $to);
 
-        $branchId = $this->branch_id > 0 ? $this->branch_id : null;
+        $resolvedBranchId = property_exists($this, 'branch_id')
+            ? (int) ($this->branch_id ?? 0)
+            : (int) request()->integer('branch_id', 0);
+        $branchId = $resolvedBranchId > 0 ? $resolvedBranchId : null;
         $scale = max(1, MinorUnits::posScale());
         $moneyDigits = MinorUnits::scaleDigits($scale);
         $currency = (string) config('pos.currency', 'QAR');
