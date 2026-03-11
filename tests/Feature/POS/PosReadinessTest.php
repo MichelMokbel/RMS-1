@@ -18,6 +18,7 @@ use App\Models\User;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -70,6 +71,50 @@ function posToken(User $user, string $deviceId): string
     grantBranchAccess($user, [$branchId]);
 
     return (string) $user->createToken('pos:'.$deviceId, ['pos:*', 'device:'.$deviceId])->plainTextToken;
+}
+
+/**
+ * @return array<int, array{id:?int,event:string,data:array<string,mixed>}>
+ */
+function parseSseEvents(string $content): array
+{
+    $events = [];
+    $currentId = null;
+    $currentEvent = null;
+    $currentData = null;
+
+    foreach (preg_split('/\r?\n/', $content) ?: [] as $line) {
+        if ($line === '') {
+            if (is_string($currentEvent)) {
+                $decoded = is_string($currentData) ? json_decode($currentData, true) : null;
+                $events[] = [
+                    'id' => $currentId,
+                    'event' => $currentEvent,
+                    'data' => is_array($decoded) ? $decoded : [],
+                ];
+            }
+            $currentId = null;
+            $currentEvent = null;
+            $currentData = null;
+            continue;
+        }
+
+        if (str_starts_with($line, 'id:')) {
+            $currentId = (int) trim(substr($line, 3));
+            continue;
+        }
+
+        if (str_starts_with($line, 'event:')) {
+            $currentEvent = trim(substr($line, 6));
+            continue;
+        }
+
+        if (str_starts_with($line, 'data:')) {
+            $currentData = trim(substr($line, 5));
+        }
+    }
+
+    return $events;
 }
 
 test('sequence reservation produces non-overlapping ranges', function () {
@@ -136,7 +181,7 @@ test('print job enqueue is idempotent by source terminal + client_job_id', funct
         ->where('branch_id', 1)
         ->where('code', 'T02')
         ->firstOrFail();
-    expect(PosPrintStreamEvent::query()->where('terminal_id', (int) $targetTerminal->id)->count())->toBe(1);
+    expect(PosPrintStreamEvent::query()->where('terminal_id', (int) $targetTerminal->id)->count())->toBe(0);
 });
 
 test('print job pull claims and ack prints the job and updates terminal status', function () {
@@ -306,7 +351,7 @@ test('print pull returns 200 with empty jobs array when queue is empty', functio
     expect((string) ($resp['server_timestamp'] ?? ''))->not->toBe('');
 });
 
-test('print stream emits ready, job_available, keepalive and terminal_status', function () {
+test('print stream emits ready, job, keepalive and terminal_status', function () {
     $user = User::factory()->create(['status' => 'active']);
     seedPosTerminal('PRINT-DEV-SSE', 'T06', 1);
     $token = posToken($user, 'PRINT-DEV-SSE');
@@ -330,14 +375,141 @@ test('print stream emits ready, job_available, keepalive and terminal_status', f
     expect((string) $response->headers->get('content-type'))->toContain('text/event-stream');
 
     $content = $response->streamedContent();
-    expect($content)->toContain('event: ready');
-    expect($content)->toContain('event: job_available');
-    expect($content)->toContain('event: keepalive');
-    expect($content)->toContain('event: terminal_status');
+    $events = parseSseEvents($content);
+    $names = array_map(static fn (array $event): string => (string) ($event['event'] ?? ''), $events);
+
+    expect($names)->toContain('ready');
+    expect($names)->toContain('job');
+    expect($names)->toContain('keepalive');
+    expect($names)->toContain('terminal_status');
+
+    $jobEvent = collect($events)->firstWhere('event', 'job');
+    expect($jobEvent)->not->toBeNull();
+    expect((int) ($jobEvent['id'] ?? 0))->toBeGreaterThan(0);
+
+    $jobData = (array) ($jobEvent['data'] ?? []);
+    foreach ([
+        'job_id',
+        'client_job_id',
+        'target_terminal_code',
+        'target',
+        'doc_type',
+        'payload_base64',
+        'metadata',
+        'claim_token',
+        'attempt_count',
+        'claim_expires_at',
+        'queued_at',
+        'server_time',
+    ] as $key) {
+        expect(array_key_exists($key, $jobData))->toBeTrue();
+    }
 });
 
 test('print stream requires authentication', function () {
     $this->getJson('/api/pos/print-jobs/stream')->assertStatus(401);
+});
+
+test('print stream replay excludes stale claim events and resumes by Last-Event-ID', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    $terminal = seedPosTerminal('PRINT-DEV-REPLAY', 'T08', 1);
+    $token = posToken($user, 'PRINT-DEV-REPLAY');
+
+    config()->set('pos.print_jobs.stream_heartbeat_seconds', 1);
+    config()->set('pos.print_jobs.stream_max_seconds', 2);
+    config()->set('pos.print_jobs.stream_idle_sleep_ms', 50);
+    config()->set('pos.print_jobs.stream_dispatch_batch_size', 20);
+
+    $job = PosPrintJob::query()->create([
+        'client_job_id' => (string) Str::uuid(),
+        'source_terminal_id' => (int) $terminal->id,
+        'branch_id' => 1,
+        'target_terminal_id' => (int) $terminal->id,
+        'target' => 'receipt_printer',
+        'doc_type' => 'receipt',
+        'payload_base64' => base64_encode('replay payload'),
+        'client_created_at' => now(),
+        'job_type' => 'receipt',
+        'payload' => ['content' => 'replay payload'],
+        'metadata' => ['source' => 'test'],
+        'status' => PosPrintJob::STATUS_CLAIMED,
+        'attempt_count' => 1,
+        'max_attempts' => 5,
+        'next_retry_at' => null,
+        'claimed_at' => now(),
+        'claimed_by_terminal_id' => (int) $terminal->id,
+        'claim_token' => 'active-token',
+        'claim_expires_at' => now()->addMinute(),
+        'acked_at' => null,
+        'processing_ms' => null,
+        'last_error_code' => null,
+        'last_error_message' => null,
+        'created_by' => (int) $user->id,
+    ]);
+
+    $staleEvent = PosPrintStreamEvent::query()->create([
+        'terminal_id' => (int) $terminal->id,
+        'job_id' => (int) $job->id,
+        'claim_token' => 'old-token',
+        'event_type' => PosPrintStreamEvent::EVENT_JOB,
+        'payload_json' => [
+            'job_id' => (int) $job->id,
+            'client_job_id' => (string) $job->client_job_id,
+            'target_terminal_code' => (string) $terminal->code,
+            'target' => (string) $job->target,
+            'doc_type' => (string) $job->doc_type,
+            'payload_base64' => (string) $job->payload_base64,
+            'metadata' => (array) $job->metadata,
+            'claim_token' => 'old-token',
+            'attempt_count' => (int) $job->attempt_count,
+            'claim_expires_at' => optional($job->claim_expires_at)->utc()?->toISOString(),
+            'queued_at' => optional($job->created_at)->utc()?->toISOString(),
+            'server_time' => now()->utc()->toISOString(),
+        ],
+        'created_at' => now()->subSecond(),
+    ]);
+
+    $validEvent = PosPrintStreamEvent::query()->create([
+        'terminal_id' => (int) $terminal->id,
+        'job_id' => (int) $job->id,
+        'claim_token' => 'active-token',
+        'event_type' => PosPrintStreamEvent::EVENT_JOB,
+        'payload_json' => [
+            'job_id' => (int) $job->id,
+            'client_job_id' => (string) $job->client_job_id,
+            'target_terminal_code' => (string) $terminal->code,
+            'target' => (string) $job->target,
+            'doc_type' => (string) $job->doc_type,
+            'payload_base64' => (string) $job->payload_base64,
+            'metadata' => (array) $job->metadata,
+            'claim_token' => 'active-token',
+            'attempt_count' => (int) $job->attempt_count,
+            'claim_expires_at' => optional($job->claim_expires_at)->utc()?->toISOString(),
+            'queued_at' => optional($job->created_at)->utc()?->toISOString(),
+            'server_time' => now()->utc()->toISOString(),
+        ],
+        'created_at' => now(),
+    ]);
+
+    $response = $this->withToken($token)
+        ->withHeaders(['Last-Event-ID' => '0'])
+        ->get('/api/pos/print-jobs/stream');
+    $response->assertOk();
+    $events = parseSseEvents($response->streamedContent());
+    $jobEvents = array_values(array_filter($events, static fn (array $event): bool => ($event['event'] ?? '') === 'job'));
+
+    expect($jobEvents)->toHaveCount(1);
+    expect((int) ($jobEvents[0]['id'] ?? 0))->toBe((int) $validEvent->id);
+    expect((string) ($jobEvents[0]['data']['claim_token'] ?? ''))->toBe('active-token');
+    expect((int) $staleEvent->id)->toBeLessThan((int) $validEvent->id);
+
+    $reconnect = $this->withToken($token)
+        ->withHeaders(['Last-Event-ID' => (string) $validEvent->id])
+        ->get('/api/pos/print-jobs/stream');
+    $reconnect->assertOk();
+    $reconnectEvents = parseSseEvents($reconnect->streamedContent());
+    $reconnectJobEvents = array_values(array_filter($reconnectEvents, static fn (array $event): bool => ($event['event'] ?? '') === 'job'));
+    expect($reconnectJobEvents)->toHaveCount(0);
 });
 
 test('prune print stream events command removes old rows', function () {
@@ -345,13 +517,13 @@ test('prune print stream events command removes old rows', function () {
 
     $oldEvent = PosPrintStreamEvent::query()->create([
         'terminal_id' => (int) $terminal->id,
-        'event_type' => PosPrintStreamEvent::EVENT_JOB_AVAILABLE,
+        'event_type' => PosPrintStreamEvent::EVENT_JOB,
         'payload_json' => ['a' => 1],
         'created_at' => now()->subHours(30),
     ]);
     $recentEvent = PosPrintStreamEvent::query()->create([
         'terminal_id' => (int) $terminal->id,
-        'event_type' => PosPrintStreamEvent::EVENT_JOB_AVAILABLE,
+        'event_type' => PosPrintStreamEvent::EVENT_JOB,
         'payload_json' => ['b' => 2],
         'created_at' => now()->subHour(),
     ]);
@@ -417,6 +589,51 @@ test('bootstrap includes receipt_profile with normalized lines and fallbacks', f
     expect((string) $profile['logo_url'])->toBe('https://example.com/logo.png');
     expect((string) $profile['footer_note_en'])->toBe('Powered by qsale.qa');
     expect((string) $profile['timezone'])->toBe((string) config('app.timezone', 'UTC'));
+});
+
+test('bootstrap returns only active menu items and active customers', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    seedPosTerminal('DEV-BOOTSTRAP-ACTIVE', 'T08', 1);
+    $token = posToken($user, 'DEV-BOOTSTRAP-ACTIVE');
+
+    $activeCustomer = Customer::factory()->create(['is_active' => true]);
+    $inactiveCustomer = Customer::factory()->inactive()->create();
+
+    $activeMenuItem = MenuItem::factory()->create(['is_active' => true]);
+    $inactiveMenuItem = MenuItem::factory()->inactive()->create();
+
+    if (Schema::hasTable('menu_item_branches')) {
+        DB::table('menu_item_branches')->insertOrIgnore([
+            [
+                'menu_item_id' => (int) $activeMenuItem->id,
+                'branch_id' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'menu_item_id' => (int) $inactiveMenuItem->id,
+                'branch_id' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+    }
+
+    $resp = $this->withToken($token)
+        ->getJson('/api/pos/bootstrap')
+        ->assertOk()
+        ->json();
+
+    $customerIds = collect($resp['customers'] ?? [])->pluck('id')->map(fn ($id) => (int) $id)->all();
+    $menuItemIds = collect($resp['menu_items'] ?? [])->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+    expect($customerIds)->toContain((int) $activeCustomer->id)->not->toContain((int) $inactiveCustomer->id);
+    expect($menuItemIds)->toContain((int) $activeMenuItem->id)->not->toContain((int) $inactiveMenuItem->id);
+
+    expect(collect($resp['customers'] ?? [])->every(fn (array $item) => (bool) ($item['is_active'] ?? false) === true))
+        ->toBeTrue();
+    expect(collect($resp['menu_items'] ?? [])->every(fn (array $item) => (bool) ($item['is_active'] ?? false) === true))
+        ->toBeTrue();
 });
 
 test('invoice.finalize is idempotent by client_uuid and by (branch_id, pos_reference)', function () {

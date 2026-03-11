@@ -41,6 +41,7 @@ class PosBootstrapService
             ->values();
 
         $menuItems = MenuItem::query()
+            ->active()
             ->availableInBranch($branchId)
             ->when($sinceAt, fn ($q) => $this->whereUpdatedSince($q, 'menu_items', $sinceAt))
             ->orderBy('display_order')
@@ -65,6 +66,7 @@ class PosBootstrapService
             ->values();
 
         $customers = Customer::query()
+            ->active()
             ->when($sinceAt, fn ($q) => $this->whereUpdatedSince($q, 'customers', $sinceAt))
             ->orderBy('name')
             ->limit(5000)

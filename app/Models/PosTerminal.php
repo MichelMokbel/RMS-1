@@ -19,6 +19,7 @@ class PosTerminal extends Model
         'active',
         'last_seen_at',
         'print_agent_seen_at',
+        'print_stream_seen_at',
     ];
 
     protected $casts = [
@@ -26,6 +27,7 @@ class PosTerminal extends Model
         'active' => 'boolean',
         'last_seen_at' => 'datetime',
         'print_agent_seen_at' => 'datetime',
+        'print_stream_seen_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

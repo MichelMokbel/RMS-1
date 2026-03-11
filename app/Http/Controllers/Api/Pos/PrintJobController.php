@@ -94,31 +94,38 @@ class PrintJobController extends Controller
         }
 
         $heartbeatSec = max(1, min(60, (int) config('pos.print_jobs.stream_heartbeat_seconds', 15)));
-        $fallbackPollSec = max(5, min(600, (int) config('pos.print_jobs.fallback_poll_seconds', 60)));
         $sleepMs = max(25, min(5000, (int) config('pos.print_jobs.stream_idle_sleep_ms', 250)));
         $batchSize = max(1, min(200, (int) config('pos.print_jobs.stream_event_batch_size', 50)));
+        $dispatchBatchSize = max(1, min(100, (int) config('pos.print_jobs.stream_dispatch_batch_size', 20)));
         $maxSeconds = max(1, min(300, (int) config(
             'pos.print_jobs.stream_max_seconds',
             app()->environment('testing') ? 2 : 55
         )));
-        $lastEventId = max(0, (int) $request->header('Last-Event-ID', 0));
+        $initialLastEventId = max(0, (int) $request->header('Last-Event-ID', 0));
 
         return response()->stream(function () use (
             $terminal,
             $heartbeatSec,
-            $fallbackPollSec,
             $sleepMs,
             $batchSize,
+            $dispatchBatchSize,
             $maxSeconds,
-            $lastEventId
+            $initialLastEventId
         ): void {
             ignore_user_abort(true);
+            $lastEventId = $initialLastEventId;
 
             $this->jobs->touchPrintAgentHeartbeat($terminal, 'stream.connect');
+            $this->jobs->touchPrintStreamHeartbeat($terminal, 'stream.connect');
+            $pushedOnConnect = $this->jobs->dispatchPendingJobsForTerminal(
+                $terminal,
+                $dispatchBatchSize,
+                'stream.connect'
+            );
+
             $this->emitEvent('ready', [
                 'terminal_code' => (string) $terminal->code,
                 'heartbeat_sec' => $heartbeatSec,
-                'fallback_poll_sec' => $fallbackPollSec,
                 'server_time' => now()->utc()->toISOString(),
             ]);
 
@@ -128,7 +135,8 @@ class PrintJobController extends Controller
                 'event' => 'stream_connect',
                 'terminal_id' => (int) $terminal->id,
                 'terminal_code' => (string) $terminal->code,
-                'last_event_id' => $lastEventId,
+                'last_event_id' => $initialLastEventId,
+                'pushed_on_connect' => $pushedOnConnect,
             ]);
 
             $deadline = microtime(true) + $maxSeconds;
@@ -136,19 +144,45 @@ class PrintJobController extends Controller
 
             while (! connection_aborted() && microtime(true) < $deadline) {
                 $emitted = false;
+                $this->jobs->dispatchPendingJobsForTerminal($terminal, $dispatchBatchSize, 'stream.tick');
 
-                $events = $this->jobs->streamEventsSince((int) $terminal->id, $lastEventId, $batchSize);
+                $batch = $this->jobs->streamEventsSince((int) $terminal->id, $lastEventId, $batchSize);
+                /** @var array{events:\Illuminate\Support\Collection<int, PosPrintStreamEvent>,max_event_id:int} $batch */
+                $events = $batch['events'];
+                $maxEventId = (int) $batch['max_event_id'];
+                $jobEventCount = 0;
                 /** @var PosPrintStreamEvent $event */
                 foreach ($events as $event) {
                     $payload = is_array($event->payload_json) ? $event->payload_json : [];
                     $this->emitEvent((string) $event->event_type, $payload, (int) $event->id);
-                    $lastEventId = (int) $event->id;
+                    $eventId = (int) $event->id;
+                    if ($eventId > $lastEventId) {
+                        $lastEventId = $eventId;
+                    }
+                    if ((string) $event->event_type === PosPrintStreamEvent::EVENT_JOB) {
+                        $jobEventCount++;
+                    }
                     $emitted = true;
+                }
+
+                if ($maxEventId > $lastEventId) {
+                    $lastEventId = $maxEventId;
+                }
+
+                if ($initialLastEventId > 0 && $jobEventCount > 0) {
+                    logger()->info('pos_print_stream_replay', [
+                        'event' => 'replay',
+                        'terminal_id' => (int) $terminal->id,
+                        'terminal_code' => (string) $terminal->code,
+                        'last_event_id_from_client' => $initialLastEventId,
+                        'replayed_jobs' => $jobEventCount,
+                    ]);
                 }
 
                 $nowMicros = microtime(true);
                 if ($nowMicros >= $nextHeartbeatAt) {
                     $this->jobs->touchPrintAgentHeartbeat($terminal, 'stream.keepalive');
+                    $this->jobs->touchPrintStreamHeartbeat($terminal, 'stream.keepalive');
                     $seenAt = optional($terminal->fresh()->print_agent_seen_at)->utc()?->toISOString();
 
                     $this->emitEvent('keepalive', [

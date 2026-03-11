@@ -52,6 +52,10 @@ class PosPrintJobService
                 'status' => (string) $existing->status,
             ]);
 
+            if ($this->isStreamActive($targetTerminal)) {
+                $this->dispatchPendingJobsForTerminal($targetTerminal, source: 'enqueue.idempotent');
+            }
+
             return [
                 'job' => $existing,
                 'target_terminal' => $targetTerminal,
@@ -72,7 +76,7 @@ class PosPrintJobService
                 $maxAttempts,
                 $actorId
             ) {
-                $job = PosPrintJob::query()->create([
+                return PosPrintJob::query()->create([
                     'client_job_id' => $clientJobId,
                     'source_terminal_id' => (int) $sourceTerminal->id,
                     'branch_id' => (int) $targetTerminal->branch_id,
@@ -102,10 +106,6 @@ class PosPrintJobService
                     'last_error_message' => null,
                     'created_by' => $actorId,
                 ]);
-
-                $this->publishJobAvailableEvent($targetTerminal, 'enqueue');
-
-                return $job;
             }, 3);
 
             logger()->info('pos_print_enqueue', [
@@ -117,6 +117,10 @@ class PosPrintJobService
                 'target_terminal_id' => (int) $targetTerminal->id,
                 'doc_type' => $docType,
             ]);
+
+            if ($this->isStreamActive($targetTerminal)) {
+                $this->dispatchPendingJobsForTerminal($targetTerminal, source: 'enqueue');
+            }
 
             return [
                 'job' => $job,
@@ -143,6 +147,10 @@ class PosPrintJobService
                 'target_terminal_id' => (int) $targetTerminal->id,
                 'status' => (string) $job->status,
             ]);
+
+            if ($this->isStreamActive($targetTerminal)) {
+                $this->dispatchPendingJobsForTerminal($targetTerminal, source: 'enqueue.idempotent_race');
+            }
 
             return [
                 'job' => $job,
@@ -252,6 +260,8 @@ class PosPrintJobService
                 throw ValidationException::withMessages(['claim_token' => 'Claim token expired.']);
             }
 
+            $ackLatencyMs = $job->claimed_at ? (int) $job->claimed_at->diffInMilliseconds(now()) : null;
+
             if ($status === PosPrintJob::STATUS_PRINTED) {
                 $job->forceFill([
                     'status' => PosPrintJob::STATUS_PRINTED,
@@ -273,6 +283,7 @@ class PosPrintJobService
                     'job_id' => (int) $job->id,
                     'attempt_count' => (int) $job->attempt_count,
                     'processing_ms' => $processingMs,
+                    'ack_latency_ms' => $ackLatencyMs,
                 ]);
 
                 return [
@@ -308,6 +319,7 @@ class PosPrintJobService
                     'attempt_count' => $attemptCount,
                     'max_attempts' => $maxAttempts,
                     'error_code' => (string) ($job->last_error_code ?? ''),
+                    'ack_latency_ms' => $ackLatencyMs,
                 ]);
             } else {
                 $nextRetryAt = now()->addSeconds($this->retryBackoffSeconds($attemptCount));
@@ -334,6 +346,7 @@ class PosPrintJobService
                     'max_attempts' => $maxAttempts,
                     'next_retry_at' => $nextRetryAt->toISOString(),
                     'error_code' => (string) ($job->last_error_code ?? ''),
+                    'ack_latency_ms' => $ackLatencyMs,
                 ]);
             }
 
@@ -369,17 +382,139 @@ class PosPrintJobService
         ]);
     }
 
-    /**
-     * @return Collection<int, PosPrintStreamEvent>
-     */
-    public function streamEventsSince(int $terminalId, int $afterId, int $limit = 50): Collection
+    public function touchPrintStreamHeartbeat(PosTerminal $terminal, string $source): void
     {
-        return PosPrintStreamEvent::query()
+        $heartbeatAt = now();
+        $terminal->forceFill(['print_stream_seen_at' => $heartbeatAt])->save();
+
+        logger()->info('pos_print_stream_heartbeat', [
+            'event' => 'stream_heartbeat',
+            'source' => $source,
+            'terminal_id' => (int) $terminal->id,
+            'branch_id' => (int) $terminal->branch_id,
+            'print_stream_seen_at' => $heartbeatAt->toISOString(),
+        ]);
+    }
+
+    public function isStreamActive(PosTerminal|int $terminal): bool
+    {
+        $terminalId = $terminal instanceof PosTerminal ? (int) $terminal->id : (int) $terminal;
+        if ($terminalId <= 0) {
+            return false;
+        }
+
+        $windowSeconds = max(3, min(120, (int) config('pos.print_jobs.stream_active_window_seconds', 20)));
+        $threshold = now()->subSeconds($windowSeconds);
+        $streamSeenAt = PosTerminal::query()->whereKey($terminalId)->value('print_stream_seen_at');
+
+        if (! $streamSeenAt) {
+            return false;
+        }
+
+        $seenAt = $streamSeenAt instanceof Carbon ? $streamSeenAt : Carbon::parse((string) $streamSeenAt);
+
+        return $seenAt->greaterThanOrEqualTo($threshold);
+    }
+
+    public function dispatchPendingJobsForTerminal(PosTerminal $terminal, ?int $limit = null, string $source = 'stream.tick'): int
+    {
+        $terminalId = (int) $terminal->id;
+        $limit = max(1, min(100, (int) ($limit ?? config('pos.print_jobs.stream_dispatch_batch_size', 20))));
+
+        $reclaimed = $this->reclaimExpiredClaims($terminalId);
+        $pushed = $this->claimAndPublishNextJobs($terminal, $limit, $source);
+
+        if ($reclaimed > 0 || $pushed > 0) {
+            logger()->info('pos_print_push_dispatch', [
+                'event' => 'push_dispatch',
+                'terminal_id' => $terminalId,
+                'source' => $source,
+                'reclaimed_count' => $reclaimed,
+                'pushed_count' => $pushed,
+            ]);
+        }
+
+        return $pushed;
+    }
+
+    /**
+     * @return array{events:Collection<int, PosPrintStreamEvent>,max_event_id:int}
+     */
+    public function streamEventsSince(int $terminalId, int $afterId, int $limit = 50): array
+    {
+        $rawEvents = PosPrintStreamEvent::query()
             ->where('terminal_id', $terminalId)
             ->where('id', '>', max(0, $afterId))
             ->orderBy('id')
             ->limit(max(1, min(200, $limit)))
             ->get();
+
+        if ($rawEvents->isEmpty()) {
+            return [
+                'events' => collect(),
+                'max_event_id' => max(0, $afterId),
+            ];
+        }
+
+        $maxEventId = (int) ($rawEvents->max('id') ?? $afterId);
+
+        $jobIds = $rawEvents
+            ->filter(static fn (PosPrintStreamEvent $event): bool => (string) $event->event_type === PosPrintStreamEvent::EVENT_JOB)
+            ->pluck('job_id')
+            ->filter(static fn ($id): bool => (int) $id > 0)
+            ->map(static fn ($id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        $jobsById = PosPrintJob::query()
+            ->whereIn('id', $jobIds)
+            ->get()
+            ->keyBy(static fn (PosPrintJob $job): int => (int) $job->id);
+
+        $now = now();
+
+        $filtered = $rawEvents
+            ->filter(function (PosPrintStreamEvent $event) use ($terminalId, $jobsById, $now): bool {
+                if ((string) $event->event_type !== PosPrintStreamEvent::EVENT_JOB) {
+                    return true;
+                }
+
+                $jobId = (int) ($event->job_id ?? 0);
+                $claimToken = (string) ($event->claim_token ?? '');
+                if ($jobId <= 0 || $claimToken === '') {
+                    return false;
+                }
+
+                /** @var PosPrintJob|null $job */
+                $job = $jobsById->get($jobId);
+                if (! $job) {
+                    return false;
+                }
+
+                if ((int) $job->target_terminal_id !== $terminalId) {
+                    return false;
+                }
+
+                if ((string) $job->status !== PosPrintJob::STATUS_CLAIMED) {
+                    return false;
+                }
+
+                if ((string) ($job->claim_token ?? '') !== $claimToken) {
+                    return false;
+                }
+
+                if ($job->claim_expires_at && $job->claim_expires_at->lt($now)) {
+                    return false;
+                }
+
+                return true;
+            })
+            ->values();
+
+        return [
+            'events' => $filtered,
+            'max_event_id' => $maxEventId,
+        ];
     }
 
     public function pruneStreamEvents(int $olderThanHours): int
@@ -404,33 +539,6 @@ class PosPrintJobService
                     });
             })
             ->count();
-    }
-
-    public function publishJobAvailableEvent(PosTerminal $terminal, string $reason): PosPrintStreamEvent
-    {
-        $payload = [
-            'terminal_code' => (string) $terminal->code,
-            'pending_jobs' => $this->pendingJobsCount((int) $terminal->id),
-            'reason' => $reason,
-            'server_time' => now()->utc()->toISOString(),
-        ];
-
-        $event = PosPrintStreamEvent::query()->create([
-            'terminal_id' => (int) $terminal->id,
-            'event_type' => PosPrintStreamEvent::EVENT_JOB_AVAILABLE,
-            'payload_json' => $payload,
-            'created_at' => now(),
-        ]);
-
-        logger()->info('pos_print_stream_event_publish', [
-            'event' => 'stream_publish',
-            'event_type' => PosPrintStreamEvent::EVENT_JOB_AVAILABLE,
-            'stream_event_id' => (int) $event->id,
-            'terminal_id' => (int) $terminal->id,
-            'payload' => $payload,
-        ]);
-
-        return $event;
     }
 
     private function resolveTargetTerminal(int $branchId, string $terminalCode): PosTerminal
@@ -503,16 +611,7 @@ class PosPrintJobService
             $now = now();
             $claimTtlSeconds = max(5, min(300, (int) config('pos.print_jobs.claim_ttl_seconds', 45)));
 
-            $jobs = PosPrintJob::query()
-                ->where('target_terminal_id', $terminalId)
-                ->where('status', PosPrintJob::STATUS_QUEUED)
-                ->where(function ($query) use ($now): void {
-                    $query->whereNull('next_retry_at')
-                        ->orWhere('next_retry_at', '<=', $now);
-                })
-                ->orderByRaw('case when next_retry_at is null then 0 else 1 end')
-                ->orderBy('next_retry_at')
-                ->orderBy('created_at')
+            $jobs = $this->claimableJobsQuery($terminalId, $now)
                 ->lockForUpdate()
                 ->limit($limit)
                 ->get();
@@ -539,6 +638,7 @@ class PosPrintJobService
                     'job_id' => (int) $job->id,
                     'attempt_count' => (int) $job->attempt_count,
                     'claim_expires_at' => optional($job->claim_expires_at)->toISOString(),
+                    'mode' => 'pull',
                 ]);
 
                 $claimedIds[] = (int) $job->id;
@@ -550,6 +650,103 @@ class PosPrintJobService
                 ->get()
                 ->all();
         }, 3);
+    }
+
+    private function claimAndPublishNextJobs(PosTerminal $terminal, int $limit, string $source): int
+    {
+        return DB::transaction(function () use ($terminal, $limit, $source): int {
+            $terminalId = (int) $terminal->id;
+            $now = now();
+            $claimTtlSeconds = max(5, min(300, (int) config('pos.print_jobs.claim_ttl_seconds', 45)));
+
+            $jobs = $this->claimableJobsQuery($terminalId, $now)
+                ->lockForUpdate()
+                ->limit($limit)
+                ->get();
+
+            if ($jobs->isEmpty()) {
+                return 0;
+            }
+
+            $pushedCount = 0;
+            foreach ($jobs as $job) {
+                $job->forceFill([
+                    'status' => PosPrintJob::STATUS_CLAIMED,
+                    'attempt_count' => (int) $job->attempt_count + 1,
+                    'claimed_at' => $now,
+                    'claimed_by_terminal_id' => $terminalId,
+                    'claim_token' => Str::random(48),
+                    'claim_expires_at' => $now->copy()->addSeconds($claimTtlSeconds),
+                    'next_retry_at' => null,
+                ])->save();
+
+                logger()->info('pos_print_claim', [
+                    'event' => 'claim',
+                    'terminal_id' => $terminalId,
+                    'job_id' => (int) $job->id,
+                    'attempt_count' => (int) $job->attempt_count,
+                    'claim_expires_at' => optional($job->claim_expires_at)->toISOString(),
+                    'mode' => 'push',
+                    'source' => $source,
+                ]);
+
+                $event = $this->createJobStreamEvent($terminal, $job, $source, $now);
+                $pushedCount++;
+
+                logger()->info('pos_print_stream_event_publish', [
+                    'event' => 'stream_publish',
+                    'event_type' => PosPrintStreamEvent::EVENT_JOB,
+                    'stream_event_id' => (int) $event->id,
+                    'terminal_id' => $terminalId,
+                    'job_id' => (int) $job->id,
+                    'attempt_count' => (int) $job->attempt_count,
+                    'source' => $source,
+                ]);
+            }
+
+            return $pushedCount;
+        }, 3);
+    }
+
+    private function createJobStreamEvent(PosTerminal $terminal, PosPrintJob $job, string $source, Carbon $serverNow): PosPrintStreamEvent
+    {
+        $payload = [
+            'job_id' => (int) $job->id,
+            'client_job_id' => (string) ($job->client_job_id ?? ''),
+            'target_terminal_code' => (string) $terminal->code,
+            'target' => (string) ($job->target ?? ''),
+            'doc_type' => (string) ($job->doc_type ?? ''),
+            'payload_base64' => (string) ($job->payload_base64 ?? ''),
+            'metadata' => (array) ($job->metadata ?? []),
+            'claim_token' => (string) ($job->claim_token ?? ''),
+            'attempt_count' => (int) $job->attempt_count,
+            'claim_expires_at' => optional($job->claim_expires_at)->utc()?->toISOString(),
+            'queued_at' => optional($job->created_at)->utc()?->toISOString(),
+            'server_time' => $serverNow->copy()->utc()->toISOString(),
+        ];
+
+        return PosPrintStreamEvent::query()->create([
+            'terminal_id' => (int) $terminal->id,
+            'job_id' => (int) $job->id,
+            'claim_token' => (string) ($job->claim_token ?? ''),
+            'event_type' => PosPrintStreamEvent::EVENT_JOB,
+            'payload_json' => $payload,
+            'created_at' => $serverNow,
+        ]);
+    }
+
+    private function claimableJobsQuery(int $terminalId, Carbon $now)
+    {
+        return PosPrintJob::query()
+            ->where('target_terminal_id', $terminalId)
+            ->where('status', PosPrintJob::STATUS_QUEUED)
+            ->where(function ($query) use ($now): void {
+                $query->whereNull('next_retry_at')
+                    ->orWhere('next_retry_at', '<=', $now);
+            })
+            ->orderByRaw('case when next_retry_at is null then 0 else 1 end')
+            ->orderBy('next_retry_at')
+            ->orderBy('created_at');
     }
 
     private function retryBackoffSeconds(int $attemptCount): int

@@ -29,6 +29,8 @@ return [
         'stream_idle_sleep_ms' => (int) env('POS_PRINT_STREAM_IDLE_SLEEP_MS', 250),
         'stream_max_seconds' => (int) env('POS_PRINT_STREAM_MAX_SECONDS', 55),
         'stream_event_batch_size' => (int) env('POS_PRINT_STREAM_EVENT_BATCH_SIZE', 50),
+        'stream_dispatch_batch_size' => (int) env('POS_PRINT_STREAM_DISPATCH_BATCH_SIZE', 20),
+        'stream_active_window_seconds' => (int) env('POS_PRINT_STREAM_ACTIVE_WINDOW_SECONDS', 20),
         'stream_event_retention_hours' => (int) env('POS_PRINT_STREAM_EVENT_RETENTION_HOURS', 24),
     ],
     'receipt_profile' => [

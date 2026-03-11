@@ -9,6 +9,7 @@ class PosPrintStreamEvent extends Model
 {
     use HasFactory;
 
+    public const EVENT_JOB = 'job';
     public const EVENT_JOB_AVAILABLE = 'job_available';
 
     protected $table = 'pos_print_stream_events';
@@ -17,6 +18,8 @@ class PosPrintStreamEvent extends Model
 
     protected $fillable = [
         'terminal_id',
+        'job_id',
+        'claim_token',
         'event_type',
         'payload_json',
         'created_at',
@@ -24,6 +27,7 @@ class PosPrintStreamEvent extends Model
 
     protected $casts = [
         'terminal_id' => 'integer',
+        'job_id' => 'integer',
         'payload_json' => 'array',
         'created_at' => 'datetime',
     ];
@@ -31,5 +35,10 @@ class PosPrintStreamEvent extends Model
     public function terminal()
     {
         return $this->belongsTo(PosTerminal::class, 'terminal_id');
+    }
+
+    public function job()
+    {
+        return $this->belongsTo(PosPrintJob::class, 'job_id');
     }
 }
