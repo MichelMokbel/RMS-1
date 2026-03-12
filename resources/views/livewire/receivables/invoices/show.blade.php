@@ -405,7 +405,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
 
         @if (filled($invoice->notes))
-            <div class="rounded-md border border-neutral-200 p-3 text-sm dark:border-neutral-700">
+            <div class="rounded-md p-3 text-sm">
                 <div class="text-neutral-500 dark:text-neutral-400">{{ __('Notes') }}</div>
                 <div class="mt-1 whitespace-pre-wrap font-medium text-neutral-900 dark:text-neutral-100">{{ $invoice->notes }}</div>
             </div>

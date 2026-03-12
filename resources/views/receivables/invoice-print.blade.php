@@ -213,7 +213,6 @@
 
         .invoice-notes {
             margin-top: 4mm;
-            border: 1px solid #333;
             padding: 2.2mm 3mm;
             font-size: 11px;
         }
