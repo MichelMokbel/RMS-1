@@ -200,6 +200,34 @@
             width: 12%;
         }
 
+        .item-desc-main {
+            font-weight: 600;
+        }
+
+        .item-line-note {
+            margin-top: 1.2mm;
+            font-size: 10px;
+            color: #444;
+            white-space: pre-wrap;
+        }
+
+        .invoice-notes {
+            margin-top: 4mm;
+            border: 1px solid #333;
+            padding: 2.2mm 3mm;
+            font-size: 11px;
+        }
+
+        .invoice-notes .label {
+            font-weight: 700;
+            margin-bottom: 1mm;
+        }
+
+        .invoice-notes .value {
+            font-weight: 400;
+            white-space: pre-wrap;
+        }
+
         .totals-bar {
             display: flex;
             justify-content: space-between;
@@ -332,6 +360,7 @@
     $invoiceDiscountCents = (int) ($invoice->invoice_discount_cents ?? 0);
     $subtotalCents = (int) ($invoice->subtotal_cents ?? 0);
     $grandTotalCents = (int) ($invoice->total_cents ?? 0);
+    $invoiceNote = trim((string) ($invoice->notes ?? ''));
 
     $numberToWords = function (int $number) use (&$numberToWords): string {
     $ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
@@ -499,11 +528,17 @@
                     }
                     $displayDescription = $rawDescription !== '' ? $rawDescription : 'Item';
                     }
+                    $lineNote = trim((string) ($item->line_notes ?? ''));
                     @endphp
                     <tr>
                         <td class="center">{{ $index + 1 }}</td>
                         <td class="center">{{ $item->sku_snapshot ?? '-' }}</td>
-                        <td>{{ $displayDescription }}</td>
+                        <td>
+                            <div class="item-desc-main">{{ $displayDescription }}</div>
+                            @if ($lineNote !== '')
+                                <div class="item-line-note">{{ $lineNote }}</div>
+                            @endif
+                        </td>
                         <td class="center">{{ $item->unit ?? 'EA' }}</td>
                         <td class="center">{{ number_format((float) $item->qty, 3, '.', '') }}</td>
                         <td class="right">{{ $fmtCents((int) $item->unit_price_cents) }}</td>
@@ -517,6 +552,13 @@
                     @endforelse
                 </tbody>
             </table>
+
+            @if ($invoiceNote !== '')
+                <div class="invoice-notes">
+                    <div class="label">Notes</div>
+                    <div class="value">{{ $invoiceNote }}</div>
+                </div>
+            @endif
 
             <div class="totals-bar">
                 <div class="totals-words">

@@ -305,7 +305,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div class="w-full max-w-5xl mx-auto px-4 space-y-6">
+<div class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
     <div class="flex items-center justify-between">
         <div>
             <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
@@ -404,6 +404,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         </div>
 
+        @if (filled($invoice->notes))
+            <div class="rounded-md border border-neutral-200 p-3 text-sm dark:border-neutral-700">
+                <div class="text-neutral-500 dark:text-neutral-400">{{ __('Notes') }}</div>
+                <div class="mt-1 whitespace-pre-wrap font-medium text-neutral-900 dark:text-neutral-100">{{ $invoice->notes }}</div>
+            </div>
+        @endif
+
         @if ($invoice->status === 'draft')
             <div class="flex justify-end">
                 <flux:button type="button" wire:click="issue" variant="primary">{{ __('Issue Invoice') }}</flux:button>
@@ -439,6 +446,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <div class="flex items-start justify-between gap-3 rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
                         <div>
                             <div class="text-sm font-medium text-neutral-900 dark:text-neutral-100">{{ $row->description }}</div>
+                            @if (filled($row->line_notes))
+                                <div class="mt-1 whitespace-pre-wrap text-xs text-neutral-500 dark:text-neutral-400">{{ $row->line_notes }}</div>
+                            @endif
                             <div class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Qty') }}: {{ $row->qty }}</div>
                         </div>
                         <div class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($row->line_total_cents) }}</div>

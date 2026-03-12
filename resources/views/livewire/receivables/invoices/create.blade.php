@@ -587,7 +587,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div class="w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+<div class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
             {{ $editing_invoice_id ? __('Edit Invoice') : __('Create Invoice') }}
