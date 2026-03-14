@@ -5,6 +5,9 @@ namespace App\Services\AR;
 use App\Models\ArInvoice;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
+use App\Services\Accounting\AccountingContextService;
+use App\Services\Accounting\LedgerAccountMappingService;
+use App\Services\Banking\BankTransactionService;
 use App\Services\Ledger\SubledgerService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -13,7 +16,10 @@ class ArAllocationService
 {
     public function __construct(
         protected ArInvoiceService $invoices,
-        protected SubledgerService $subledgerService
+        protected SubledgerService $subledgerService,
+        protected AccountingContextService $accountingContext,
+        protected LedgerAccountMappingService $mappingService,
+        protected BankTransactionService $bankTransactionService
     )
     {
     }
@@ -36,7 +42,7 @@ class ArAllocationService
             throw ValidationException::withMessages(['amount_cents' => __('Amount is required.')]);
         }
 
-        $method = (string) ($payload['method'] ?? 'bank');
+        $method = $this->mappingService->normalizePaymentMethod((string) ($payload['method'] ?? 'bank_transfer'));
         $currency = (string) ($payload['currency'] ?? ($invoice->currency ?: config('pos.currency')));
 
         return DB::transaction(function () use ($invoiceId, $amount, $method, $currency, $payload, $actorId) {
@@ -61,6 +67,9 @@ class ArAllocationService
             $payment = Payment::create([
                 'branch_id' => $invoice->branch_id,
                 'customer_id' => $invoice->customer_id,
+                'company_id' => $this->accountingContext->resolveCompanyId((int) $invoice->branch_id, (int) ($invoice->company_id ?? 0)),
+                'bank_account_id' => $this->resolveBankAccountId($method, (int) ($invoice->company_id ?? 0)),
+                'period_id' => $this->accountingContext->resolvePeriodId((string) ($payload['received_at'] ?? now()), (int) ($invoice->company_id ?? 0)),
                 'source' => 'ar',
                 'method' => $method,
                 'amount_cents' => $amount,
@@ -89,6 +98,7 @@ class ArAllocationService
                 $amount - $allocated,
                 $actorId
             );
+            $this->bankTransactionService->recordArPayment($payment->fresh(), $actorId);
 
             return [
                 'payment' => $payment->fresh(['allocations']),
@@ -196,5 +206,20 @@ class ArAllocationService
 
         $invoice->update(['status' => 'issued']);
     }
-}
 
+    private function resolveBankAccountId(string $paymentMethod, ?int $companyId): ?int
+    {
+        if ($paymentMethod !== 'bank_transfer') {
+            return null;
+        }
+
+        $bankAccount = $this->mappingService->resolveBankAccount(null, $companyId);
+        if (! $bankAccount || ! $bankAccount->ledger_account_id) {
+            throw ValidationException::withMessages([
+                'payment_method' => __('A default bank account linked to a ledger account is required for bank-transfer receipts.'),
+            ]);
+        }
+
+        return (int) $bankAccount->id;
+    }
+}

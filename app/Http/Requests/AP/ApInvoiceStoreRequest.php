@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\AP;
 
+use App\Support\AP\DocumentTypeMap;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
@@ -19,9 +20,16 @@ class ApInvoiceStoreRequest extends FormRequest
 
         return [
             'supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
+            'company_id' => ['nullable', 'integer', 'exists:accounting_companies,id'],
+            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+            'department_id' => ['nullable', 'integer', 'exists:departments,id'],
+            'job_id' => ['nullable', 'integer', 'exists:accounting_jobs,id'],
             'purchase_order_id' => ['nullable', 'integer', Rule::exists('purchase_orders', 'id')],
             'category_id' => ['nullable', 'integer', Rule::exists('expense_categories', 'id')],
-            'is_expense' => ['required', 'boolean'],
+            'expense_channel' => ['nullable', 'in:vendor,petty_cash,reimbursement'],
+            'wallet_id' => ['nullable', 'integer', 'exists:petty_cash_wallets,id'],
+            'document_type' => ['required', Rule::in(DocumentTypeMap::types())],
+            'currency_code' => ['nullable', 'string', 'max:10'],
             'invoice_number' => [
                 'required',
                 'string',
@@ -42,8 +50,15 @@ class ApInvoiceStoreRequest extends FormRequest
     public function withValidator($validator)
     {
         $validator->after(function ($v) {
-            if ($this->boolean('is_expense') && Schema::hasTable('expense_categories') && empty($this->category_id)) {
+            $documentType = DocumentTypeMap::normalizeDocumentType($this->input('document_type'));
+            $expenseChannel = DocumentTypeMap::normalizeExpenseChannel($documentType, $this->input('expense_channel'));
+
+            if (DocumentTypeMap::requiresCategory($documentType) && Schema::hasTable('expense_categories') && empty($this->category_id)) {
                 $v->errors()->add('category_id', __('Category is required for expenses.'));
+            }
+
+            if (DocumentTypeMap::requiresWallet($documentType, $expenseChannel) && empty($this->wallet_id)) {
+                $v->errors()->add('wallet_id', __('Wallet is required for petty cash expenses.'));
             }
         });
     }

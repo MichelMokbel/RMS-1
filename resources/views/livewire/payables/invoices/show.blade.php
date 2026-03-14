@@ -3,7 +3,7 @@
 use App\Models\ApInvoice;
 use App\Services\AP\ApInvoicePostingService;
 use App\Services\AP\ApInvoiceVoidService;
-use App\Services\AP\ApInvoiceStatusService;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -12,7 +12,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(ApInvoice $invoice): void
     {
-        $this->invoice = $invoice->load(['items', 'allocations.payment', 'supplier']);
+        $this->invoice = $invoice->load(['items', 'allocations.payment', 'supplier', 'expenseProfile.wallet']);
     }
 
     public function post(ApInvoicePostingService $postingService): void
@@ -32,7 +32,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="flex items-center justify-between">
         <div>
             <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ $invoice->invoice_number }}</h1>
-            <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Status') }}: {{ $invoice->status }}</p>
+            <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ $invoice->documentTypeLabel() }} · {{ Str::headline(str_replace('_', ' ', $invoice->workflowStateLabel())) }}</p>
         </div>
         <div class="flex gap-2">
             <flux:button :href="route('payables.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
@@ -54,11 +54,20 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-2">
+            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Type') }}: {{ $invoice->documentTypeLabel() }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Supplier') }}: {{ $invoice->supplier->name ?? '—' }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Invoice Date') }}: {{ $invoice->invoice_date?->format('Y-m-d') }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Due Date') }}: {{ $invoice->due_date?->format('Y-m-d') }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('PO') }}: {{ $invoice->purchase_order_id ?? '—' }}</p>
-            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Expense') }}: {{ $invoice->is_expense ? 'Yes' : 'No' }}</p>
+            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Approval') }}: {{ Str::headline(str_replace('_', ' ', $invoice->approvalStatusLabel())) }}</p>
+            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Workflow') }}: {{ Str::headline(str_replace('_', ' ', $invoice->workflowStateLabel())) }}</p>
+            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Payment') }}: {{ Str::headline(str_replace('_', ' ', $invoice->paymentStateLabel())) }}</p>
+            @if($invoice->expenseProfile?->channel)
+                <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Expense Channel') }}: {{ Str::headline(str_replace('_', ' ', $invoice->expenseProfile->channel)) }}</p>
+            @endif
+            @if($invoice->expenseProfile?->wallet)
+                <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Wallet') }}: {{ $invoice->expenseProfile->wallet->driver_name ?: $invoice->expenseProfile->wallet->driver_id }}</p>
+            @endif
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Notes') }}: {{ $invoice->notes ?? '—' }}</p>
         </div>
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-2">

@@ -6,6 +6,9 @@ use App\Models\ArInvoice;
 use App\Models\Customer;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
+use App\Services\Accounting\AccountingContextService;
+use App\Services\Accounting\LedgerAccountMappingService;
+use App\Services\Banking\BankTransactionService;
 use App\Services\Ledger\SubledgerService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -16,6 +19,9 @@ class ArPaymentService
         protected ArInvoiceService $invoices,
         protected ArAllocationService $allocations,
         protected SubledgerService $subledgerService,
+        protected AccountingContextService $accountingContext,
+        protected LedgerAccountMappingService $mappingService,
+        protected BankTransactionService $bankTransactionService,
     ) {
     }
 
@@ -43,14 +49,19 @@ class ArPaymentService
         }
 
         return DB::transaction(function () use ($customer, $branchId, $amountCents, $method, $receivedAt, $reference, $notes, $actorId, $clientUuid, $terminalId, $posShiftId, $currency) {
+            $companyId = $this->accountingContext->resolveCompanyId($branchId);
+            $normalizedMethod = $this->mappingService->normalizePaymentMethod($method);
             $payment = Payment::create([
                 'branch_id' => $branchId,
                 'customer_id' => $customer->id,
+                'company_id' => $companyId,
+                'bank_account_id' => $this->resolveBankAccountId($normalizedMethod, $companyId, null),
+                'period_id' => $this->accountingContext->resolvePeriodId($receivedAt, $companyId),
                 'client_uuid' => $clientUuid,
                 'terminal_id' => $terminalId,
                 'pos_shift_id' => $posShiftId,
                 'source' => 'ar',
-                'method' => $method,
+                'method' => $normalizedMethod,
                 'amount_cents' => $amountCents,
                 'currency' => $currency ?: (string) config('pos.currency'),
                 'received_at' => $receivedAt ?? now(),
@@ -60,6 +71,7 @@ class ArPaymentService
             ]);
 
             $this->subledgerService->recordArPaymentReceived($payment, 0, $amountCents, $actorId);
+            $this->bankTransactionService->recordArPayment($payment->fresh(), $actorId);
 
             return $payment->fresh();
         });
@@ -87,7 +99,7 @@ class ArPaymentService
             $branchId = 1;
         }
 
-        $method = (string) ($payload['method'] ?? 'bank');
+        $method = $this->mappingService->normalizePaymentMethod((string) ($payload['method'] ?? 'bank_transfer'));
         $currency = (string) ($payload['currency'] ?? config('pos.currency'));
         $receivedAt = $payload['received_at'] ?? now();
         $reference = $payload['reference'] ?? null;
@@ -96,15 +108,20 @@ class ArPaymentService
         $clientUuid = $payload['client_uuid'] ?? null;
         $terminalId = $payload['terminal_id'] ?? null;
         $posShiftId = $payload['pos_shift_id'] ?? null;
+        $bankAccountId = $payload['bank_account_id'] ?? null;
 
         usort($rows, function ($a, $b) {
             return (int) ($a['invoice_id'] ?? 0) <=> (int) ($b['invoice_id'] ?? 0);
         });
 
-        return DB::transaction(function () use ($customer, $branchId, $amount, $method, $currency, $receivedAt, $reference, $notes, $rows, $actorId, $clientUuid, $terminalId, $posShiftId) {
+        return DB::transaction(function () use ($customer, $branchId, $amount, $method, $currency, $receivedAt, $reference, $notes, $rows, $actorId, $clientUuid, $terminalId, $posShiftId, $bankAccountId) {
+            $companyId = $this->accountingContext->resolveCompanyId($branchId);
             $payment = Payment::create([
                 'branch_id' => $branchId,
                 'customer_id' => $customer->id,
+                'company_id' => $companyId,
+                'bank_account_id' => $this->resolveBankAccountId($method, $companyId, $bankAccountId),
+                'period_id' => $this->accountingContext->resolvePeriodId((string) $receivedAt, $companyId),
                 'client_uuid' => $clientUuid,
                 'terminal_id' => $terminalId,
                 'pos_shift_id' => $posShiftId,
@@ -189,6 +206,8 @@ class ArPaymentService
                 $actorId
             );
 
+            $this->bankTransactionService->recordArPayment($payment->fresh(), $actorId);
+
             return $payment->fresh(['allocations']);
         });
     }
@@ -267,5 +286,33 @@ class ArPaymentService
 
             return $allocation->fresh(['payment']);
         });
+    }
+
+    private function resolveBankAccountId(string $paymentMethod, ?int $companyId, mixed $bankAccountId): ?int
+    {
+        if ($paymentMethod !== 'bank_transfer') {
+            return null;
+        }
+
+        $bankAccount = $this->mappingService->resolveBankAccount((int) ($bankAccountId ?? 0), $companyId);
+        if (! $bankAccount) {
+            throw ValidationException::withMessages([
+                'bank_account_id' => __('A bank account is required for bank transfers.'),
+            ]);
+        }
+
+        if ((int) $bankAccount->company_id !== (int) $companyId) {
+            throw ValidationException::withMessages([
+                'bank_account_id' => __('The selected bank account does not belong to the payment company.'),
+            ]);
+        }
+
+        if (! $bankAccount->ledger_account_id) {
+            throw ValidationException::withMessages([
+                'bank_account_id' => __('The selected bank account must be linked to a ledger account.'),
+            ]);
+        }
+
+        return (int) $bankAccount->id;
     }
 }

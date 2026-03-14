@@ -23,7 +23,10 @@ class PurchaseOrder extends Model
 
     protected $fillable = [
         'po_number',
+        'company_id',
         'supplier_id',
+        'department_id',
+        'job_id',
         'order_date',
         'expected_delivery_date',
         'status',
@@ -32,13 +35,24 @@ class PurchaseOrder extends Model
         'notes',
         'payment_terms',
         'payment_type',
+        'matching_policy',
+        'workflow_state',
+        'approved_at',
+        'approved_by',
+        'closed_at',
+        'closed_by',
         'created_by',
     ];
 
     protected $casts = [
+        'company_id' => 'integer',
+        'department_id' => 'integer',
+        'job_id' => 'integer',
         'order_date' => 'date',
         'expected_delivery_date' => 'date',
         'received_date' => 'date',
+        'approved_at' => 'datetime',
+        'closed_at' => 'datetime',
         'total_amount' => 'decimal:2',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
@@ -63,6 +77,21 @@ class PurchaseOrder extends Model
     {
         return $this->hasMany(PurchaseOrderReceiving::class, 'purchase_order_id')
             ->latest('received_at');
+    }
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(AccountingCompany::class, 'company_id');
+    }
+
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'department_id');
+    }
+
+    public function job(): BelongsTo
+    {
+        return $this->belongsTo(Job::class, 'job_id');
     }
 
     public function isDraft(): bool { return $this->status === self::STATUS_DRAFT; }

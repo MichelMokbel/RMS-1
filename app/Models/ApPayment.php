@@ -19,9 +19,16 @@ class ApPayment extends Model
 
     protected $fillable = [
         'supplier_id',
+        'company_id',
+        'bank_account_id',
+        'branch_id',
+        'department_id',
+        'job_id',
+        'period_id',
         'payment_date',
         'amount',
         'payment_method',
+        'currency_code',
         'reference',
         'notes',
         'created_by',
@@ -32,6 +39,12 @@ class ApPayment extends Model
     ];
 
     protected $casts = [
+        'company_id' => 'integer',
+        'bank_account_id' => 'integer',
+        'branch_id' => 'integer',
+        'department_id' => 'integer',
+        'job_id' => 'integer',
+        'period_id' => 'integer',
         'payment_date' => 'date',
         'amount' => 'decimal:2',
         'created_at' => 'datetime',
@@ -86,6 +99,26 @@ class ApPayment extends Model
     public function voidedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'voided_by');
+    }
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(AccountingCompany::class, 'company_id');
+    }
+
+    public function bankAccount(): BelongsTo
+    {
+        return $this->belongsTo(BankAccount::class, 'bank_account_id');
+    }
+
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'department_id');
+    }
+
+    public function job(): BelongsTo
+    {
+        return $this->belongsTo(Job::class, 'job_id');
     }
 
     public function allocatedAmount(): float

@@ -11,6 +11,8 @@ use App\Models\PurchaseOrderReceiving;
 use App\Models\PurchaseOrderReceivingLine;
 use App\Models\ApInvoice;
 use App\Models\ApInvoiceItem;
+use App\Services\Accounting\AccountingAuditLogService;
+use App\Services\Accounting\AccountingContextService;
 use App\Services\Ledger\SubledgerService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +21,12 @@ use Illuminate\Validation\ValidationException;
 
 class PurchaseOrderReceivingService
 {
+    public function __construct(
+        protected AccountingContextService $accountingContext,
+        protected AccountingAuditLogService $auditLog
+    ) {
+    }
+
     public function receive(PurchaseOrder $po, array $lineReceipts, int $userId, ?string $notes = null, array $costOverrides = [], mixed $receivedAt = null): PurchaseOrder
     {
         return DB::transaction(function () use ($po, $lineReceipts, $userId, $notes, $costOverrides, $receivedAt) {
@@ -112,6 +120,10 @@ class PurchaseOrderReceivingService
             if ($po->isFullyReceived()) {
                 $this->maybeCreateApInvoice($po, $userId, $costOverrides);
             }
+
+            $this->auditLog->log('purchase_order.received', $userId, $po, [
+                'line_receipts' => $lineReceipts,
+            ], (int) ($po->company_id ?? 0) ?: null);
 
             return $po->fresh(['items']);
         });
@@ -214,10 +226,19 @@ class PurchaseOrderReceivingService
         }
 
         $invoice = ApInvoice::create([
+            'company_id' => $po->company_id ?: $this->accountingContext->resolveCompanyId((int) ($po->branch_id ?? 0)),
+            'branch_id' => $po->branch_id ?? null,
+            'department_id' => $po->department_id ?? null,
+            'job_id' => $po->job_id ?? null,
+            'period_id' => $this->accountingContext->resolvePeriodId(now()->toDateString(), (int) ($po->company_id ?? 0)),
             'supplier_id' => $po->supplier_id,
             'purchase_order_id' => $po->id,
             'category_id' => null,
             'is_expense' => false,
+            'document_type' => 'vendor_bill',
+            'currency_code' => config('pos.currency', 'QAR'),
+            'source_document_type' => PurchaseOrder::class,
+            'source_document_id' => $po->id,
             'invoice_number' => $invoiceNumber,
             'invoice_date' => now()->toDateString(),
             'due_date' => now()->addDays(30)->toDateString(),

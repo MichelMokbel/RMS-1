@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\AP\DocumentTypeMap;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -19,10 +20,20 @@ class ApInvoice extends Model
     protected $table = 'ap_invoices';
 
     protected $fillable = [
+        'company_id',
+        'branch_id',
+        'department_id',
+        'job_id',
+        'period_id',
         'supplier_id',
         'purchase_order_id',
         'category_id',
         'is_expense',
+        'document_type',
+        'currency_code',
+        'source_document_type',
+        'source_document_id',
+        'recurring_template_id',
         'invoice_number',
         'invoice_date',
         'due_date',
@@ -39,6 +50,11 @@ class ApInvoice extends Model
     ];
 
     protected $casts = [
+        'company_id' => 'integer',
+        'branch_id' => 'integer',
+        'department_id' => 'integer',
+        'job_id' => 'integer',
+        'period_id' => 'integer',
         'is_expense' => 'boolean',
         'invoice_date' => 'date',
         'due_date' => 'date',
@@ -139,6 +155,26 @@ class ApInvoice extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(AccountingCompany::class, 'company_id');
+    }
+
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'department_id');
+    }
+
+    public function job(): BelongsTo
+    {
+        return $this->belongsTo(Job::class, 'job_id');
+    }
+
+    public function period(): BelongsTo
+    {
+        return $this->belongsTo(AccountingPeriod::class, 'period_id');
+    }
+
     public function paidAmount(): float
     {
         return (float) $this->allocations()->sum('allocated_amount');
@@ -157,7 +193,10 @@ class ApInvoice extends Model
 
     public function canPost(): bool
     {
-        return $this->isDraft() && $this->supplier_id && $this->items()->count() > 0;
+        return $this->isDraft()
+            && $this->supplier_id
+            && $this->items()->count() > 0
+            && ($this->company_id !== null);
     }
 
     public function canVoid(): bool
@@ -172,5 +211,25 @@ class ApInvoice extends Model
             && $this->due_date
             && $this->due_date->isPast()
             && $this->outstandingAmount() > 0;
+    }
+
+    public function documentTypeLabel(): string
+    {
+        return DocumentTypeMap::label($this->document_type);
+    }
+
+    public function approvalStatusLabel(): string
+    {
+        return DocumentTypeMap::approvalStatus($this);
+    }
+
+    public function workflowStateLabel(): string
+    {
+        return DocumentTypeMap::workflowState($this);
+    }
+
+    public function paymentStateLabel(): string
+    {
+        return DocumentTypeMap::paymentState($this);
     }
 }

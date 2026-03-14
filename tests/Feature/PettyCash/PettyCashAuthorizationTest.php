@@ -17,5 +17,5 @@ it('allows admin role to view petty cash index', function () {
 
     $this->actingAs($user)
         ->get('/petty-cash')
-        ->assertRedirect('/spend?tab=petty');
+        ->assertRedirect('/payables?tab=expenses&expense_channel=petty_cash');
 });

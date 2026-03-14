@@ -16,7 +16,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $void_reason = '';
     public string $active_tab = 'allocations';
 
-    public string $payment_method = 'bank';
+    public string $payment_method = 'bank_transfer';
     public string $payment_amount = '0.00';
 
     public string $credit_amount = '0.00';

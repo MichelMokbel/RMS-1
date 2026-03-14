@@ -17,6 +17,9 @@ class Payment extends Model
     protected $fillable = [
         'branch_id',
         'customer_id',
+        'company_id',
+        'bank_account_id',
+        'period_id',
         'client_uuid',
         'terminal_id',
         'pos_shift_id',
@@ -34,6 +37,9 @@ class Payment extends Model
     ];
 
     protected $casts = [
+        'company_id' => 'integer',
+        'bank_account_id' => 'integer',
+        'period_id' => 'integer',
         'terminal_id' => 'integer',
         'pos_shift_id' => 'integer',
         'amount_cents' => 'integer',
@@ -64,6 +70,16 @@ class Payment extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class, 'customer_id');
+    }
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(AccountingCompany::class, 'company_id');
+    }
+
+    public function bankAccount(): BelongsTo
+    {
+        return $this->belongsTo(BankAccount::class, 'bank_account_id');
     }
 
     public function allocations(): HasMany

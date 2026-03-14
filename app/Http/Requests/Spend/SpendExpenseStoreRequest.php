@@ -15,6 +15,10 @@ class SpendExpenseStoreRequest extends FormRequest
     {
         return [
             'channel' => ['required', 'in:vendor,petty_cash,reimbursement'],
+            'company_id' => ['nullable', 'integer', 'exists:accounting_companies,id'],
+            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+            'department_id' => ['nullable', 'integer', 'exists:departments,id'],
+            'job_id' => ['nullable', 'integer', 'exists:accounting_jobs,id'],
             'supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
             'wallet_id' => ['nullable', 'integer', 'exists:petty_cash_wallets,id'],
             'category_id' => ['required', 'integer', 'exists:expense_categories,id'],
@@ -23,6 +27,7 @@ class SpendExpenseStoreRequest extends FormRequest
             'description' => ['required', 'string', 'max:255'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'tax_amount' => ['required', 'numeric', 'min:0'],
+            'currency_code' => ['nullable', 'string', 'max:10'],
             'notes' => ['nullable', 'string'],
             'reference' => ['nullable', 'string', 'max:100'],
         ];

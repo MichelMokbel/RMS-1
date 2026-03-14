@@ -30,7 +30,8 @@
                     || request()->routeIs('spend.*')
                     || request()->routeIs('expenses.*')
                     || request()->routeIs('petty-cash.*')
-                    || request()->routeIs('ledger.*');
+                    || request()->routeIs('ledger.*')
+                    || request()->routeIs('accounting.*');
                 $inReports = request()->routeIs('reports.*');
                 $inAdministration = request()->routeIs('categories.*')
                     || request()->routeIs('customers.*')
