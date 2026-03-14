@@ -30,7 +30,8 @@
                 $inFinance = request()->routeIs('payables.*')
                     || request()->routeIs('spend.*')
                     || request()->routeIs('expenses.*')
-                    || request()->routeIs('petty-cash.*');
+                    || request()->routeIs('petty-cash.*')
+                    || request()->routeIs('accounting.*');
                 $inReports = request()->routeIs('reports.*') || request()->routeIs('ledger.*');
             @endphp
 
@@ -137,13 +138,11 @@
 
                 @if ($isManager || $isStaff)
                     <flux:navlist.group expandable :expanded="$inFinance" :heading="__('Finance')">
-                        @if ($isManager)
-                            <flux:navlist.item icon="banknotes" :href="route('payables.index')" :current="request()->routeIs('payables.*')" wire:navigate>
-                                {{ __('Payables') }}
-                            </flux:navlist.item>
-                        @endif
-                        <flux:navlist.item icon="wallet" :href="route('spend.index')" :current="request()->routeIs('spend.*') || request()->routeIs('expenses.*') || request()->routeIs('petty-cash.*')" wire:navigate>
-                            {{ __('Spend') }}
+                        <flux:navlist.item icon="building-library" :href="route('accounting.dashboard')" :current="request()->routeIs('accounting.*')" wire:navigate>
+                            {{ __('Accounting') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="banknotes" :href="route('payables.index')" :current="request()->routeIs('payables.*') || request()->routeIs('spend.*') || request()->routeIs('expenses.*') || request()->routeIs('petty-cash.*')" wire:navigate>
+                            {{ __('Accounts Payable') }}
                         </flux:navlist.item>
                     </flux:navlist.group>
 

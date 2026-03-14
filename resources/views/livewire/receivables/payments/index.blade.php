@@ -73,9 +73,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <option value="">{{ __('All') }}</option>
                     <option value="cash">{{ __('Cash') }}</option>
                     <option value="card">{{ __('Card') }}</option>
-                    <option value="online">{{ __('Online') }}</option>
-                    <option value="bank">{{ __('Bank') }}</option>
-                    <option value="voucher">{{ __('Voucher') }}</option>
+                    <option value="bank_transfer">{{ __('Bank Transfer') }}</option>
+                    <option value="cheque">{{ __('Cheque') }}</option>
+                    <option value="other">{{ __('Other') }}</option>
                 </select>
             </div>
             <div class="min-w-[170px]">

@@ -192,12 +192,17 @@ Route::middleware(['auth', 'active', 'role:admin', 'ensure.admin'])->group(funct
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|finance.access|settings.pos_terminals.manage'])->group(function () {
     Volt::route('settings/finance', 'finance.settings')->name('finance.settings');
+    Volt::route('settings/accounting', 'settings.accounting')->name('settings.accounting');
     Volt::route('settings/payment-terms', 'settings.payment-terms')->name('settings.payment-terms');
     Volt::route('settings/pos-terminals', 'settings.pos-terminals')->name('settings.pos-terminals');
     Route::redirect('finance/settings', 'settings/finance');
 
     Volt::route('ledger/batches', 'ledger.batches.index')->name('ledger.batches.index');
     Volt::route('ledger/batches/{batch}', 'ledger.batches.show')->name('ledger.batches.show');
+});
+
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|finance.access'])->group(function () {
+    Volt::route('settings/organization', 'settings.organization')->name('settings.organization');
 });
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|receivables.access'])->group(function () {
@@ -1090,13 +1095,6 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|catalog.a
     Volt::route('menu-items/create', 'menu-items.create')->name('menu-items.create');
     Volt::route('menu-items/{menuItem}/edit', 'menu-items.edit')->name('menu-items.edit');
 
-    Volt::route('payables', 'payables.index')->name('payables.index');
-    Volt::route('payables/invoices/create', 'payables.invoices.create')->name('payables.invoices.create');
-    Volt::route('payables/invoices/{invoice}', 'payables.invoices.show')->name('payables.invoices.show');
-    Volt::route('payables/invoices/{invoice}/edit', 'payables.invoices.edit')->name('payables.invoices.edit');
-    Volt::route('payables/payments/create', 'payables.payments.create')->name('payables.payments.create');
-    Volt::route('payables/payments/{payment}', 'payables.payments.show')->name('payables.payments.show');
-
     Volt::route('purchase-orders', 'purchase-orders.index')->name('purchase-orders.index');
     Volt::route('purchase-orders/create', 'purchase-orders.create')->name('purchase-orders.create');
     Route::get('purchase-orders/{purchaseOrder}/print', function (PurchaseOrder $purchaseOrder) {
@@ -1107,17 +1105,34 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|catalog.a
     Volt::route('purchase-orders/{purchaseOrder}', 'purchase-orders.show')->name('purchase-orders.show');
     Volt::route('purchase-orders/{purchaseOrder}/edit', 'purchase-orders.edit')->name('purchase-orders.edit');
 
-    // Expenses legacy pages are cut over to Spend hub.
-    Route::get('expenses', fn () => redirect()->route('spend.index', ['tab' => 'vendor']))->name('expenses.index');
-    Route::get('expenses/create', fn () => redirect()->route('spend.index', ['tab' => 'vendor']))->name('expenses.create');
-    Route::get('expenses/categories', fn () => redirect()->route('spend.index', ['tab' => 'vendor']))->name('expenses.categories');
-    Route::get('expenses/{expense}', fn () => redirect()->route('spend.index', ['tab' => 'vendor']))->name('expenses.show');
-    Route::get('expenses/{expense}/edit', fn () => redirect()->route('spend.index', ['tab' => 'vendor']))->name('expenses.edit');
 });
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|finance.access'])->group(function () {
-    Volt::route('spend', 'spend.index')->name('spend.index');
-    Route::get('petty-cash', fn () => redirect()->route('spend.index', ['tab' => 'petty']))->name('petty-cash.index');
+    Volt::route('payables', 'payables.index')->name('payables.index');
+    Volt::route('payables/create', 'payables.create')->name('payables.create');
+    Volt::route('payables/invoices/create', 'payables.invoices.create')->name('payables.invoices.create');
+    Volt::route('payables/invoices/{invoice}', 'payables.invoices.show')->name('payables.invoices.show');
+    Volt::route('payables/invoices/{invoice}/edit', 'payables.invoices.edit')->name('payables.invoices.edit');
+    Route::get('spend', fn () => redirect()->route('payables.index', ['tab' => 'approvals']))->name('spend.index');
+    Route::get('petty-cash', fn () => redirect()->route('payables.index', ['tab' => 'expenses', 'expense_channel' => 'petty_cash']))->name('petty-cash.index');
+    Route::get('expenses', fn () => redirect()->route('payables.index', ['tab' => 'expenses']))->name('expenses.index');
+    Route::get('expenses/create', fn () => redirect()->route('payables.create'))->name('expenses.create');
+    Route::get('expenses/categories', fn () => redirect()->route('payables.index', ['tab' => 'expenses']))->name('expenses.categories');
+    Route::get('expenses/{expense}', fn ($expense) => redirect()->route('payables.invoices.show', $expense))->name('expenses.show');
+    Route::get('expenses/{expense}/edit', fn ($expense) => redirect()->route('payables.invoices.edit', $expense))->name('expenses.edit');
+    Volt::route('accounting', 'accounting.dashboard')->name('accounting.dashboard');
+    Route::redirect('accounting/chart-of-accounts', 'settings/accounting?tab=chart')->name('accounting.chart-of-accounts');
+    Volt::route('accounting/banking', 'accounting.banking')->name('accounting.banking');
+    Volt::route('accounting/journals', 'accounting.journals')->name('accounting.journals');
+    Volt::route('accounting/budgets', 'accounting.budgets')->name('accounting.budgets');
+    Volt::route('accounting/jobs', 'accounting.jobs')->name('accounting.jobs');
+    Volt::route('accounting/reports', 'accounting.reports')->name('accounting.reports');
+    Volt::route('accounting/period-close', 'accounting.period-close')->name('accounting.period-close');
+});
+
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|finance.access'])->group(function () {
+    Volt::route('payables/payments/create', 'payables.payments.create')->name('payables.payments.create');
+    Volt::route('payables/payments/{payment}', 'payables.payments.show')->name('payables.payments.show');
 });
 
 // POS Android app download

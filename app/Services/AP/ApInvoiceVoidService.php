@@ -3,13 +3,17 @@
 namespace App\Services\AP;
 
 use App\Models\ApInvoice;
+use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\Ledger\SubledgerService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class ApInvoiceVoidService
 {
-    public function __construct(protected SubledgerService $subledgerService)
+    public function __construct(
+        protected SubledgerService $subledgerService,
+        protected AccountingAuditLogService $auditLog
+    )
     {
     }
 
@@ -37,6 +41,10 @@ class ApInvoiceVoidService
             if ($wasPosted) {
                 $this->subledgerService->recordApInvoiceVoid($invoice, $userId);
             }
+
+            $this->auditLog->log('ap_invoice.voided', $userId, $invoice, [
+                'was_posted' => $wasPosted,
+            ], (int) ($invoice->company_id ?? 0) ?: null);
 
             return $invoice;
         });

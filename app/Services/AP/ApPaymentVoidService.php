@@ -5,6 +5,8 @@ namespace App\Services\AP;
 use App\Models\ApPayment;
 use App\Models\ApPaymentAllocation;
 use App\Models\SubledgerEntry;
+use App\Services\Accounting\AccountingAuditLogService;
+use App\Services\Banking\BankTransactionService;
 use App\Services\Ledger\SubledgerService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -13,7 +15,9 @@ class ApPaymentVoidService
 {
     public function __construct(
         protected SubledgerService $subledgerService,
-        protected ApInvoiceStatusService $statusService
+        protected ApInvoiceStatusService $statusService,
+        protected BankTransactionService $bankTransactionService,
+        protected AccountingAuditLogService $auditLog
     ) {
     }
 
@@ -72,6 +76,10 @@ class ApPaymentVoidService
             $payment->voided_at = now();
             $payment->voided_by = $userId;
             $payment->save();
+            $this->bankTransactionService->voidApPayment($payment, $userId);
+            $this->auditLog->log('ap_payment.voided', $userId, $payment, [
+                'allocation_count' => $allocations->count(),
+            ], (int) ($payment->company_id ?? 0) ?: null);
 
             foreach ($invoiceIds as $invoiceId) {
                 $invoice = \App\Models\ApInvoice::whereKey($invoiceId)->lockForUpdate()->first();

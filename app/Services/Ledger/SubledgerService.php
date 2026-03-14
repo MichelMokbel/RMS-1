@@ -6,23 +6,33 @@ use App\Models\ApInvoice;
 use App\Models\ApPayment;
 use App\Models\ApPaymentAllocation;
 use App\Models\ArInvoice;
+use App\Models\Branch;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Models\InventoryTransaction;
 use App\Models\InventoryTransfer;
-use App\Models\LedgerAccount;
 use App\Models\PettyCashIssue;
 use App\Models\PettyCashReconciliation;
+use App\Models\Supplier;
 use App\Models\SubledgerEntry;
 use App\Models\SubledgerLine;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Config;
+use App\Services\Accounting\AccountingContextService;
+use App\Services\Accounting\LedgerAccountMappingService;
+use App\Services\Accounting\AccountingPeriodGateService;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class SubledgerService
 {
     protected array $accountCache = [];
+
+    public function __construct(
+        protected AccountingContextService $accountingContext,
+        protected LedgerAccountMappingService $mappingService,
+        protected AccountingPeriodGateService $periodGate
+    )
+    {
+    }
 
     public function recordInventoryTransaction(InventoryTransaction $transaction, ?int $userId = null): ?SubledgerEntry
     {
@@ -40,8 +50,8 @@ class SubledgerService
             return null;
         }
 
-        $inventoryAccount = $this->mapKey('inventory_asset');
-        $offsetAccount = $this->mapKey($offsetKey);
+        $inventoryAccount = 'inventory_asset';
+        $offsetAccount = $offsetKey;
 
         $lines = $this->buildDualLines($amount, $inventoryAccount, $offsetAccount);
         $date = optional($transaction->transaction_date)->toDateString() ?? now()->toDateString();
@@ -71,7 +81,7 @@ class SubledgerService
             return null;
         }
 
-        $inventoryAccount = $this->mapKey('inventory_asset');
+        $inventoryAccount = 'inventory_asset';
         $lines = [
             [
                 'account' => $inventoryAccount,
@@ -117,13 +127,13 @@ class SubledgerService
         }
 
         $debitKey = $this->apInvoiceDebitKey($invoice);
-        $debitAccount = $this->mapKey($debitKey);
-        $apAccount = $this->mapKey('ap_invoice_ap');
+        $expenseAccountId = $this->apInvoiceExpenseAccountId($invoice);
+        $apAccount = 'ap_invoice_ap';
 
         $lines = [];
         if ($subtotal > 0) {
             $lines[] = [
-                'account' => $debitAccount,
+                'account' => $expenseAccountId ?: $debitKey,
                 'debit' => $subtotal,
                 'credit' => 0,
                 'memo' => 'Invoice subtotal',
@@ -131,7 +141,7 @@ class SubledgerService
         }
         if ($tax > 0) {
             $lines[] = [
-                'account' => $this->mapKey('ap_invoice_tax'),
+                'account' => 'ap_invoice_tax',
                 'debit' => $tax,
                 'credit' => 0,
                 'memo' => 'Invoice tax',
@@ -156,7 +166,9 @@ class SubledgerService
             entryDate: $date,
             description: 'AP Invoice '.$invoice->invoice_number,
             lines: $lines,
-            userId: $userId
+            userId: $userId,
+            branchId: $invoice->branch_id,
+            companyId: $invoice->company_id
         );
     }
 
@@ -178,13 +190,13 @@ class SubledgerService
         }
 
         $debitKey = $this->apInvoiceDebitKey($invoice);
-        $debitAccount = $this->mapKey($debitKey);
-        $apAccount = $this->mapKey('ap_invoice_ap');
+        $expenseAccountId = $this->apInvoiceExpenseAccountId($invoice);
+        $apAccount = 'ap_invoice_ap';
 
         $lines = [];
         if ($subtotal > 0) {
             $lines[] = [
-                'account' => $debitAccount,
+                'account' => $expenseAccountId ?: $debitKey,
                 'debit' => 0,
                 'credit' => $subtotal,
                 'memo' => 'Invoice reversal',
@@ -192,7 +204,7 @@ class SubledgerService
         }
         if ($tax > 0) {
             $lines[] = [
-                'account' => $this->mapKey('ap_invoice_tax'),
+                'account' => 'ap_invoice_tax',
                 'debit' => 0,
                 'credit' => $tax,
                 'memo' => 'Tax reversal',
@@ -215,7 +227,9 @@ class SubledgerService
             entryDate: $date,
             description: 'AP Invoice void '.$invoice->invoice_number,
             lines: $lines,
-            userId: $userId
+            userId: $userId,
+            branchId: $invoice->branch_id,
+            companyId: $invoice->company_id
         );
     }
 
@@ -234,10 +248,11 @@ class SubledgerService
         $applied = $appliedAmount ?? (float) $payment->allocations()->sum('allocated_amount');
         $applied = max(min($applied, $amount), 0);
         $unapplied = max($amount - $applied, 0);
+        $companyId = $this->accountingContext->resolveCompanyId((int) ($payment->branch_id ?? 0), (int) ($payment->company_id ?? 0));
 
         $lines = [
             [
-                'account' => $this->mapKey('ap_payment_cash'),
+                'account_id' => $this->paymentSettlementAccount($payment->payment_method, $companyId, (int) ($payment->bank_account_id ?? 0), 'ap'),
                 'debit' => 0,
                 'credit' => $amount,
                 'memo' => 'Cash payment',
@@ -246,7 +261,7 @@ class SubledgerService
 
         if ($applied > 0) {
             $lines[] = [
-                'account' => $this->mapKey('ap_invoice_ap'),
+                'account' => 'ap_invoice_ap',
                 'debit' => $applied,
                 'credit' => 0,
                 'memo' => 'AP payment applied',
@@ -255,7 +270,7 @@ class SubledgerService
 
         if ($unapplied > 0) {
             $lines[] = [
-                'account' => $this->mapKey('ap_payment_prepay'),
+                'account' => 'ap_payment_prepay',
                 'debit' => $unapplied,
                 'credit' => 0,
                 'memo' => 'Supplier advance',
@@ -271,7 +286,9 @@ class SubledgerService
             entryDate: $date,
             description: 'AP Payment '.$payment->reference,
             lines: $lines,
-            userId: $userId
+            userId: $userId,
+            branchId: $payment->branch_id,
+            companyId: $payment->company_id
         );
     }
 
@@ -296,7 +313,7 @@ class SubledgerService
             return null;
         }
 
-        $prepayAccountId = $this->resolveAccountId('ap_payment_prepay');
+        $prepayAccountId = $this->resolveAccountId('ap_payment_prepay', (int) ($allocation->payment?->company_id ?? 0));
         if (! $prepayAccountId) {
             return null;
         }
@@ -313,13 +330,13 @@ class SubledgerService
 
         $lines = [
             [
-                'account' => $this->mapKey('ap_invoice_ap'),
+                'account' => 'ap_invoice_ap',
                 'debit' => $amount,
                 'credit' => 0,
                 'memo' => 'Apply supplier advance',
             ],
             [
-                'account' => $this->mapKey('ap_payment_prepay'),
+                'account' => 'ap_payment_prepay',
                 'debit' => 0,
                 'credit' => $amount,
                 'memo' => 'Reduce supplier advance',
@@ -333,7 +350,9 @@ class SubledgerService
             entryDate: $date,
             description: 'Apply supplier advance',
             lines: $lines,
-            userId: $userId
+            userId: $userId,
+            branchId: $allocation->payment?->branch_id,
+            companyId: $allocation->payment?->company_id
         );
     }
 
@@ -358,14 +377,14 @@ class SubledgerService
         $lines = [];
         if ($totalCents > 0) {
             $lines[] = [
-                'account' => $this->mapKey('ar_invoice_ar'),
+                'account' => 'ar_invoice_ar',
                 'debit' => $total,
                 'credit' => 0,
                 'memo' => 'Accounts receivable',
             ];
             if ($net > 0) {
                 $lines[] = [
-                    'account' => $this->mapKey('ar_invoice_revenue'),
+                    'account' => 'ar_invoice_revenue',
                     'debit' => 0,
                     'credit' => $net,
                     'memo' => 'Sales revenue',
@@ -373,7 +392,7 @@ class SubledgerService
             }
             if ($tax > 0) {
                 $lines[] = [
-                    'account' => $this->mapKey('ar_invoice_tax'),
+                    'account' => 'ar_invoice_tax',
                     'debit' => 0,
                     'credit' => $tax,
                     'memo' => 'Output tax',
@@ -381,14 +400,14 @@ class SubledgerService
             }
         } else {
             $lines[] = [
-                'account' => $this->mapKey('ar_invoice_ar'),
+                'account' => 'ar_invoice_ar',
                 'debit' => 0,
                 'credit' => $total,
                 'memo' => 'Accounts receivable reversal',
             ];
             if ($net > 0) {
                 $lines[] = [
-                    'account' => $this->mapKey('ar_invoice_revenue'),
+                    'account' => 'ar_invoice_revenue',
                     'debit' => $net,
                     'credit' => 0,
                     'memo' => 'Sales revenue reversal',
@@ -396,7 +415,7 @@ class SubledgerService
             }
             if ($tax > 0) {
                 $lines[] = [
-                    'account' => $this->mapKey('ar_invoice_tax'),
+                    'account' => 'ar_invoice_tax',
                     'debit' => $tax,
                     'credit' => 0,
                     'memo' => 'Output tax reversal',
@@ -414,7 +433,8 @@ class SubledgerService
             description: 'AR Invoice '.$invoice->invoice_number,
             lines: $lines,
             userId: $userId,
-            branchId: $invoice->branch_id
+            branchId: $invoice->branch_id,
+            companyId: $invoice->company_id ?? null
         );
     }
 
@@ -435,7 +455,7 @@ class SubledgerService
 
         $lines = [
             [
-                'account' => $this->mapKey('ar_payment_cash'),
+                'account_id' => $this->paymentSettlementAccount($payment->method, (int) ($payment->company_id ?? 0), (int) ($payment->bank_account_id ?? 0), 'ar'),
                 'debit' => $total,
                 'credit' => 0,
                 'memo' => 'Cash received',
@@ -444,7 +464,7 @@ class SubledgerService
 
         if ($applied > 0) {
             $lines[] = [
-                'account' => $this->mapKey('ar_invoice_ar'),
+                'account' => 'ar_invoice_ar',
                 'debit' => 0,
                 'credit' => $applied,
                 'memo' => 'Apply to receivables',
@@ -453,7 +473,7 @@ class SubledgerService
 
         if ($unapplied > 0) {
             $lines[] = [
-                'account' => $this->mapKey('ar_payment_advance'),
+                'account' => 'ar_payment_advance',
                 'debit' => 0,
                 'credit' => $unapplied,
                 'memo' => 'Customer advance',
@@ -470,7 +490,8 @@ class SubledgerService
             description: 'AR Payment '.$payment->id,
             lines: $lines,
             userId: $userId,
-            branchId: $payment->branch_id
+            branchId: $payment->branch_id,
+            companyId: $payment->company_id
         );
     }
 
@@ -494,13 +515,13 @@ class SubledgerService
 
         $lines = [
             [
-                'account' => $this->mapKey('ar_payment_advance'),
+                'account' => 'ar_payment_advance',
                 'debit' => $amount,
                 'credit' => 0,
                 'memo' => 'Reduce customer advance',
             ],
             [
-                'account' => $this->mapKey('ar_invoice_ar'),
+                'account' => 'ar_invoice_ar',
                 'debit' => 0,
                 'credit' => $amount,
                 'memo' => 'Apply advance to receivables',
@@ -515,7 +536,8 @@ class SubledgerService
             description: 'Apply customer advance',
             lines: $lines,
             userId: $userId,
-            branchId: $allocation->payment?->branch_id
+            branchId: $allocation->payment?->branch_id,
+            companyId: $allocation->payment?->company_id
         );
     }
 
@@ -532,13 +554,13 @@ class SubledgerService
 
         $lines = [
             [
-                'account' => $this->mapKey('petty_cash_asset'),
+                'account' => 'petty_cash_asset',
                 'debit' => $amount,
                 'credit' => 0,
                 'memo' => 'Petty cash issue',
             ],
             [
-                'account' => $this->mapKey('petty_cash_issue_cash'),
+                'account' => 'petty_cash_issue_cash',
                 'debit' => 0,
                 'credit' => $amount,
                 'memo' => 'Cash funding',
@@ -576,13 +598,13 @@ class SubledgerService
         if ($variance > 0) {
             $lines = [
                 [
-                    'account' => $this->mapKey('petty_cash_asset'),
+                    'account' => 'petty_cash_asset',
                     'debit' => $variance,
                     'credit' => 0,
                     'memo' => 'Petty cash overage',
                 ],
                 [
-                    'account' => $this->mapKey('petty_cash_over_short'),
+                    'account' => 'petty_cash_over_short',
                     'debit' => 0,
                     'credit' => $variance,
                     'memo' => 'Over/short',
@@ -592,13 +614,13 @@ class SubledgerService
             $short = abs($variance);
             $lines = [
                 [
-                    'account' => $this->mapKey('petty_cash_over_short'),
+                    'account' => 'petty_cash_over_short',
                     'debit' => $short,
                     'credit' => 0,
                     'memo' => 'Over/short',
                 ],
                 [
-                    'account' => $this->mapKey('petty_cash_asset'),
+                    'account' => 'petty_cash_asset',
                     'debit' => 0,
                     'credit' => $short,
                     'memo' => 'Petty cash shortage',
@@ -629,13 +651,16 @@ class SubledgerService
         ?string $description,
         array $lines,
         ?int $userId = null,
-        ?int $branchId = null
+        ?int $branchId = null,
+        ?int $companyId = null
     ): ?SubledgerEntry {
         if (! $this->canPost()) {
             return null;
         }
 
-        $this->assertOpenPeriod($entryDate);
+        $branchId = $this->normalizeBranchId($branchId);
+        $companyId = $this->accountingContext->resolveCompanyId($branchId, $companyId);
+        $this->assertOpenPeriod($entryDate, $companyId, null, 'ledger');
 
         $exists = SubledgerEntry::where('source_type', $sourceType)
             ->where('source_id', $sourceId)
@@ -659,7 +684,9 @@ class SubledgerService
                 throw ValidationException::withMessages(['ledger' => __('Ledger line cannot have both debit and credit.')]);
             }
 
-            $accountId = $this->resolveAccountId($line['account'] ?? null);
+            $accountId = isset($line['account_id']) && (int) $line['account_id'] > 0
+                ? (int) $line['account_id']
+                : $this->resolveAccountId($line['account'] ?? null, $companyId);
             if (! $accountId) {
                 throw ValidationException::withMessages(['ledger' => __('Ledger account is missing.')]);
             }
@@ -682,10 +709,15 @@ class SubledgerService
         $entry = SubledgerEntry::create([
             'source_type' => $sourceType,
             'source_id' => $sourceId,
+            'company_id' => $companyId,
             'event' => $event,
             'entry_date' => $entryDate,
             'description' => $description,
+            'source_document_type' => $sourceType,
+            'source_document_id' => $sourceId,
             'branch_id' => $branchId,
+            'period_id' => $this->accountingContext->resolvePeriodId($entryDate, $companyId),
+            'currency_code' => config('pos.currency', 'QAR'),
             'status' => 'posted',
             'posted_at' => now(),
             'posted_by' => $userId,
@@ -711,7 +743,7 @@ class SubledgerService
         }
 
         $entryDate = $entryDate ?? now()->toDateString();
-        $this->assertOpenPeriod($entryDate);
+        $this->assertOpenPeriod($entryDate, (int) ($entry->company_id ?? 0), null, 'ledger');
 
         $exists = SubledgerEntry::where('source_type', $entry->source_type)
             ->where('source_id', $entry->source_id)
@@ -755,10 +787,17 @@ class SubledgerService
         $reversal = SubledgerEntry::create([
             'source_type' => $entry->source_type,
             'source_id' => $entry->source_id,
+            'company_id' => $entry->company_id,
             'event' => $event,
             'entry_date' => $entryDate,
             'description' => $description,
+            'source_document_type' => $entry->source_document_type,
+            'source_document_id' => $entry->source_document_id,
             'branch_id' => $entry->branch_id,
+            'department_id' => $entry->department_id,
+            'job_id' => $entry->job_id,
+            'period_id' => $this->accountingContext->resolvePeriodId($entryDate, (int) ($entry->company_id ?? 0)),
+            'currency_code' => $entry->currency_code ?: config('pos.currency', 'QAR'),
             'status' => 'posted',
             'posted_at' => now(),
             'posted_by' => $userId,
@@ -772,34 +811,29 @@ class SubledgerService
         return $reversal->load('lines');
     }
 
-    private function resolveAccountId(?string $key): ?int
+    private function resolveAccountId(mixed $key, ?int $companyId = null): ?int
     {
-        if (! $key) {
+        if (is_int($key) || ctype_digit((string) $key)) {
+            return (int) $key;
+        }
+
+        if (! is_string($key) || $key === '') {
             return null;
         }
 
-        $mapped = $this->mapKey($key);
-        $accounts = $this->accountsConfig();
-
-        $code = $accounts[$mapped]['code'] ?? $mapped;
-        if (isset($this->accountCache[$code])) {
-            return $this->accountCache[$code];
+        $cacheKey = ($companyId ?: 0).'::'.$key;
+        if (isset($this->accountCache[$cacheKey])) {
+            return $this->accountCache[$cacheKey];
         }
 
-        $account = LedgerAccount::where('code', $code)->first();
+        $account = $this->mappingService->resolveAccount($key, $companyId);
         if (! $account) {
-            $meta = $accounts[$mapped] ?? ['name' => $code, 'type' => 'asset'];
-            $account = LedgerAccount::create([
-                'code' => $code,
-                'name' => $meta['name'] ?? $code,
-                'type' => $meta['type'] ?? 'asset',
-                'is_active' => true,
-            ]);
+            return null;
         }
 
-        $this->accountCache[$code] = $account->id;
+        $this->accountCache[$cacheKey] = (int) $account->id;
 
-        return $account->id;
+        return (int) $account->id;
     }
 
     private function apInvoiceDebitKey(ApInvoice $invoice): string
@@ -809,6 +843,19 @@ class SubledgerService
         }
 
         return $invoice->is_expense ? 'ap_invoice_expense' : 'ap_invoice_inventory';
+    }
+
+    private function apInvoiceExpenseAccountId(ApInvoice $invoice): ?int
+    {
+        if (! $invoice->is_expense) {
+            return null;
+        }
+
+        $supplier = $invoice->relationLoaded('supplier')
+            ? $invoice->supplier
+            : Supplier::query()->select(['id', 'default_expense_account_id'])->find($invoice->supplier_id);
+
+        return $supplier?->default_expense_account_id ? (int) $supplier->default_expense_account_id : null;
     }
 
     private function inventoryOffsetKey(string $transactionType, ?string $referenceType): ?string
@@ -853,12 +900,6 @@ class SubledgerService
         return trim('Inventory '.$transaction->transaction_type.' '.$reference.' '.$refId);
     }
 
-    private function mapKey(string $key): string
-    {
-        $map = Config::get('ledger.mappings', []);
-        return $map[$key] ?? $key;
-    }
-
     private function moneyFromCents(int $cents): float
     {
         $scale = (int) config('pos.money_scale', 100);
@@ -869,9 +910,31 @@ class SubledgerService
         return round(((float) $cents) / $scale, 4);
     }
 
-    private function accountsConfig(): array
+    private function paymentSettlementAccount(?string $method, ?int $companyId, ?int $bankAccountId, string $module): int
     {
-        return Config::get('ledger.accounts', []);
+        $accountId = $this->mappingService->resolveSettlementAccountId((string) $method, $companyId, $bankAccountId);
+        if (! $accountId) {
+            throw ValidationException::withMessages([
+                'payment_method' => __('No settlement ledger account is configured for the selected payment method.'),
+            ]);
+        }
+
+        $required = $module === 'ap'
+            ? ['ap_control', 'ap_prepay']
+            : ['ar_control', 'customer_advances'];
+        $normalizedMethod = $this->mappingService->normalizePaymentMethod($method);
+        if ($normalizedMethod !== 'bank_transfer') {
+            $required[] = match ($normalizedMethod) {
+            'cash' => 'cash',
+            'card' => 'card_clearing',
+            'cheque' => 'cheque_clearing',
+            'petty_cash' => 'petty_cash_asset',
+            default => 'other_clearing',
+        };
+        }
+        $this->mappingService->assertRequiredMappings($companyId, $required);
+
+        return $accountId;
     }
 
     private function canPost(): bool
@@ -881,20 +944,17 @@ class SubledgerService
             && Schema::hasTable('ledger_accounts');
     }
 
-    private function assertOpenPeriod(string $entryDate): void
+    private function normalizeBranchId(?int $branchId): ?int
     {
-        $lockDate = Config::get('finance.lock_date');
-        if (! $lockDate) {
-            return;
+        if (! $branchId || ! Schema::hasTable('branches')) {
+            return null;
         }
 
-        $locked = Carbon::parse($lockDate)->startOfDay();
-        $date = Carbon::parse($entryDate)->startOfDay();
+        return Branch::query()->whereKey($branchId)->exists() ? $branchId : null;
+    }
 
-        if ($date->lessThanOrEqualTo($locked)) {
-            throw ValidationException::withMessages([
-                'ledger' => __('Posting is locked for periods on or before :date.', ['date' => $locked->toDateString()]),
-            ]);
-        }
+    private function assertOpenPeriod(string $entryDate, ?int $companyId = null, ?int $periodId = null, string $module = 'all'): void
+    {
+        $this->periodGate->assertDateOpen($entryDate, $companyId, $periodId, $module, 'ledger');
     }
 }

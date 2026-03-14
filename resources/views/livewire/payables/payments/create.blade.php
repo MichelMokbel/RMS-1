@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ApInvoice;
+use App\Models\BankAccount;
 use App\Models\Supplier;
 use App\Services\AP\ApAllocationService;
 use Illuminate\Support\Facades\Schema;
@@ -13,6 +14,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?string $payment_date = null;
     public float $amount = 0;
     public ?string $payment_method = 'bank_transfer';
+    public ?int $bank_account_id = null;
     public ?string $reference = null;
     public ?string $notes = null;
     public array $allocations = [];
@@ -61,6 +63,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'payment_date' => $this->payment_date,
             'amount' => $this->amount,
             'payment_method' => $this->payment_method,
+            'bank_account_id' => $this->bank_account_id,
             'reference' => $this->reference,
             'notes' => $this->notes,
             'allocations' => collect($this->allocations)
@@ -89,7 +92,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
             'payment_date' => ['required', 'date'],
             'amount' => ['required', 'numeric', 'min:0.01'],
-            'payment_method' => ['nullable', 'in:cash,bank_transfer,card,cheque,other'],
+            'payment_method' => ['nullable', 'in:cash,bank_transfer,card,cheque,other,petty_cash'],
+            'bank_account_id' => ['nullable', 'integer', 'exists:bank_accounts,id', 'required_if:payment_method,bank_transfer'],
             'allocations' => ['sometimes', 'array'],
         ]);
 
@@ -110,6 +114,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->pluck('supplier_id');
 
         return Supplier::whereIn('id', $supplierIds)->orderBy('name')->get();
+    }
+
+    public function bankAccounts()
+    {
+        return Schema::hasTable('bank_accounts')
+            ? BankAccount::query()->where('is_active', true)->orderBy('name')->get()
+            : collect();
     }
 }; ?>
 
@@ -144,7 +155,31 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <option value="card">Card</option>
                         <option value="cheque">Cheque</option>
                         <option value="other">Other</option>
+                        <option value="petty_cash">Petty Cash</option>
                     </select>
+                </div>
+                <div>
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Bank Account') }}</label>
+                    <select wire:model="bank_account_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                        <option value="">{{ __('Default') }}</option>
+                        @foreach($this->bankAccounts() as $account)
+                            <option value="{{ $account->id }}">{{ $account->name }}</option>
+                        @endforeach
+                    </select>
+                    <p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                        @if($payment_method === 'bank_transfer')
+                            {{ __('Required for bank transfers. The selected bank account ledger will be credited.') }}
+                        @elseif($payment_method === 'card')
+                            {{ __('Card payments post to the company card-clearing account.') }}
+                        @elseif($payment_method === 'cash')
+                            {{ __('Cash payments post to the company cash account.') }}
+                        @elseif($payment_method === 'petty_cash')
+                            {{ __('Petty cash payments reduce the petty cash asset account.') }}
+                        @else
+                            {{ __('Cheque and other methods use their configured clearing accounts.') }}
+                        @endif
+                    </p>
+                    @error('bank_account_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                 </div>
                 <flux:input wire:model="reference" :label="__('Reference')" />
             </div>

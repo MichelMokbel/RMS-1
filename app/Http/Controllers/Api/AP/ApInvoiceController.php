@@ -9,10 +9,14 @@ use App\Http\Requests\AP\ApInvoiceUpdateRequest;
 use App\Http\Requests\AP\ApInvoiceVoidRequest;
 use App\Models\ApInvoice;
 use App\Models\ApInvoiceItem;
+use App\Models\ExpenseProfile;
+use App\Services\Accounting\AccountingContextService;
+use App\Services\Accounting\AccountingPeriodGateService;
 use App\Services\AP\ApInvoicePostingService;
 use App\Services\AP\ApInvoiceTotalsService;
 use App\Services\AP\ApInvoiceVoidService;
-use App\Services\AP\ApInvoiceStatusService;
+use App\Services\Spend\ExpenseWorkflowService;
+use App\Support\AP\DocumentTypeMap;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -40,16 +44,30 @@ class ApInvoiceController extends Controller
 
     public function store(
         ApInvoiceStoreRequest $request,
-        ApInvoiceTotalsService $totalsService
+        ApInvoiceTotalsService $totalsService,
+        AccountingContextService $accountingContext,
+        AccountingPeriodGateService $periodGate,
+        ExpenseWorkflowService $expenseWorkflowService
     ): JsonResponse {
         $data = $request->validated();
+        $document = DocumentTypeMap::derive((string) $data['document_type'], $data['expense_channel'] ?? null);
+        $companyId = $accountingContext->resolveCompanyId($data['branch_id'] ?? null, $data['company_id'] ?? null);
+        $periodId = $accountingContext->resolvePeriodId($data['invoice_date'] ?? null, $data['company_id'] ?? null);
+        $periodGate->assertDateOpen((string) $data['invoice_date'], $companyId, $periodId, 'ap', 'invoice_date');
 
-        $invoice = DB::transaction(function () use ($data, $totalsService) {
+        $invoice = DB::transaction(function () use ($data, $totalsService, $document, $expenseWorkflowService, $companyId, $periodId) {
             $invoice = ApInvoice::create([
+                'company_id' => $companyId,
+                'branch_id' => $data['branch_id'] ?? null,
+                'department_id' => $data['department_id'] ?? null,
+                'job_id' => $data['job_id'] ?? null,
+                'period_id' => $periodId,
                 'supplier_id' => $data['supplier_id'],
                 'purchase_order_id' => $data['purchase_order_id'] ?? null,
                 'category_id' => $data['category_id'] ?? null,
-                'is_expense' => $data['is_expense'],
+                'is_expense' => $document['is_expense'],
+                'document_type' => $data['document_type'],
+                'currency_code' => $data['currency_code'] ?? config('pos.currency', 'QAR'),
                 'invoice_number' => $data['invoice_number'],
                 'invoice_date' => $data['invoice_date'],
                 'due_date' => $data['due_date'],
@@ -74,6 +92,14 @@ class ApInvoiceController extends Controller
 
             $totalsService->recalc($invoice);
 
+            if ($document['is_expense']) {
+                $expenseWorkflowService->initializeProfile(
+                    $invoice,
+                    (string) ($document['expense_channel'] ?? 'vendor'),
+                    isset($data['wallet_id']) ? (int) $data['wallet_id'] : null
+                );
+            }
+
             return $invoice;
         });
 
@@ -83,20 +109,35 @@ class ApInvoiceController extends Controller
     public function update(
         ApInvoiceUpdateRequest $request,
         ApInvoice $invoice,
-        ApInvoiceTotalsService $totalsService
+        ApInvoiceTotalsService $totalsService,
+        AccountingContextService $accountingContext,
+        AccountingPeriodGateService $periodGate,
+        ExpenseWorkflowService $expenseWorkflowService
     ): JsonResponse {
         $data = $request->validated();
+        $document = DocumentTypeMap::derive((string) $data['document_type'], $data['expense_channel'] ?? null);
 
         if ($invoice->status !== 'draft') {
             throw ValidationException::withMessages(['status' => __('Only draft invoices can be edited.')]);
         }
 
-        $invoice = DB::transaction(function () use ($invoice, $data, $totalsService) {
+        $companyId = $accountingContext->resolveCompanyId($data['branch_id'] ?? $invoice->branch_id, $data['company_id'] ?? $invoice->company_id);
+        $periodId = $accountingContext->resolvePeriodId($data['invoice_date'] ?? null, $data['company_id'] ?? $invoice->company_id);
+        $periodGate->assertDateOpen((string) $data['invoice_date'], $companyId, $periodId, 'ap', 'invoice_date');
+
+        $invoice = DB::transaction(function () use ($invoice, $data, $totalsService, $document, $expenseWorkflowService, $companyId, $periodId) {
             $invoice->update([
+                'company_id' => $companyId,
+                'branch_id' => $data['branch_id'] ?? $invoice->branch_id,
+                'department_id' => $data['department_id'] ?? $invoice->department_id,
+                'job_id' => $data['job_id'] ?? $invoice->job_id,
+                'period_id' => $periodId,
                 'supplier_id' => $data['supplier_id'],
                 'purchase_order_id' => $data['purchase_order_id'] ?? null,
                 'category_id' => $data['category_id'] ?? null,
-                'is_expense' => $data['is_expense'],
+                'is_expense' => $document['is_expense'],
+                'document_type' => $data['document_type'],
+                'currency_code' => $data['currency_code'] ?? $invoice->currency_code ?? config('pos.currency', 'QAR'),
                 'invoice_number' => $data['invoice_number'],
                 'invoice_date' => $data['invoice_date'],
                 'due_date' => $data['due_date'],
@@ -117,6 +158,16 @@ class ApInvoiceController extends Controller
             }
 
             $totalsService->recalc($invoice);
+
+            if ($document['is_expense']) {
+                $expenseWorkflowService->initializeProfile(
+                    $invoice,
+                    (string) ($document['expense_channel'] ?? 'vendor'),
+                    isset($data['wallet_id']) ? (int) $data['wallet_id'] : null
+                );
+            } else {
+                ExpenseProfile::query()->where('invoice_id', $invoice->id)->delete();
+            }
 
             return $invoice;
         });

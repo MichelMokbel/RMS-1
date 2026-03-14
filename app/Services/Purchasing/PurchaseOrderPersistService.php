@@ -3,11 +3,19 @@
 namespace App\Services\Purchasing;
 
 use App\Models\PurchaseOrder;
+use App\Services\Accounting\AccountingAuditLogService;
+use App\Services\Accounting\AccountingContextService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class PurchaseOrderPersistService
 {
+    public function __construct(
+        protected AccountingContextService $accountingContext,
+        protected AccountingAuditLogService $auditLog
+    ) {
+    }
+
     public function create(array $data, string $status, ?int $actorId): PurchaseOrder
     {
         $actorId = ($actorId && $actorId > 0) ? $actorId : null;
@@ -15,12 +23,17 @@ class PurchaseOrderPersistService
         return DB::transaction(function () use ($data, $status, $actorId) {
             $po = PurchaseOrder::create([
                 'po_number' => $data['po_number'],
+                'company_id' => $this->accountingContext->resolveCompanyId($data['branch_id'] ?? null, $data['company_id'] ?? null),
                 'supplier_id' => $data['supplier_id'] ?? null,
+                'department_id' => $data['department_id'] ?? null,
+                'job_id' => $data['job_id'] ?? null,
                 'order_date' => $data['order_date'] ?? null,
                 'expected_delivery_date' => $data['expected_delivery_date'] ?? null,
                 'notes' => $data['notes'] ?? null,
                 'payment_terms' => $data['payment_terms'] ?? null,
                 'payment_type' => $data['payment_type'] ?? null,
+                'matching_policy' => $data['matching_policy'] ?? '2_way',
+                'workflow_state' => $status,
                 'status' => $status,
                 'created_by' => $actorId,
             ]);
@@ -39,6 +52,10 @@ class PurchaseOrderPersistService
             }
 
             $po->update(['total_amount' => $total]);
+            $this->auditLog->log('purchase_order.created', $actorId, $po, [
+                'status' => $status,
+                'line_count' => count($data['lines'] ?? []),
+            ], (int) ($po->company_id ?? 0) ?: null);
 
             return $po->fresh(['items']);
         });
@@ -64,12 +81,17 @@ class PurchaseOrderPersistService
 
             $po->update([
                 'po_number' => $nextPoNumber,
+                'company_id' => $po->company_id ?: $this->accountingContext->resolveCompanyId($data['branch_id'] ?? null, $data['company_id'] ?? null),
                 'supplier_id' => $data['supplier_id'] ?? null,
+                'department_id' => $data['department_id'] ?? null,
+                'job_id' => $data['job_id'] ?? null,
                 'order_date' => $data['order_date'] ?? null,
                 'expected_delivery_date' => $data['expected_delivery_date'] ?? null,
                 'notes' => $data['notes'] ?? null,
                 'payment_terms' => $data['payment_terms'] ?? null,
                 'payment_type' => $data['payment_type'] ?? null,
+                'matching_policy' => $data['matching_policy'] ?? ($po->matching_policy ?? '2_way'),
+                'workflow_state' => $nextStatus,
                 'status' => $nextStatus,
             ]);
 
@@ -89,6 +111,10 @@ class PurchaseOrderPersistService
             }
 
             $po->update(['total_amount' => $total]);
+            $this->auditLog->log('purchase_order.updated', null, $po, [
+                'status' => $nextStatus,
+                'line_count' => count($data['lines'] ?? []),
+            ], (int) ($po->company_id ?? 0) ?: null);
 
             return $po->fresh(['items']);
         });

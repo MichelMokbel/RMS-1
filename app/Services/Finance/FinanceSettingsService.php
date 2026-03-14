@@ -19,7 +19,7 @@ class FinanceSettingsService
         return $row?->lock_date?->toDateString();
     }
 
-    public function setLockDate(?string $lockDate, ?int $userId = null): ?string
+    public function setLockDate(?string $lockDate, ?int $userId = null, bool $allowBackward = false): ?string
     {
         if (! Schema::hasTable('finance_settings')) {
             throw ValidationException::withMessages(['finance' => __('Finance settings table is missing.')]);
@@ -35,6 +35,12 @@ class FinanceSettingsService
         }
 
         $row = FinanceSetting::query()->firstOrCreate(['id' => 1], []);
+        $current = $row->lock_date?->toDateString();
+        if (! $allowBackward && $normalized !== null && $current !== null) {
+            if (Carbon::parse($normalized)->lt(Carbon::parse($current))) {
+                throw ValidationException::withMessages(['lock_date' => __('Lock date cannot move backwards.')]);
+            }
+        }
         $row->lock_date = $normalized;
         $row->updated_by = $userId;
         $row->save();

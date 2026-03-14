@@ -1,0 +1,38 @@
+﻿Invoice No,POS Ref.No,Date,Customer Name,Phone No,Warehouse,Payment Type,Category Name,Item Name,Unit,Quantity,Unit Price,Total Sales,Discount
+INV7885,1037843,2026-03-10 16:41:00.417,Firas Arb,55567629,Branch 1,Credit,Extras,Delivery Charge,EA,1,25,25,0
+INV7885,1037843,2026-03-10 16:41:00.417,Firas Arb,55567629,Branch 1,Credit,Main Dish,Warak 3inab Meat,EA,0.5,360,180,0
+INV7885,1037843,2026-03-10 16:41:00.417,Firas Arb,55567629,Branch 1,Credit,Salads,Fattouch,Each,1,40,40,0
+INV7885,1037843,2026-03-10 16:41:00.417,Firas Arb,55567629,Branch 1,Credit,Hot Mezze,Soup,EA,1,36,36,0
+INV7886,1037844,2026-03-10 16:42:17.095,alaa,0097433609688,Branch 1,Credit,Main Dish,Chicken Supreme,Each,1,130,130,0
+INV7886,1037844,2026-03-10 16:42:17.095,alaa,0097433609688,Branch 1,Credit,Salads,Special Salad,Each,1,180,180,0
+INV7886,1037844,2026-03-10 16:42:17.095,alaa,0097433609688,Branch 1,Credit,Main Dish,Chicken Pie,EA,1,140,140,0
+INV7886,1037844,2026-03-10 16:42:17.095,alaa,0097433609688,Branch 1,Credit,Hot Mezze,Kebbeh 6 pcs,EA,1,22.5,22.5,0
+INV7886,1037844,2026-03-10 16:42:17.095,alaa,0097433609688,Branch 1,Credit,Extras,Delivery Charge,EA,2,20,40,0
+INV7886,1037844,2026-03-10 16:42:17.095,alaa,0097433609688,Branch 1,Credit,Desserts,Kameh Kg,EA,1,50,50,0
+INV7886,1037844,2026-03-10 16:42:17.095,alaa,0097433609688,Branch 1,Credit,Hot Mezze,Cheese Roll (6 pcs),Each,1,17.5,17.5,0
+INV7887,1037845,2026-03-10 16:45:05.826,jackie,97455872034,Branch 1,Credit,Daily Dish,Daily Dish 1,EA,2,55,110,0
+INV7888,1037846,2026-03-10 16:45:18.004,Fadi El Jam,33588316,Branch 1,Credit,Daily Dish,Daily dish M.S.,EA,1,40,40,0
+INV7889,1037847,2026-03-10 16:45:27.162,PIA,66458801,Branch 1,Credit,Daily Dish,Main Dish 1 Portion,EA,1,200,200,0
+INV7890,1037848,2026-03-10 16:45:38.095,Antonio, ,Branch 1,Credit,Daily Dish,Daily dish M.S.,EA,1,40,40,0
+INV7891,1037849,2026-03-10 16:45:53.445,Eliane Daccache, ,Branch 1,Credit,Daily Dish,Daily dish M.S.,EA,2,40,80,0
+INV7892,1037850,2026-03-10 16:46:07.613,GHADA MAALOUF,9613960175,Branch 1,Credit,Daily Dish,Daily Dish 1,EA,1,55,55,0
+INV7893,1037851,2026-03-10 16:46:15.606,Roger Abou Malhab,66855997,Branch 1,Credit,Daily Dish,Daily Dish Monthly 26 Days,EA,1,42.3,42.3,0
+INV7894,1037852,2026-03-10 16:46:26.42,St Georges And Isaac Church, ,Branch 1,Credit,Salads,Salad ,Each,1,10,10,0
+INV7894,1037852,2026-03-10 16:46:26.42,St Georges And Isaac Church, ,Branch 1,Credit,Daily Dish,Daily Dish 2,EA,4,35,140,0
+INV7895,1037853,2026-03-10 16:47:35.719,Wael Fattouh,77451387,Branch 1,Credit,Daily Dish,Daily dish M.S.,EA,1,40,40,0
+INV7896,1037854,2026-03-10 16:47:50.785,Youssef R,,Branch 1,Credit,Daily Dish,Daily dish M.S.,EA,1,40,40,0
+INV7897,1037855,2026-03-10 16:47:57.674,Melody R,,Branch 1,Credit,Daily Dish,Daily dish M.S.,EA,1,40,40,0
+INV7898,1037856,2026-03-10 16:48:16.388,Ghinwa Bou Abdallah,66166804,Branch 1,Credit,Daily Dish,Daily dish M.S.,EA,1,40,40,0
+INV7899,1037857,2026-03-10 16:48:24.22,Ramzi Joukhadar,55536459,Branch 1,Credit,Daily Dish,Daily dish M.S.,EA,1,40,40,0
+INV7900,1037858,2026-03-10 16:48:34.054,Saeed Zeidan,,Branch 1,Credit,Daily Dish,Daily dish M.S.,EA,1,40,40,0
+INV7901,1037859,2026-03-10 16:48:42.518,Jamil , ,Branch 1,Credit,Daily Dish,Daily Dish Full Set,EA,1,65,65,0
+INV7902,1037860,2026-03-10 16:49:13.723,MANAL,96170578155,Branch 1,Credit,Daily Dish,Daily Dish 1,EA,4,55,220,0
+INV7903,1037861,2026-03-10 16:49:27.866,Rouba El Khoury,55895004,Branch 1,Credit,Daily Dish,Daily Dish 2,EA,1,50,50,0
+INV7904,1037862,2026-03-10 16:49:40.596,Mohamad Al Jamal,70569016,Branch 1,Credit,Meals,Iftar Box,EA,1,45,45,0
+INV7905,1037863,2026-03-10 16:49:47.529,Mitche Maroun,31161746,Branch 1,Credit,Daily Dish,Daily dish M.S.,EA,1,40,40,0
+INV7906,1037864,2026-03-10 16:50:01.563,Hala Issa,77889294,Branch 1,Credit,Raw Items,Bakdounis cut 1 Box,EA,2,45,90,0
+INV7906,1037864,2026-03-10 16:50:01.563,Hala Issa,77889294,Branch 1,Credit,Extras,Delivery Charge,EA,1,10,10,0
+INV7907,1037865,2026-03-10 16:50:23,Lara Karam,77954847,Branch 1,Credit,Extras,Delivery Charge,EA,1,10,10,0
+INV7907,1037865,2026-03-10 16:50:23,Lara Karam,77954847,Branch 1,Credit,Daily Dish,Main Dish 1 Portion,EA,1,180,180,0
+INV7907,1037865,2026-03-10 16:50:23,Lara Karam,77954847,Branch 1,Credit,Daily Dish,Main Dish 1 Portion,EA,1,200,200,0
+INV7908,1037866,2026-03-10 16:50:43.457,chady,,Branch 1,Credit,Daily Dish,Daily Dish 1,EA,2,55,110,0

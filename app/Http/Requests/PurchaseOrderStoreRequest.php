@@ -15,6 +15,9 @@ class PurchaseOrderStoreRequest extends FormRequest
     {
         return [
             'po_number' => ['required', 'string', 'max:50', 'unique:purchase_orders,po_number'],
+            'company_id' => ['nullable', 'integer', 'exists:accounting_companies,id'],
+            'department_id' => ['nullable', 'integer', 'exists:departments,id'],
+            'job_id' => ['nullable', 'integer', 'exists:accounting_jobs,id'],
             'supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
             'order_date' => ['nullable', 'date'],
             'expected_delivery_date' => ['nullable', 'date', 'after_or_equal:order_date'],
@@ -22,6 +25,7 @@ class PurchaseOrderStoreRequest extends FormRequest
             'notes' => ['nullable', 'string'],
             'payment_terms' => ['nullable', 'string', 'max:255'],
             'payment_type' => ['nullable', 'string', 'max:100'],
+            'matching_policy' => ['nullable', 'in:2_way,3_way'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.item_id' => ['required', 'integer', 'exists:inventory_items,id'],
             'lines.*.quantity' => ['required', 'numeric', 'min:0.001'],

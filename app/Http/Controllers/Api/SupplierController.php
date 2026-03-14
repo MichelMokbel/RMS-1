@@ -17,6 +17,7 @@ class SupplierController extends Controller
         $perPage = (int) $request->input('per_page', 20);
 
         $query = Supplier::query()
+            ->with(['paymentTerm', 'defaultExpenseAccount'])
             ->when($status !== 'all', fn ($q) => $q->where('status', $status))
             ->when($search, function ($q) use ($search) {
                 $q->where(function ($inner) use ($search) {
@@ -39,6 +40,7 @@ class SupplierController extends Controller
                 return [
                     'id' => $supplier->id,
                     'text' => $text,
+                    'preferred_payment_method' => $supplier->preferred_payment_method,
                 ];
             });
         }
@@ -104,12 +106,22 @@ class SupplierController extends Controller
             'address' => ['nullable', 'string'],
             'qid_cr' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', Rule::in(['active', 'inactive'])],
+            'company_id' => ['nullable', 'integer', 'exists:accounting_companies,id'],
+            'payment_term_id' => ['nullable', 'integer', 'exists:payment_terms,id'],
+            'default_expense_account_id' => ['nullable', 'integer', 'exists:ledger_accounts,id'],
+            'preferred_payment_method' => ['nullable', Rule::in(['cash', 'bank_transfer', 'card', 'cheque', 'other', 'petty_cash'])],
+            'hold_status' => ['nullable', Rule::in(['open', 'hold', 'blocked'])],
+            'requires_1099' => ['nullable', 'boolean'],
+            'approval_threshold' => ['nullable', 'numeric', 'min:0'],
         ];
 
         $validated = $request->validate($rules);
 
         if (empty($validated['status'])) {
             $validated['status'] = 'active';
+        }
+        if (empty($validated['hold_status'])) {
+            $validated['hold_status'] = 'open';
         }
 
         return $validated;

@@ -15,9 +15,15 @@ class ApPaymentStoreRequest extends FormRequest
     {
         return [
             'supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
+            'company_id' => ['nullable', 'integer', 'exists:accounting_companies,id'],
+            'bank_account_id' => ['nullable', 'integer', 'exists:bank_accounts,id', 'required_if:payment_method,bank_transfer'],
+            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+            'department_id' => ['nullable', 'integer', 'exists:departments,id'],
+            'job_id' => ['nullable', 'integer', 'exists:accounting_jobs,id'],
             'payment_date' => ['required', 'date'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'payment_method' => ['nullable', 'in:cash,bank_transfer,card,cheque,other,petty_cash'],
+            'currency_code' => ['nullable', 'string', 'max:10'],
             'reference' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string'],
             'allocations' => ['sometimes', 'array'],

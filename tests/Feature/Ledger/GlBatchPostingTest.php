@@ -4,13 +4,13 @@ use App\Models\LedgerAccount;
 use App\Models\SubledgerEntry;
 use App\Models\SubledgerLine;
 use App\Models\User;
-use App\Services\Finance\FinanceSettingsService;
 use App\Services\Ledger\GlBatchPostingService;
 use App\Services\Ledger\GlSummaryService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 
-it('generates and posts a gl batch and can close the period', function () {
+it('does not bypass period close requirements when close_period is requested from gl batch posting', function () {
     if (! Schema::hasTable('subledger_entries') || ! Schema::hasTable('subledger_lines') || ! Schema::hasTable('gl_batches')) {
         $this->markTestSkipped('Ledger tables not available.');
     }
@@ -61,14 +61,5 @@ it('generates and posts a gl batch and can close the period', function () {
     $batch = app(GlSummaryService::class)->generateForPeriod($periodStart, $periodEnd, $user->id);
     expect($batch->lines)->not->toBeEmpty();
 
-    // Ensure lock date starts empty (or at least <= period end after posting).
-    $finance = app(FinanceSettingsService::class);
-    $finance->setLockDate(null, null);
-
-    $posted = app(GlBatchPostingService::class)->post($batch, $user->id, true);
-    expect($posted->status)->toBe('posted');
-
-    $lock = $finance->getLockDate();
-    expect($lock)->toBe($periodEnd->toDateString());
-});
-
+    app(GlBatchPostingService::class)->post($batch, $user->id, true);
+})->throws(ValidationException::class);

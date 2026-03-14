@@ -10,6 +10,8 @@ use App\Http\Requests\Spend\SpendExpenseStoreRequest;
 use App\Models\ApInvoice;
 use App\Models\ApInvoiceItem;
 use App\Models\ExpenseProfile;
+use App\Services\Accounting\AccountingContextService;
+use App\Services\Accounting\AccountingPeriodGateService;
 use App\Services\AP\ApInvoiceAttachmentService;
 use App\Services\AP\ApInvoiceTotalsService;
 use App\Services\Spend\ExpenseEventService;
@@ -66,7 +68,9 @@ class ExpenseController extends Controller
         SpendExpenseStoreRequest $request,
         ApInvoiceTotalsService $totalsService,
         ExpenseWorkflowService $workflowService,
-        ExpenseEventService $eventService
+        ExpenseEventService $eventService,
+        AccountingContextService $accountingContext,
+        AccountingPeriodGateService $periodGate
     ): JsonResponse {
         $data = $request->validated();
         $userId = (int) Auth::id();
@@ -74,13 +78,23 @@ class ExpenseController extends Controller
         $supplierId = $this->resolveSupplierId($data);
         $channel = (string) ($data['channel'] ?? 'vendor');
         $walletId = isset($data['wallet_id']) ? (int) $data['wallet_id'] : null;
+        $companyId = $accountingContext->resolveCompanyId($data['branch_id'] ?? null, $data['company_id'] ?? null);
+        $periodId = $accountingContext->resolvePeriodId($data['expense_date'] ?? null, $data['company_id'] ?? null);
+        $periodGate->assertDateOpen((string) $data['expense_date'], $companyId, $periodId, 'ap', 'expense_date');
 
-        $invoice = DB::transaction(function () use ($data, $supplierId, $totalsService, $userId, $workflowService, $eventService, $channel, $walletId) {
+        $invoice = DB::transaction(function () use ($data, $supplierId, $totalsService, $userId, $workflowService, $eventService, $channel, $walletId, $companyId, $periodId) {
             $invoice = ApInvoice::create([
+                'company_id' => $companyId,
+                'branch_id' => $data['branch_id'] ?? null,
+                'department_id' => $data['department_id'] ?? null,
+                'job_id' => $data['job_id'] ?? null,
+                'period_id' => $periodId,
                 'supplier_id' => $supplierId,
                 'purchase_order_id' => null,
                 'category_id' => $data['category_id'],
                 'is_expense' => true,
+                'document_type' => $channel === 'reimbursement' ? 'reimbursement' : 'expense',
+                'currency_code' => $data['currency_code'] ?? config('pos.currency', 'QAR'),
                 'invoice_number' => $this->generateExpenseInvoiceNumber($supplierId),
                 'invoice_date' => $data['expense_date'],
                 'due_date' => $data['due_date'] ?? $data['expense_date'],
