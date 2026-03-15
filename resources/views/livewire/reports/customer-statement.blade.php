@@ -255,9 +255,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
-        <div class="app-filter-grid">
-            <x-reports.branch-select name="branch_id" :branches="$branches" />
-            <div class="min-w-[220px] relative">
+        <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:flex-nowrap">
+            <div class="xl:w-56 xl:flex-none">
+                <x-reports.branch-select name="branch_id" :branches="$branches" />
+            </div>
+            <div class="relative xl:min-w-0 xl:flex-1">
                 <flux:input wire:model.live.debounce.300ms="customer_search" :label="__('Customer')" placeholder="{{ __('Search by name/phone/code') }}" />
                 @if($customer_id === null && trim($customer_search) !== '')
                     <div class="absolute z-10 mt-1 w-full overflow-hidden rounded-md border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
@@ -281,8 +283,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                 @endif
             </div>
-            <x-reports.date-range fromName="date_from" toName="date_to" class="sm:flex-nowrap sm:shrink-0" />
-            <div class="pb-1 sm:shrink-0">
+            <x-reports.date-range fromName="date_from" toName="date_to" class="flex-nowrap xl:flex-none" />
+            <div class="pb-1 xl:flex-none">
                 <flux:checkbox wire:model.live="only_unpaid" :label="__('Only unpaid')" />
             </div>
         </div>
