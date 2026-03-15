@@ -281,8 +281,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                 @endif
             </div>
-            <x-reports.date-range fromName="date_from" toName="date_to" />
-            <div class="pb-1">
+            <x-reports.date-range fromName="date_from" toName="date_to" class="sm:flex-nowrap sm:shrink-0" />
+            <div class="pb-1 sm:shrink-0">
                 <flux:checkbox wire:model.live="only_unpaid" :label="__('Only unpaid')" />
             </div>
         </div>
