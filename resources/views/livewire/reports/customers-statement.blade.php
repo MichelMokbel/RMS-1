@@ -2,6 +2,7 @@
 
 use App\Models\ArInvoice;
 use App\Support\Money\MinorUnits;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -29,6 +30,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
             'exportParams' => $this->exportParams(),
         ];
+    }
+
+    private function agingAsOf(Carbon $date): Carbon
+    {
+        $today = now()->startOfDay();
+        $candidate = $date->copy()->startOfDay();
+
+        return $candidate->greaterThan($today) ? $today : $candidate;
     }
 
     /**
@@ -61,7 +70,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->pluck('name', 'id')
             : collect();
 
-        $asOf = $dateTo->copy();
+        $asOf = $this->agingAsOf($dateTo);
 
         return $invoices
             ->groupBy(fn (ArInvoice $invoice) => (int) $invoice->customer_id)

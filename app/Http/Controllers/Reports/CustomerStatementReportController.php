@@ -22,6 +22,19 @@ class CustomerStatementReportController extends Controller
         return MinorUnits::format((int) ($cents ?? 0));
     }
 
+    private function onlyUnpaid(Request $request): bool
+    {
+        return $request->boolean('only_unpaid');
+    }
+
+    private function agingAsOf(Carbon $date): Carbon
+    {
+        $today = now()->startOfDay();
+        $candidate = $date->copy()->startOfDay();
+
+        return $candidate->greaterThan($today) ? $today : $candidate;
+    }
+
     /**
      * @return array{0: Carbon, 1: Carbon}
      */
@@ -122,12 +135,14 @@ class CustomerStatementReportController extends Controller
 
         $branchId = $request->integer('branch_id') ?? 0;
         [$dateFrom, $dateTo] = $this->resolvedRange($request);
-        $asOf = $dateTo->copy();
+        $asOf = $this->agingAsOf($dateTo);
+        $onlyUnpaid = $this->onlyUnpaid($request);
 
         $invoices = ArInvoice::query()
             ->where('customer_id', $customerId)
             ->where('type', 'invoice')
             ->whereIn('status', ['issued', 'partially_paid', 'paid'])
+            ->when($onlyUnpaid, fn ($q) => $q->where('balance_cents', '>', 0))
             ->when($branchId > 0, fn ($q) => $q->where('branch_id', $branchId))
             ->whereDate('issue_date', '>=', $dateFrom)
             ->whereDate('issue_date', '<=', $dateTo)
@@ -182,6 +197,7 @@ class CustomerStatementReportController extends Controller
 
         $branchId = $request->integer('branch_id') ?? 0;
         [, $asOf] = $this->resolvedRange($request);
+        $asOf = $this->agingAsOf($asOf);
 
         $invoices = ArInvoice::query()
             ->where('customer_id', $customerId)
@@ -267,7 +283,7 @@ class CustomerStatementReportController extends Controller
         $statement = $this->buildStatement($request);
         [$from, $to] = $this->resolvedRange($request);
         $filters = array_merge(
-            $request->only(['branch_id', 'customer_id']),
+            $request->only(['branch_id', 'customer_id', 'only_unpaid']),
             ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()]
         );
         $customer = $request->filled('customer_id') ? Customer::find($request->integer('customer_id')) : null;
@@ -291,6 +307,40 @@ class CustomerStatementReportController extends Controller
 
     public function csv(Request $request): StreamedResponse
     {
+        if ($this->onlyUnpaid($request)) {
+            $headers = [
+                __('No'),
+                __('Document Type'),
+                __('Location'),
+                __('Type'),
+                __('Date'),
+                __('Due Date'),
+                __('Reference No'),
+                __('Amount'),
+                __('Paid'),
+                __('Balance'),
+                __('Aging'),
+                __('Payment No'),
+            ];
+
+            $rows = $this->buildPrintRows($request)->map(fn (array $row) => [
+                $row['document_no'],
+                $row['document_type'],
+                $row['location'],
+                $row['type'],
+                $row['date'],
+                $row['due_date'],
+                $row['reference_no'],
+                $this->formatCents((int) $row['amount_cents']),
+                $this->formatCents((int) $row['paid_cents']),
+                $this->formatCents((int) $row['balance_cents']),
+                $row['aging_label'],
+                $row['payment_no'],
+            ]);
+
+            return CsvExport::stream($headers, $rows, 'customer-statement.csv');
+        }
+
         $statement = $this->buildStatement($request);
         $headers = [__('Date'), __('Description'), __('Debit'), __('Credit'), __('Balance')];
 
@@ -314,7 +364,7 @@ class CustomerStatementReportController extends Controller
         $statement = $this->buildStatement($request);
         [$from, $to] = $this->resolvedRange($request);
         $filters = array_merge(
-            $request->only(['branch_id', 'customer_id']),
+            $request->only(['branch_id', 'customer_id', 'only_unpaid']),
             ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()]
         );
         $customer = $request->filled('customer_id') ? Customer::find($request->integer('customer_id')) : null;

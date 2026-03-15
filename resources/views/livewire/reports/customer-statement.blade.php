@@ -3,6 +3,7 @@
 use App\Models\ArInvoice;
 use App\Models\Customer;
 use App\Support\Money\MinorUnits;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -15,6 +16,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $customer_search = '';
     public ?string $date_from = null;
     public ?string $date_to = null;
+    public bool $only_unpaid = false;
 
     public function mount(): void
     {
@@ -65,6 +67,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
     }
 
+    private function agingAsOf(Carbon $date): Carbon
+    {
+        $today = now()->startOfDay();
+        $candidate = $date->copy()->startOfDay();
+
+        return $candidate->greaterThan($today) ? $today : $candidate;
+    }
+
     /**
      * @return Collection<int, array<string, int|string>>
      */
@@ -76,12 +86,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $dateFrom = $this->date_from ? now()->parse($this->date_from)->startOfDay() : now()->startOfMonth()->startOfDay();
         $dateTo = $this->date_to ? now()->parse($this->date_to)->endOfDay() : now()->endOfMonth()->endOfDay();
-        $asOf = $dateTo->copy();
+        $asOf = $this->agingAsOf($dateTo);
 
         $invoices = ArInvoice::query()
             ->where('customer_id', $this->customer_id)
             ->where('type', 'invoice')
             ->whereIn('status', ['issued', 'partially_paid', 'paid'])
+            ->when($this->only_unpaid, fn ($q) => $q->where('balance_cents', '>', 0))
             ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id))
             ->whereDate('issue_date', '>=', $dateFrom)
             ->whereDate('issue_date', '<=', $dateTo)
@@ -167,7 +178,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             ];
         }
 
-        $asOf = $this->date_to ? now()->parse($this->date_to)->endOfDay() : now()->endOfMonth()->endOfDay();
+        $resolvedDateTo = $this->date_to ? now()->parse($this->date_to)->endOfDay() : now()->endOfMonth()->endOfDay();
+        $asOf = $this->agingAsOf($resolvedDateTo);
 
         $invoices = ArInvoice::query()
             ->where('customer_id', $this->customer_id)
@@ -221,6 +233,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'customer_id' => $this->customer_id,
             'date_from' => $this->date_from,
             'date_to' => $this->date_to,
+            'only_unpaid' => $this->only_unpaid ? 1 : null,
         ], fn ($v) => $v !== null && $v !== '');
     }
 
@@ -269,6 +282,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endif
             </div>
             <x-reports.date-range fromName="date_from" toName="date_to" />
+            <div class="pb-1">
+                <flux:checkbox wire:model.live="only_unpaid" :label="__('Only unpaid')" />
+            </div>
         </div>
     </div>
 

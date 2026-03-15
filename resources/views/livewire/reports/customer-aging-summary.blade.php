@@ -3,6 +3,7 @@
 use App\Models\ArInvoice;
 use App\Models\Customer;
 use App\Support\Money\MinorUnits;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
@@ -60,9 +61,22 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
     }
 
+    private function agingAsOf(?string $dateTo): Carbon
+    {
+        $today = now()->startOfDay();
+
+        if (! $dateTo) {
+            return $today;
+        }
+
+        $candidate = Carbon::parse($dateTo)->startOfDay();
+
+        return $candidate->greaterThan($today) ? $today : $candidate;
+    }
+
     private function query()
     {
-        $asOf = $this->date_to ? now()->parse($this->date_to) : now();
+        $asOf = $this->agingAsOf($this->date_to);
 
         $invoices = ArInvoice::query()
             ->with(['customer'])

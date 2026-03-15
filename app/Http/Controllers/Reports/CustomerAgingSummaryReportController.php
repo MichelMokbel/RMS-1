@@ -7,6 +7,7 @@ use App\Models\ArInvoice;
 use App\Support\Money\MinorUnits;
 use App\Support\Reports\CsvExport;
 use App\Support\Reports\PdfExport;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -18,12 +19,25 @@ class CustomerAgingSummaryReportController extends Controller
         return MinorUnits::format((int) ($cents ?? 0));
     }
 
+    private function agingAsOf(?string $dateTo): Carbon
+    {
+        $today = now()->startOfDay();
+
+        if (! $dateTo) {
+            return $today;
+        }
+
+        $candidate = Carbon::parse($dateTo)->startOfDay();
+
+        return $candidate->greaterThan($today) ? $today : $candidate;
+    }
+
     /**
      * @return Collection<int, array{customer_id:int, customer_name:string, current:int, bucket_1_30:int, bucket_31_60:int, bucket_61_90:int, bucket_90_plus:int, total:int}>
      */
     private function query(Request $request): Collection
     {
-        $asOf = $request->filled('date_to') ? now()->parse($request->date_to) : now();
+        $asOf = $this->agingAsOf($request->input('date_to'));
 
         $invoices = ArInvoice::query()
             ->with(['customer'])

@@ -20,6 +20,14 @@ class CustomersStatementReportController extends Controller
         return MinorUnits::format((int) ($cents ?? 0));
     }
 
+    private function agingAsOf(Carbon $date): Carbon
+    {
+        $today = now()->startOfDay();
+        $candidate = $date->copy()->startOfDay();
+
+        return $candidate->greaterThan($today) ? $today : $candidate;
+    }
+
     /**
      * @return array{0: Carbon, 1: Carbon}
      */
@@ -66,7 +74,7 @@ class CustomersStatementReportController extends Controller
             ->whereIn('id', $invoices->pluck('branch_id')->filter()->unique()->values())
             ->pluck('name', 'id');
 
-        $asOf = $to->copy();
+        $asOf = $this->agingAsOf($to);
 
         return $invoices
             ->groupBy(fn (ArInvoice $invoice) => (int) $invoice->customer_id)
