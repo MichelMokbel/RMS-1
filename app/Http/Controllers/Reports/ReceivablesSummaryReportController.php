@@ -21,6 +21,7 @@ class ReceivablesSummaryReportController extends Controller
     {
         return ArInvoice::query()
             ->where('type', 'invoice')
+            ->whereNull('voided_at')
             ->whereIn('status', ['issued', 'partially_paid', 'paid'])
             ->when($request->filled('branch_id') && $request->integer('branch_id') > 0, fn ($q) => $q->where('branch_id', $request->integer('branch_id')))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('issue_date', '>=', $request->date_from))

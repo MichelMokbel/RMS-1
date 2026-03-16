@@ -31,6 +31,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $invoices = ArInvoice::query()
             ->where('type', 'invoice')
+            ->whereNull('voided_at')
             ->whereIn('status', ['issued', 'partially_paid', 'paid'])
             ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id))
             ->when($this->date_from, fn ($q) => $q->whereDate('issue_date', '>=', $this->date_from))

@@ -23,6 +23,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?string $notes = null;
 
     public array $allocations = [];
+    public bool $select_all_allocations = false;
 
     public string $invoice_date_from = '';
     public string $invoice_date_to = '';
@@ -58,6 +59,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (trim($this->customer_search) === '') {
             $this->customer_id = null;
             $this->allocations = [];
+            $this->select_all_allocations = false;
+            $this->syncAmount();
         }
     }
 
@@ -73,6 +76,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         if (! $this->customer_id || ! Schema::hasTable('ar_invoices')) {
             $this->allocations = [];
+            $this->select_all_allocations = false;
+            $this->syncAmount();
             return;
         }
 
@@ -99,7 +104,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'due_date' => $invoice->due_date?->format('Y-m-d'),
                     'outstanding_cents' => $outstanding,
                     'amount' => MinorUnits::format($outstanding),
-                    'selected' => $outstanding > 0,
+                    'selected' => false,
                 ];
             })
             ->filter(fn ($row) => (int) ($row['outstanding_cents'] ?? 0) > 0)
@@ -107,6 +112,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->toArray();
 
         $this->allocations = $invoices;
+        $this->syncSelectAllAllocations();
         $this->syncAmount();
     }
 
@@ -120,12 +126,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->loadInvoices();
     }
 
-    public function toggleSelectAll(): void
+    public function updatedSelectAllAllocations(bool $selected): void
     {
-        $allSelected = collect($this->allocations)->every(fn ($a) => (bool) ($a['selected'] ?? false));
-
         foreach ($this->allocations as $idx => $alloc) {
-            $this->allocations[$idx]['selected'] = ! $allSelected;
+            $this->allocations[$idx]['selected'] = $selected;
         }
 
         $this->syncAmount();
@@ -140,8 +144,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         // Auto-sync amount when any allocation selection or amount changes
         if (str_starts_with($property, 'allocations.')) {
+            $this->syncSelectAllAllocations();
             $this->syncAmount();
         }
+    }
+
+    private function syncSelectAllAllocations(): void
+    {
+        $this->select_all_allocations = count($this->allocations) > 0
+            && collect($this->allocations)->every(fn ($allocation) => (bool) ($allocation['selected'] ?? false));
     }
 
     public function save(ArPaymentService $payments): void
@@ -386,13 +397,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <input type="date" wire:model.live="invoice_date_to" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" />
                     </div>
                     <div>
-                        <flux:button wire:click="toggleSelectAll" variant="subtle" size="sm">
-                            @if(count($allocations) > 0 && collect($allocations)->every(fn ($a) => (bool) ($a['selected'] ?? false)))
-                                {{ __('Deselect All') }}
-                            @else
-                                {{ __('Select All') }}
-                            @endif
-                        </flux:button>
+                        <label class="inline-flex items-center gap-2 text-sm font-medium text-neutral-700 dark:text-neutral-200">
+                            <input
+                                type="checkbox"
+                                wire:model.live="select_all_allocations"
+                                class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500"
+                            >
+                            <span>{{ __('Select All') }}</span>
+                        </label>
                     </div>
                     <div class="text-right text-sm text-neutral-600 dark:text-neutral-300">
                         {{ count($allocations) }} {{ __('invoice(s)') }}
