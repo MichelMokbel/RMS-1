@@ -52,6 +52,7 @@ class ReceivablesReportController extends Controller
         return ArInvoice::query()
             ->with(['customer:id,name,customer_code', 'paymentAllocations.payment'])
             ->where('type', 'invoice')
+            ->whereNull('voided_at')
             ->where('balance_cents', '>', 0)
             ->when($request->filled('branch_id') && $request->integer('branch_id') > 0, fn ($q) => $q->where('branch_id', $request->integer('branch_id')))
             ->when($request->filled('status') && $request->status !== 'all', fn ($q) => $q->where('status', $request->status))
