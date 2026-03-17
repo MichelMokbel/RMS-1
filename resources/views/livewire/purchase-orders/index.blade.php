@@ -77,19 +77,19 @@ new #[Layout('components.layouts.app')] class extends Component {
         session()->flash('status', __('Purchase order posted.'));
     }
 
-    public function cancel(int $id): void
+    public function voidOrder(int $id): void
     {
         $po = PurchaseOrder::with('items')->findOrFail($id);
         if ($po->isReceived()) {
-            $this->addError('status', __('Cannot cancel a received PO.'));
+            $this->addError('status', __('Cannot void a received PO.'));
             return;
         }
         if ($po->isApproved() && $po->items->sum('received_quantity') > 0) {
-            $this->addError('status', __('Cannot cancel after receiving items.'));
+            $this->addError('status', __('Cannot void after receiving items.'));
             return;
         }
         $po->update(['status' => PurchaseOrder::STATUS_CANCELLED]);
-        session()->flash('status', __('Purchase order cancelled.'));
+        session()->flash('status', __('Purchase order voided.'));
     }
 }; ?>
 
@@ -196,7 +196,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     <flux:button size="xs" wire:click="approve({{ $order->id }})">{{ __('Approve') }}</flux:button>
                                 @endif
                                 @if(! $order->isReceived())
-                                    <flux:button size="xs" wire:click="cancel({{ $order->id }})" variant="ghost">{{ __('Cancel') }}</flux:button>
+                                    <flux:button size="xs" wire:click="voidOrder({{ $order->id }})" variant="ghost">{{ __('Void') }}</flux:button>
                                 @endif
                             </div>
                         </td>

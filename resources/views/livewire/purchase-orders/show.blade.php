@@ -35,13 +35,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
-    public function cancel(PurchaseOrderWorkflowService $workflow): void
+    public function voidOrder(PurchaseOrderWorkflowService $workflow): void
     {
         try {
             $this->purchaseOrder = $workflow->cancel($this->purchaseOrder);
-            session()->flash('status', __('Purchase order cancelled.'));
+            session()->flash('status', __('Purchase order voided.'));
         } catch (ValidationException $e) {
-            $message = collect($e->errors())->flatten()->first() ?? __('Cancel failed.');
+            $message = collect($e->errors())->flatten()->first() ?? __('Void failed.');
             $this->addError('status', $message);
         }
     }
@@ -102,7 +102,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <flux:button type="button" wire:click="approve">{{ __('Approve') }}</flux:button>
             @endif
             @if(! $purchaseOrder->isReceived())
-                <flux:button type="button" wire:click="cancel" variant="ghost">{{ __('Cancel') }}</flux:button>
+                <flux:button type="button" wire:click="voidOrder" variant="ghost">{{ __('Void') }}</flux:button>
             @endif
         </div>
     </div>
