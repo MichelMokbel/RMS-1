@@ -121,26 +121,26 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-2">
             <h3 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Header') }}</h3>
-            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Supplier:') }} {{ $purchaseOrder->supplier->name ?? '—' }}</p>
-            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Order Date:') }} {{ $purchaseOrder->order_date?->format('Y-m-d') ?? '—' }}</p>
-            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Expected Delivery:') }} {{ $purchaseOrder->expected_delivery_date?->format('Y-m-d') ?? '—' }}</p>
+            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Supplier:') }} {{ $purchaseOrder->supplier->name ?? '-' }}</p>
+            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Order Date:') }} {{ $purchaseOrder->order_date?->format('Y-m-d') ?? '-' }}</p>
+            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Expected Delivery:') }} {{ $purchaseOrder->expected_delivery_date?->format('Y-m-d') ?? '-' }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">
                 {{ __('Created By:') }}
-                {{ $purchaseOrder->creator->name ?? $purchaseOrder->creator->username ?? $purchaseOrder->creator->email ?? '—' }}
+                {{ $purchaseOrder->creator->name ?? $purchaseOrder->creator->username ?? $purchaseOrder->creator->email ?? '-' }}
             </p>
-            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Notes:') }} {{ $purchaseOrder->notes ?? '—' }}</p>
-            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Payment Terms:') }} {{ $purchaseOrder->payment_terms ?? '—' }}</p>
-            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Payment Type:') }} {{ $purchaseOrder->payment_type ?? '—' }}</p>
+            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Notes:') }} {{ $purchaseOrder->notes ?? '-' }}</p>
+            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Payment Terms:') }} {{ $purchaseOrder->payment_terms ?? '-' }}</p>
+            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Payment Type:') }} {{ $purchaseOrder->payment_type ?? '-' }}</p>
         </div>
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-2">
             <h3 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Totals') }}</h3>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Total Amount:') }} {{ number_format((float) $purchaseOrder->total_amount, 2) }}</p>
-            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Received Date:') }} {{ $purchaseOrder->received_date?->format('Y-m-d') ?? '—' }}</p>
+            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Received Date:') }} {{ $purchaseOrder->received_date?->format('Y-m-d') ?? '-' }}</p>
         </div>
     </div>
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
-        <h3 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200 mb-3">{{ __('Lines') }}</h3>
+        <h3 class="mb-3 text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Lines') }}</h3>
         <div class="overflow-x-auto">
             <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
                 <thead class="bg-neutral-50 dark:bg-neutral-800/90">
@@ -156,7 +156,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <tbody class="divide-y divide-neutral-200 bg-white dark:divide-neutral-800 dark:bg-neutral-900">
                     @foreach ($purchaseOrder->items as $line)
                         <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
-                            <td class="px-3 py-3 text-sm text-neutral-900 dark:text-neutral-100">{{ $line->item?->name ?? '—' }}</td>
+                            <td class="px-3 py-3 text-sm text-neutral-900 dark:text-neutral-100">{{ $line->item?->name ?? '-' }}</td>
                             <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $line->quantity }}</td>
                             <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $line->received_quantity ?? 0 }}</td>
                             <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $line->remainingToReceive() }}</td>
@@ -172,36 +172,47 @@ new #[Layout('components.layouts.app')] class extends Component {
     @if($purchaseOrder->isApproved())
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
             <h3 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Receive Items') }}</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full min-w-[900px] table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
+                    <thead class="bg-neutral-50 dark:bg-neutral-800/90">
+                        <tr>
+                            <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Item') }}</th>
+                            <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Ordered') }}</th>
+                            <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Received') }}</th>
+                            <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Remaining') }}</th>
+                            <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Receive Now') }}</th>
+                            <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Actual Unit Cost (pkg)') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-neutral-200 bg-white dark:divide-neutral-800 dark:bg-neutral-900">
+                        @foreach ($purchaseOrder->items as $line)
+                            <tr class="align-top hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
+                                <td class="px-3 py-3 text-sm text-neutral-900 dark:text-neutral-100">{{ $line->item?->name ?? '-' }}</td>
+                                <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $line->quantity }}</td>
+                                <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $line->received_quantity ?? 0 }}</td>
+                                <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $line->remainingToReceive() }}</td>
+                                <td class="px-3 py-3">
+                                    <flux:input
+                                        wire:model="receipts.{{ $line->id }}"
+                                        type="number"
+                                        min="0"
+                                        :max="$line->remainingToReceive()"
+                                    />
+                                </td>
+                                <td class="px-3 py-3">
+                                    <flux:input
+                                        wire:model="receive_costs.{{ $line->id }}"
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                    />
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
             <div class="space-y-3">
-                @foreach ($purchaseOrder->items as $line)
-                    <div class="grid grid-cols-1 gap-3 md:grid-cols-5 items-center">
-                        <div class="md:col-span-2 text-sm text-neutral-900 dark:text-neutral-100">
-                            <p class="font-semibold">{{ $line->item?->name ?? '—' }}</p>
-                            <p class="text-neutral-600 dark:text-neutral-300 text-xs">{{ __('Remaining:') }} {{ $line->remainingToReceive() }}</p>
-                        </div>
-                        <div class="md:col-span-2">
-                            <flux:input
-                                wire:model="receipts.{{ $line->id }}"
-                                type="number"
-                                min="0"
-                                :max="$line->remainingToReceive()"
-                                :label="__('Receive now')"
-                            />
-                        </div>
-                        <div class="md:col-span-2">
-                            <flux:input
-                                wire:model="receive_costs.{{ $line->id }}"
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                :label="__('Actual Unit Cost (pkg)')"
-                            />
-                        </div>
-                        <div class="md:col-span-1">
-                            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Ordered:') }} {{ $line->quantity }}</p>
-                        </div>
-                    </div>
-                @endforeach
                 <flux:textarea wire:model="receive_notes" :label="__('Notes')" rows="2" />
                 <div class="flex justify-end">
                     <flux:button type="button" wire:click="receive" variant="primary">{{ __('Receive Selected') }}</flux:button>
