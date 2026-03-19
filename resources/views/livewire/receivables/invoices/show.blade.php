@@ -14,6 +14,7 @@ use Livewire\Volt\Component;
 new #[Layout('components.layouts.app')] class extends Component {
     public ArInvoice $invoice;
     public string $void_reason = '';
+    public string $active_tab = 'allocations';
 
     public string $payment_method = 'bank';
     public string $payment_amount = '0.00';
@@ -30,7 +31,19 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->payment_amount = $this->moneyZero();
         $this->credit_amount = $this->moneyZero();
         $this->advance_amount = $this->moneyZero();
+        $this->active_tab = in_array($this->invoice->status, ['issued', 'partially_paid'], true)
+            ? 'receive-payment'
+            : 'allocations';
         $this->loadAdvances();
+    }
+
+    public function selectTab(string $tab): void
+    {
+        $allowed = ['receive-payment', 'credit-note', 'apply-advance', 'allocations'];
+
+        if (in_array($tab, $allowed, true)) {
+            $this->active_tab = $tab;
+        }
     }
 
     public function issue(ArInvoiceService $service): void
@@ -417,28 +430,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         @endif
 
-        @if (in_array($invoice->status, ['draft', 'issued', 'partially_paid', 'paid'], true))
-            <div class="border-t border-neutral-200 pt-4 dark:border-neutral-700 space-y-3">
-                <h2 class="text-lg font-semibold text-rose-700 dark:text-rose-200">{{ __('Void Invoice') }}</h2>
-                <flux:input wire:model="void_reason" :label="__('Reason (optional)')" />
-                @error('status') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
-                <div class="flex justify-end gap-2">
-                    <flux:button
-                        type="button"
-                        wire:click="voidInvoice"
-                        wire:confirm="{{ __('Void this invoice?') }}"
-                        variant="danger"
-                    >{{ __('Void') }}</flux:button>
-                    <flux:button
-                        type="button"
-                        wire:click="voidAndDuplicate"
-                        wire:confirm="{{ __('Void and create an editable duplicate draft?') }}"
-                        variant="primary"
-                    >{{ __('Void & Duplicate') }}</flux:button>
-                </div>
-            </div>
-        @endif
-
         <div class="border-t border-neutral-200 pt-4 dark:border-neutral-700">
             <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Items') }}</h2>
             <div class="mt-3 space-y-2">
@@ -457,104 +448,166 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         </div>
 
-        @if (in_array($invoice->status, ['issued', 'partially_paid'], true))
-            <div class="border-t border-neutral-200 pt-4 dark:border-neutral-700 space-y-3">
-                <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Receive Payment') }}</h2>
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-                    <div>
-                        <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Method') }}</label>
-                        <select wire:model="payment_method" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                            <option value="cash">{{ __('Cash') }}</option>
-                            <option value="card">{{ __('Card') }}</option>
-                            <option value="online">{{ __('Online') }}</option>
-                            <option value="bank">{{ __('Bank') }}</option>
-                            <option value="voucher">{{ __('Voucher') }}</option>
-                        </select>
-                    </div>
-                    <flux:input wire:model="payment_amount" type="number" step="{{ $this->moneyStep() }}" :label="__('Amount')" />
-                    <div class="flex items-end justify-end">
-                        <flux:button type="button" wire:click="receivePayment" variant="primary">{{ __('Apply') }}</flux:button>
-                    </div>
+        <div class="border-t border-neutral-200 pt-4 dark:border-neutral-700 space-y-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div class="flex flex-wrap gap-2">
+                    @if (in_array($invoice->status, ['issued', 'partially_paid'], true))
+                        <flux:button type="button" wire:click="selectTab('receive-payment')" :variant="$active_tab === 'receive-payment' ? 'primary' : 'ghost'">
+                            {{ __('Receive Payment') }}
+                        </flux:button>
+                        <flux:button type="button" wire:click="selectTab('credit-note')" :variant="$active_tab === 'credit-note' ? 'primary' : 'ghost'">
+                            {{ __('Credit Note') }}
+                        </flux:button>
+                        <flux:button type="button" wire:click="selectTab('apply-advance')" :variant="$active_tab === 'apply-advance' ? 'primary' : 'ghost'">
+                            {{ __('Apply Advance') }}
+                        </flux:button>
+                    @endif
+                    <flux:button type="button" wire:click="selectTab('allocations')" :variant="$active_tab === 'allocations' ? 'primary' : 'ghost'">
+                        {{ __('Allocations') }}
+                    </flux:button>
                 </div>
-                @error('payment_amount') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
+
+                @if (in_array($invoice->status, ['draft', 'issued', 'partially_paid', 'paid'], true))
+                    <flux:modal.trigger name="void-invoice-modal">
+                        <flux:button type="button" variant="danger" x-data="" x-on:click.prevent="$dispatch('open-modal', 'void-invoice-modal')">
+                            {{ __('Void Invoice') }}
+                        </flux:button>
+                    </flux:modal.trigger>
+                @endif
             </div>
 
-            <div class="border-t border-neutral-200 pt-4 dark:border-neutral-700 space-y-3">
-                <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Credit Note') }}</h2>
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-                    <flux:input wire:model="credit_amount" type="number" step="{{ $this->moneyStep() }}" :label="__('Credit Amount')" />
-                    <div class="md:col-span-2 flex items-end justify-end">
-                        <flux:button type="button" wire:click="applyCredit" variant="outline">{{ __('Create & Apply Credit Note') }}</flux:button>
-                    </div>
-                </div>
-                @error('credit_amount') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
-            </div>
-
-            <div class="border-t border-neutral-200 pt-4 dark:border-neutral-700 space-y-3">
-                <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Apply Advance') }}</h2>
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-                    <div>
-                        <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Advance Payment') }}</label>
-                        <select wire:model="advance_payment_id" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                            <option value="">{{ __('Select') }}</option>
-                            @foreach ($available_advances as $adv)
-                                <option value="{{ $adv['id'] }}">#{{ $adv['id'] }} • {{ $adv['received_at'] }} • {{ $this->formatMoney($adv['remaining_cents']) }}</option>
-                            @endforeach
-                        </select>
-                        @error('advance_payment_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
-                    </div>
-                    <flux:input wire:model="advance_amount" type="number" step="{{ $this->moneyStep() }}" :label="__('Amount')" />
-                    <div class="flex items-end justify-end">
-                        <flux:button type="button" wire:click="applyAdvance" variant="primary">{{ __('Apply Advance') }}</flux:button>
-                    </div>
-                </div>
-                @error('advance_amount') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
-
-                <div class="mt-2">
-                    <div class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Available Advances') }}</div>
-                    <div class="mt-2 overflow-x-auto">
-                        <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
-                            <thead class="bg-neutral-50 dark:bg-neutral-800/90">
-                                <tr>
-                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Payment #') }}</th>
-                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Date') }}</th>
-                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Method') }}</th>
-                                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Remaining') }}</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                                @forelse ($available_advances as $adv)
-                                    <tr>
-                                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">#{{ $adv['id'] }}</td>
-                                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $adv['received_at'] }}</td>
-                                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ strtoupper($adv['method'] ?? '—') }}</td>
-                                        <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney($adv['remaining_cents']) }}</td>
-                                    </tr>
-                                @empty
-                                    <tr><td colspan="4" class="px-3 py-3 text-sm text-neutral-600 dark:text-neutral-300 text-center">{{ __('No available advances.') }}</td></tr>
-                                @endforelse
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        @endif
-
-        <div class="border-t border-neutral-200 pt-4 dark:border-neutral-700">
-            <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Allocations') }}</h2>
-            <div class="mt-3 space-y-2">
-                @forelse ($invoice->paymentAllocations as $allocRow)
-                    <div class="flex items-center justify-between rounded-md border border-neutral-200 p-3 text-sm dark:border-neutral-700">
-                        <div class="text-neutral-700 dark:text-neutral-200">
-                            {{ strtoupper($allocRow->payment?->method ?? '—') }}
-                            <span class="text-xs text-neutral-500 dark:text-neutral-400">• {{ $allocRow->payment?->received_at?->format('Y-m-d H:i') }}</span>
+            @if ($active_tab === 'receive-payment' && in_array($invoice->status, ['issued', 'partially_paid'], true))
+                <div class="space-y-3">
+                    <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Receive Payment') }}</h2>
+                    <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+                        <div>
+                            <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Method') }}</label>
+                            <select wire:model="payment_method" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                                <option value="cash">{{ __('Cash') }}</option>
+                                <option value="card">{{ __('Card') }}</option>
+                                <option value="online">{{ __('Online') }}</option>
+                                <option value="bank">{{ __('Bank') }}</option>
+                                <option value="voucher">{{ __('Voucher') }}</option>
+                            </select>
                         </div>
-                        <div class="font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($allocRow->amount_cents) }}</div>
+                        <flux:input wire:model="payment_amount" type="number" step="{{ $this->moneyStep() }}" :label="__('Amount')" />
+                        <div class="flex items-end justify-end">
+                            <flux:button type="button" wire:click="receivePayment" variant="primary">{{ __('Apply') }}</flux:button>
+                        </div>
                     </div>
-                @empty
-                    <p class="text-sm text-neutral-500 dark:text-neutral-400">{{ __('No allocations.') }}</p>
-                @endforelse
-            </div>
+                    @error('payment_amount') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
+                </div>
+            @endif
+
+            @if ($active_tab === 'credit-note' && in_array($invoice->status, ['issued', 'partially_paid'], true))
+                <div class="space-y-3">
+                    <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Credit Note') }}</h2>
+                    <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+                        <flux:input wire:model="credit_amount" type="number" step="{{ $this->moneyStep() }}" :label="__('Credit Amount')" />
+                        <div class="md:col-span-2 flex items-end justify-end">
+                            <flux:button type="button" wire:click="applyCredit" variant="outline">{{ __('Create & Apply Credit Note') }}</flux:button>
+                        </div>
+                    </div>
+                    @error('credit_amount') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
+                </div>
+            @endif
+
+            @if ($active_tab === 'apply-advance' && in_array($invoice->status, ['issued', 'partially_paid'], true))
+                <div class="space-y-3">
+                    <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Apply Advance') }}</h2>
+                    <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+                        <div>
+                            <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Advance Payment') }}</label>
+                            <select wire:model="advance_payment_id" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                                <option value="">{{ __('Select') }}</option>
+                                @foreach ($available_advances as $adv)
+                                    <option value="{{ $adv['id'] }}">#{{ $adv['id'] }} • {{ $adv['received_at'] }} • {{ $this->formatMoney($adv['remaining_cents']) }}</option>
+                                @endforeach
+                            </select>
+                            @error('advance_payment_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                        </div>
+                        <flux:input wire:model="advance_amount" type="number" step="{{ $this->moneyStep() }}" :label="__('Amount')" />
+                        <div class="flex items-end justify-end">
+                            <flux:button type="button" wire:click="applyAdvance" variant="primary">{{ __('Apply Advance') }}</flux:button>
+                        </div>
+                    </div>
+                    @error('advance_amount') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
+
+                    <div class="mt-2">
+                        <div class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Available Advances') }}</div>
+                        <div class="mt-2 overflow-x-auto">
+                            <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
+                                <thead class="bg-neutral-50 dark:bg-neutral-800/90">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Payment #') }}</th>
+                                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Date') }}</th>
+                                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Method') }}</th>
+                                        <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Remaining') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                                    @forelse ($available_advances as $adv)
+                                        <tr>
+                                            <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">#{{ $adv['id'] }}</td>
+                                            <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $adv['received_at'] }}</td>
+                                            <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ strtoupper($adv['method'] ?? '—') }}</td>
+                                            <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney($adv['remaining_cents']) }}</td>
+                                        </tr>
+                                    @empty
+                                        <tr><td colspan="4" class="px-3 py-3 text-sm text-neutral-600 dark:text-neutral-300 text-center">{{ __('No available advances.') }}</td></tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
+            @if ($active_tab === 'allocations')
+                <div class="space-y-3">
+                    <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Allocations') }}</h2>
+                    <div class="space-y-2">
+                        @forelse ($invoice->paymentAllocations as $allocRow)
+                            <div class="flex items-center justify-between rounded-md border border-neutral-200 p-3 text-sm dark:border-neutral-700">
+                                <div class="text-neutral-700 dark:text-neutral-200">
+                                    {{ strtoupper($allocRow->payment?->method ?? '—') }}
+                                    <span class="text-xs text-neutral-500 dark:text-neutral-400">• {{ $allocRow->payment?->received_at?->format('Y-m-d H:i') }}</span>
+                                </div>
+                                <div class="font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($allocRow->amount_cents) }}</div>
+                            </div>
+                        @empty
+                            <p class="text-sm text-neutral-500 dark:text-neutral-400">{{ __('No allocations.') }}</p>
+                        @endforelse
+                    </div>
+                </div>
+            @endif
         </div>
     </div>
+
+    <flux:modal name="void-invoice-modal" :show="$errors->has('status') || $errors->has('invoice')" focusable class="max-w-lg">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">{{ __('Void Invoice') }}</flux:heading>
+                <flux:subheading>
+                    {{ __('Void this invoice or void it and create an editable duplicate draft.') }}
+                </flux:subheading>
+            </div>
+
+            <flux:input wire:model="void_reason" :label="__('Reason (optional)')" />
+            @error('status') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
+            @error('invoice') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button variant="filled">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+                <flux:button type="button" wire:click="voidInvoice" variant="danger">
+                    {{ __('Void') }}
+                </flux:button>
+                <flux:button type="button" wire:click="voidAndDuplicate" variant="primary">
+                    {{ __('Void & Duplicate') }}
+                </flux:button>
+            </div>
+        </div>
+    </flux:modal>
 </div>
