@@ -13,13 +13,14 @@ use Illuminate\Validation\ValidationException;
 class RecipeProductionService
 {
     public function __construct(
-        protected InventoryStockService $stockService
+        protected InventoryStockService $stockService,
+        protected RecipeCompositionService $composition,
     ) {
     }
 
     public function produce(Recipe $recipe, array $payload, int $userId): RecipeProduction
     {
-        $recipe->loadMissing(['items.inventoryItem']);
+        $recipe->loadMissing(['items.inventoryItem', 'items.subRecipe']);
         if ((string) ($recipe->status ?? 'published') === 'draft') {
             throw ValidationException::withMessages(['status' => __('Draft recipes cannot be produced.')]);
         }
@@ -42,8 +43,7 @@ class RecipeProductionService
             // Lock recipe to prevent concurrent updates
             $lockedRecipe = Recipe::whereKey($recipe->id)->lockForUpdate()->firstOrFail();
 
-            // Lock inventory items to check stock atomically
-            $lockedItems = $lockedRecipe->items()->with('inventoryItem')->get();
+            $leafIngredients = $this->composition->explodeIngredients($lockedRecipe, $factor);
 
             $strictStockCheck = array_key_exists('strict_stock_check', $payload)
                 ? (bool) $payload['strict_stock_check']
@@ -51,19 +51,13 @@ class RecipeProductionService
 
             $deductions = [];
 
-            foreach ($lockedItems as $item) {
+            foreach ($leafIngredients as $ingredient) {
                 /** @var InventoryItem|null $inv */
-                $inv = $item->inventoryItem;
-                if (! $inv) {
-                    throw ValidationException::withMessages([
-                        'inventory_item_id' => __("Inventory item for ingredient is missing."),
-                    ]);
-                }
-
-                $requiredQty = (float) $item->quantity * $factor;
+                $inv = $ingredient['inventory_item'];
+                $requiredQty = (float) $ingredient['scaled_quantity'];
                 $unitsPerPackage = (float) ($inv->units_per_package ?? 0);
 
-                if ($item->quantity_type === 'package') {
+                if (($ingredient['quantity_type'] ?? 'unit') === 'package') {
                     $deduction = $requiredQty;
                 } else {
                     if ($unitsPerPackage <= 0) {
@@ -76,9 +70,10 @@ class RecipeProductionService
 
                 $deduction = round($deduction, 3);
 
-                $deductions[] = [
+                $existing = $deductions[$inv->id]['deduction'] ?? 0;
+                $deductions[$inv->id] = [
                     'inventory_item' => $inv,
-                    'deduction' => $deduction,
+                    'deduction' => round($existing + $deduction, 3),
                 ];
             }
 

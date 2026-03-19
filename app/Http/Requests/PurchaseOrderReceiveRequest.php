@@ -19,6 +19,7 @@ class PurchaseOrderReceiveRequest extends FormRequest
             'costs' => ['sometimes', 'array'],
             'costs.*' => ['nullable', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string'],
+            'received_at' => ['nullable', 'date'],
         ];
     }
 }

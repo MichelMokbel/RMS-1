@@ -15,6 +15,7 @@ class RecipeItem extends Model
     protected $fillable = [
         'recipe_id',
         'inventory_item_id',
+        'sub_recipe_id',
         'quantity',
         'unit',
         'quantity_type',
@@ -36,5 +37,14 @@ class RecipeItem extends Model
     {
         return $this->belongsTo(InventoryItem::class, 'inventory_item_id');
     }
-}
 
+    public function subRecipe(): BelongsTo
+    {
+        return $this->belongsTo(Recipe::class, 'sub_recipe_id');
+    }
+
+    public function sourceType(): string
+    {
+        return $this->sub_recipe_id ? 'sub_recipe' : 'inventory_item';
+    }
+}

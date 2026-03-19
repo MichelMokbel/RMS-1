@@ -46,6 +46,11 @@ class InventoryTransaction extends Model
         return class_exists(User::class) ? $this->belongsTo(User::class, 'user_id') : null;
     }
 
+    public function branch()
+    {
+        return class_exists(Branch::class) ? $this->belongsTo(Branch::class, 'branch_id') : null;
+    }
+
     public function delta(): float
     {
         $qty = (float) $this->quantity;
@@ -53,6 +58,7 @@ class InventoryTransaction extends Model
         return match ($this->transaction_type) {
             'in' => abs($qty),
             'out' => -abs($qty),
+            'adjust' => $qty,
             'adjustment' => $qty,
             default => $qty,
         };

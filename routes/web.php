@@ -987,6 +987,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|o
 });
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operations.access'])->group(function () {
+    Volt::route('inventory/transactions', 'inventory.transactions')->name('inventory.transactions');
     Volt::route('inventory/transfers', 'inventory.transfers')->name('inventory.transfers');
     Volt::route('inventory/create', 'inventory.create')->name('inventory.create');
     Volt::route('inventory/{item}/edit', 'inventory.edit')->name('inventory.edit');
@@ -1184,10 +1185,13 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Volt::route('orders', 'reports.orders')->name('orders');
     Volt::route('purchase-orders', 'reports.purchase-orders')->name('purchase-orders');
     Volt::route('purchase-order-detail', 'reports.purchase-order-detail')->name('purchase-order-detail');
+    Volt::route('purchase-order-receiving', 'reports.purchase-order-receiving')->name('purchase-order-receiving');
+    Volt::route('supplier-purchases', 'reports.supplier-purchases')->name('supplier-purchases');
     Volt::route('expenses', 'reports.expenses')->name('expenses');
     Volt::route('costing', 'reports.costing')->name('costing');
     Volt::route('sales', 'reports.sales')->name('sales');
     Volt::route('inventory', 'reports.inventory')->name('inventory');
+    Volt::route('inventory-transactions', 'reports.inventory-transactions')->name('inventory-transactions');
     Volt::route('payables', 'reports.payables')->name('payables');
     Volt::route('receivables', 'reports.receivables')->name('receivables');
     Volt::route('customer-advances', 'reports.customer-advances')->name('customer-advances');
@@ -1218,6 +1222,12 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Route::get('purchase-order-detail/print', [\App\Http\Controllers\Reports\PurchaseOrderDetailReportController::class, 'print'])->name('purchase-order-detail.print');
     Route::get('purchase-order-detail/csv', [\App\Http\Controllers\Reports\PurchaseOrderDetailReportController::class, 'csv'])->name('purchase-order-detail.csv');
     Route::get('purchase-order-detail/pdf', [\App\Http\Controllers\Reports\PurchaseOrderDetailReportController::class, 'pdf'])->name('purchase-order-detail.pdf');
+    Route::get('purchase-order-receiving/print', [\App\Http\Controllers\Reports\PurchaseOrderReceivingReportController::class, 'print'])->name('purchase-order-receiving.print');
+    Route::get('purchase-order-receiving/csv', [\App\Http\Controllers\Reports\PurchaseOrderReceivingReportController::class, 'csv'])->name('purchase-order-receiving.csv');
+    Route::get('purchase-order-receiving/pdf', [\App\Http\Controllers\Reports\PurchaseOrderReceivingReportController::class, 'pdf'])->name('purchase-order-receiving.pdf');
+    Route::get('supplier-purchases/print', [\App\Http\Controllers\Reports\SupplierPurchasesReportController::class, 'print'])->name('supplier-purchases.print');
+    Route::get('supplier-purchases/csv', [\App\Http\Controllers\Reports\SupplierPurchasesReportController::class, 'csv'])->name('supplier-purchases.csv');
+    Route::get('supplier-purchases/pdf', [\App\Http\Controllers\Reports\SupplierPurchasesReportController::class, 'pdf'])->name('supplier-purchases.pdf');
     Route::get('expenses/print', [\App\Http\Controllers\Reports\ExpensesReportController::class, 'print'])->name('expenses.print');
     Route::get('expenses/csv', [\App\Http\Controllers\Reports\ExpensesReportController::class, 'csv'])->name('expenses.csv');
     Route::get('expenses/pdf', [\App\Http\Controllers\Reports\ExpensesReportController::class, 'pdf'])->name('expenses.pdf');
@@ -1230,6 +1240,9 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Route::get('inventory/print', [\App\Http\Controllers\Reports\InventoryReportController::class, 'print'])->name('inventory.print');
     Route::get('inventory/csv', [\App\Http\Controllers\Reports\InventoryReportController::class, 'csv'])->name('inventory.csv');
     Route::get('inventory/pdf', [\App\Http\Controllers\Reports\InventoryReportController::class, 'pdf'])->name('inventory.pdf');
+    Route::get('inventory-transactions/print', [\App\Http\Controllers\Reports\InventoryTransactionsReportController::class, 'print'])->name('inventory-transactions.print');
+    Route::get('inventory-transactions/csv', [\App\Http\Controllers\Reports\InventoryTransactionsReportController::class, 'csv'])->name('inventory-transactions.csv');
+    Route::get('inventory-transactions/pdf', [\App\Http\Controllers\Reports\InventoryTransactionsReportController::class, 'pdf'])->name('inventory-transactions.pdf');
     Route::get('payables/print', [\App\Http\Controllers\Reports\PayablesReportController::class, 'print'])->name('payables.print');
     Route::get('payables/csv', [\App\Http\Controllers\Reports\PayablesReportController::class, 'csv'])->name('payables.csv');
     Route::get('payables/pdf', [\App\Http\Controllers\Reports\PayablesReportController::class, 'pdf'])->name('payables.pdf');

@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\PublicDailyDishController;
 use App\Http\Controllers\Api\PublicDailyDishOrderController;
 use App\Http\Controllers\Api\Expenses\ExpenseCategoryController;
 use App\Http\Controllers\Api\InventoryController;
+use App\Http\Controllers\Api\InventoryTransactionController;
 use App\Http\Controllers\Api\InventoryTransferController;
 use App\Http\Controllers\Api\MealSubscriptionController;
 use App\Http\Controllers\Api\MenuItemController;
@@ -95,6 +96,7 @@ Route::middleware(['api', $apiAuthMiddleware])->group(function () {
         Route::put('inventory/{item}', [InventoryController::class, 'update'])->name('api.inventory.update');
         Route::post('inventory/{item}/adjustments', [InventoryController::class, 'adjust'])->name('api.inventory.adjust');
         Route::post('inventory/{item}/availability', [InventoryController::class, 'addAvailability'])->name('api.inventory.availability');
+        Route::post('inventory/transactions', [InventoryTransactionController::class, 'store'])->name('api.inventory.transactions.store');
         Route::post('inventory/transfers', [InventoryTransferController::class, 'store'])->name('api.inventory.transfers.store');
 
         Route::post('menu-items', [MenuItemController::class, 'store'])->name('api.menu-items.store');

@@ -13,6 +13,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public PurchaseOrder $purchaseOrder;
     public array $receipts = [];
     public ?string $receive_notes = null;
+    public ?string $receive_date = null;
     public array $receive_costs = [];
 
     public function mount(PurchaseOrder $purchaseOrder): void
@@ -22,6 +23,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->receipts[$item->id] = $item->remainingToReceive();
             $this->receive_costs[$item->id] = $item->unit_price;
         }
+        $this->receive_date = now()->format('Y-m-d\TH:i');
     }
 
     public function approve(PurchaseOrderWorkflowService $workflow): void
@@ -53,13 +55,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
-        $receipts = collect($this->receipts)->map(fn ($qty) => (int) $qty)->toArray();
+        $receipts = collect($this->receipts)->map(fn ($qty) => (float) $qty)->toArray();
         $costs = collect($this->receive_costs)->map(fn ($cost) => $cost === '' ? null : (float) $cost)->toArray();
 
         try {
-            $po = $receivingService->receive($this->purchaseOrder, $receipts, Auth::id(), $this->receive_notes, $costs);
+            $po = $receivingService->receive($this->purchaseOrder, $receipts, Auth::id(), $this->receive_notes, $costs, $this->receive_date);
             $this->purchaseOrder = $po;
             $this->receive_notes = null;
+            $this->receive_date = now()->format('Y-m-d\TH:i');
             foreach ($this->purchaseOrder->items as $item) {
                 $this->receipts[$item->id] = $item->remainingToReceive();
                 $this->receive_costs[$item->id] = $item->unit_price;
@@ -213,6 +216,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </table>
             </div>
             <div class="space-y-3">
+                <flux:input wire:model="receive_date" type="datetime-local" :label="__('Receive Date')" />
                 <flux:textarea wire:model="receive_notes" :label="__('Notes')" rows="2" />
                 <div class="flex justify-end">
                     <flux:button type="button" wire:click="receive" variant="primary">{{ __('Receive Selected') }}</flux:button>

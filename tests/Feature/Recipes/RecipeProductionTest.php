@@ -90,3 +90,70 @@ it('blocks insufficient stock when negative stock disallowed', function () {
         'produced_quantity' => 10, // factor 2 => required 10 units => 2 packages, but stock set to 1 package
     ], userId: $user->id))->toThrow(ValidationException::class);
 });
+
+it('deducts nested sub recipe ingredients recursively', function () {
+    $lettuce = InventoryItem::factory()->create([
+        'name' => 'Lettuce',
+        'units_per_package' => 2,
+        'cost_per_unit' => 10,
+    ]);
+    $tomato = InventoryItem::factory()->create([
+        'name' => 'Tomato',
+        'units_per_package' => 4,
+        'cost_per_unit' => 12,
+    ]);
+
+    $branchId = (int) config('inventory.default_branch_id', 1);
+    InventoryStock::where('inventory_item_id', $lettuce->id)->where('branch_id', $branchId)->update(['current_stock' => 5]);
+    InventoryStock::where('inventory_item_id', $tomato->id)->where('branch_id', $branchId)->update(['current_stock' => 5]);
+
+    $sauce = Recipe::factory()->create([
+        'name' => 'Sauce',
+        'yield_quantity' => 2,
+        'yield_unit' => 'portion',
+    ]);
+    RecipeItem::create([
+        'recipe_id' => $sauce->id,
+        'inventory_item_id' => $tomato->id,
+        'sub_recipe_id' => null,
+        'quantity' => 4,
+        'unit' => 'unit',
+        'quantity_type' => 'unit',
+        'cost_type' => 'ingredient',
+    ]);
+
+    $salad = Recipe::factory()->create([
+        'name' => 'Salad',
+        'yield_quantity' => 1,
+        'yield_unit' => 'plate',
+    ]);
+    RecipeItem::create([
+        'recipe_id' => $salad->id,
+        'inventory_item_id' => $lettuce->id,
+        'sub_recipe_id' => null,
+        'quantity' => 2,
+        'unit' => 'unit',
+        'quantity_type' => 'unit',
+        'cost_type' => 'ingredient',
+    ]);
+    RecipeItem::create([
+        'recipe_id' => $salad->id,
+        'inventory_item_id' => null,
+        'sub_recipe_id' => $sauce->id,
+        'quantity' => 1,
+        'unit' => 'portion',
+        'quantity_type' => 'unit',
+        'cost_type' => 'ingredient',
+    ]);
+
+    $service = app(RecipeProductionService::class);
+    $user = User::factory()->create(['status' => 'active']);
+
+    $production = $service->produce($salad->fresh(), [
+        'produced_quantity' => 2,
+    ], userId: $user->id);
+
+    expect($production)->toBeInstanceOf(RecipeProduction::class);
+    expect((float) $lettuce->fresh()->current_stock)->toBe(3.0);
+    expect((float) $tomato->fresh()->current_stock)->toBe(4.0);
+});

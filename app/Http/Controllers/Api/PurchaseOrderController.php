@@ -146,8 +146,9 @@ class PurchaseOrderController extends Controller
         $receipts = $validated['receipts'];
         $costs = $validated['costs'] ?? [];
         $notes = $validated['notes'] ?? null;
+        $receivedAt = $validated['received_at'] ?? null;
 
-        $po = $receivingService->receive($purchaseOrder, $receipts, Auth::id(), $notes, $costs);
+        $po = $receivingService->receive($purchaseOrder, $receipts, Auth::id(), $notes, $costs, $receivedAt);
 
         return response()->json($po);
     }

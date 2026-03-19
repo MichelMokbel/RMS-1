@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Collection;
 
 class Category extends Model
 {
@@ -32,6 +33,54 @@ class Category extends Model
     public function children(): HasMany
     {
         return $this->hasMany(self::class, 'parent_id');
+    }
+
+    public function ancestorsAndSelf(): Collection
+    {
+        $nodes = collect([$this]);
+        $parent = $this->parent;
+
+        while ($parent) {
+            $nodes->prepend($parent);
+            $parent = $parent->parent;
+        }
+
+        return $nodes;
+    }
+
+    public function fullName(string $separator = ' > '): string
+    {
+        return $this->ancestorsAndSelf()
+            ->pluck('name')
+            ->filter()
+            ->implode($separator);
+    }
+
+    public function descendantIdsAndSelf(): Collection
+    {
+        $ids = collect([(int) $this->id]);
+        $pending = [(int) $this->id];
+
+        while ($pending !== []) {
+            $children = static::query()
+                ->whereIn('parent_id', $pending)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values();
+
+            $newChildren = $children
+                ->reject(fn (int $id) => $ids->contains($id))
+                ->values();
+
+            if ($newChildren->isEmpty()) {
+                break;
+            }
+
+            $ids = $ids->concat($newChildren)->values();
+            $pending = $newChildren->all();
+        }
+
+        return $ids;
     }
 
     /**

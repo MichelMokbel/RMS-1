@@ -57,11 +57,16 @@ new #[Layout('components.layouts.app')] class extends Component {
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
             {{ __('Inventory') }}
         </h1>
-        @if(auth()->user()->hasAnyRole(['admin','manager']))
-            <flux:button :href="route('inventory.create')" wire:navigate variant="primary">
-                {{ __('Create Item') }}
-            </flux:button>
-        @endif
+        <div class="flex gap-2">
+            @if(auth()->user()->hasAnyRole(['admin','manager']))
+                <flux:button :href="route('inventory.transactions')" wire:navigate variant="ghost">
+                    {{ __('Transactions') }}
+                </flux:button>
+                <flux:button :href="route('inventory.create')" wire:navigate variant="primary">
+                    {{ __('Create Item') }}
+                </flux:button>
+            @endif
+        </div>
     </div>
 
     @if (session('status'))
@@ -84,7 +89,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <select id="category_id" wire:model.live="category_id" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                         <option value="">{{ __('All') }}</option>
                         @foreach ($categories as $cat)
-                            <option value="{{ $cat->id }}">{{ $cat->name }}</option>
+                            <option value="{{ $cat->id }}">{{ $cat->fullName() }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -154,7 +159,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             {{ \Illuminate\Support\Str::limit($item->name, 24, '...') }}
                         </td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200" title="{{ $item->category?->name }}">
-                            {{ \Illuminate\Support\Str::limit($item->category?->name, 12, '...') }}
+                            {{ \Illuminate\Support\Str::limit($item->categoryLabel() ?? '', 18, '...') ?: '—' }}
                         </td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200" title="{{ $item->supplier?->name }}">
                             {{ \Illuminate\Support\Str::limit($item->supplier?->name, 12, '...') }}

@@ -4,8 +4,10 @@ use App\Models\InventoryItem;
 use App\Models\Recipe;
 use App\Models\RecipeItem;
 use App\Models\User;
+use App\Services\Recipes\RecipePersistService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -91,4 +93,113 @@ it('updates recipe by re-syncing items', function () {
     expect($recipe->name)->toBe('Updated');
     expect($recipe->items()->count())->toBe(1);
     expect($recipe->items()->first()->inventory_item_id)->toBe($inv2->id);
+});
+
+it('persists mixed inventory and sub recipe lines', function () {
+    $inventory = InventoryItem::factory()->create();
+    $subRecipe = Recipe::factory()->create([
+        'name' => 'Dressing Base',
+        'yield_quantity' => 1,
+        'yield_unit' => 'portion',
+    ]);
+
+    $recipe = app(RecipePersistService::class)->create([
+        'name' => 'Salad',
+        'description' => 'Nested recipe test',
+        'category_id' => null,
+        'yield_quantity' => 1,
+        'yield_unit' => 'plate',
+        'overhead_pct' => 0,
+        'selling_price_per_unit' => null,
+        'status' => 'published',
+        'items' => [
+            [
+                'source_type' => 'inventory_item',
+                'inventory_item_id' => $inventory->id,
+                'sub_recipe_id' => null,
+                'quantity' => 2,
+                'unit' => 'unit',
+                'quantity_type' => 'unit',
+                'cost_type' => 'ingredient',
+            ],
+            [
+                'source_type' => 'sub_recipe',
+                'inventory_item_id' => null,
+                'sub_recipe_id' => $subRecipe->id,
+                'quantity' => 1,
+                'unit' => 'portion',
+                'quantity_type' => 'unit',
+                'cost_type' => 'ingredient',
+            ],
+        ],
+    ]);
+
+    expect($recipe->items()->count())->toBe(2);
+    expect($recipe->items()->whereNotNull('sub_recipe_id')->first()->sub_recipe_id)->toBe($subRecipe->id);
+    expect($recipe->items()->whereNotNull('inventory_item_id')->first()->inventory_item_id)->toBe($inventory->id);
+});
+
+it('rejects indirect recipe cycles', function () {
+    $inventory = InventoryItem::factory()->create();
+    $persist = app(RecipePersistService::class);
+
+    $recipeB = $persist->create([
+        'name' => 'Recipe B',
+        'description' => null,
+        'category_id' => null,
+        'yield_quantity' => 1,
+        'yield_unit' => 'unit',
+        'overhead_pct' => 0,
+        'selling_price_per_unit' => null,
+        'status' => 'published',
+        'items' => [[
+            'source_type' => 'inventory_item',
+            'inventory_item_id' => $inventory->id,
+            'sub_recipe_id' => null,
+            'quantity' => 1,
+            'unit' => 'unit',
+            'quantity_type' => 'unit',
+            'cost_type' => 'ingredient',
+        ]],
+    ]);
+
+    $recipeA = $persist->create([
+        'name' => 'Recipe A',
+        'description' => null,
+        'category_id' => null,
+        'yield_quantity' => 1,
+        'yield_unit' => 'unit',
+        'overhead_pct' => 0,
+        'selling_price_per_unit' => null,
+        'status' => 'published',
+        'items' => [[
+            'source_type' => 'sub_recipe',
+            'inventory_item_id' => null,
+            'sub_recipe_id' => $recipeB->id,
+            'quantity' => 1,
+            'unit' => 'unit',
+            'quantity_type' => 'unit',
+            'cost_type' => 'ingredient',
+        ]],
+    ]);
+
+    expect(fn () => $persist->update($recipeB, [
+        'name' => 'Recipe B',
+        'description' => null,
+        'category_id' => null,
+        'yield_quantity' => 1,
+        'yield_unit' => 'unit',
+        'overhead_pct' => 0,
+        'selling_price_per_unit' => null,
+        'status' => 'published',
+        'items' => [[
+            'source_type' => 'sub_recipe',
+            'inventory_item_id' => null,
+            'sub_recipe_id' => $recipeA->id,
+            'quantity' => 1,
+            'unit' => 'unit',
+            'quantity_type' => 'unit',
+            'cost_type' => 'ingredient',
+        ]],
+    ]))->toThrow(ValidationException::class);
 });

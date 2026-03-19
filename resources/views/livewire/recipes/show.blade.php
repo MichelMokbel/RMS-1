@@ -36,7 +36,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
                 <p class="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">{{ __('Category') }}</p>
-                <p class="text-sm text-neutral-900 dark:text-neutral-100">{{ $recipe->category?->name ?? '—' }}</p>
+                <p class="text-sm text-neutral-900 dark:text-neutral-100">{{ $recipe->category?->fullName() ?? '—' }}</p>
             </div>
             <div>
                 <p class="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">{{ __('Yield') }}</p>
@@ -59,6 +59,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
                 <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                     <tr>
+                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Source') }}</th>
                         <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Item') }}</th>
                         <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Quantity') }}</th>
                         <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Unit') }}</th>
@@ -69,8 +70,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     @forelse ($items as $item)
                         <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
+                            <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
+                                {{ $item->sub_recipe_id ? __('Sub Recipe') : __('Inventory Item') }}
+                            </td>
                             <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">
-                                {{ $item->inventoryItem?->name ?? '—' }}
+                                {{ $item->sub_recipe_id ? ($item->subRecipe?->name ?? '—') : ($item->inventoryItem?->name ?? '—') }}
                             </td>
                             <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
                                 {{ number_format((float) $item->quantity, 3) }}
@@ -87,7 +91,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="5" class="px-4 py-4 text-center text-sm text-neutral-600 dark:text-neutral-300">
+                            <td colspan="6" class="px-4 py-4 text-center text-sm text-neutral-600 dark:text-neutral-300">
                                 {{ __('No ingredients added yet.') }}
                             </td>
                         </tr>
@@ -136,6 +140,47 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endif
                 </p>
             </div>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
+                <thead class="bg-neutral-50 dark:bg-neutral-800/90">
+                    <tr>
+                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Leaf Item') }}</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Recipe Path') }}</th>
+                        <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Quantity') }}</th>
+                        <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Line Cost') }}</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                    @forelse (($costing['items'] ?? []) as $costItem)
+                        <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
+                            <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $costItem['item_name'] ?? '—' }}</td>
+                            <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
+                                @php
+                                    $pathNames = collect($costItem['path'] ?? [])
+                                        ->pluck('sub_recipe_name')
+                                        ->filter()
+                                        ->values();
+                                @endphp
+                                {{ $pathNames->isNotEmpty() ? $pathNames->implode(' > ') : __('Direct Ingredient') }}
+                            </td>
+                            <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">
+                                {{ number_format((float) ($costItem['quantity'] ?? 0), 3) }} {{ $costItem['unit'] ?? '' }}
+                            </td>
+                            <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">
+                                {{ number_format((float) ($costItem['line_cost'] ?? 0), 2) }}
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="4" class="px-4 py-4 text-center text-sm text-neutral-600 dark:text-neutral-300">
+                                {{ __('No costing lines available.') }}
+                            </td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
         </div>
     </div>
 

@@ -11,50 +11,101 @@ use Illuminate\Validation\ValidationException;
 
 class InventoryStockService
 {
-    public function adjustStock(InventoryItem $item, float $delta, string $notes = null, ?int $userId = null, ?int $branchId = null): InventoryTransaction
-    {
-        $delta = round($delta, 3);
-        if (abs($delta) < 0.0005) {
+    public function postTransaction(
+        InventoryItem $item,
+        string $transactionType,
+        float $quantity,
+        ?string $notes = null,
+        ?int $userId = null,
+        ?int $branchId = null,
+        ?float $unitCost = null,
+        string $referenceType = 'manual',
+        ?int $referenceId = null,
+        mixed $transactionDate = null
+    ): InventoryTransaction {
+        $normalizedType = $transactionType === 'adjust' ? 'adjustment' : $transactionType;
+
+        if (! in_array($normalizedType, ['in', 'out', 'adjustment'], true)) {
+            throw ValidationException::withMessages(['transaction_type' => __('Invalid transaction type.')]);
+        }
+
+        $quantity = round($quantity, 3);
+        if (abs($quantity) < 0.0005) {
             throw ValidationException::withMessages(['quantity' => __('Quantity must not be zero.')]);
         }
 
-        $branchId = $this->resolveBranchId($branchId);
+        if (in_array($normalizedType, ['in', 'out'], true) && $quantity < 0) {
+            throw ValidationException::withMessages(['quantity' => __('Quantity must be greater than zero.')]);
+        }
 
-        return DB::transaction(function () use ($item, $delta, $notes, $userId, $branchId) {
+        $delta = match ($normalizedType) {
+            'in' => abs($quantity),
+            'out' => -abs($quantity),
+            default => $quantity,
+        };
+
+        $storedQuantity = $normalizedType === 'adjustment' ? $delta : abs($quantity);
+        $branchId = $this->resolveBranchId($branchId);
+        $effectiveDate = $transactionDate ?: now();
+
+        return DB::transaction(function () use (
+            $item,
+            $delta,
+            $storedQuantity,
+            $normalizedType,
+            $notes,
+            $userId,
+            $branchId,
+            $unitCost,
+            $referenceType,
+            $referenceId,
+            $effectiveDate
+        ) {
             $locked = InventoryItem::where('id', $item->id)->lockForUpdate()->firstOrFail();
             $stock = $this->lockStockRow($locked, $branchId);
             $currentStock = (float) ($stock->current_stock ?? 0);
             $newStock = round($currentStock + $delta, 3);
 
-            if (! config('inventory.allow_negative_stock', false) && $newStock < 0) {
+            if (! config('inventory.allow_negative_stock', false) && $newStock < -0.0005) {
                 throw ValidationException::withMessages(['quantity' => __('Stock cannot go negative.')]);
             }
 
             $stock->current_stock = $newStock;
             $stock->save();
 
-
-            $unitCost = $locked->cost_per_unit !== null ? (float) $locked->cost_per_unit : null;
-            $totalCost = $unitCost !== null ? round($unitCost * $delta, 4) : null;
+            $effectiveUnitCost = $unitCost ?? ($locked->cost_per_unit !== null ? (float) $locked->cost_per_unit : null);
+            $totalCost = $effectiveUnitCost !== null ? round($effectiveUnitCost * $delta, 4) : null;
 
             $transaction = InventoryTransaction::create([
                 'item_id' => $locked->id,
                 'branch_id' => $branchId,
-                'transaction_type' => 'adjustment',
-                'quantity' => $delta,
-                'unit_cost' => $unitCost,
+                'transaction_type' => $normalizedType,
+                'quantity' => $storedQuantity,
+                'unit_cost' => $effectiveUnitCost,
                 'total_cost' => $totalCost,
-                'reference_type' => 'manual',
-                'reference_id' => null,
+                'reference_type' => $referenceType,
+                'reference_id' => $referenceId,
                 'user_id' => $userId,
                 'notes' => $notes,
-                'transaction_date' => now(),
+                'transaction_date' => $effectiveDate,
             ]);
 
             app(SubledgerService::class)->recordInventoryTransaction($transaction, $userId);
 
             return $transaction;
         });
+    }
+
+    public function adjustStock(InventoryItem $item, float $delta, string $notes = null, ?int $userId = null, ?int $branchId = null): InventoryTransaction
+    {
+        return $this->postTransaction(
+            $item,
+            'adjustment',
+            $delta,
+            $notes,
+            $userId,
+            $branchId
+        );
     }
 
     public function recordMovement(
@@ -68,55 +119,17 @@ class InventoryStockService
         ?float $unitCost = null,
         ?int $branchId = null
     ): InventoryTransaction {
-        if (! in_array($type, ['in', 'out'], true)) {
-            throw ValidationException::withMessages(['transaction_type' => __('Invalid transaction type.')]);
-        }
-
-        $quantity = round($quantity, 3);
-        if ($quantity <= 0) {
-            throw ValidationException::withMessages(['quantity' => __('Quantity must be greater than zero.')]);
-        }
-
-        $delta = $type === 'in' ? $quantity : -$quantity;
-
-        $branchId = $this->resolveBranchId($branchId);
-
-        return DB::transaction(function () use ($item, $delta, $type, $referenceType, $referenceId, $notes, $userId, $quantity, $unitCost, $branchId) {
-            $locked = InventoryItem::where('id', $item->id)->lockForUpdate()->firstOrFail();
-            $stock = $this->lockStockRow($locked, $branchId);
-            $currentStock = (float) ($stock->current_stock ?? 0);
-            $newStock = round($currentStock + $delta, 3);
-
-            if (! config('inventory.allow_negative_stock', false) && $newStock < 0) {
-                throw ValidationException::withMessages(['quantity' => __('Stock cannot go negative.')]);
-            }
-
-            $stock->current_stock = $newStock;
-            $stock->save();
-
-
-            $effectiveUnitCost = $unitCost ?? ($locked->cost_per_unit !== null ? (float) $locked->cost_per_unit : null);
-            $direction = $type === 'out' ? -1 : 1;
-            $totalCost = $effectiveUnitCost !== null ? round($effectiveUnitCost * $quantity * $direction, 4) : null;
-
-            $transaction = InventoryTransaction::create([
-                'item_id' => $locked->id,
-                'branch_id' => $branchId,
-                'transaction_type' => $type,
-                'quantity' => abs($delta),
-                'unit_cost' => $effectiveUnitCost,
-                'total_cost' => $totalCost,
-                'reference_type' => $referenceType,
-                'reference_id' => $referenceId,
-                'user_id' => $userId,
-                'notes' => $notes,
-                'transaction_date' => now(),
-            ]);
-
-            app(SubledgerService::class)->recordInventoryTransaction($transaction, $userId);
-
-            return $transaction;
-        });
+        return $this->postTransaction(
+            $item,
+            $type,
+            $quantity,
+            $notes,
+            $userId,
+            $branchId,
+            $unitCost,
+            $referenceType,
+            $referenceId
+        );
     }
 
     private function resolveBranchId(?int $branchId): int

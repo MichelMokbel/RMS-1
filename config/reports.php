@@ -41,12 +41,28 @@ return [
             'filters' => ['supplier', 'status', 'date_range', 'search'],
             'outputs' => ['screen', 'print', 'csv', 'pdf'],
         ],
+        'purchase-order-receiving' => [
+            'key' => 'purchase-order-receiving',
+            'label' => 'Purchase Order Receiving',
+            'category' => 'purchase_orders',
+            'route' => 'reports.purchase-order-receiving',
+            'filters' => ['supplier', 'po', 'item', 'date_range', 'receiver'],
+            'outputs' => ['screen', 'print', 'csv', 'pdf'],
+        ],
         'purchase-orders' => [
             'key' => 'purchase-orders',
             'label' => 'Purchase Orders',
             'category' => 'purchase_orders',
             'route' => 'reports.purchase-orders',
             'filters' => ['supplier', 'status', 'date_range', 'search'],
+            'outputs' => ['screen', 'print', 'csv', 'pdf'],
+        ],
+        'supplier-purchases' => [
+            'key' => 'supplier-purchases',
+            'label' => 'Supplier Purchases',
+            'category' => 'purchase_orders',
+            'route' => 'reports.supplier-purchases',
+            'filters' => ['supplier', 'item', 'date_range', 'status'],
             'outputs' => ['screen', 'print', 'csv', 'pdf'],
         ],
         'expenses' => [
@@ -71,6 +87,14 @@ return [
             'category' => 'expenses',
             'route' => 'reports.inventory',
             'filters' => ['branch', 'category', 'search', 'low_stock'],
+            'outputs' => ['screen', 'print', 'csv', 'pdf'],
+        ],
+        'inventory-transactions' => [
+            'key' => 'inventory-transactions',
+            'label' => 'Inventory Transactions',
+            'category' => 'expenses',
+            'route' => 'reports.inventory-transactions',
+            'filters' => ['branch', 'item', 'supplier', 'category', 'transaction_type', 'reference_type', 'date_range', 'search'],
             'outputs' => ['screen', 'print', 'csv', 'pdf'],
         ],
         'sales' => [

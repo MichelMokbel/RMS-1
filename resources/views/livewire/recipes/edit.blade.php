@@ -23,7 +23,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
-        $this->recipe->loadMissing('items');
+        $this->recipe->loadMissing('items.subRecipe');
         $this->name = $this->recipe->name;
         $this->description = $this->recipe->description;
         $this->category_id = $this->recipe->category_id;
@@ -35,7 +35,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->items = $this->recipe->items->map(function ($item) {
             return [
+                'source_type' => $item->sub_recipe_id ? 'sub_recipe' : 'inventory_item',
                 'inventory_item_id' => $item->inventory_item_id,
+                'sub_recipe_id' => $item->sub_recipe_id,
                 'quantity' => (float) $item->quantity,
                 'unit' => $item->unit,
                 'quantity_type' => $item->quantity_type,
@@ -47,7 +49,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function addItem(): void
     {
         $this->items[] = [
+            'source_type' => 'inventory_item',
             'inventory_item_id' => null,
+            'sub_recipe_id' => null,
             'quantity' => 0,
             'unit' => '',
             'quantity_type' => 'unit',
@@ -66,6 +70,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         return [
             'categories' => $formQuery->categories(),
             'inventoryItems' => $formQuery->inventoryItems(),
+            'subRecipes' => $formQuery->subRecipes($this->recipe->id),
         ];
     }
 
@@ -118,7 +123,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <select wire:model="category_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                     <option value="">{{ __('None') }}</option>
                     @foreach($categories as $cat)
-                        <option value="{{ $cat->id }}">{{ $cat->name }}</option>
+                        <option value="{{ $cat->id }}">{{ $cat->fullName() }}</option>
                     @endforeach
                 </select>
             </div>
@@ -143,6 +148,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
                 <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                     <tr>
+                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Source') }}</th>
                         <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Item') }}</th>
                         <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Quantity') }}</th>
                         <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Unit') }}</th>
@@ -155,12 +161,30 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @foreach ($items as $index => $row)
                         <tr class="align-top">
                             <td class="px-3 py-2 text-sm">
-                                <select wire:model="items.{{ $index }}.inventory_item_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                                    <option value="">{{ __('Select item') }}</option>
-                                    @foreach($inventoryItems as $inv)
-                                        <option value="{{ $inv->id }}">{{ $inv->item_code ?? '' }} {{ $inv->name }}</option>
-                                    @endforeach
+                                <select wire:model.live="items.{{ $index }}.source_type" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                                    <option value="inventory_item">{{ __('Inventory Item') }}</option>
+                                    <option value="sub_recipe">{{ __('Sub Recipe') }}</option>
                                 </select>
+                                @error("items.$index.source_type") <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                            </td>
+                            <td class="px-3 py-2 text-sm">
+                                @if (($row['source_type'] ?? 'inventory_item') === 'sub_recipe')
+                                    <select wire:model="items.{{ $index }}.sub_recipe_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                                        <option value="">{{ __('Select recipe') }}</option>
+                                        @foreach($subRecipes as $subRecipe)
+                                            <option value="{{ $subRecipe->id }}">{{ $subRecipe->name }}</option>
+                                        @endforeach
+                                    </select>
+                                    @error("items.$index.sub_recipe_id") <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                                @else
+                                    <select wire:model="items.{{ $index }}.inventory_item_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                                        <option value="">{{ __('Select item') }}</option>
+                                        @foreach($inventoryItems as $inv)
+                                            <option value="{{ $inv->id }}">{{ $inv->item_code ?? '' }} {{ $inv->name }}</option>
+                                        @endforeach
+                                    </select>
+                                    @error("items.$index.inventory_item_id") <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                                @endif
                             </td>
                             <td class="px-3 py-2 text-sm">
                                 <flux:input wire:model="items.{{ $index }}.quantity" type="number" step="0.001" min="0" />
@@ -169,7 +193,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <flux:input wire:model="items.{{ $index }}.unit" />
                             </td>
                             <td class="px-3 py-2 text-sm">
-                                <select wire:model="items.{{ $index }}.quantity_type" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                                <select wire:model="items.{{ $index }}.quantity_type" @if (($row['source_type'] ?? 'inventory_item') === 'sub_recipe') disabled @endif class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 disabled:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50 dark:disabled:bg-neutral-700">
                                     <option value="unit">{{ __('Unit') }}</option>
                                     <option value="package">{{ __('Package') }}</option>
                                 </select>

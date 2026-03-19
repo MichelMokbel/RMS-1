@@ -2,6 +2,7 @@
 
 use App\Models\InventoryItem;
 use App\Models\InventoryStock;
+use App\Models\InventoryTransaction;
 use App\Models\User;
 use Spatie\Permission\Models\Role;
 
@@ -53,4 +54,54 @@ it('adjust endpoint updates stock', function () {
 
     $res->assertOk();
     expect((float) $item->fresh()->current_stock)->toBe(3.0);
+});
+
+it('records direct manual inventory transactions with custom date and description', function () {
+    $user = inventoryApiAdmin();
+    $item = InventoryItem::factory()->create();
+    InventoryStock::where('inventory_item_id', $item->id)
+        ->where('branch_id', (int) config('inventory.default_branch_id', 1))
+        ->update(['current_stock' => 5]);
+
+    $res = actingAs($user)->postJson('/api/inventory/transactions', [
+        'item_id' => $item->id,
+        'branch_id' => (int) config('inventory.default_branch_id', 1),
+        'transaction_type' => 'adjust',
+        'quantity' => -1.25,
+        'unit_cost' => 7.5,
+        'description' => 'Shrinkage count',
+        'transaction_date' => '2026-03-15 10:30:00',
+    ]);
+
+    $res->assertCreated()
+        ->assertJsonPath('message', 'Transaction recorded.');
+
+    $transaction = InventoryTransaction::query()->latest('id')->first();
+
+    expect((float) $item->fresh()->current_stock)->toBe(3.75);
+    expect($transaction->transaction_type)->toBe('adjustment');
+    expect((float) $transaction->quantity)->toBe(-1.25);
+    expect($transaction->notes)->toBe('Shrinkage count');
+    expect($transaction->transaction_date?->format('Y-m-d H:i:s'))->toBe('2026-03-15 10:30:00');
+});
+
+it('blocks direct out transactions that would make stock negative', function () {
+    config()->set('inventory.allow_negative_stock', false);
+
+    $user = inventoryApiAdmin();
+    $item = InventoryItem::factory()->create();
+    InventoryStock::where('inventory_item_id', $item->id)
+        ->where('branch_id', (int) config('inventory.default_branch_id', 1))
+        ->update(['current_stock' => 1]);
+
+    $res = actingAs($user)->postJson('/api/inventory/transactions', [
+        'item_id' => $item->id,
+        'branch_id' => (int) config('inventory.default_branch_id', 1),
+        'transaction_type' => 'out',
+        'quantity' => 5,
+        'transaction_date' => now()->toDateTimeString(),
+    ]);
+
+    $res->assertUnprocessable()
+        ->assertJsonValidationErrors(['quantity']);
 });

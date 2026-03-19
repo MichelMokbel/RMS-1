@@ -16,7 +16,7 @@ class InventoryItemFormQueryService
             return collect();
         }
 
-        return Category::orderBy('name')->get();
+        return Category::with('parent.parent.parent')->orderBy('name')->get();
     }
 
     public function suppliers(): Collection
@@ -42,4 +42,3 @@ class InventoryItemFormQueryService
         return $q->get();
     }
 }
-

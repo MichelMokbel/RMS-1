@@ -59,6 +59,12 @@ class PurchaseOrder extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    public function receivings(): HasMany
+    {
+        return $this->hasMany(PurchaseOrderReceiving::class, 'purchase_order_id')
+            ->latest('received_at');
+    }
+
     public function isDraft(): bool { return $this->status === self::STATUS_DRAFT; }
     public function isPending(): bool { return $this->status === self::STATUS_PENDING; }
     public function isApproved(): bool { return $this->status === self::STATUS_APPROVED; }

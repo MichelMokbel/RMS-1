@@ -65,6 +65,13 @@ class InventoryItem extends Model
         return class_exists(Category::class) ? $this->belongsTo(Category::class, 'category_id') : null;
     }
 
+    public function categoryLabel(string $separator = ' > '): ?string
+    {
+        $category = $this->relationLoaded('category') ? $this->category : $this->category()->with('parent.parent.parent')->first();
+
+        return $category?->fullName($separator);
+    }
+
     public function supplier()
     {
         return class_exists(Supplier::class) ? $this->belongsTo(Supplier::class, 'supplier_id') : null;

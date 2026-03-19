@@ -1,15 +1,15 @@
         @page {
-            margin: 8mm 10mm 0 10mm;
+            margin: 8mm 10mm 12mm 10mm;
         }
         @media print {
             body {
                 margin: 0 !important;
-                padding: 0 0 14mm 0 !important;
+                padding: 0 0 18mm 0 !important;
             }
         }
         .print-footer {
             position: fixed;
-            bottom: 2mm;
+            bottom: 0;
             left: 0;
             right: 0;
             font-size: 8px;

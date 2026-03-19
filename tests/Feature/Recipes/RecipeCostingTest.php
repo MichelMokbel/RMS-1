@@ -73,3 +73,68 @@ it('computes costing with package and unit quantities and overhead normalization
     expect($cost['margin_amount_per_unit'])->toBe(-55.6);
     expect(round($cost['margin_pct'], 2))->toBe(-2.78);
 });
+
+it('computes costing recursively for nested sub recipes', function () {
+    $oil = InventoryItem::factory()->create([
+        'name' => 'Olive Oil',
+        'cost_per_unit' => 20,
+        'units_per_package' => 10,
+    ]);
+
+    $lettuce = InventoryItem::factory()->create([
+        'name' => 'Lettuce',
+        'cost_per_unit' => 8,
+        'units_per_package' => 4,
+    ]);
+
+    $dressing = Recipe::factory()->create([
+        'name' => 'Dressing',
+        'yield_quantity' => 2,
+        'yield_unit' => 'portion',
+        'overhead_pct' => 0,
+    ]);
+
+    RecipeItem::create([
+        'recipe_id' => $dressing->id,
+        'inventory_item_id' => $oil->id,
+        'sub_recipe_id' => null,
+        'quantity' => 4,
+        'unit' => 'ml',
+        'quantity_type' => 'unit',
+        'cost_type' => 'ingredient',
+    ]);
+
+    $salad = Recipe::factory()->create([
+        'name' => 'Salad',
+        'yield_quantity' => 1,
+        'yield_unit' => 'plate',
+        'overhead_pct' => 0,
+    ]);
+
+    RecipeItem::create([
+        'recipe_id' => $salad->id,
+        'inventory_item_id' => $lettuce->id,
+        'sub_recipe_id' => null,
+        'quantity' => 2,
+        'unit' => 'leaf',
+        'quantity_type' => 'unit',
+        'cost_type' => 'ingredient',
+    ]);
+
+    RecipeItem::create([
+        'recipe_id' => $salad->id,
+        'inventory_item_id' => null,
+        'sub_recipe_id' => $dressing->id,
+        'quantity' => 1,
+        'unit' => 'portion',
+        'quantity_type' => 'unit',
+        'cost_type' => 'ingredient',
+    ]);
+
+    $cost = app(RecipeCostingService::class)->compute($salad->fresh());
+
+    expect($cost['base_cost_total'])->toBe(8.00);
+    expect($cost['items'])->toHaveCount(2);
+    expect(collect($cost['items'])->firstWhere('item_name', 'Olive Oil')['line_cost'])->toBe(4.0);
+    expect(collect($cost['items'])->firstWhere('item_name', 'Olive Oil')['path'][0]['sub_recipe_name'])->toBe('Dressing');
+});

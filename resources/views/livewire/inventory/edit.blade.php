@@ -104,7 +104,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <select wire:model="category_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                         <option value="">{{ __('None') }}</option>
                         @foreach ($categories as $category)
-                            <option value="{{ $category->id }}">{{ $category->name }}</option>
+                            <option value="{{ $category->id }}">{{ $category->fullName() }}</option>
                         @endforeach
                     </select>
                 </div>

@@ -113,6 +113,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{ __('Back') }}
             </flux:button>
             @if(auth()->check() && auth()->user()->hasAnyRole(['admin','manager']))
+                <flux:button :href="route('inventory.transactions')" wire:navigate variant="ghost">
+                    {{ __('Transactions') }}
+                </flux:button>
+            @endif
+            @if(auth()->check() && auth()->user()->hasAnyRole(['admin','manager']))
                 <flux:button :href="route('inventory.edit', $item)" wire:navigate variant="primary">
                     {{ __('Edit') }}
                 </flux:button>
@@ -143,7 +148,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-100 mb-2">{{ __('Details') }}</h2>
             <dl class="space-y-1 text-sm text-neutral-700 dark:text-neutral-200">
                 <div><span class="font-semibold">{{ __('Code') }}:</span> {{ $item->item_code }}</div>
-                <div><span class="font-semibold">{{ __('Category') }}:</span> {{ $item->category?->name }}</div>
+                <div><span class="font-semibold">{{ __('Category') }}:</span> {{ $item->categoryLabel() ?? '—' }}</div>
                 <div><span class="font-semibold">{{ __('Supplier') }}:</span> {{ $item->supplier?->name }}</div>
                 <div><span class="font-semibold">{{ __('Location') }}:</span> {{ $item->location }}</div>
                 <div><span class="font-semibold">{{ __('Package') }}:</span> {{ $item->package_label }} ({{ $item->units_per_package }} {{ $item->unit_of_measure }})</div>

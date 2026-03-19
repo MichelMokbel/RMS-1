@@ -8,9 +8,17 @@ use Illuminate\Support\Facades\DB;
 
 class RecipePersistService
 {
+    public function __construct(
+        private readonly RecipeCompositionService $composition,
+    ) {
+    }
+
     public function create(array $data): Recipe
     {
         return DB::transaction(function () use ($data) {
+            $items = $this->composition->normalizeItems($data['items'] ?? []);
+            $this->composition->assertValidComposition(null, $items);
+
             $recipe = Recipe::create([
                 'name' => $data['name'],
                 'description' => $data['description'] ?? null,
@@ -22,10 +30,13 @@ class RecipePersistService
                 'status' => $data['status'] ?? 'published',
             ]);
 
-            foreach (($data['items'] ?? []) as $item) {
+            $this->composition->assertValidComposition($recipe, $items);
+
+            foreach ($items as $item) {
                 RecipeItem::create([
                     'recipe_id' => $recipe->id,
                     'inventory_item_id' => $item['inventory_item_id'],
+                    'sub_recipe_id' => $item['sub_recipe_id'],
                     'quantity' => $item['quantity'],
                     'unit' => $item['unit'],
                     'quantity_type' => $item['quantity_type'],
@@ -40,6 +51,9 @@ class RecipePersistService
     public function update(Recipe $recipe, array $data): Recipe
     {
         return DB::transaction(function () use ($recipe, $data) {
+            $items = $this->composition->normalizeItems($data['items'] ?? []);
+            $this->composition->assertValidComposition($recipe, $items);
+
             $recipe->update([
                 'name' => $data['name'],
                 'description' => $data['description'] ?? null,
@@ -54,10 +68,11 @@ class RecipePersistService
             // simplest sync: delete and recreate items
             $recipe->items()->delete();
 
-            foreach (($data['items'] ?? []) as $item) {
+            foreach ($items as $item) {
                 RecipeItem::create([
                     'recipe_id' => $recipe->id,
                     'inventory_item_id' => $item['inventory_item_id'],
+                    'sub_recipe_id' => $item['sub_recipe_id'],
                     'quantity' => $item['quantity'],
                     'unit' => $item['unit'],
                     'quantity_type' => $item['quantity_type'],
@@ -65,7 +80,7 @@ class RecipePersistService
                 ]);
             }
 
-            return $recipe->fresh();
+            return $recipe->fresh(['items.inventoryItem', 'items.subRecipe']);
         });
     }
 }

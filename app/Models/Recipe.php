@@ -42,6 +42,11 @@ class Recipe extends Model
         return $this->hasMany(RecipeItem::class, 'recipe_id');
     }
 
+    public function recipeItems(): HasMany
+    {
+        return $this->items();
+    }
+
     public function productions(): HasMany
     {
         return $this->hasMany(RecipeProduction::class, 'recipe_id')->latest('production_date');

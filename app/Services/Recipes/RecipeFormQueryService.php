@@ -4,6 +4,7 @@ namespace App\Services\Recipes;
 
 use App\Models\Category;
 use App\Models\InventoryItem;
+use App\Models\Recipe;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 
@@ -15,7 +16,7 @@ class RecipeFormQueryService
             return collect();
         }
 
-        return Category::orderBy('name')->get();
+        return Category::with('parent.parent.parent')->orderBy('name')->get();
     }
 
     public function inventoryItems(): Collection
@@ -26,5 +27,16 @@ class RecipeFormQueryService
 
         return InventoryItem::orderBy('name')->get();
     }
-}
 
+    public function subRecipes(?int $excludeRecipeId = null): Collection
+    {
+        if (! Schema::hasTable('recipes')) {
+            return collect();
+        }
+
+        return Recipe::query()
+            ->when($excludeRecipeId, fn ($query) => $query->whereKeyNot($excludeRecipeId))
+            ->orderBy('name')
+            ->get();
+    }
+}

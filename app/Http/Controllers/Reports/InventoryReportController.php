@@ -22,7 +22,7 @@ class InventoryReportController extends Controller
             'low_stock_only' => (bool) $request->get('low_stock_only'),
         ];
 
-        return $queryService->query($filters)->with('category')->limit($limit)->get();
+        return $queryService->query($filters)->with('category.parent.parent.parent')->limit($limit)->get();
     }
 
     public function print(Request $request, InventoryItemIndexQueryService $queryService)
@@ -40,7 +40,7 @@ class InventoryReportController extends Controller
         $rows = $items->map(fn ($i) => [
             $i->item_code ?? '',
             $i->name ?? '',
-            $i->category?->name ?? '',
+            $i->categoryLabel() ?? '',
             number_format((float) ($i->current_stock ?? 0), 3, '.', ''),
             number_format((float) ($i->minimum_stock ?? 0), 3, '.', ''),
             number_format((float) ($i->cost_per_unit ?? 0), 3, '.', ''),

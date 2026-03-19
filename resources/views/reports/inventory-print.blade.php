@@ -41,7 +41,7 @@
                 <tr>
                     <td>{{ $i->item_code ?? '—' }}</td>
                     <td>{{ $i->name }}</td>
-                    <td>{{ $i->category?->name ?? '—' }}</td>
+                    <td>{{ $i->categoryLabel() ?? '—' }}</td>
                     <td class="right">{{ number_format((float) ($i->current_stock ?? 0), 3) }}</td>
                     <td class="right">{{ number_format((float) ($i->minimum_stock ?? 0), 3) }}</td>
                     <td class="right">{{ number_format((float) ($i->cost_per_unit ?? 0), 3) }}</td>

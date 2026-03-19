@@ -7,6 +7,11 @@ use Illuminate\Support\Collection;
 
 class RecipeCostingService
 {
+    public function __construct(
+        private readonly RecipeCompositionService $composition,
+    ) {
+    }
+
     /**
     * Compute costing details for a recipe.
     *
@@ -14,34 +19,36 @@ class RecipeCostingService
     */
     public function compute(Recipe $recipe): array
     {
-        $recipe->loadMissing(['items.inventoryItem']);
-
-        $items = $recipe->items->map(function ($item) {
-            $inv = $item->inventoryItem;
+        $items = $this->composition->explodeIngredients($recipe)->map(function (array $row) {
+            /** @var \App\Models\InventoryItem $inv */
+            $inv = $row['inventory_item'];
             $unitsPerPackage = (float) ($inv->units_per_package ?? 0);
             $packageCost = (float) ($inv->cost_per_unit ?? 0);
+            $quantity = (float) ($row['scaled_quantity'] ?? 0);
+            $quantityType = (string) ($row['quantity_type'] ?? 'unit');
 
             $perUnitCost = $unitsPerPackage > 0
                 ? $packageCost / $unitsPerPackage
-                : $packageCost; // fallback
+                : $packageCost;
 
-            if ($item->quantity_type === 'package') {
-                $lineCost = (float) $item->quantity * $packageCost;
-            } else {
-                $lineCost = (float) $item->quantity * $perUnitCost;
-            }
+            $lineCost = $quantityType === 'package'
+                ? $quantity * $packageCost
+                : $quantity * $perUnitCost;
 
             return [
-                'inventory_item_id' => $item->inventory_item_id,
+                'inventory_item_id' => $inv->id,
                 'item_name' => $inv->name ?? null,
+                'category_name' => $inv->categoryLabel(),
                 'units_per_package' => $unitsPerPackage,
-                'quantity' => (float) $item->quantity,
-                'unit' => $item->unit,
-                'quantity_type' => $item->quantity_type,
-                'cost_type' => $item->cost_type,
+                'quantity' => $quantity,
+                'unit' => (string) ($row['unit'] ?? ''),
+                'quantity_type' => $quantityType,
+                'cost_type' => (string) ($row['cost_type'] ?? 'ingredient'),
                 'package_cost' => $packageCost,
                 'per_unit_cost' => $perUnitCost,
                 'line_cost' => round($lineCost, 2),
+                'source_recipe_name' => (string) ($row['source_recipe_name'] ?? ''),
+                'path' => $row['path'] ?? [],
             ];
         });
 
@@ -96,9 +103,8 @@ class RecipeCostingService
 
             return [
                 'line_cost' => round($total, 2),
-                'base_cost_pct' => $group->avg('base_cost_pct'),
+                'base_cost_pct' => round((float) $group->sum('base_cost_pct'), 4),
             ];
         })->toArray();
     }
 }
-

@@ -7,18 +7,21 @@ use App\Models\InventoryStock;
 use App\Models\InventoryTransaction;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Models\PurchaseOrderReceiving;
+use App\Models\PurchaseOrderReceivingLine;
 use App\Models\ApInvoice;
 use App\Models\ApInvoiceItem;
 use App\Services\Ledger\SubledgerService;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class PurchaseOrderReceivingService
 {
-    public function receive(PurchaseOrder $po, array $lineReceipts, int $userId, ?string $notes = null, array $costOverrides = []): PurchaseOrder
+    public function receive(PurchaseOrder $po, array $lineReceipts, int $userId, ?string $notes = null, array $costOverrides = [], mixed $receivedAt = null): PurchaseOrder
     {
-        return DB::transaction(function () use ($po, $lineReceipts, $userId, $notes, $costOverrides) {
+        return DB::transaction(function () use ($po, $lineReceipts, $userId, $notes, $costOverrides, $receivedAt) {
             $po = PurchaseOrder::where('id', $po->id)->lockForUpdate()->firstOrFail();
 
             if ($po->status !== PurchaseOrder::STATUS_APPROVED) {
@@ -27,7 +30,8 @@ class PurchaseOrderReceivingService
                 ]);
             }
 
-            $anyReceived = false;
+            $receivedAt = $receivedAt ? Carbon::parse($receivedAt) : now();
+            $pendingLines = [];
 
             foreach ($lineReceipts as $lineId => $receiveQty) {
                 $line = PurchaseOrderItem::where('id', $lineId)->lockForUpdate()->first();
@@ -53,26 +57,55 @@ class PurchaseOrderReceivingService
                     ]);
                 }
 
-                $anyReceived = true;
-                $line->received_quantity = (float) ($line->received_quantity ?? 0) + $receiveQty;
-                $line->save();
-
-                if ($line->item_id) {
-                    $overrideCost = $costOverrides[$line->id] ?? null;
-                    $this->updateInventory($line, $receiveQty, $userId, $po, $notes, $overrideCost);
-                }
+                $pendingLines[] = [
+                    'line' => $line,
+                    'receive_qty' => $receiveQty,
+                    'override_cost' => $costOverrides[$line->id] ?? null,
+                ];
             }
 
-            if (! $anyReceived) {
+            if ($pendingLines === []) {
                 throw ValidationException::withMessages([
                     'receive' => __('Nothing to receive.'),
                 ]);
             }
 
+            $receiving = PurchaseOrderReceiving::create([
+                'purchase_order_id' => $po->id,
+                'received_at' => $receivedAt,
+                'notes' => $notes,
+                'created_by' => $userId,
+            ]);
+
+            foreach ($pendingLines as $pending) {
+                /** @var PurchaseOrderItem $line */
+                $line = $pending['line'];
+                $receiveQty = (float) $pending['receive_qty'];
+                $overrideCost = $pending['override_cost'];
+
+                $line->received_quantity = (float) ($line->received_quantity ?? 0) + $receiveQty;
+                $line->save();
+
+                $unitCost = $overrideCost !== null ? (float) $overrideCost : (float) ($line->unit_price ?? 0);
+
+                PurchaseOrderReceivingLine::create([
+                    'purchase_order_receiving_id' => $receiving->id,
+                    'purchase_order_item_id' => $line->id,
+                    'inventory_item_id' => $line->item_id,
+                    'received_quantity' => $receiveQty,
+                    'unit_cost' => $unitCost,
+                    'total_cost' => round($unitCost * $receiveQty, 4),
+                ]);
+
+                if ($line->item_id) {
+                    $this->updateInventory($line, $receiveQty, $userId, $po, $notes, $unitCost, $receivedAt);
+                }
+            }
+
             $po->refresh();
             if ($po->isFullyReceived()) {
                 $po->status = PurchaseOrder::STATUS_RECEIVED;
-                $po->received_date = now();
+                $po->received_date = $receivedAt->toDateString();
             }
             $po->save();
 
@@ -84,7 +117,15 @@ class PurchaseOrderReceivingService
         });
     }
 
-    private function updateInventory(PurchaseOrderItem $line, float $delta, int $userId, PurchaseOrder $po, ?string $notes = null, $overrideCost = null): void
+    private function updateInventory(
+        PurchaseOrderItem $line,
+        float $delta,
+        int $userId,
+        PurchaseOrder $po,
+        ?string $notes = null,
+        ?float $unitPrice = null,
+        mixed $receivedAt = null
+    ): void
     {
         $item = InventoryItem::where('id', $line->item_id)->lockForUpdate()->first();
         if (! $item) {
@@ -113,7 +154,7 @@ class PurchaseOrderReceivingService
         $oldStock = (float) InventoryStock::where('inventory_item_id', $item->id)->lockForUpdate()->sum('current_stock');
         $branchStock = (float) ($stock->current_stock ?? 0);
         $oldCost = (float) ($item->cost_per_unit ?? 0);
-        $unitPrice = $overrideCost !== null ? (float) $overrideCost : (float) ($line->unit_price ?? 0);
+        $unitPrice = $unitPrice ?? (float) ($line->unit_price ?? 0);
 
         $newCost = $oldStock > 0
             ? (($oldStock * $oldCost) + ($delta * $unitPrice)) / ($oldStock + $delta)
@@ -137,7 +178,7 @@ class PurchaseOrderReceivingService
             'reference_id' => $po->id,
             'user_id' => $userId,
             'notes' => trim('PO '.$po->po_number.' '.($notes ?? '')),
-            'transaction_date' => now(),
+            'transaction_date' => $receivedAt ?: now(),
         ]);
 
         app(SubledgerService::class)->recordInventoryTransaction($transaction, $userId);

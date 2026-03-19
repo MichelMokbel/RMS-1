@@ -85,7 +85,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <select wire:model.live="category_id" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                         <option value="">{{ __('All') }}</option>
                         @foreach ($categories as $c)
-                            <option value="{{ $c->id }}">{{ $c->name }}</option>
+                            <option value="{{ $c->id }}">{{ $c->fullName() }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -125,7 +125,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
                         <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $item->item_code ?? '—' }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $item->name }}</td>
-                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $item->category?->name ?? '—' }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $item->categoryLabel() ?? '—' }}</td>
                         <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ number_format((float) ($item->current_stock ?? 0), 3) }}</td>
                         <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ number_format((float) ($item->minimum_stock ?? 0), 3) }}</td>
                         <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ number_format((float) ($item->cost_per_unit ?? 0), 3) }}</td>

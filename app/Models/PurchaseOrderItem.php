@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PurchaseOrderItem extends Model
 {
@@ -40,6 +41,11 @@ class PurchaseOrderItem extends Model
     public function item(): BelongsTo
     {
         return $this->belongsTo(InventoryItem::class, 'item_id');
+    }
+
+    public function receivingLines(): HasMany
+    {
+        return $this->hasMany(PurchaseOrderReceivingLine::class, 'purchase_order_item_id');
     }
 
     public function remainingToReceive(): float

@@ -15,7 +15,7 @@ class RecipeShowQueryService
 
     public function showData(Recipe $recipe): array
     {
-        $recipe->loadMissing(['category', 'items.inventoryItem', 'productions.creator']);
+        $recipe->loadMissing(['category.parent.parent.parent', 'items.inventoryItem.category.parent.parent.parent', 'items.subRecipe', 'productions.creator']);
 
         return [
             'recipe' => $recipe,
@@ -25,4 +25,3 @@ class RecipeShowQueryService
         ];
     }
 }
-

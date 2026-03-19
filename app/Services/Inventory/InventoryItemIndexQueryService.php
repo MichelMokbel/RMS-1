@@ -2,6 +2,7 @@
 
 namespace App\Services\Inventory;
 
+use App\Models\Category;
 use App\Models\InventoryItem;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -28,8 +29,9 @@ class InventoryItemIndexQueryService
         $lowStockOnly = (bool) ($filters['low_stock_only'] ?? false);
 
         $query = InventoryItem::query()
+            ->with(['category.parent.parent.parent', 'supplier'])
             ->when($status !== 'all', fn ($q) => $q->where('status', $status))
-            ->when($categoryId, fn ($q) => $q->where('category_id', $categoryId))
+            ->when($categoryId, fn ($q) => $q->whereIn('category_id', $this->categoryIdsForFilter($categoryId)))
             ->when($supplierId, fn ($q) => $q->where('supplier_id', $supplierId))
             ->when($search !== '', function ($q) use ($search) {
                 $q->where(function ($inner) use ($search) {
@@ -66,5 +68,14 @@ class InventoryItemIndexQueryService
         }
 
         return $query;
+    }
+
+    private function categoryIdsForFilter(int $categoryId): array
+    {
+        $category = Category::query()->find($categoryId);
+
+        return $category
+            ? $category->descendantIdsAndSelf()->all()
+            : [$categoryId];
     }
 }
