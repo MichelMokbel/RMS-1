@@ -2,6 +2,7 @@
 
 use App\Models\Payment;
 use App\Support\Money\MinorUnits;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -17,6 +18,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         return MinorUnits::format((int) ($cents ?? 0));
     }
+
+    public function canDeletePayment(): bool
+    {
+        $user = Auth::user();
+
+        return (bool) ($user && method_exists($user, 'hasRole') && $user->hasRole('admin'));
+    }
 }; ?>
 
 <div class="w-full max-w-5xl mx-auto px-4 space-y-6">
@@ -26,6 +34,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ $payment->received_at?->format('Y-m-d H:i') }}</p>
         </div>
         <div class="flex items-center gap-2">
+            @if($this->canDeletePayment())
+                <form method="POST" action="{{ route('receivables.payments.destroy', $payment) }}">
+                    @csrf
+                    @method('DELETE')
+                    <flux:button type="submit" variant="ghost" class="text-rose-600" onclick="return confirm('{{ __('Delete this payment? This action cannot be undone.') }}')">
+                        {{ __('Delete Payment') }}
+                    </flux:button>
+                </form>
+            @endif
             <flux:button :href="route('receivables.payments.print', $payment)" target="_blank" variant="ghost">{{ __('Print Receipt') }}</flux:button>
             <flux:button :href="route('receivables.payments.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
         </div>

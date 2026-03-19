@@ -1165,6 +1165,9 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|receivabl
         $payment->load(['customer', 'allocations.allocatable']);
         return view('receivables.payment-receipt', ['payment' => $payment]);
     })->name('receivables.payments.print');
+    Route::delete('receivables/payments/{payment}', \App\Http\Controllers\Receivables\PaymentDestroyController::class)
+        ->middleware(['role:admin', 'ensure.admin'])
+        ->name('receivables.payments.destroy');
 
     Volt::route('receivables/orders-to-invoice', 'receivables.orders-to-invoice')->name('receivables.orders-to-invoice');
 

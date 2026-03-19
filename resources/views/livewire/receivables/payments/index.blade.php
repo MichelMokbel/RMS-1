@@ -61,6 +61,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
+    @if (session('status'))
+        <div class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">
+            {{ session('status') }}
+        </div>
+    @endif
+
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
         <div class="app-filter-grid">
             <div class="min-w-[220px]">
