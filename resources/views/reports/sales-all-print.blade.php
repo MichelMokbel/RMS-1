@@ -24,7 +24,7 @@
         <a class="btn" href="{{ route('reports.sales-all') }}">Back to Report</a>
     </div>
     @include('reports.print-header', ['reportTitle' => 'Sales Report (All Branches)'])
-    <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} | Filters: {{ json_encode($filters) }}</div>
+    <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} @include('reports.print-filters', ['filters' => $filters])</div>
     <table>
         <thead>
             <tr>

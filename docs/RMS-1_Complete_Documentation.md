@@ -1,5 +1,7 @@
 # RMS-1 Complete System Documentation
 
+Updated for current codebase state on 2026-03-19.
+
 ## 1. SYSTEM OVERVIEW
 
 ### High-level description of the system
@@ -24,14 +26,15 @@ RMS-1 is a production-grade restaurant and finance management platform built as 
 - Order lifecycle and kitchen workflow management.
 - Daily Dish and subscription-based meal operations.
 - Company Food standalone project ordering module.
-- Inventory management with adjustments, transfers, and transaction history.
-- Purchasing and receiving workflows with AP integration.
+- Inventory management with adjustments, manual stock transactions, transfers, and transaction history.
+- Purchasing and receiving workflows with receiving-batch history and AP integration.
 - AP invoice/payment lifecycle and aging summaries.
 - Spend module with staged approvals and settlement.
 - Petty cash wallet, issues, and reconciliation workflows.
-- AR invoice/payment lifecycle for receivables.
-- Offline-first POS bootstrap/sequence/sync APIs.
-- Reporting with screen/print/CSV/PDF outputs.
+- AR invoice/payment lifecycle for receivables, including admin-only payment deletion with reversals.
+- Recipe composition with nested sub-recipes and cycle protection.
+- Offline-first POS bootstrap/sequence/sync APIs and terminal-to-terminal print job relay.
+- Reporting with screen/print/CSV/PDF outputs, including receiving, supplier purchase, and inventory transaction reports.
 - Ledger and finance lock controls.
 
 ### Target users
@@ -67,7 +70,7 @@ Modular monolith (single Laravel deployment with domain-segmented services/modul
 - Web users access Blade/Livewire pages.
 - Internal APIs serve authenticated module operations.
 - Public APIs serve daily dish/company food external channels.
-- POS clients use dedicated `/api/pos/*` endpoints with offline sync.
+- POS clients use dedicated `/api/pos/*` endpoints with offline sync and print-job relay.
 - Shared services persist to MySQL and write accounting/audit records.
 
 ```mermaid
@@ -82,6 +85,8 @@ G --> H[(MySQL/MariaDB)]
 G --> I[Queue]
 G --> J[Storage]
 G --> K[Mail/Recaptcha]
+D --> L[POS Print Queue and Stream]
+L --> H
 ```
 
 ### Core architectural principles
@@ -98,11 +103,13 @@ G --> K[Mail/Recaptcha]
 - MySQL/MariaDB data store.
 - Database queue/cache defaults.
 - Filesystem abstraction (local/public/S3).
+- Server-sent event stream support for POS print dispatch.
 
 ### Service interactions
 - Controllers delegate to services for workflows.
-- Services coordinate cross-domain updates (e.g., PO receive -> inventory + AP draft).
+- Services coordinate cross-domain updates (e.g., PO receive -> inventory + receiving history + AP draft).
 - POS sync service dispatches type-specific handlers and returns ACK + deltas.
+- POS print service manages enqueue, claim, retry, ACK, and terminal heartbeat status.
 
 ### Data flow overview
 1. Request arrives via web/internal API/public API/POS API.
@@ -122,6 +129,7 @@ G --> K[Mail/Recaptcha]
 - Horizontal app scaling with stateless web nodes.
 - Dedicated queue workers for background processing.
 - POS/event-heavy paths use row locking for consistency.
+- POS print streaming and pull endpoints rely on lightweight terminal heartbeats and claim windows instead of heavy broker infrastructure.
 - Read-heavy reports rely on indexing and can be moved to replicas.
 
 ### Security architecture
@@ -130,6 +138,7 @@ G --> K[Mail/Recaptcha]
 - Spatie roles/permissions and middleware enforcement.
 - Branch access middleware for data scoping.
 - POS token middleware validates device/terminal/branch alignment.
+- POS print jobs use terminal-bound claims plus per-job claim tokens before ACK is accepted.
 
 ---
 
@@ -172,8 +181,8 @@ G --> K[Mail/Recaptcha]
 
 ### Catalog & Recipes
 - **Purpose:** Define sellable/menu entities and composition.
-- **Responsibilities:** Category/menu item CRUD, recipe management, branch availability.
-- **Components:** Category/MenuItem/Recipe screens and menu services.
+- **Responsibilities:** Category/menu item CRUD, recipe management, nested sub-recipes, cost rollup, branch availability.
+- **Components:** Category/MenuItem/Recipe screens, `RecipeCompositionService`, menu services.
 - **Data:** `categories`, `menu_items`, `recipes`, `recipe_items`, `menu_item_branches`.
 - **APIs:** `/api/categories`, `/api/menu-items`.
 
@@ -207,16 +216,16 @@ G --> K[Mail/Recaptcha]
 
 ### Inventory
 - **Purpose:** Stock visibility and movement control.
-- **Responsibilities:** Item CRUD, stock adjustments, transfers, branch availability.
-- **Components:** Inventory services (`InventoryStockService`, `InventoryTransferService`).
+- **Responsibilities:** Item CRUD, stock adjustments, manual transaction posting, transfers, branch availability.
+- **Components:** Inventory services (`InventoryStockService`, `InventoryTransferService`), manual transaction controller.
 - **Data:** `inventory_items`, `inventory_stocks`, `inventory_transactions`, transfer tables.
-- **APIs:** `/api/inventory`, `/api/inventory/transfers`.
+- **APIs:** `/api/inventory`, `/api/inventory/transactions`, `/api/inventory/transfers`.
 
 ### Purchasing
 - **Purpose:** Procure inventory with controlled PO flow.
-- **Responsibilities:** PO create/update/submit/approve/receive/cancel.
-- **Components:** PO services and receive workflow services.
-- **Data:** `purchase_orders`, `purchase_order_items`.
+- **Responsibilities:** PO create/update/submit/approve/receive/cancel, receipt costing, and receipt history.
+- **Components:** PO services, `PurchaseOrderReceivingService`, receiving report controllers.
+- **Data:** `purchase_orders`, `purchase_order_items`, `purchase_order_receivings`, `purchase_order_receiving_lines`.
 - **APIs:** `/api/purchase-orders`.
 
 ### AP (Payables)
@@ -235,21 +244,21 @@ G --> K[Mail/Recaptcha]
 
 ### AR & Receivables
 - **Purpose:** Manage customer invoicing and collection.
-- **Responsibilities:** Draft/issue invoices, receive payments, allocate advances.
-- **Components:** AR invoice/payment/allocation services.
+- **Responsibilities:** Draft/issue invoices, receive payments, allocate advances, and admin-only payment deletion with ledger reversals.
+- **Components:** AR invoice/payment/allocation services, `ArPaymentDeleteService`.
 - **Data:** `ar_invoices`, `ar_invoice_items`, `payments`, `payment_allocations`.
 - **APIs:** Web receivables + POS-integrated AR event handling.
 
-### POS Sync & Terminal Management
-- **Purpose:** Enable secure offline-first POS.
-- **Responsibilities:** setup branches, terminal registration, login, bootstrap, sequence reservation, sync.
-- **Components:** POS auth/bootstrap/sequence/sync services.
-- **Data:** `pos_terminals`, `pos_shifts`, `pos_document_sequences`, `pos_sync_events`, restaurant table/session tables.
+### POS Sync, Terminal Management, and Printing
+- **Purpose:** Enable secure offline-first POS and branch-local print relay.
+- **Responsibilities:** setup branches, terminal registration, login, bootstrap, sequence reservation, sync, print enqueue, print stream/pull, and print ACK/retry.
+- **Components:** POS auth/bootstrap/sequence/sync services, `PosPrintJobService`, print controllers.
+- **Data:** `pos_terminals`, `pos_shifts`, `pos_document_sequences`, `pos_sync_events`, `pos_print_jobs`, `pos_print_stream_events`, restaurant table/session tables.
 - **APIs:** `/api/pos/*`.
 
 ### Reporting
 - **Purpose:** Provide operational/financial insights.
-- **Responsibilities:** Unified report catalog, filter-driven datasets, exports.
+- **Responsibilities:** Unified report catalog, filter-driven datasets, exports, and print/PDF-ready filter summaries.
 - **Components:** report controllers + `config/reports.php`.
 - **Data:** Cross-domain reads.
 - **APIs:** report endpoints (web export routes).
@@ -274,7 +283,7 @@ Major domains in schema:
 - Inventory and purchasing
 - AP/AR and payments
 - Spend/petty cash
-- POS synchronization and table management
+- POS synchronization, print relay, and table management
 - Ledger and reporting support
 
 ### Entity Relationship explanation
@@ -284,12 +293,17 @@ USERS ||--o{ USER_BRANCH_ACCESS : has
 BRANCHES ||--o{ USER_BRANCH_ACCESS : grants
 ORDERS ||--o{ ORDER_ITEMS : contains
 MENU_ITEMS ||--o{ ORDER_ITEMS : referenced_by
+RECIPES ||--o{ RECIPE_ITEMS : contains
+RECIPES ||--o{ RECIPE_ITEMS : nested_in
 PURCHASE_ORDERS ||--o{ PURCHASE_ORDER_ITEMS : contains
+PURCHASE_ORDER_RECEIVINGS ||--o{ PURCHASE_ORDER_RECEIVING_LINES : contains
 AP_INVOICES ||--o{ AP_INVOICE_ITEMS : contains
 AP_PAYMENTS ||--o{ AP_PAYMENT_ALLOCATIONS : allocates
 AR_INVOICES ||--o{ AR_INVOICE_ITEMS : contains
 PAYMENTS ||--o{ PAYMENT_ALLOCATIONS : allocates
 POS_TERMINALS ||--o{ POS_SYNC_EVENTS : emits
+POS_TERMINALS ||--o{ POS_PRINT_JOBS : targets
+POS_PRINT_JOBS ||--o{ POS_PRINT_STREAM_EVENTS : publishes
 RESTAURANT_TABLES ||--o{ RESTAURANT_TABLE_SESSIONS : has
 ```
 
@@ -298,25 +312,31 @@ Representative critical tables:
 - `users`: identity, `status`, `pos_enabled`
 - `user_branch_access`: user-to-branch permissions
 - `orders` / `order_items`: operational ordering and status data
+- `recipes` / `recipe_items`: recipe definitions, status, nested sub-recipes
 - `inventory_items` / `inventory_stocks` / `inventory_transactions`
-- `purchase_orders` / `purchase_order_items`
+- `purchase_orders` / `purchase_order_items` / `purchase_order_receivings` / `purchase_order_receiving_lines`
 - `ap_invoices` / `ap_invoice_items` / `ap_payments` / `ap_payment_allocations`
 - `ar_invoices` / `ar_invoice_items` / `payments` / `payment_allocations`
 - `expense_profiles` / `expense_events`
-- `pos_terminals` / `pos_shifts` / `pos_document_sequences` / `pos_sync_events`
+- `pos_terminals` / `pos_shifts` / `pos_document_sequences` / `pos_sync_events` / `pos_print_jobs` / `pos_print_stream_events`
 - `ledger_accounts` / `subledger_entries` / `subledger_lines` / `gl_batches` / `gl_batch_lines`
 
 ### Key relationships
 - Users to roles/permissions via Spatie polymorphic tables.
 - Non-admin users to branches via `user_branch_access`.
-- PO receive updates inventory and can auto-create AP invoice draft.
+- Recipe items may point either to an `inventory_item_id` or to a nested `sub_recipe_id`.
+- PO receipt batches create `purchase_order_receivings` headers and `purchase_order_receiving_lines`, update inventory, and can auto-create AP invoice draft.
 - POS invoices map into AR invoices and payment allocations.
+- POS print jobs are unique per `source_terminal_id + client_job_id` and emit relay events for target terminals.
 
 ### Indexing strategy
 - Unique and composite indexes for lookup and integrity.
 - Search-focused indexes on names/codes/contact fields.
 - Event idempotency uniques (`pos_sync_events.client_uuid`).
 - POS sequence uniqueness per terminal and business date.
+- Receipt history indexes on purchase order plus receive timestamp.
+- POS print indexes on target terminal, status, claim expiry, and branch create time.
+- Recipe sub-recipe lookup index on `recipe_items.sub_recipe_id`.
 
 ### Data lifecycle
 - Active/inactive toggles for many records.
@@ -329,7 +349,9 @@ Representative critical tables:
 {
   "user": {"id": 7, "username": "manager1", "status": "active", "pos_enabled": true},
   "order": {"id": 245, "status": "Confirmed", "branch_id": 1, "source": "Backoffice"},
+  "purchase_order_receiving": {"id": 12, "purchase_order_id": 90, "received_at": "2026-03-18T10:30:00Z", "created_by": 7},
   "ap_invoice": {"id": 81, "invoice_number": "SUP-2026-110", "status": "posted", "total_amount": "560.00"},
+  "pos_print_job": {"id": 22, "client_job_id": "job-1002", "source_terminal_id": 3, "target_terminal_id": 5, "status": "queued"},
   "pos_sync_event": {"event_id": "evt-001", "client_uuid": "uuid", "status": "applied"}
 }
 ```
@@ -379,11 +401,41 @@ Example request (POST):
 - **PUT** `/api/inventory/{item}` (`admin|manager`)
 - **POST** `/api/inventory/{item}/adjustments` (`admin|manager`)
 - **POST** `/api/inventory/{item}/availability` (`admin|manager`)
+- **POST** `/api/inventory/transactions` (`auth` + `role:admin|manager`) - record manual inventory movement with explicit branch, type, date, notes, and optional unit cost
 - **POST** `/api/inventory/transfers` (`admin|manager`)
 
 Example adjustment request:
 ```json
 {"direction":"decrease","quantity":2.5,"branch_id":1,"notes":"Damaged stock"}
+```
+
+Example manual transaction request:
+```json
+{
+  "item_id": 10,
+  "branch_id": 1,
+  "transaction_type": "in",
+  "quantity": 6,
+  "unit_cost": 18.5,
+  "notes": "Manual stock correction after count",
+  "transaction_date": "2026-03-19 09:15:00"
+}
+```
+
+Example manual transaction response:
+```json
+{
+  "message": "Transaction recorded.",
+  "transaction": {
+    "id": 501,
+    "transaction_type": "in",
+    "reference_type": "manual"
+  },
+  "item": {
+    "id": 10,
+    "cost_per_unit": "18.5000"
+  }
+}
 ```
 
 ### 6.3 Menu Item APIs
@@ -477,6 +529,56 @@ Runtime:
 - **GET** `/api/pos/bootstrap`
 - **POST** `/api/pos/sequences/reserve`
 - **POST** `/api/pos/sync`
+- **GET** `/api/pos/print-terminals/{terminal_code}/status` (auth:sanctum) - view terminal online state, pending jobs, claimed jobs, and heartbeat timestamps; `branch_id` may be required when terminal codes are reused across branches
+- **POST** `/api/pos/print-jobs` (auth:sanctum + pos.token) - enqueue a print job to another terminal in the same branch
+- **GET** `/api/pos/print-jobs/stream` (auth:sanctum + pos.token) - server-sent event stream for real-time relay to print agents
+- **GET** `/api/pos/print-jobs/pull` (auth:sanctum + pos.token) - long-poll fallback that claims pending jobs
+- **POST** `/api/pos/print-jobs/{job_id}/ack` (auth:sanctum + pos.token) - acknowledge `printed` or `failed` with claim token and optional processing telemetry
+
+Example print job enqueue request:
+```json
+{
+  "client_job_id": "job-1002",
+  "target_terminal_code": "KITCHEN-01",
+  "target": "kitchen_printer",
+  "doc_type": "kitchen_ticket",
+  "payload_base64": "SGVsbG8=",
+  "created_at": "2026-03-19T09:00:00Z",
+  "metadata": {
+    "order_number": "ORD-20260319-0042"
+  }
+}
+```
+
+Example print job enqueue response:
+```json
+{
+  "job_id": 22,
+  "client_job_id": "job-1002",
+  "status": "queued",
+  "target_terminal_code": "KITCHEN-01",
+  "queued_at": "2026-03-19T09:00:01Z"
+}
+```
+
+Example print ACK request:
+```json
+{
+  "claim_token": "clm_123",
+  "status": "printed",
+  "processing_ms": 420
+}
+```
+
+Example failed ACK response with retry scheduling:
+```json
+{
+  "job_id": 22,
+  "final_status": "failed",
+  "attempt_count": 2,
+  "next_retry_at": "2026-03-19T09:02:00Z"
+}
+```
 
 POS sync supported event types:
 - `shift.open`
@@ -494,6 +596,11 @@ POS sync supported event types:
 - `supplier.payment.create`
 - `restaurant_area.upsert`
 - `restaurant_table.upsert`
+
+POS print relay rules:
+- Print jobs are idempotent per source terminal and `client_job_id`.
+- A claimed print job must be ACKed with the issued `claim_token`.
+- Failed ACKs are retried until `max_attempts` is reached, after which the job is marked `failed`.
 
 ---
 
@@ -546,7 +653,28 @@ POS sync supported event types:
 ### Inventory updates
 1. Item created with optional initial stock.
 2. Adjustments and transfers modify branch stocks.
-3. Inventory transactions provide historical traceability.
+3. Managers can post manual inventory transactions through `/api/inventory/transactions` with explicit branch, type, quantity, and transaction date.
+4. Inventory transactions provide historical traceability and feed inventory reporting.
+
+### Purchase order receiving
+1. Approved PO enters receiving workflow.
+2. Receiver submits quantities per PO line and optional cost overrides.
+3. System creates a `purchase_order_receivings` header and `purchase_order_receiving_lines` details.
+4. Inventory stock and weighted cost are updated for each received inventory item.
+5. If PO becomes fully received, status changes to `received` and a draft AP invoice may be created automatically.
+
+### POS printing
+1. POS terminal enqueues a print job to a target terminal in the same branch.
+2. Target terminal consumes jobs through SSE stream or pull fallback.
+3. Server claims the job and issues a claim token with expiry.
+4. Print agent prints the payload and sends ACK with `printed` or `failed`.
+5. Failed jobs are re-queued with backoff until max attempts are exhausted.
+
+### Receivables payment deletion
+1. Admin opens receivables payment listing.
+2. Admin deletes a payment through the protected web action.
+3. System reverses related subledger entries for payment and allocations.
+4. Allocations are removed and affected invoice balances/statuses are recalculated.
 
 ### File uploads
 1. User uploads AP/Spend attachment.
@@ -578,6 +706,7 @@ POS sync supported event types:
 - Receivables and payments
 - Company Food administration
 - Reports and exports
+- Dedicated screens for purchase order receiving, supplier purchases, and inventory transactions reports
 
 ### Components
 - Blade layout components and Flux UI elements.
@@ -590,6 +719,7 @@ POS sync supported event types:
 ### Navigation structure
 - Route-level middleware enforces access.
 - Sidebar visibility also uses role checks.
+- Admin-only receivables payment deletion is protected by route middleware and explicit role guard.
 
 ### UI data flow
 User action -> server validation -> service execution -> persistence -> reactive page update/export.
@@ -606,21 +736,25 @@ User action -> server validation -> service execution -> persistence -> reactive
 5. Shift controls
 6. Table/session management
 7. Sales/finalization
-8. Sync status
+8. Print agent status and target printer selection
+9. Sync status
 
 ### Offline support
 - Local outbox model expected in POS client.
 - Server supports idempotent event reprocessing and delta pulls.
+- Printing supports real-time stream plus pull fallback for unstable connections.
 
 ### Sync mechanisms
 - `POST /api/pos/sync` with event list and `last_pulled_at`.
 - Server returns ACKs plus delta datasets.
+- Print relay uses `GET /api/pos/print-jobs/stream` for SSE and `GET /api/pos/print-jobs/pull` as fallback.
 
 ### Upload workflows
 - POS channel is transaction-event based; attachments are handled in backoffice spend flow.
 
 ### Notifications
 - No dedicated push-notification subsystem in repository; POS client is expected to display sync status locally.
+- Print agent status can be polled through `/api/pos/print-terminals/{terminal_code}/status`.
 
 ---
 
@@ -637,6 +771,7 @@ User action -> server validation -> service execution -> persistence -> reactive
 ### Token handling
 - POS tokens include `pos:*` and `device:{device_id}` abilities.
 - Middleware cross-checks token, terminal, device, and branch access.
+- POS print ACKs additionally require a valid per-job `claim_token`.
 
 ### Data protection
 - Password hashing and validated inputs.
@@ -649,6 +784,12 @@ User action -> server validation -> service execution -> persistence -> reactive
 ### API protection
 - Public throttling on daily dish endpoints.
 - Validation-heavy POS sync and deterministic error/ack handling.
+- Print status endpoint requires authenticated branch access.
+- Print enqueue, pull, stream, and ACK endpoints require both Sanctum auth and `pos.token` middleware.
+
+### Destructive action controls
+- Receivables payment deletion is restricted to admins and runs inside a transactional reversal workflow.
+- Financial side effects are reversed before allocations and payment records are removed.
 
 ### Logging
 - Monolog via Laravel channels and environment-driven levels.
@@ -726,6 +867,7 @@ User action -> server validation -> service execution -> persistence -> reactive
 - API latency/error rates
 - Queue throughput and failures
 - POS sync ACK failure ratio
+- POS print queue depth, claim expiry count, retry count, and terminal heartbeat freshness
 - Posting and settlement counts
 - DB query performance
 
@@ -733,6 +875,7 @@ User action -> server validation -> service execution -> persistence -> reactive
 - High 5xx/4xx spikes
 - Queue failure threshold breaches
 - POS sync recurring server/validation failures
+- POS print jobs stuck in `claimed` or repeatedly returning `failed`
 
 ### Logging system
 - Laravel logging channels (`stack`, `single`, `daily`, etc.)
@@ -796,6 +939,7 @@ User action -> server validation -> service execution -> persistence -> reactive
 
 ### Using reports
 - Select report, set filters, then view or export.
+- New report screens cover purchase order receiving history, supplier purchases, and inventory transactions.
 
 ---
 
@@ -812,6 +956,8 @@ User action -> server validation -> service execution -> persistence -> reactive
 ### Manage modules
 - Configure finance settings, payment terms, POS terminals.
 - Maintain master data (categories, suppliers, customers).
+- Review print terminal online status and pending print jobs from POS status endpoints or operational tooling.
+- Use receiving and inventory transaction reports to audit stock movement changes.
 
 ### Monitor system health
 - Review logs, queue failures, sync issues.
@@ -880,8 +1026,10 @@ composer dev
 | Upload rejected | invalid type/size or storage issue | validate file format/size and disk config |
 | DB errors | schema mismatch or connection errors | verify env, run migrations, inspect logs |
 | POS sync errors | payload shape mismatch, terminal mismatch, validation failure | inspect ACK `error_code` and fix client payload/state |
+| POS print jobs do not arrive | target terminal offline, branch mismatch, claim expiry, or print stream inactive | check `/api/pos/print-terminals/{terminal_code}/status`, confirm target terminal code, inspect retry/failed jobs and print agent heartbeat |
 | Public order failure | recaptcha or menu/date validation fails | verify recaptcha config and published menus |
 | Spend posting blocked | workflow stage not satisfied | move through submit/approve/post flow with proper role |
+| Manual inventory transaction rejected | inactive branch, invalid transaction type, or missing transaction date | validate `branch_id`, use one of `in/out/adjust/adjustment`, and send a valid `transaction_date` |
 
 ---
 
@@ -892,10 +1040,14 @@ composer dev
 - **Branch access:** User restriction to permitted branches.
 - **Daily Dish:** Date-based meal menu system.
 - **Idempotency:** Safe retry behavior without duplicate effects.
+- **Claim token:** Short-lived token proving a terminal legitimately claimed a print job before ACK.
+- **Purchase order receiving:** Header/detail receipt records created when approved PO quantities are received.
 - **POS token:** Device-bound Sanctum token.
+- **Print job:** Terminal-to-terminal relay record used for receipt/kitchen printing.
 - **Sync ACK:** Result entry for each POS event.
 - **Spend profile:** Approval metadata for expense invoices.
 - **Subledger:** Detailed accounting event ledger.
+- **Sub-recipe:** A recipe item whose source is another recipe instead of a raw inventory item.
 - **GL batch:** Aggregated posting batch to general ledger.
 - **Void:** Controlled reversal of posted financial records.
 - **Edit token:** Public order secret for retrieving/updating Company Food submissions.

@@ -23,7 +23,7 @@
     <a class="btn" href="{{ route('reports.purchase-order-receiving') }}">Back to Report</a>
 </div>
 @include('reports.print-header', ['reportTitle' => 'Purchase Order Receiving Report'])
-<div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} | Filters: {{ json_encode($filters) }}</div>
+<div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} @include('reports.print-filters', ['filters' => $filters])</div>
 <table>
     <thead>
     <tr>

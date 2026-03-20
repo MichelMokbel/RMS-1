@@ -1,4 +1,5 @@
 import ApexCharts from 'apexcharts';
+import './help/bot';
 
 const dashboardChartRegistry = new Map();
 let dashboardObserverInitialized = false;

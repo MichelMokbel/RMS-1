@@ -26,7 +26,7 @@
         <a class="btn" href="{{ route('reports.payables-summary') }}">Back to Report</a>
     </div>
     @include('reports.print-header', ['reportTitle' => 'Payables Summary'])
-    <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} | Filters: {{ json_encode($filters) }}</div>
+    <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} @include('reports.print-filters', ['filters' => $filters])</div>
     @php $statusRows = collect($summary['by_status'] ?? []); @endphp
     <div class="cards">
         <div class="card">Total: {{ $formatMoney($summary['total']) }}</div>

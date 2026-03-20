@@ -109,6 +109,27 @@ select:focus[data-flux-control] {
         overflow-y: auto;
         overflow-x: hidden;
     }
+
+    .help-markdown {
+        @apply space-y-3 text-sm leading-6 text-neutral-700 dark:text-neutral-200;
+    }
+
+    .help-markdown p {
+        @apply m-0;
+    }
+
+    .help-markdown ul,
+    .help-markdown ol {
+        @apply ml-5 space-y-2;
+    }
+
+    .help-markdown strong {
+        @apply font-semibold text-neutral-900 dark:text-neutral-100;
+    }
+
+    .help-bot-shadow {
+        box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
+    }
 }
 
 @layer utilities {

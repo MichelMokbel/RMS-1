@@ -37,7 +37,7 @@
     </div>
 
     @include('reports.print-header', ['reportTitle' => 'All Customers Statement'])
-    <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} | Filters: {{ json_encode($filters) }}</div>
+    <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} @include('reports.print-filters', ['filters' => $filters])</div>
 
     @forelse ($sections as $section)
         <div class="section {{ $loop->index > 0 ? 'page-break' : '' }}">

@@ -24,7 +24,7 @@
         <a class="btn" href="{{ route('reports.costing') }}">Back to Report</a>
     </div>
     @include('reports.print-header', ['reportTitle' => 'Costing Report'])
-    <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} | Filters: {{ json_encode($filters) }}</div>
+    <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} @include('reports.print-filters', ['filters' => $filters])</div>
     @php $validCostings = collect($costingByRecipe)->filter(fn ($c) => is_array($c)); @endphp
     <table>
         <thead>

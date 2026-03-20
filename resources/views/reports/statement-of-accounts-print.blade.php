@@ -22,7 +22,7 @@
         <a class="btn" href="{{ route('reports.statement-of-accounts') }}">Back to Report</a>
     </div>
     @include('reports.print-header', ['reportTitle' => 'Statement of Accounts'])
-    <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} | Filters: {{ json_encode($filters) }}</div>
+    <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} @include('reports.print-filters', ['filters' => $filters])</div>
     <div class="cards">
         <div class="card">Opening: {{ $formatCents($summary['opening']) }}</div>
         <div class="card">Invoices: {{ $formatCents($summary['invoices']) }}</div>

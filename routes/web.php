@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Http\Controllers\Help\HelpBotController;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -166,6 +167,17 @@ Route::middleware(['auth', 'active'])->group(function () {
             ),
         )
         ->name('two-factor.show');
+
+    Volt::route('help', 'help.index')->name('help.index');
+    Route::post('help/bot/respond', HelpBotController::class)->name('help.bot.respond');
+});
+
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|help.manage'])->group(function () {
+    Volt::route('help/manage', 'help.manage')->name('help.manage');
+});
+
+Route::middleware(['auth', 'active'])->group(function () {
+    Volt::route('help/{article:slug}', 'help.show')->name('help.show');
 });
 
 Route::middleware(['auth', 'active', 'role:admin', 'ensure.admin'])->group(function () {

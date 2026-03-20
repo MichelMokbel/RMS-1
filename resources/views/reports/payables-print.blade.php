@@ -26,7 +26,7 @@
         <a class="btn" href="{{ route('reports.payables') }}">Back to Report</a>
     </div>
     @include('reports.print-header', ['reportTitle' => 'Payables (AP) Report'])
-    <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} | Tab: {{ $tab }} | Filters: {{ json_encode($filters) }}</div>
+    <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} | Tab: {{ $tab }} @include('reports.print-filters', ['filters' => $filters])</div>
 
     @if ($tab === 'aging')
         <h2>Aging Summary</h2>

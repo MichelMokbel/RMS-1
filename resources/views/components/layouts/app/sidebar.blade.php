@@ -32,6 +32,7 @@
                     || request()->routeIs('expenses.*')
                     || request()->routeIs('petty-cash.*');
                 $inReports = request()->routeIs('reports.*') || request()->routeIs('ledger.*');
+                $inHelp = request()->routeIs('help.*');
             @endphp
 
             <a href="{{ $isAdmin ? route('dashboard') : route('home') }}" class="me-5 flex items-center space-x-2 rtl:space-x-reverse" wire:navigate>
@@ -173,6 +174,17 @@
                         {{ __('Install POS App') }}
                     </flux:navlist.item>
                 </flux:navlist.group>
+
+                <flux:navlist.group :heading="__('Support')">
+                    <flux:navlist.item icon="question-mark-circle" :href="route('help.index')" :current="$inHelp" wire:navigate>
+                        {{ __('Help Center') }}
+                    </flux:navlist.item>
+                    @if ($user?->hasAnyRole(['admin', 'manager']) || $user?->can('help.manage'))
+                        <flux:navlist.item icon="wrench-screwdriver" :href="route('help.manage')" :current="request()->routeIs('help.manage')" wire:navigate>
+                            {{ __('Manage Help') }}
+                        </flux:navlist.item>
+                    @endif
+                </flux:navlist.group>
             </flux:navlist>
 
             <flux:spacer />
@@ -285,6 +297,7 @@
         </flux:header>
 
         {{ $slot }}
+        <x-help.bot />
 
         @livewireScripts
         @fluxScripts
