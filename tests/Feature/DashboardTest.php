@@ -119,6 +119,20 @@ test('dashboard finance kpi labels are not duplicated and chart payload exists',
     expect(substr_count($content, 'Expenses (Range)'))->toBe(1);
 });
 
+test('non-admin users do not see admin-only receivables kpis or charts', function () {
+    Role::findOrCreate('manager', 'web');
+    $manager = User::factory()->create(['status' => 'active']);
+    $manager->assignRole('manager');
+
+    $response = $this->actingAs($manager)->get(route('dashboard'));
+    $response->assertOk();
+    $response->assertDontSee('Revenue (Paid Invoices)');
+    $response->assertDontSee('Receivables Outstanding');
+    $response->assertDontSee('data-dashboard-charts', false);
+    $response->assertDontSee('Receivables Split');
+    $response->assertDontSee('Invoice Status Mix (Amount)');
+});
+
 test('dashboard quick actions are scoped by user access', function () {
     Role::findOrCreate('staff', 'web');
     $staff = User::factory()->create(['status' => 'active']);

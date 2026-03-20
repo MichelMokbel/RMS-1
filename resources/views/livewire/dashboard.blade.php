@@ -70,6 +70,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $canViewPrograms = $this->canViewPrograms($user);
         $canViewCatalog = $this->canViewCatalog($user);
         $canViewReports = $this->canViewReports($user);
+        $isAdminDashboard = $user->isAdmin();
         $canViewOrderMetrics = $user->hasAnyRole(['admin', 'manager', 'cashier']) || $user->can('orders.access');
         $canViewReceivablesMetrics = $user->hasAnyRole(['admin', 'manager']) || $user->can('receivables.access');
         $applyBranchScope = function (Builder $query, string $column = 'branch_id') use ($user, $selectedBranchId, $allowedBranchIds): Builder {
@@ -374,7 +375,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         );
 
         if ($user->hasAnyRole(['admin', 'manager'])) {
-            if ($canViewReceivablesMetrics) {
+            if ($isAdminDashboard && $canViewReceivablesMetrics) {
                 $kpiCards[] = $revenueCard;
                 $kpiCards[] = $receivablesCard;
             }
@@ -388,15 +389,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             if ($canViewPrograms) {
                 $kpiCards[] = $subscriptionsCard;
             }
-            if ($canViewReceivablesMetrics) {
+            if ($isAdminDashboard && $canViewReceivablesMetrics) {
                 $kpiCards[] = $customersCard;
             }
             if ($canViewSupplyChain) {
                 $kpiCards[] = $pendingPOsCard;
             }
-        } elseif ($canViewFinance && $canViewReceivablesMetrics) {
+        } elseif ($canViewFinance && $isAdminDashboard && $canViewReceivablesMetrics) {
             $kpiCards = [$revenueCard, $receivablesCard, $payablesCard, $expensesCard];
-        } elseif ($canViewReceivablesMetrics) {
+        } elseif ($isAdminDashboard && $canViewReceivablesMetrics) {
             $kpiCards = [$revenueCard, $receivablesCard, $todayOrdersCard, $customersCard];
         } elseif ($canViewPrograms) {
             $kpiCards = array_values(array_filter([
@@ -424,7 +425,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->action(__('Add Customer Payment'), route('receivables.payments.create'), $canManageReceivables),
         ])->filter()->values()->all();
 
-        $showCharts = $user->isAdmin() || $canViewFinance || $canViewReports;
+        $showCharts = $isAdminDashboard;
         $chartPayload = null;
 
         if ($showCharts) {
