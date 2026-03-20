@@ -18,19 +18,7 @@ use Laravel\Fortify\Features;
 
 Route::get('/', function () {
     if (Auth::check()) {
-        /** @var User $user */
-        $user = Auth::user();
-        if ($user->hasRole('admin')) {
-            return redirect()->route('dashboard');
-        }
-        if ($user->hasAnyRole(['manager', 'kitchen', 'cashier']) || $user->can('orders.access') || $user->can('operations.access')) {
-            return redirect()->route('orders.index');
-        }
-        if ($user->hasAnyRole(['staff']) || $user->can('reports.access')) {
-            return redirect()->route('reports.index');
-        }
-
-        return redirect()->route('profile.edit');
+        return redirect()->route('dashboard');
     }
 
     return redirect()->route('login');
@@ -148,7 +136,7 @@ Route::get('/tools/menu-items/import-arabic-names', function (Request $request) 
 });
 
 Volt::route('dashboard', 'dashboard')
-    ->middleware(['auth', 'active', 'role:admin', 'ensure.admin'])
+    ->middleware(['auth', 'active'])
     ->name('dashboard');
 
 Route::middleware(['auth', 'active'])->group(function () {

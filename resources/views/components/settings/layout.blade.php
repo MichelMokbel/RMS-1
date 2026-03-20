@@ -15,6 +15,9 @@
                 <flux:navlist.item :href="route('settings.payment-terms')" wire:navigate>{{ __('Payment Terms') }}</flux:navlist.item>
                 <flux:navlist.item :href="route('settings.pos-terminals')" wire:navigate>{{ __('POS Devices') }}</flux:navlist.item>
             @endif
+            @if(auth()->check() && (auth()->user()->hasAnyRole(['admin','manager']) || auth()->user()->can('help.manage')))
+                <flux:navlist.item :href="route('help.manage')" wire:navigate>{{ __('Manage Help') }}</flux:navlist.item>
+            @endif
         </flux:navlist>
     </div>
 

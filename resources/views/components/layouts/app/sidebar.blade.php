@@ -16,23 +16,28 @@
                 $isCashier = $user?->hasAnyRole(['admin','manager','cashier']) ?? false;
                 $isStaff = $user?->hasAnyRole(['admin','manager','staff']) ?? false;
 
-                $inPlatform = request()->routeIs('dashboard');
-                $inAdmin = request()->routeIs('categories.*')
-                    || request()->routeIs('suppliers.*')
-                    || request()->routeIs('customers.*')
-                    || request()->routeIs('iam.*')
-                    || request()->routeIs('users.*');
-                $inOrders = request()->routeIs('orders.*') || request()->routeIs('meal-plan-requests.*') || request()->routeIs('subscriptions.*') || request()->routeIs('company-food.*');
-                $inCatalog = request()->routeIs('menu-items.*') || request()->routeIs('recipes.*');
-                $inOps = request()->routeIs('inventory.*') || request()->routeIs('purchase-orders.*');
-                $inDailyDish = request()->routeIs('daily-dish.*');
-                $inReceivables = request()->routeIs('invoices.*') || request()->routeIs('receivables.payments.*') || request()->routeIs('receivables.orders-to-invoice');
+                $inSales = request()->routeIs('orders.*')
+                    || request()->routeIs('invoices.*')
+                    || request()->routeIs('receivables.payments.*')
+                    || request()->routeIs('receivables.orders-to-invoice');
+                $inPrograms = request()->routeIs('meal-plan-requests.*')
+                    || request()->routeIs('subscriptions.*')
+                    || request()->routeIs('company-food.*');
+                $inCatalog = request()->routeIs('menu-items.*') || request()->routeIs('recipes.*') || request()->routeIs('daily-dish.*');
+                $inSupplyChain = request()->routeIs('inventory.*')
+                    || request()->routeIs('purchase-orders.*');
                 $inFinance = request()->routeIs('payables.*')
                     || request()->routeIs('spend.*')
                     || request()->routeIs('expenses.*')
-                    || request()->routeIs('petty-cash.*');
-                $inReports = request()->routeIs('reports.*') || request()->routeIs('ledger.*');
-                $inHelp = request()->routeIs('help.*');
+                    || request()->routeIs('petty-cash.*')
+                    || request()->routeIs('ledger.*');
+                $inReports = request()->routeIs('reports.*');
+                $inAdministration = request()->routeIs('categories.*')
+                    || request()->routeIs('customers.*')
+                    || request()->routeIs('suppliers.*')
+                    || request()->routeIs('iam.*')
+                    || request()->routeIs('users.*');
+                $inSupport = request()->routeIs('help.*');
             @endphp
 
             <a href="{{ $isAdmin ? route('dashboard') : route('home') }}" class="me-5 flex items-center space-x-2 rtl:space-x-reverse" wire:navigate>
@@ -40,74 +45,48 @@
             </a>
 
             <flux:navlist variant="outline">
-                @if ($isAdmin)
-                <flux:navlist.group expandable :expanded="$inPlatform" :heading="__('Platform')">
                     <flux:navlist.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:navlist.item>
-                </flux:navlist.group>
 
-                @endif
                 @if ($isAdmin)
-                    <flux:navlist.group expandable :expanded="$inAdmin" :heading="__('Administration')">
+                    <flux:navlist.group expandable :expanded="$inAdministration" :heading="__('Administration')">
                         <flux:navlist.item icon="shield-check" :href="route('iam.users.index')" :current="request()->routeIs('iam.*') || request()->routeIs('users.*')" wire:navigate>
                             {{ __('Identity & Access') }}
-                        </flux:navlist.item>
-                        <flux:navlist.item icon="folder" :href="route('categories.index')" :current="request()->routeIs('categories.*')" wire:navigate>
-                            {{ __('Categories') }}
-                        </flux:navlist.item>
-                        <flux:navlist.item icon="truck" :href="route('suppliers.index')" :current="request()->routeIs('suppliers.*')" wire:navigate>
-                            {{ __('Suppliers') }}
                         </flux:navlist.item>
                         @if ($isCashier)
                             <flux:navlist.item icon="users" :href="route('customers.index')" :current="request()->routeIs('customers.*')" wire:navigate>
                                 {{ __('Customers') }}
                             </flux:navlist.item>
                         @endif
+                        <flux:navlist.item icon="truck" :href="route('suppliers.index')" :current="request()->routeIs('suppliers.*')" wire:navigate>
+                            {{ __('Suppliers') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="folder" :href="route('categories.index')" :current="request()->routeIs('categories.*')" wire:navigate>
+                            {{ __('Categories') }}
+                        </flux:navlist.item>
                     </flux:navlist.group>
                 @endif
 
                 @if ($isCashier)
-                    <flux:navlist.group expandable :expanded="$inOrders" :heading="__('Orders')">
+                    <flux:navlist.group expandable :expanded="$inSales" :heading="__('Sales')">
                         <flux:navlist.item icon="clipboard-document" :href="route('orders.index')" :current="request()->routeIs('orders.*')" wire:navigate>
                             {{ __('Orders') }}
                         </flux:navlist.item>
                         @if ($isManager)
-                            <flux:navlist.item icon="clipboard-document" :href="route('meal-plan-requests.index')" :current="request()->routeIs('meal-plan-requests.*')" wire:navigate>
-                                {{ __('Meal Plan Requests') }}
+                            <flux:navlist.item icon="clipboard-document-list" :href="route('receivables.orders-to-invoice')" :current="request()->routeIs('receivables.orders-to-invoice')" wire:navigate>
+                                {{ __('Orders to Invoice') }}
                             </flux:navlist.item>
-                            <flux:navlist.item icon="ticket" :href="route('subscriptions.index')" :current="request()->routeIs('subscriptions.*')" wire:navigate>
-                                {{ __('Subscriptions') }}
+                            <flux:navlist.item icon="document-text" :href="route('invoices.index')" :current="request()->routeIs('invoices.*')" wire:navigate>
+                                {{ __('Invoices (AR)') }}
                             </flux:navlist.item>
-                            <flux:navlist.item icon="building-office-2" :href="route('company-food.projects.index')" :current="request()->routeIs('company-food.*')" wire:navigate>
-                                {{ __('Company Food') }}
-                            </flux:navlist.item>
-                        @endif
-                    </flux:navlist.group>
-
-                    <flux:navlist.group expandable :expanded="$inCatalog" :heading="__('Catalog')">
-                        <flux:navlist.item icon="list-bullet" :href="route('menu-items.index')" :current="request()->routeIs('menu-items.*')" wire:navigate>
-                            {{ __('Menu Items') }}
-                        </flux:navlist.item>
-                        @if ($isManager)
-                            <flux:navlist.item icon="building-storefront" :href="route('menu-items.availability')" :current="request()->routeIs('menu-items.availability')" wire:navigate>
-                                {{ __('Menu Item Availability') }}
-                            </flux:navlist.item>
-                            <flux:navlist.item icon="tag" :href="route('menu-items.categorize')" :current="request()->routeIs('menu-items.categorize')" wire:navigate>
-                                {{ __('Categorize Items') }}
-                            </flux:navlist.item>
-                        @endif
-                        @if ($isManager)
-                            <flux:navlist.item icon="beaker" :href="route('recipes.index')" :current="request()->routeIs('recipes.*')" wire:navigate>
-                                {{ __('Recipes') }}
-                            </flux:navlist.item>
-                            <flux:navlist.item icon="calendar-days" :href="route('daily-dish.menus.index')" :current="request()->routeIs('daily-dish.menus.*')" wire:navigate>
-                                {{ __('Daily Dish') }}
+                            <flux:navlist.item icon="credit-card" :href="route('receivables.payments.index')" :current="request()->routeIs('receivables.payments.*')" wire:navigate>
+                                {{ __('Customer Payments') }}
                             </flux:navlist.item>
                         @endif
                     </flux:navlist.group>
 
-                    <flux:navlist.group expandable :expanded="$inOps" :heading="__('Operations')">
+                    <flux:navlist.group expandable :expanded="$inSupplyChain" :heading="__('Supply Chain')">
                         <flux:navlist.item icon="archive-box" :href="route('inventory.index')" :current="request()->routeIs('inventory.*')" wire:navigate>
                             {{ __('Inventory') }}
                         </flux:navlist.item>
@@ -123,42 +102,66 @@
                 @endif
 
                 @if ($isManager)
-                    <flux:navlist.group expandable :expanded="$inReceivables" :heading="__('Receivables')">
-                        <flux:navlist.item icon="clipboard-document-list" :href="route('receivables.orders-to-invoice')" :current="request()->routeIs('receivables.orders-to-invoice')" wire:navigate>
-                            {{ __('Orders to Invoice') }}
+                    <flux:navlist.group expandable :expanded="$inFinance" :heading="__('Finance')">
+                        <flux:navlist.item icon="banknotes" :href="route('payables.index')" :current="request()->routeIs('payables.*')" wire:navigate>
+                            {{ __('Payables') }}
                         </flux:navlist.item>
-                        <flux:navlist.item icon="document-text" :href="route('invoices.index')" :current="request()->routeIs('invoices.*')" wire:navigate>
-                            {{ __('Invoices (AR)') }}
+                        <flux:navlist.item icon="wallet" :href="route('spend.index')" :current="request()->routeIs('spend.*') || request()->routeIs('expenses.*') || request()->routeIs('petty-cash.*')" wire:navigate>
+                            {{ __('Spend') }}
                         </flux:navlist.item>
-                        <flux:navlist.item icon="credit-card" :href="route('receivables.payments.index')" :current="request()->routeIs('receivables.payments.*')" wire:navigate>
-                            {{ __('Customer Payments') }}
+                        <flux:navlist.item icon="calculator" :href="route('ledger.batches.index')" :current="request()->routeIs('ledger.*')" wire:navigate>
+                            {{ __('Ledger Batches') }}
                         </flux:navlist.item>
+                    </flux:navlist.group>
+
+                    <flux:navlist.group expandable :expanded="$inPrograms" :heading="__('Programs')">
+                        <flux:navlist.item icon="clipboard-document" :href="route('meal-plan-requests.index')" :current="request()->routeIs('meal-plan-requests.*')" wire:navigate>
+                            {{ __('Meal Plan Requests') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="ticket" :href="route('subscriptions.index')" :current="request()->routeIs('subscriptions.*')" wire:navigate>
+                            {{ __('Subscriptions') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="building-office-2" :href="route('company-food.projects.index')" :current="request()->routeIs('company-food.*')" wire:navigate>
+                            {{ __('Company Food') }}
+                        </flux:navlist.item>
+                    </flux:navlist.group>
+                @endif
+
+                @if ($isCashier)
+                    <flux:navlist.group expandable :expanded="$inCatalog" :heading="__('Catalog & Production')">
+                        <flux:navlist.item icon="list-bullet" :href="route('menu-items.index')" :current="request()->routeIs('menu-items.*')" wire:navigate>
+                            {{ __('Menu Items') }}
+                        </flux:navlist.item>
+                        @if ($isManager)
+                            <flux:navlist.item icon="building-storefront" :href="route('menu-items.availability')" :current="request()->routeIs('menu-items.availability')" wire:navigate>
+                                {{ __('Menu Item Availability') }}
+                            </flux:navlist.item>
+                            <flux:navlist.item icon="tag" :href="route('menu-items.categorize')" :current="request()->routeIs('menu-items.categorize')" wire:navigate>
+                                {{ __('Categorize Items') }}
+                            </flux:navlist.item>
+                            <flux:navlist.item icon="beaker" :href="route('recipes.index')" :current="request()->routeIs('recipes.*')" wire:navigate>
+                                {{ __('Recipes') }}
+                            </flux:navlist.item>
+                            <flux:navlist.item icon="calendar-days" :href="route('daily-dish.menus.index')" :current="request()->routeIs('daily-dish.menus.*')" wire:navigate>
+                                {{ __('Daily Dish') }}
+                            </flux:navlist.item>
+                        @endif
                     </flux:navlist.group>
                 @endif
 
                 @if ($isManager || $isStaff)
-                    <flux:navlist.group expandable :expanded="$inFinance" :heading="__('Finance')">
-                        @if ($isManager)
-                            <flux:navlist.item icon="banknotes" :href="route('payables.index')" :current="request()->routeIs('payables.*')" wire:navigate>
-                                {{ __('Payables') }}
-                            </flux:navlist.item>
-                        @endif
-                        <flux:navlist.item icon="wallet" :href="route('spend.index')" :current="request()->routeIs('spend.*') || request()->routeIs('expenses.*') || request()->routeIs('petty-cash.*')" wire:navigate>
-                            {{ __('Spend') }}
-                        </flux:navlist.item>
-                    </flux:navlist.group>
-
                     <flux:navlist.group expandable :expanded="$inReports" :heading="__('Reports')">
                         <flux:navlist.item icon="chart-bar" :href="route('reports.index')" :current="request()->routeIs('reports.index')" wire:navigate>
                             {{ __('All Reports') }}
                         </flux:navlist.item>
-                        @if ($isManager)
-                            <flux:navlist.item icon="calculator" :href="route('ledger.batches.index')" :current="request()->routeIs('ledger.*')" wire:navigate>
-                                {{ __('Ledger Batches') }}
-                            </flux:navlist.item>
-                        @endif
                     </flux:navlist.group>
                 @endif
+
+                <flux:navlist.group :heading="__('Support')">
+                    <flux:navlist.item icon="question-mark-circle" :href="route('help.index')" :current="$inSupport" wire:navigate>
+                        {{ __('Help Center') }}
+                    </flux:navlist.item>
+                </flux:navlist.group>
 
                 <flux:navlist.group :heading="__('Tools')">
                     <flux:navlist.item
@@ -174,30 +177,9 @@
                         {{ __('Install POS App') }}
                     </flux:navlist.item>
                 </flux:navlist.group>
-
-                <flux:navlist.group :heading="__('Support')">
-                    <flux:navlist.item icon="question-mark-circle" :href="route('help.index')" :current="$inHelp" wire:navigate>
-                        {{ __('Help Center') }}
-                    </flux:navlist.item>
-                    @if ($user?->hasAnyRole(['admin', 'manager']) || $user?->can('help.manage'))
-                        <flux:navlist.item icon="wrench-screwdriver" :href="route('help.manage')" :current="request()->routeIs('help.manage')" wire:navigate>
-                            {{ __('Manage Help') }}
-                        </flux:navlist.item>
-                    @endif
-                </flux:navlist.group>
             </flux:navlist>
 
             <flux:spacer />
-
-            <flux:navlist variant="outline">
-                <flux:navlist.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
-                {{ __('Repository') }}
-                </flux:navlist.item>
-
-                <flux:navlist.item icon="book-open-text" href="https://laravel.com/docs/starter-kits#livewire" target="_blank">
-                {{ __('Documentation') }}
-                </flux:navlist.item>
-            </flux:navlist>
 
             <!-- Desktop User Menu -->
             <flux:dropdown class="hidden lg:block" position="bottom" align="start">

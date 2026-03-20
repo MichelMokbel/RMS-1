@@ -28,13 +28,19 @@ test('admin users can visit the dashboard', function () {
     $response->assertStatus(200);
 });
 
-test('non-admin users cannot visit the dashboard', function () {
+test('authenticated non-admin users can visit the dashboard', function () {
+    Role::findOrCreate('cashier', 'web');
     $user = User::factory()->create(['status' => 'active']);
+    $user->assignRole('cashier');
 
     $this->actingAs($user);
 
     $response = $this->get(route('dashboard'));
-    $response->assertForbidden();
+    $response->assertOk();
+    $response->assertSee('Quick Actions');
+    $response->assertSee('Create PO');
+    $response->assertDontSee('Create Invoice');
+    $response->assertDontSee('Add Customer Payment');
 });
 
 test('dashboard revenue uses paid ar invoice amounts, not orders totals', function () {
@@ -111,4 +117,31 @@ test('dashboard finance kpi labels are not duplicated and chart payload exists',
     $content = $response->getContent();
     expect(substr_count($content, 'Payables Outstanding'))->toBe(1);
     expect(substr_count($content, 'Expenses (Range)'))->toBe(1);
+});
+
+test('dashboard quick actions are scoped by user access', function () {
+    Role::findOrCreate('staff', 'web');
+    $staff = User::factory()->create(['status' => 'active']);
+    $staff->assignRole('staff');
+
+    $response = $this->actingAs($staff)->get(route('dashboard'));
+    $response->assertOk();
+    $response->assertSee('Quick Actions');
+    $response->assertSee('Create PO');
+    $response->assertDontSee('Create Invoice');
+    $response->assertDontSee('Add Customer Payment');
+});
+
+test('dashboard quick actions show only the supported shortcuts', function () {
+    Role::findOrCreate('manager', 'web');
+    $manager = User::factory()->create(['status' => 'active']);
+    $manager->assignRole('manager');
+
+    $response = $this->actingAs($manager)->get(route('dashboard'));
+    $response->assertOk();
+    $response->assertSee('Quick Actions');
+    $response->assertSee('Create PO');
+    $response->assertSee('Create Invoice');
+    $response->assertSee('Add Customer Payment');
+    $response->assertDontSee('Create Order');
 });
