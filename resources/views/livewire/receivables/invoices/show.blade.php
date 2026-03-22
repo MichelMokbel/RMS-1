@@ -191,7 +191,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ]],
             actorId: $userId,
             currency: (string) ($this->invoice->currency ?: config('pos.currency')),
-            posReference: $this->invoice->pos_reference ?? null,
+            posReference: null,
             source: $this->invoice->source ?? 'dashboard',
             sourceSaleId: null,
             type: 'credit_note',

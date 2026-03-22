@@ -156,6 +156,48 @@ it('creates and applies a credit note to reduce invoice balance', function () {
     expect($credit->balance_cents)->toBe(0);
 });
 
+it('does not reuse pos reference when creating a credit note for a pos-traceable invoice', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $customer = Customer::factory()->corporate()->create();
+
+    /** @var ArInvoiceService $invoices */
+    $invoices = app(ArInvoiceService::class);
+
+    $inv = $invoices->createDraft(
+        branchId: 1,
+        customerId: $customer->id,
+        items: [
+            ['description' => 'Service', 'qty' => '1.000', 'unit_price_cents' => 10000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 10000],
+        ],
+        actorId: $user->id,
+        posReference: '1037822',
+        source: 'import',
+        type: 'invoice',
+    );
+    $inv = $invoices->issue($inv, $user->id);
+
+    $credit = $invoices->createDraft(
+        branchId: 1,
+        customerId: $customer->id,
+        items: [
+            ['description' => 'Return', 'qty' => '1.000', 'unit_price_cents' => -3000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => -3000],
+        ],
+        actorId: $user->id,
+        posReference: $inv->pos_reference,
+        source: $inv->source,
+        type: 'credit_note'
+    );
+
+    expect($credit->pos_reference)->toBeNull();
+
+    $credit = $invoices->issue($credit, $user->id);
+
+    expect($credit->pos_reference)->toBeNull();
+    expect($credit->isCreditNote())->toBeTrue();
+});
+
 it('allows overpayment and stores remainder as advance', function () {
     $user = User::factory()->create();
     $user->assignRole('manager');

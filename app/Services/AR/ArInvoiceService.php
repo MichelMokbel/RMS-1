@@ -62,6 +62,9 @@ class ArInvoiceService
         return DB::transaction(function () use ($branchId, $customer, $items, $actorId, $currency, $posReference, $source, $sourceSaleId, $type, $issueDate, $paymentType, $paymentTermId, $paymentTermDays, $salesPersonId, $lpoReference, $invoiceDiscountType, $invoiceDiscountValue) {
             $currency = $currency ?: (string) config('pos.currency');
             $source = $source ?: 'dashboard';
+            if ($type === 'credit_note') {
+                $posReference = null;
+            }
             $termDays = max(0, $paymentTermDays);
             if ($paymentTermId) {
                 $term = PaymentTerm::find($paymentTermId);
