@@ -688,7 +688,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div>
             <h1 class="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{{ __('Dashboard') }}</h1>
             <p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-                {{ __('A role-aware overview of the areas you can access in RMS-1.') }}
+                {{ __('A role-aware overview of the areas you can access in Layla Kitchen.') }}
             </p>
         </div>
         <time class="text-sm font-medium text-zinc-500 dark:text-zinc-400" datetime="{{ now()->toIso8601String() }}">

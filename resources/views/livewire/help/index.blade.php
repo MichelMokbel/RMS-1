@@ -36,7 +36,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 Help Center
             </div>
             <div>
-                <h1 class="text-3xl font-semibold tracking-tight text-neutral-950 dark:text-white">Guided help for daily RMS-1 tasks</h1>
+                <h1 class="text-3xl font-semibold tracking-tight text-neutral-950 dark:text-white">Guided help for daily Layla Kitchen tasks</h1>
                 <p class="mt-3 max-w-2xl text-sm leading-6 text-neutral-600 dark:text-neutral-300">
                     Search task-focused guides, FAQs, and screenshots. The Help Bot only answers from the approved guides you can already access.
                 </p>
