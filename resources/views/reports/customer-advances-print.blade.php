@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Customer Advances Report</title>
+    <title>Advance Payments Report</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 24px; }
         h1 { font-size: 22px; margin: 0 0 8px; }
@@ -24,7 +24,7 @@
         <button class="btn" onclick="window.print()">Print</button>
         <a class="btn" href="{{ route('reports.customer-advances') }}">Back to Report</a>
     </div>
-    @include('reports.print-header', ['reportTitle' => 'Customer Advances Report'])
+    @include('reports.print-header', ['reportTitle' => 'Advance Payments Report'])
     <div class="meta">Generated: {{ $generatedAt->format('Y-m-d H:i') }} @include('reports.print-filters', ['filters' => $filters])</div>
     <table>
         <thead>
@@ -54,7 +54,7 @@
                     <td class="right">{{ $formatCents($remaining) }}</td>
                 </tr>
             @empty
-                <tr><td colspan="7">No advances found.</td></tr>
+                <tr><td colspan="7">No advance payments found.</td></tr>
             @endforelse
         </tbody>
         @if ($payments->count() > 0)

@@ -123,7 +123,7 @@ return [
         ],
         'customer-advances' => [
             'key' => 'customer-advances',
-            'label' => 'Customer Advances',
+            'label' => 'Advance Payments',
             'category' => 'accounts',
             'route' => 'reports.customer-advances',
             'filters' => ['branch', 'customer', 'date_range'],

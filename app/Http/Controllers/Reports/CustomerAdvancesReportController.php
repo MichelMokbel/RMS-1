@@ -66,7 +66,7 @@ class CustomerAdvancesReportController extends Controller
             ];
         });
 
-        return CsvExport::stream($headers, $rows, 'customer-advances-report.csv');
+        return CsvExport::stream($headers, $rows, 'advance-payments-report.csv');
     }
 
     public function pdf(Request $request)
@@ -79,6 +79,6 @@ class CustomerAdvancesReportController extends Controller
             'filters' => $filters,
             'generatedAt' => now(),
             'formatCents' => fn ($c) => $this->formatCents($c),
-        ], 'customer-advances-report.pdf');
+        ], 'advance-payments-report.pdf');
     }
 }

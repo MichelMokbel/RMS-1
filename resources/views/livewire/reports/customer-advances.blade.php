@@ -107,7 +107,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 <div class="app-page space-y-6">
     <div class="flex items-center justify-between">
-        <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Customer Advances') }}</h1>
+        <div>
+            <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Advance Payments') }}</h1>
+            <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+                {{ __('Shows AR payments that still have an unallocated advance balance.') }}
+            </p>
+        </div>
         <div class="flex gap-2">
             <flux:button :href="route('reports.index')" wire:navigate variant="ghost">{{ __('Back to Reports') }}</flux:button>
             <flux:button href="{{ route('reports.customer-advances.print') . '?' . http_build_query($exportParams) }}" target="_blank" variant="ghost">{{ __('Print') }}</flux:button>
@@ -177,7 +182,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="7" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No advances found.') }}</td>
+                        <td colspan="7" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No advance payments found.') }}</td>
                     </tr>
                 @endforelse
             </tbody>
