@@ -328,6 +328,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
         <div class="flex items-center gap-2">
             <flux:button :href="route('invoices.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
+            <flux:button :href="route('invoices.create')" wire:navigate variant="ghost">{{ __('Create New Invoice') }}</flux:button>
             @if ($invoice->status === 'draft')
                 <flux:button :href="route('invoices.edit', $invoice)" wire:navigate variant="ghost">{{ __('Edit') }}</flux:button>
             @endif

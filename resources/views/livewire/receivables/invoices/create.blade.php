@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Category;
 use App\Models\Customer;
 use App\Models\ArInvoice;
 use App\Models\MenuItem;
@@ -34,6 +35,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     public array $selected_items = [];
     public array $item_search = [];
 
+    public string $menu_item_code = '';
+    public string $menu_item_name = '';
+    public ?int $menu_item_category_id = null;
+    public float $menu_item_price = 0.0;
+    public string $menu_item_unit = MenuItem::UNIT_EACH;
+
     // Order prefill
     public ?int $source_order_id = null;
     public ?string $source_order_number = null;
@@ -51,6 +58,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->sales_person_id = Auth::id();
         $this->payment_term_id = $this->defaultPaymentTermId('credit');
         $this->invoice_discount_value = $this->moneyZero();
+        $this->menu_item_unit = MenuItem::UNIT_EACH;
 
         if ($order_id) {
             $this->prefillFromOrder($order_id);
@@ -110,6 +118,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         if (count($this->selected_items) === 0) {
             $this->addItemRow();
+        } else {
+            $this->ensureTrailingBlankItemRow();
         }
     }
 
@@ -244,6 +254,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         if (count($this->selected_items) === 0) {
             $this->addItemRow();
+        } else {
+            $this->ensureTrailingBlankItemRow();
         }
 
         // Add order reference to notes
@@ -274,9 +286,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             'customers' => $customers,
             'salesPeople' => User::query()->orderBy('username')->get(),
             'paymentTerms' => $paymentTerms,
+            'categories' => Schema::hasTable('categories') ? Category::query()->orderBy('name')->get() : collect(),
             'branches' => Schema::hasTable('branches')
                 ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
                 : collect(),
+            'unitOptions' => MenuItem::unitOptions(),
         ];
     }
 
@@ -305,6 +319,26 @@ new #[Layout('components.layouts.app')] class extends Component {
             return null;
         }
         if ($type === 'credit') {
+            $namedCreditId = PaymentTerm::query()
+                ->where('is_active', 1)
+                ->where('is_credit', 1)
+                ->whereRaw('LOWER(name) = ?', ['credit'])
+                ->value('id');
+
+            if ($namedCreditId) {
+                return (int) $namedCreditId;
+            }
+
+            $sameDayCreditId = PaymentTerm::query()
+                ->where('is_active', 1)
+                ->where('is_credit', 1)
+                ->where('days', 0)
+                ->value('id');
+
+            if ($sameDayCreditId) {
+                return (int) $sameDayCreditId;
+            }
+
             return PaymentTerm::query()
                 ->where('is_active', 1)
                 ->where('is_credit', 1)
@@ -317,6 +351,17 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->where('is_credit', 0)
             ->where('days', 0)
             ->value('id');
+    }
+
+    public function paymentTermOptionLabel(PaymentTerm $term): string
+    {
+        $name = trim((string) $term->name);
+
+        if ((bool) $term->is_credit && preg_match('/^credit\\s*-\\s*30\\s*days$/i', $name)) {
+            return __('Credit');
+        }
+
+        return $name;
     }
 
     public function updatedItemSearch($value, $name): void
@@ -345,6 +390,27 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->item_search[] = '';
     }
 
+    private function ensureTrailingBlankItemRow(): void
+    {
+        if ($this->selected_items === []) {
+            $this->addItemRow();
+            return;
+        }
+
+        $lastIndex = array_key_last($this->selected_items);
+        if ($lastIndex === null) {
+            $this->addItemRow();
+            return;
+        }
+
+        $lastRow = $this->selected_items[$lastIndex] ?? [];
+        $lastSearch = trim((string) ($this->item_search[$lastIndex] ?? ''));
+
+        if ((int) ($lastRow['menu_item_id'] ?? 0) > 0 || $lastSearch !== '') {
+            $this->addItemRow();
+        }
+    }
+
     public function removeItemRow(int $index): void
     {
         unset($this->selected_items[$index], $this->item_search[$index]);
@@ -352,7 +418,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->item_search = array_values($this->item_search);
         if (count($this->selected_items) === 0) {
             $this->addItemRow();
+            return;
         }
+
+        $this->ensureTrailingBlankItemRow();
     }
 
     public function selectMenuItemPayload(int $index, int $menuItemId, string $label, ?float $price = null): void
@@ -367,6 +436,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->selected_items[$index]['discount_amount'] = $this->selected_items[$index]['discount_amount'] ?? 0;
         $this->selected_items[$index]['sort_order'] = $this->selected_items[$index]['sort_order'] ?? $index;
         $this->item_search[$index] = $label;
+
+        if ($index === array_key_last($this->selected_items)) {
+            $this->ensureTrailingBlankItemRow();
+        }
     }
 
     public function clearMenuItemSelection(int $index): void
@@ -378,6 +451,106 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->selected_items[$index]['menu_item_id'] = null;
         $this->selected_items[$index]['unit_price'] = null;
         $this->item_search[$index] = '';
+    }
+
+    public function prepareMenuItemModal(): void
+    {
+        $this->resetErrorBag([
+            'menu_item_code',
+            'menu_item_name',
+            'menu_item_category_id',
+            'menu_item_price',
+            'menu_item_unit',
+        ]);
+        $this->menu_item_code = $this->nextMenuItemCode();
+        $this->menu_item_name = '';
+        $this->menu_item_category_id = null;
+        $this->menu_item_price = 0.0;
+        $this->menu_item_unit = MenuItem::UNIT_EACH;
+    }
+
+    public function createMenuItem(): void
+    {
+        $data = $this->validate([
+            'menu_item_code' => ['required', 'string', 'max:50', 'unique:menu_items,code'],
+            'menu_item_name' => ['required', 'string', 'max:255'],
+            'menu_item_category_id' => ['nullable', 'integer', 'exists:categories,id'],
+            'menu_item_price' => ['required', 'numeric', 'min:0'],
+            'menu_item_unit' => ['required', 'string', 'in:'.implode(',', array_keys(MenuItem::unitOptions()))],
+        ]);
+
+        $displayOrder = ((int) MenuItem::query()->max('display_order')) + 1;
+
+        $menuItem = MenuItem::create([
+            'code' => $data['menu_item_code'],
+            'name' => $data['menu_item_name'],
+            'arabic_name' => null,
+            'category_id' => $data['menu_item_category_id'],
+            'recipe_id' => null,
+            'selling_price_per_unit' => $data['menu_item_price'],
+            'unit' => $data['menu_item_unit'],
+            'tax_rate' => 0,
+            'is_active' => true,
+            'display_order' => $displayOrder,
+        ]);
+
+        if (Schema::hasTable('menu_item_branches')) {
+            $exists = DB::table('menu_item_branches')
+                ->where('menu_item_id', $menuItem->id)
+                ->where('branch_id', 1)
+                ->exists();
+
+            if (! $exists) {
+                DB::table('menu_item_branches')->insert([
+                    'menu_item_id' => $menuItem->id,
+                    'branch_id' => 1,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        }
+
+        $targetIndex = null;
+        foreach ($this->selected_items as $idx => $row) {
+            if (empty($row['menu_item_id'])) {
+                $targetIndex = $idx;
+                break;
+            }
+        }
+        if ($targetIndex === null) {
+            $this->addItemRow();
+            $targetIndex = count($this->selected_items) - 1;
+        }
+
+        $label = trim(($menuItem->code ?? '').' '.$menuItem->name);
+        $price = $menuItem->selling_price_per_unit !== null ? (float) $menuItem->selling_price_per_unit : 0.0;
+        $this->selectMenuItemPayload($targetIndex, $menuItem->id, $label, $price);
+
+        $this->dispatch('modal-close', name: 'create-menu-item');
+    }
+
+    private function nextMenuItemCode(): string
+    {
+        $lastCode = MenuItem::query()
+            ->whereNotNull('code')
+            ->where('code', 'like', 'MI-%')
+            ->orderByRaw("CAST(SUBSTRING_INDEX(code, '-', -1) AS UNSIGNED) DESC")
+            ->orderByDesc('id')
+            ->value('code');
+
+        if (! $lastCode) {
+            return 'MI-000001';
+        }
+
+        if (preg_match('/^(MI-)(\d+)$/', (string) $lastCode, $matches)) {
+            $prefix = $matches[1];
+            $number = (int) $matches[2];
+            $width = strlen($matches[2]);
+
+            return $prefix.str_pad((string) ($number + 1), $width, '0', STR_PAD_LEFT);
+        }
+
+        return 'MI-000001';
     }
 
     public function saveDraft(ArInvoiceService $service): void
@@ -677,7 +850,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <select wire:model.live="payment_term_id" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                         <option value="">{{ __('Select') }}</option>
                         @foreach ($paymentTerms as $term)
-                            <option value="{{ $term->id }}">{{ $term->name }}</option>
+                            <option value="{{ $term->id }}">{{ $this->paymentTermOptionLabel($term) }}</option>
                         @endforeach
                     </select>
                     @error('payment_term_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
@@ -719,7 +892,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
         <div class="flex items-center justify-between">
             <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Line Items') }}</h2>
-            <flux:button type="button" wire:click="addItemRow">{{ __('Add line') }}</flux:button>
+            <div class="flex items-center gap-2">
+                <flux:button type="button" wire:click="addItemRow">{{ __('Add line') }}</flux:button>
+                <flux:button
+                    type="button"
+                    variant="ghost"
+                    x-data=""
+                    x-on:click.prevent="$wire.prepareMenuItemModal(); $dispatch('modal-show', { name: 'create-menu-item' })"
+                >{{ __('Create Menu Item') }}</flux:button>
+            </div>
         </div>
 
         @error('selected_items') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
@@ -790,8 +971,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     <template x-if="open">
                                         <div
                                             x-ref="panel"
-                                            x-bind:style="panelStyle"
-                                            class="mb-1 overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+                                            class="absolute left-0 top-full z-20 mt-1 w-full overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
                                         >
                                             <div class="max-h-60 overflow-auto">
                                                 <template x-for="item in results" :key="item.id">
@@ -819,13 +999,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 </div>
                             </td>
                             <td class="px-3 py-3 text-sm">
-                                <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.quantity" type="number" step="0.001" class="w-20" />
+                                <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.quantity" type="number" step="1" class="w-20" />
                             </td>
                             <td class="px-3 py-3 text-sm">
                                 <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.unit" class="w-20" />
                             </td>
                             <td class="px-3 py-3 text-sm">
-                                <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.unit_price" type="number" step="{{ $moneyStep }}" class="w-24" />
+                                <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.unit_price" type="number" step="1" class="w-24" />
                             </td>
                             <td class="px-3 py-3 text-sm">
                                 <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.discount_amount" type="number" step="{{ $moneyStep }}" class="w-24" />
@@ -871,6 +1051,52 @@ new #[Layout('components.layouts.app')] class extends Component {
         <flux:button type="button" wire:click="saveDraft" class="touch-target">{{ __('Save Draft') }}</flux:button>
         <flux:button type="button" wire:click="saveAndIssue" variant="primary" class="touch-target">{{ __('Save & Issue') }}</flux:button>
     </div>
+
+    <flux:modal name="create-menu-item" focusable class="max-w-lg">
+        <form wire:submit="createMenuItem" class="space-y-4">
+            <div class="space-y-1">
+                <flux:heading size="lg">{{ __('Create Menu Item') }}</flux:heading>
+                <flux:subheading>{{ __('Add a menu item without leaving the invoice.') }}</flux:subheading>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4">
+                <flux:input wire:model="menu_item_code" :label="__('Item Code')" readonly />
+                <flux:input wire:model="menu_item_name" :label="__('Name')" required />
+
+                <div>
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Category') }}</label>
+                    @if ($categories->count())
+                        <select wire:model="menu_item_category_id" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                            <option value="">{{ __('None') }}</option>
+                            @foreach ($categories as $category)
+                                <option value="{{ $category->id }}">{{ $category->name }}</option>
+                            @endforeach
+                        </select>
+                    @else
+                        <flux:input disabled placeholder="{{ __('No categories available') }}" />
+                    @endif
+                </div>
+
+                <flux:input wire:model="menu_item_price" type="number" step="1" min="0" :label="__('Selling Price')" />
+
+                <div>
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Unit') }}</label>
+                    <select wire:model="menu_item_unit" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                        @foreach ($unitOptions as $value => $label)
+                            <option value="{{ $value }}">{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button variant="filled" type="button">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+                <flux:button variant="primary" type="submit">{{ __('Create') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
 </div>
 
 <script>
@@ -891,7 +1117,6 @@ const registerInvoiceMenuItemLookup = () => {
         loading: false,
         open: false,
         hasSearched: false,
-        panelStyle: '',
         controller: null,
         onInput(force = false) {
             if (this.selectedId !== null && this.query !== this.selectedLabel) {
@@ -937,7 +1162,6 @@ const registerInvoiceMenuItemLookup = () => {
                 .then((data) => {
                     this.results = Array.isArray(data) ? data : [];
                     this.loading = false;
-                    this.$nextTick(() => this.positionDropdown());
                 })
                 .catch((error) => {
                     if (error.name === 'AbortError') {
@@ -959,16 +1183,6 @@ const registerInvoiceMenuItemLookup = () => {
         },
         close() {
             this.open = false;
-        },
-        positionDropdown() {
-            if (!this.$refs.panel) return;
-            const inputRect = this.$el.getBoundingClientRect();
-            const panel = this.$refs.panel;
-            const panelRect = panel.getBoundingClientRect();
-            const top = inputRect.bottom + window.scrollY;
-            const left = inputRect.left + window.scrollX;
-            const width = inputRect.width;
-            this.panelStyle = `position: fixed; top: ${top}px; left: ${left}px; width: ${width}px;`;
         },
     }));
 };

@@ -77,3 +77,17 @@ it('uses a wider container on invoice create and show pages', function () {
         ->assertSee('max-w-7xl', false);
 });
 
+it('shows inline menu item creation controls on invoice create', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $this->actingAs($user)
+        ->get(route('invoices.create'))
+        ->assertOk()
+        ->assertSee('Create Menu Item')
+        ->assertSee('Item Code')
+        ->assertSee('Name')
+        ->assertSee('Category')
+        ->assertSee('Selling Price')
+        ->assertSee('Unit');
+});
