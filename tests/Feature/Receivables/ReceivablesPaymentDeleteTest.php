@@ -53,6 +53,41 @@ it('shows the delete action only to admins', function () {
         ->assertDontSeeText('Delete Payment');
 });
 
+it('shows invoice dates in the payment allocations table', function () {
+    $manager = makeReceivablesManagerUser();
+    $customer = Customer::factory()->create();
+
+    $invoice = ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'issued',
+        'invoice_number' => 'INV-DATE-001',
+        'issue_date' => '2026-03-22',
+        'due_date' => '2026-03-29',
+        'total_cents' => 15000,
+        'balance_cents' => 5000,
+    ]);
+
+    $payment = Payment::factory()->create([
+        'customer_id' => $customer->id,
+        'source' => 'ar',
+        'amount_cents' => 10000,
+    ]);
+
+    PaymentAllocation::factory()->create([
+        'payment_id' => $payment->id,
+        'allocatable_type' => ArInvoice::class,
+        'allocatable_id' => $invoice->id,
+        'amount_cents' => 10000,
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('receivables.payments.show', $payment))
+        ->assertOk()
+        ->assertSeeText('Invoice Date')
+        ->assertSeeText('2026-03-22');
+});
+
 it('allows admins to delete customer payments and restore invoice balances', function () {
     $admin = makeReceivablesAdmin();
     $customer = Customer::factory()->create();

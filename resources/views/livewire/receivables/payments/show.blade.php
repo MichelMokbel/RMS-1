@@ -79,6 +79,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Invoice') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Invoice Date') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Amount') }}</th>
                 </tr>
             </thead>
@@ -91,10 +92,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">
                             {{ $invoice?->invoice_number ?: ($invoice ? '#'.$invoice->id : '—') }}
                         </td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
+                            {{ $invoice?->issue_date?->format('Y-m-d') ?? '—' }}
+                        </td>
                         <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney($alloc->amount_cents) }}</td>
                     </tr>
                 @empty
-                    <tr><td colspan="2" class="px-3 py-3 text-sm text-neutral-600 dark:text-neutral-300 text-center">{{ __('No allocations') }}</td></tr>
+                    <tr><td colspan="3" class="px-3 py-3 text-sm text-neutral-600 dark:text-neutral-300 text-center">{{ __('No allocations') }}</td></tr>
                 @endforelse
             </tbody>
         </table>
