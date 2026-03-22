@@ -957,10 +957,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         searchUrl: '{{ route('orders.menu-items.search') }}',
                                         branchId: @entangle('branch_id')
                                     })"
+                                    x-init="init()"
                                     x-on:keydown.escape.stop="close()"
                                     x-on:click.outside="close()"
                                 >
                                     <input
+                                        x-ref="input"
                                         type="text"
                                         class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
                                         x-model="query"
@@ -968,10 +970,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         x-on:focus="onInput(true)"
                                         placeholder="{{ __('Search item') }}"
                                     />
-                                    <template x-if="open">
+                                    <template x-teleport="body">
                                         <div
+                                            x-show="open"
                                             x-ref="panel"
-                                            class="absolute left-0 top-full z-20 mt-1 w-full overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+                                            x-bind:style="panelStyle"
+                                            class="z-[9999] overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
                                         >
                                             <div class="max-h-60 overflow-auto">
                                                 <template x-for="item in results" :key="item.id">
@@ -1117,7 +1121,18 @@ const registerInvoiceMenuItemLookup = () => {
         loading: false,
         open: false,
         hasSearched: false,
+        panelStyle: 'display: none;',
         controller: null,
+        repositionHandler: null,
+        init() {
+            this.repositionHandler = () => {
+                if (this.open) {
+                    this.positionDropdown();
+                }
+            };
+            window.addEventListener('resize', this.repositionHandler);
+            window.addEventListener('scroll', this.repositionHandler, true);
+        },
         onInput(force = false) {
             if (this.selectedId !== null && this.query !== this.selectedLabel) {
                 this.selectedId = null;
@@ -1145,6 +1160,7 @@ const registerInvoiceMenuItemLookup = () => {
             this.loading = true;
             this.hasSearched = true;
             this.open = true;
+            this.positionDropdown();
             if (this.controller) {
                 this.controller.abort();
             }
@@ -1162,6 +1178,7 @@ const registerInvoiceMenuItemLookup = () => {
                 .then((data) => {
                     this.results = Array.isArray(data) ? data : [];
                     this.loading = false;
+                    this.$nextTick(() => this.positionDropdown());
                 })
                 .catch((error) => {
                     if (error.name === 'AbortError') {
@@ -1183,6 +1200,21 @@ const registerInvoiceMenuItemLookup = () => {
         },
         close() {
             this.open = false;
+            this.panelStyle = 'display: none;';
+        },
+        positionDropdown() {
+            if (!this.$refs.input) {
+                return;
+            }
+
+            const rect = this.$refs.input.getBoundingClientRect();
+            this.panelStyle = [
+                'position: fixed',
+                `top: ${rect.bottom + 4}px`,
+                `left: ${rect.left}px`,
+                `width: ${rect.width}px`,
+                'display: block',
+            ].join('; ');
         },
     }));
 };
