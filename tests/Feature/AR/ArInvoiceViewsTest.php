@@ -5,6 +5,7 @@ use App\Models\ArInvoiceItem;
 use App\Models\Customer;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Volt\Volt;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -90,4 +91,26 @@ it('shows inline menu item creation controls on invoice create', function () {
         ->assertSee('Category')
         ->assertSee('Selling Price')
         ->assertSee('Unit');
+});
+
+it('lets users clear the selected customer when editing a draft invoice', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $currentCustomer = Customer::factory()->create([
+        'name' => 'Current Customer',
+        'phone' => '11111111',
+    ]);
+
+    $draft = ArInvoice::factory()->create([
+        'customer_id' => $currentCustomer->id,
+        'status' => 'draft',
+    ]);
+
+    Volt::actingAs($user);
+
+    Volt::test('receivables.invoices.create', ['invoice' => $draft])
+        ->assertSet('customer_id', $currentCustomer->id)
+        ->set('customer_search', 'Replacement Customer')
+        ->assertSet('customer_id', null);
 });

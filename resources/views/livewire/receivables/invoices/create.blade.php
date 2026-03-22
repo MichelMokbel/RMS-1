@@ -308,6 +308,19 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
+    public function updatedCustomerSearch(): void
+    {
+        if ($this->customer_id === null) {
+            return;
+        }
+
+        $selected = Customer::find($this->customer_id);
+        $selectedLabel = $selected ? trim($selected->name.' '.($selected->phone ?? '')) : '';
+        if (trim($this->customer_search) !== $selectedLabel) {
+            $this->customer_id = null;
+        }
+    }
+
     public function updatedPaymentType(): void
     {
         $this->payment_term_id = $this->defaultPaymentTermId($this->payment_type);
