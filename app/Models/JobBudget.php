@@ -27,4 +27,14 @@ class JobBudget extends Model
     {
         return $this->belongsTo(Job::class, 'job_id');
     }
+
+    public function phase(): BelongsTo
+    {
+        return $this->belongsTo(JobPhase::class, 'job_phase_id');
+    }
+
+    public function costCode(): BelongsTo
+    {
+        return $this->belongsTo(JobCostCode::class, 'job_cost_code_id');
+    }
 }

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class BankTransaction extends Model
 {
@@ -15,6 +16,7 @@ class BankTransaction extends Model
         'bank_account_id',
         'period_id',
         'reconciliation_run_id',
+        'matched_bank_transaction_id',
         'transaction_type',
         'transaction_date',
         'amount',
@@ -54,5 +56,15 @@ class BankTransaction extends Model
     public function reconciliationRun(): BelongsTo
     {
         return $this->belongsTo(BankReconciliationRun::class, 'reconciliation_run_id');
+    }
+
+    public function matchedTransaction(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'matched_bank_transaction_id');
+    }
+
+    public function matchingTransactions(): HasMany
+    {
+        return $this->hasMany(self::class, 'matched_bank_transaction_id');
     }
 }

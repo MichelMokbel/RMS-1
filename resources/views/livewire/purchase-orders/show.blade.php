@@ -2,6 +2,7 @@
 
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Services\AP\PurchaseOrderInvoiceMatchingService;
 use App\Services\Purchasing\PurchaseOrderReceivingService;
 use App\Services\Purchasing\PurchaseOrderWorkflowService;
 use Illuminate\Support\Facades\Auth;
@@ -76,6 +77,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->purchaseOrder = $this->purchaseOrder->fresh(['items.item', 'supplier', 'creator']);
     }
+
+    public function accrualRows(): \Illuminate\Support\Collection
+    {
+        return app(PurchaseOrderInvoiceMatchingService::class)
+            ->purchaseAccrualRows((int) ($this->purchaseOrder->company_id ?? 0), [])
+            ->where('purchase_order_id', (int) $this->purchaseOrder->id)
+            ->values();
+    }
 }; ?>
 
 <div class="w-full max-w-6xl mx-auto px-4 space-y-6">
@@ -147,8 +156,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <tr>
                         <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Item') }}</th>
                         <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Ordered') }}</th>
-                        <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Received') }}</th>
-                        <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Remaining') }}</th>
+                            <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Received') }}</th>
+                            <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Matched') }}</th>
+                            <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Remaining') }}</th>
                         <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Unit Price') }}</th>
                         <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Total') }}</th>
                     </tr>
@@ -157,8 +167,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @foreach ($purchaseOrder->items as $line)
                         <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
                             <td class="px-3 py-3 text-sm text-neutral-900 dark:text-neutral-100">{{ $line->item?->name ?? '—' }}</td>
+                            @php($accrual = $this->accrualRows()->firstWhere('purchase_order_item_id', $line->id))
                             <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $line->quantity }}</td>
                             <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $line->received_quantity ?? 0 }}</td>
+                            <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ number_format((float) ($accrual['matched_quantity'] ?? $line->invoiceMatches->sum('matched_quantity')), 3) }}</td>
                             <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $line->remainingToReceive() }}</td>
                             <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ number_format((float) $line->unit_price, 2) }}</td>
                             <td class="px-3 py-3 text-sm text-neutral-900 dark:text-neutral-100">{{ number_format((float) $line->total_price, 2) }}</td>
@@ -166,8 +178,34 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endforeach
                 </tbody>
             </table>
-        </div>
     </div>
+
+    @if($this->accrualRows()->isNotEmpty())
+        <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+            <h3 class="mb-3 text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Purchase Accruals / GRNI') }}</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
+                    <thead class="bg-neutral-50 dark:bg-neutral-800/90">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Item') }}</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Remaining Qty') }}</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Accrual Value') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                        @foreach($this->accrualRows() as $row)
+                            <tr>
+                                <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $row['item_name'] ?? '—' }}</td>
+                                <td class="px-3 py-2 text-right text-sm text-neutral-700 dark:text-neutral-200">{{ number_format((float) $row['remaining_quantity'], 3) }}</td>
+                                <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">{{ number_format((float) $row['accrual_value'], 2) }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    @endif
+</div>
 
     @if($purchaseOrder->isApproved())
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">

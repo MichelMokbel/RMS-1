@@ -19,6 +19,7 @@ class ApAllocationService
 {
     public function __construct(
         protected ApInvoiceStatusService $statusService,
+        protected SupplierAccountingPolicyService $supplierPolicy,
         protected SubledgerService $subledgerService,
         protected AccountingContextService $accountingContext,
         protected LedgerAccountMappingService $mappingService,
@@ -33,6 +34,10 @@ class ApAllocationService
     {
         return DB::transaction(function () use ($payload, $userId) {
             $this->validateAllocations($payload['allocations'] ?? [], $payload['supplier_id']);
+            $this->supplierPolicy->assertCanPay(
+                \App\Models\Supplier::query()->find((int) $payload['supplier_id']),
+                'supplier_id'
+            );
             $companyId = $this->accountingContext->resolveCompanyId($payload['branch_id'] ?? null, $payload['company_id'] ?? null);
             $periodId = $this->accountingContext->resolvePeriodId($payload['payment_date'] ?? null, $payload['company_id'] ?? null);
             $paymentMethod = $this->mappingService->normalizePaymentMethod((string) ($payload['payment_method'] ?? 'bank_transfer'));

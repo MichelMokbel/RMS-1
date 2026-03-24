@@ -6,8 +6,10 @@ use App\Models\AccountingPeriod;
 use App\Models\BudgetLine;
 use App\Models\BudgetVersion;
 use App\Models\FiscalYear;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class BudgetService
 {
@@ -18,6 +20,11 @@ class BudgetService
     }
 
     public function createVersion(array $data, int $actorId): BudgetVersion
+    {
+        return $this->saveVersion($data, $actorId);
+    }
+
+    public function saveVersion(array $data, int $actorId, ?BudgetVersion $version = null): BudgetVersion
     {
         $companyId = (int) ($data['company_id'] ?? 0) ?: $this->context->defaultCompanyId();
         $fiscalYear = FiscalYear::query()->findOrFail($data['fiscal_year_id']);
@@ -31,21 +38,35 @@ class BudgetService
             $periodNumbers = range(1, 12);
         }
 
-        $budget = DB::transaction(function () use ($data, $actorId, $companyId, $fiscalYear, $periodNumbers) {
+        $budget = DB::transaction(function () use ($data, $actorId, $companyId, $fiscalYear, $periodNumbers, $version) {
             if (! empty($data['is_active'])) {
                 BudgetVersion::query()
                     ->where('company_id', $companyId)
+                    ->where('fiscal_year_id', $fiscalYear->id)
                     ->update(['is_active' => false]);
             }
 
-            $budget = BudgetVersion::query()->create([
+            $budget = $version
+                ? BudgetVersion::query()->lockForUpdate()->findOrFail($version->id)
+                : new BudgetVersion();
+
+            if ($budget->exists && $budget->status === 'locked') {
+                throw ValidationException::withMessages([
+                    'budget' => __('Locked budget versions cannot be edited.'),
+                ]);
+            }
+
+            $budget->fill([
                 'company_id' => $companyId,
                 'fiscal_year_id' => $fiscalYear->id,
                 'name' => $data['name'],
                 'status' => $data['status'] ?? 'draft',
                 'is_active' => (bool) ($data['is_active'] ?? false),
-                'created_by' => $actorId,
+                'created_by' => $budget->exists ? $budget->created_by : $actorId,
             ]);
+            $budget->save();
+
+            BudgetLine::query()->where('budget_version_id', $budget->id)->delete();
 
             foreach ((array) $data['lines'] as $line) {
                 foreach ($this->normalizedPeriodAmounts($line, $periodNumbers) as $periodNumber => $amount) {
@@ -64,12 +85,136 @@ class BudgetService
             return $budget;
         });
 
-        $this->auditLog->log('budget.created', $actorId, $budget, [
+        $this->auditLog->log($version ? 'budget.updated' : 'budget.created', $actorId, $budget, [
             'line_count' => count((array) $data['lines']),
             'fiscal_year_id' => (int) $fiscalYear->id,
         ], $companyId);
 
         return $budget->load(['company', 'fiscalYear', 'lines.account']);
+    }
+
+    public function activate(BudgetVersion $version, int $actorId): BudgetVersion
+    {
+        return DB::transaction(function () use ($version, $actorId) {
+            $version = BudgetVersion::query()->lockForUpdate()->findOrFail($version->id);
+
+            BudgetVersion::query()
+                ->where('company_id', $version->company_id)
+                ->where('fiscal_year_id', $version->fiscal_year_id)
+                ->update(['is_active' => false]);
+
+            $version->update([
+                'is_active' => true,
+                'status' => $version->status === 'archived' ? 'draft' : $version->status,
+            ]);
+
+            $this->auditLog->log('budget.activated', $actorId, $version, [], (int) $version->company_id);
+
+            return $version->fresh(['company', 'fiscalYear', 'lines.account']);
+        });
+    }
+
+    public function archive(BudgetVersion $version, int $actorId): BudgetVersion
+    {
+        $version->update([
+            'status' => 'archived',
+            'is_active' => false,
+        ]);
+
+        $this->auditLog->log('budget.archived', $actorId, $version, [], (int) $version->company_id);
+
+        return $version->fresh(['company', 'fiscalYear', 'lines.account']);
+    }
+
+    public function lock(BudgetVersion $version, int $actorId): BudgetVersion
+    {
+        $version->update(['status' => 'locked']);
+        $this->auditLog->log('budget.locked', $actorId, $version, [], (int) $version->company_id);
+
+        return $version->fresh(['company', 'fiscalYear', 'lines.account']);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function exportRows(BudgetVersion $version): array
+    {
+        $version->loadMissing(['lines.account', 'fiscalYear']);
+
+        return $version->lines
+            ->sortBy(['account.code', 'period_number'])
+            ->map(fn (BudgetLine $line) => [
+                'account_code' => $line->account?->code,
+                'account_name' => $line->account?->name,
+                'account_id' => (int) $line->account_id,
+                'department_id' => $line->department_id,
+                'branch_id' => $line->branch_id,
+                'job_id' => $line->job_id,
+                'period_number' => (int) $line->period_number,
+                'amount' => round((float) $line->amount, 2),
+            ])->values()->all();
+    }
+
+    public function importCsv(BudgetVersion $version, UploadedFile $file, int $actorId): BudgetVersion
+    {
+        $contents = trim((string) $file->get());
+        if ($contents === '') {
+            throw ValidationException::withMessages(['budget_import' => __('Imported budget file is empty.')]);
+        }
+
+        $rows = array_map('str_getcsv', preg_split("/\\r\\n|\\n|\\r/", $contents) ?: []);
+        $header = array_map(static fn ($value) => strtolower(trim((string) $value)), array_shift($rows) ?? []);
+
+        $lines = collect($rows)
+            ->filter(fn (array $row) => collect($row)->filter(fn ($value) => trim((string) $value) !== '')->isNotEmpty())
+            ->map(function (array $row) use ($header) {
+                $data = array_combine($header, $row);
+
+                return [
+                    'account_id' => (int) ($data['account_id'] ?? 0),
+                    'department_id' => ! empty($data['department_id']) ? (int) $data['department_id'] : null,
+                    'branch_id' => ! empty($data['branch_id']) ? (int) $data['branch_id'] : null,
+                    'job_id' => ! empty($data['job_id']) ? (int) $data['job_id'] : null,
+                    'period_amounts' => [
+                        (float) ($data['amount'] ?? 0),
+                    ],
+                    'period_number' => (int) ($data['period_number'] ?? 1),
+                    'amount' => (float) ($data['amount'] ?? 0),
+                ];
+            });
+
+        $periodNumbers = AccountingPeriod::query()
+            ->where('fiscal_year_id', $version->fiscal_year_id)
+            ->orderBy('period_number')
+            ->pluck('period_number')
+            ->all();
+
+        return DB::transaction(function () use ($version, $lines, $periodNumbers, $actorId) {
+            BudgetLine::query()->where('budget_version_id', $version->id)->delete();
+
+            foreach ($lines as $line) {
+                $periodNumber = (int) ($line['period_number'] ?? 1);
+                if (! in_array($periodNumber, $periodNumbers, true)) {
+                    continue;
+                }
+
+                BudgetLine::query()->create([
+                    'budget_version_id' => $version->id,
+                    'account_id' => $line['account_id'],
+                    'department_id' => $line['department_id'],
+                    'job_id' => $line['job_id'],
+                    'branch_id' => $line['branch_id'],
+                    'period_number' => $periodNumber,
+                    'amount' => round((float) ($line['amount'] ?? 0), 2),
+                ]);
+            }
+
+            $this->auditLog->log('budget.imported', $actorId, $version, [
+                'line_count' => $lines->count(),
+            ], (int) $version->company_id);
+
+            return $version->fresh(['company', 'fiscalYear', 'lines.account']);
+        });
     }
 
     public function variance(BudgetVersion $version): array

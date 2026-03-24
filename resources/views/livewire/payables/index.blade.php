@@ -1,14 +1,17 @@
 <?php
 
+use App\Models\AccountingCompany;
 use App\Models\ApInvoice;
 use App\Models\ApPayment;
 use App\Models\Branch;
 use App\Models\Department;
 use App\Models\Job;
+use App\Models\RecurringBillTemplate;
 use App\Models\Supplier;
 use App\Services\AP\ApInvoicePostingService;
 use App\Services\AP\ApInvoiceVoidService;
 use App\Services\AP\ApReportsService;
+use App\Services\AP\RecurringBillService;
 use App\Services\Spend\ExpenseWorkflowService;
 use App\Support\AP\DocumentTypeMap;
 use Illuminate\Database\Eloquent\Builder;
@@ -40,6 +43,22 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?string $payment_date_from = null;
     public ?string $payment_date_to = null;
 
+    public ?int $editing_recurring_template_id = null;
+    public ?int $recurring_company_id = null;
+    public string $recurring_name = '';
+    public ?int $recurring_supplier_id = null;
+    public ?int $recurring_branch_id = null;
+    public ?int $recurring_department_id = null;
+    public ?int $recurring_job_id = null;
+    public string $recurring_frequency = 'monthly';
+    public ?string $recurring_start_date = null;
+    public ?string $recurring_end_date = null;
+    public ?string $recurring_next_run_date = null;
+    public string $recurring_due_day_offset = '30';
+    public bool $recurring_is_active = true;
+    public ?string $recurring_notes = null;
+    public array $recurring_lines = [];
+
     protected $paginationTheme = 'tailwind';
 
     public function mount(): void
@@ -48,6 +67,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $allowedTabs = $this->availableTabs();
         $this->tab = in_array($requestedTab, array_keys($allowedTabs), true) ? $requestedTab : array_key_first($allowedTabs);
         $this->expense_channel = (string) request()->query('expense_channel', 'all');
+        $this->resetRecurringTemplateForm();
     }
 
     public function updating($field): void
@@ -122,8 +142,137 @@ new #[Layout('components.layouts.app')] class extends Component {
         session()->flash('status', __('Document voided.'));
     }
 
+    public function addRecurringLine(): void
+    {
+        $this->recurring_lines[] = ['description' => '', 'quantity' => 1, 'unit_price' => 0];
+    }
+
+    public function removeRecurringLine(int $index): void
+    {
+        unset($this->recurring_lines[$index]);
+        $this->recurring_lines = array_values($this->recurring_lines);
+    }
+
+    public function editRecurringTemplate(int $templateId): void
+    {
+        abort_unless($this->canManageAp(), 403);
+        $template = RecurringBillTemplate::query()->with('lines')->findOrFail($templateId);
+
+        $this->editing_recurring_template_id = $template->id;
+        $this->recurring_name = $template->name;
+        $this->recurring_company_id = $template->company_id;
+        $this->recurring_supplier_id = $template->supplier_id;
+        $this->recurring_branch_id = $template->branch_id;
+        $this->recurring_department_id = $template->department_id;
+        $this->recurring_job_id = $template->job_id;
+        $this->recurring_frequency = $template->frequency;
+        $this->recurring_start_date = optional($template->start_date)->toDateString();
+        $this->recurring_end_date = optional($template->end_date)->toDateString();
+        $this->recurring_next_run_date = optional($template->next_run_date)->toDateString();
+        $this->recurring_due_day_offset = (string) ($template->due_day_offset ?? 30);
+        $this->recurring_is_active = (bool) $template->is_active;
+        $this->recurring_notes = $template->notes;
+        $this->recurring_lines = $template->lines->map(fn ($line) => [
+            'purchase_order_item_id' => $line->purchase_order_item_id,
+            'description' => $line->description,
+            'quantity' => $line->quantity,
+            'unit_price' => $line->unit_price,
+        ])->all();
+    }
+
+    public function saveRecurringTemplate(RecurringBillService $service): void
+    {
+        abort_unless($this->canManageAp(), 403);
+
+        $data = $this->validate([
+            'recurring_name' => ['required', 'string', 'max:120'],
+            'recurring_company_id' => ['required', 'integer', 'exists:accounting_companies,id'],
+            'recurring_supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
+            'recurring_branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+            'recurring_department_id' => ['nullable', 'integer', 'exists:departments,id'],
+            'recurring_job_id' => ['nullable', 'integer', 'exists:accounting_jobs,id'],
+            'recurring_frequency' => ['required', 'in:weekly,monthly,quarterly,annual'],
+            'recurring_start_date' => ['nullable', 'date'],
+            'recurring_end_date' => ['nullable', 'date', 'after_or_equal:recurring_start_date'],
+            'recurring_next_run_date' => ['required', 'date'],
+            'recurring_due_day_offset' => ['required', 'integer', 'min:0'],
+            'recurring_is_active' => ['boolean'],
+            'recurring_notes' => ['nullable', 'string'],
+            'recurring_lines' => ['required', 'array', 'min:1'],
+            'recurring_lines.*.description' => ['required', 'string', 'max:255'],
+            'recurring_lines.*.quantity' => ['required', 'numeric', 'min:0.001'],
+            'recurring_lines.*.unit_price' => ['required', 'numeric', 'min:0'],
+        ]);
+
+        $template = $this->editing_recurring_template_id
+            ? RecurringBillTemplate::query()->findOrFail($this->editing_recurring_template_id)
+            : null;
+
+        $service->saveTemplate([
+            'company_id' => $data['recurring_company_id'],
+            'branch_id' => $data['recurring_branch_id'],
+            'supplier_id' => $data['recurring_supplier_id'],
+            'department_id' => $data['recurring_department_id'],
+            'job_id' => $data['recurring_job_id'],
+            'name' => $data['recurring_name'],
+            'frequency' => $data['recurring_frequency'],
+            'start_date' => $data['recurring_start_date'],
+            'end_date' => $data['recurring_end_date'],
+            'next_run_date' => $data['recurring_next_run_date'],
+            'due_day_offset' => $data['recurring_due_day_offset'],
+            'is_active' => $data['recurring_is_active'],
+            'notes' => $data['recurring_notes'],
+            'lines' => $data['recurring_lines'],
+        ], (int) auth()->id(), $template);
+
+        $this->resetRecurringTemplateForm();
+        session()->flash('status', __('Recurring bill template saved.'));
+    }
+
+    public function pauseRecurringTemplate(int $templateId, RecurringBillService $service): void
+    {
+        abort_unless($this->canManageAp(), 403);
+        $service->pause(RecurringBillTemplate::query()->findOrFail($templateId), (int) auth()->id());
+        session()->flash('status', __('Recurring bill template paused.'));
+    }
+
+    public function resumeRecurringTemplate(int $templateId, RecurringBillService $service): void
+    {
+        abort_unless($this->canManageAp(), 403);
+        $service->resume(RecurringBillTemplate::query()->findOrFail($templateId), (int) auth()->id());
+        session()->flash('status', __('Recurring bill template resumed.'));
+    }
+
+    public function generateRecurringTemplate(int $templateId, RecurringBillService $service): void
+    {
+        abort_unless($this->canManageAp(), 403);
+        $invoice = $service->generateTemplate(RecurringBillTemplate::query()->findOrFail($templateId), null, (int) auth()->id());
+        session()->flash('status', __('Recurring bill draft generated.'));
+        $this->redirectRoute('payables.invoices.show', $invoice, navigate: true);
+    }
+
+    public function resetRecurringTemplateForm(): void
+    {
+        $this->editing_recurring_template_id = null;
+        $this->recurring_company_id = AccountingCompany::query()->where('is_default', true)->value('id');
+        $this->recurring_name = '';
+        $this->recurring_supplier_id = null;
+        $this->recurring_branch_id = null;
+        $this->recurring_department_id = null;
+        $this->recurring_job_id = null;
+        $this->recurring_frequency = 'monthly';
+        $this->recurring_start_date = now()->toDateString();
+        $this->recurring_end_date = null;
+        $this->recurring_next_run_date = now()->toDateString();
+        $this->recurring_due_day_offset = '30';
+        $this->recurring_is_active = true;
+        $this->recurring_notes = null;
+        $this->recurring_lines = [['description' => '', 'quantity' => 1, 'unit_price' => 0]];
+    }
+
     public function with(): array
     {
+        $companies = Schema::hasTable('accounting_companies') ? AccountingCompany::query()->orderBy('name')->get() : collect();
         $suppliers = Schema::hasTable('suppliers') ? Supplier::query()->orderBy('name')->get() : collect();
         $branches = Schema::hasTable('branches') ? Branch::query()->orderBy('name')->get() : collect();
         $departments = Schema::hasTable('departments') ? Department::query()->orderBy('name')->get() : collect();
@@ -131,6 +280,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         return [
             'tabs' => $this->availableTabs(),
+            'companies' => $companies,
             'suppliers' => $suppliers,
             'branches' => $branches,
             'departments' => $departments,
@@ -142,6 +292,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             'paymentPage' => $this->tab === 'payments'
                 ? $this->paymentQuery()->paginate(10, pageName: 'payPage')
                 : null,
+            'recurringTemplates' => $this->tab === 'recurring' && $this->canManageAp()
+                ? RecurringBillTemplate::query()->with(['company', 'supplier', 'lines', 'generatedInvoices'])->latest('updated_at')->get()
+                : collect(),
             'aging' => $this->canManageAp() ? app(ApReportsService::class)->agingSummary($this->supplier_id) : null,
             'agingInvoices' => $this->tab === 'aging' && $this->canManageAp()
                 ? ApInvoice::query()
@@ -259,6 +412,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
 
         if ($this->canManageAp()) {
+            $tabs['recurring'] = __('Recurring Bills');
             $tabs['payments'] = __('Payments');
             $tabs['aging'] = __('Aging');
         }
@@ -316,7 +470,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endforeach
     </div>
 
-    @if ($tab !== 'payments' && $tab !== 'aging')
+    @if ($tab !== 'payments' && $tab !== 'aging' && $tab !== 'recurring')
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
             <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <flux:input wire:model.live.debounce.300ms="search" :label="__('Search')" :placeholder="__('Document #, supplier, notes')" />
@@ -515,6 +669,142 @@ new #[Layout('components.layouts.app')] class extends Component {
                     {{ $documentPage->links() }}
                 </div>
             @endif
+        </div>
+    @endif
+
+    @if($tab === 'recurring' && $this->canManageAp())
+        <div class="grid gap-6 xl:grid-cols-[360px,1fr]">
+            <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+                <h2 class="mb-3 text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $editing_recurring_template_id ? __('Edit Recurring Template') : __('New Recurring Template') }}</h2>
+                <form wire:submit="saveRecurringTemplate" class="space-y-4">
+                    <flux:input wire:model="recurring_name" :label="__('Template Name')" />
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Company') }}</label>
+                        <select wire:model="recurring_company_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                            @foreach ($companies as $company)
+                                <option value="{{ $company->id }}">{{ $company->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Supplier') }}</label>
+                        <select wire:model="recurring_supplier_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                            <option value="">{{ __('Select supplier') }}</option>
+                            @foreach ($suppliers as $supplier)
+                                <option value="{{ $supplier->id }}">{{ $supplier->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="grid gap-4 md:grid-cols-2">
+                        <div>
+                            <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Frequency') }}</label>
+                            <select wire:model="recurring_frequency" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                                <option value="weekly">{{ __('Weekly') }}</option>
+                                <option value="monthly">{{ __('Monthly') }}</option>
+                                <option value="quarterly">{{ __('Quarterly') }}</option>
+                                <option value="annual">{{ __('Annual') }}</option>
+                            </select>
+                        </div>
+                        <flux:input wire:model="recurring_due_day_offset" type="number" min="0" :label="__('Due in days')" />
+                    </div>
+                    <div class="grid gap-4 md:grid-cols-2">
+                        <flux:input wire:model="recurring_start_date" type="date" :label="__('Start Date')" />
+                        <flux:input wire:model="recurring_next_run_date" type="date" :label="__('Next Run')" />
+                    </div>
+                    <div class="grid gap-4 md:grid-cols-2">
+                        <flux:input wire:model="recurring_end_date" type="date" :label="__('End Date')" />
+                        <label class="mt-7 inline-flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+                            <input type="checkbox" wire:model="recurring_is_active" class="rounded border-neutral-300 text-primary-600">
+                            {{ __('Active') }}
+                        </label>
+                    </div>
+                    <flux:textarea wire:model="recurring_notes" :label="__('Notes')" rows="2" />
+
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Template Lines') }}</h3>
+                            <flux:button type="button" wire:click="addRecurringLine" size="sm" variant="ghost">{{ __('Add Line') }}</flux:button>
+                        </div>
+                        @foreach($recurring_lines as $index => $line)
+                            <div class="grid gap-3 md:grid-cols-[1fr,120px,120px,auto] items-end">
+                                <flux:input wire:model="recurring_lines.{{ $index }}.description" :label="__('Description')" />
+                                <flux:input wire:model="recurring_lines.{{ $index }}.quantity" type="number" step="0.001" :label="__('Qty')" />
+                                <flux:input wire:model="recurring_lines.{{ $index }}.unit_price" type="number" step="0.0001" :label="__('Unit Price')" />
+                                <flux:button type="button" wire:click="removeRecurringLine({{ $index }})" variant="ghost" size="sm">{{ __('Remove') }}</flux:button>
+                            </div>
+                        @endforeach
+                    </div>
+
+                    <div class="flex justify-end gap-2">
+                        @if($editing_recurring_template_id)
+                            <flux:button type="button" wire:click="resetRecurringTemplateForm" variant="ghost">{{ __('Cancel') }}</flux:button>
+                        @endif
+                        <flux:button type="submit">{{ __('Save Template') }}</flux:button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+                <div class="app-table-shell">
+                    <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
+                        <thead class="bg-neutral-50 dark:bg-neutral-800/90">
+                            <tr>
+                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Template') }}</th>
+                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Company') }}</th>
+                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Supplier') }}</th>
+                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Frequency') }}</th>
+                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Schedule') }}</th>
+                                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Actions') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                            @forelse($recurringTemplates as $template)
+                                <tr>
+                                    <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">
+                                        <div class="font-semibold">{{ $template->name }}</div>
+                                        <div class="text-xs text-neutral-500">{{ $template->lines->count() }} {{ __('lines') }}</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $template->company?->name ?? '—' }}</td>
+                                    <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $template->supplier?->name ?? '—' }}</td>
+                                    <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ ucfirst($template->frequency) }}</td>
+                                    <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
+                                        <div>{{ __('Next') }}: {{ optional($template->next_run_date)->format('Y-m-d') ?? '—' }}</div>
+                                        <div class="text-xs text-neutral-500">{{ __('Last') }}: {{ optional($template->last_run_date)->format('Y-m-d') ?? '—' }}</div>
+                                        <div class="text-xs text-neutral-500">{{ $template->is_active ? __('Active') : __('Paused') }}</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right text-sm">
+                                        <div class="flex flex-wrap justify-end gap-2">
+                                            <flux:button type="button" wire:click="editRecurringTemplate({{ $template->id }})" size="xs" variant="ghost">{{ __('Edit') }}</flux:button>
+                                            <flux:button type="button" wire:click="generateRecurringTemplate({{ $template->id }})" size="xs">{{ __('Generate') }}</flux:button>
+                                            @if($template->is_active)
+                                                <flux:button type="button" wire:click="pauseRecurringTemplate({{ $template->id }})" size="xs" variant="ghost">{{ __('Pause') }}</flux:button>
+                                            @else
+                                                <flux:button type="button" wire:click="resumeRecurringTemplate({{ $template->id }})" size="xs" variant="ghost">{{ __('Resume') }}</flux:button>
+                                            @endif
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr class="bg-neutral-50/60 dark:bg-neutral-800/40">
+                                    <td colspan="6" class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <span class="font-medium">{{ __('Recent generated drafts:') }}</span>
+                                            @forelse($template->generatedInvoices->take(5) as $generatedInvoice)
+                                                <a href="{{ route('payables.invoices.show', $generatedInvoice) }}" class="rounded-full bg-white px-2 py-1 text-xs font-medium text-primary-700 shadow-sm ring-1 ring-neutral-200 hover:underline dark:bg-neutral-900 dark:text-primary-300 dark:ring-neutral-700">
+                                                    {{ $generatedInvoice->invoice_number }}
+                                                </a>
+                                            @empty
+                                                <span class="text-xs text-neutral-500">{{ __('No generated drafts yet.') }}</span>
+                                            @endforelse
+                                        </div>
+                                    </td>
+                                </tr>
+                            @empty
+                                <tr><td colspan="6" class="px-3 py-4 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No recurring bill templates found.') }}</td></tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     @endif
 

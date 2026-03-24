@@ -43,4 +43,9 @@ class BudgetLine extends Model
     {
         return $this->belongsTo(Job::class, 'job_id');
     }
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class, 'branch_id');
+    }
 }

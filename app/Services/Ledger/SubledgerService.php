@@ -7,10 +7,13 @@ use App\Models\ApPayment;
 use App\Models\ApPaymentAllocation;
 use App\Models\ArInvoice;
 use App\Models\Branch;
+use App\Models\FinanceSetting;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Models\InventoryTransaction;
 use App\Models\InventoryTransfer;
+use App\Models\JournalEntry;
+use App\Models\PurchaseOrderInvoiceMatch;
 use App\Models\PettyCashIssue;
 use App\Models\PettyCashReconciliation;
 use App\Models\Supplier;
@@ -131,7 +134,44 @@ class SubledgerService
         $apAccount = 'ap_invoice_ap';
 
         $lines = [];
-        if ($subtotal > 0) {
+        if ($subtotal > 0 && $invoice->document_type === 'landed_cost_adjustment') {
+            $lines[] = [
+                'account' => 'inventory_asset',
+                'debit' => $subtotal,
+                'credit' => 0,
+                'memo' => 'Landed cost capitalization',
+            ];
+        } elseif ($subtotal > 0 && $invoice->purchase_order_id) {
+            $matchingSummary = $this->purchaseOrderMatchingSummary($invoice);
+            $grniAmount = min(round((float) ($matchingSummary['matched_amount'] ?? 0), 2), $subtotal);
+            $varianceAmount = round($subtotal - $grniAmount, 2);
+
+            if ($grniAmount > 0) {
+                $lines[] = [
+                    'account' => 'ap_invoice_inventory',
+                    'debit' => $grniAmount,
+                    'credit' => 0,
+                    'memo' => 'Clear GRNI for matched receipts',
+                ];
+            }
+
+            if (abs($varianceAmount) > 0.0001) {
+                $varianceLine = [
+                    'debit' => $varianceAmount > 0 ? abs($varianceAmount) : 0,
+                    'credit' => $varianceAmount < 0 ? abs($varianceAmount) : 0,
+                    'memo' => 'Purchase price variance',
+                ];
+
+                $varianceAccountId = FinanceSetting::query()->find(1)?->purchase_price_variance_account_id;
+                if ($varianceAccountId) {
+                    $varianceLine['account_id'] = (int) $varianceAccountId;
+                } else {
+                    $varianceLine['account'] = 'inventory_adjustment';
+                }
+
+                $lines[] = $varianceLine;
+            }
+        } elseif ($subtotal > 0) {
             $lines[] = [
                 'account' => $expenseAccountId ?: $debitKey,
                 'debit' => $subtotal,
@@ -168,7 +208,9 @@ class SubledgerService
             lines: $lines,
             userId: $userId,
             branchId: $invoice->branch_id,
-            companyId: $invoice->company_id
+            companyId: $invoice->company_id,
+            departmentId: $invoice->department_id,
+            jobId: $invoice->job_id
         );
     }
 
@@ -229,7 +271,9 @@ class SubledgerService
             lines: $lines,
             userId: $userId,
             branchId: $invoice->branch_id,
-            companyId: $invoice->company_id
+            companyId: $invoice->company_id,
+            departmentId: $invoice->department_id,
+            jobId: $invoice->job_id
         );
     }
 
@@ -288,7 +332,9 @@ class SubledgerService
             lines: $lines,
             userId: $userId,
             branchId: $payment->branch_id,
-            companyId: $payment->company_id
+            companyId: $payment->company_id,
+            departmentId: $payment->department_id,
+            jobId: $payment->job_id
         );
     }
 
@@ -352,7 +398,9 @@ class SubledgerService
             lines: $lines,
             userId: $userId,
             branchId: $allocation->payment?->branch_id,
-            companyId: $allocation->payment?->company_id
+            companyId: $allocation->payment?->company_id,
+            departmentId: $allocation->payment?->department_id,
+            jobId: $allocation->payment?->job_id
         );
     }
 
@@ -434,7 +482,8 @@ class SubledgerService
             lines: $lines,
             userId: $userId,
             branchId: $invoice->branch_id,
-            companyId: $invoice->company_id ?? null
+            companyId: $invoice->company_id ?? null,
+            jobId: $invoice->job_id
         );
     }
 
@@ -643,6 +692,49 @@ class SubledgerService
         );
     }
 
+    public function recordJournalEntry(JournalEntry $journal, int $userId): ?SubledgerEntry
+    {
+        if (! $this->canPost()) {
+            return null;
+        }
+
+        $journal->loadMissing('lines');
+        if ($journal->lines->isEmpty()) {
+            throw ValidationException::withMessages([
+                'journal' => __('Journal entry must contain at least one line.'),
+            ]);
+        }
+
+        $lines = $journal->lines->map(function ($line) {
+            return [
+                'account_id' => (int) $line->account_id,
+                'debit' => (float) $line->debit,
+                'credit' => (float) $line->credit,
+                'memo' => $line->memo,
+            ];
+        })->all();
+
+        return $this->recordEntry(
+            sourceType: 'journal_entry',
+            sourceId: (int) $journal->id,
+            event: 'post',
+            entryDate: optional($journal->entry_date)->toDateString() ?? now()->toDateString(),
+            description: $journal->memo ?: 'Journal '.$journal->entry_number,
+            lines: $lines,
+            userId: $userId,
+            branchId: $journal->lines->pluck('branch_id')->filter()->unique()->count() === 1
+                ? (int) $journal->lines->pluck('branch_id')->filter()->first()
+                : null,
+            companyId: (int) $journal->company_id,
+            departmentId: $journal->lines->pluck('department_id')->filter()->unique()->count() === 1
+                ? (int) $journal->lines->pluck('department_id')->filter()->first()
+                : null,
+            jobId: $journal->lines->pluck('job_id')->filter()->unique()->count() === 1
+                ? (int) $journal->lines->pluck('job_id')->filter()->first()
+                : null
+        );
+    }
+
     private function recordEntry(
         string $sourceType,
         int $sourceId,
@@ -652,7 +744,9 @@ class SubledgerService
         array $lines,
         ?int $userId = null,
         ?int $branchId = null,
-        ?int $companyId = null
+        ?int $companyId = null,
+        ?int $departmentId = null,
+        ?int $jobId = null
     ): ?SubledgerEntry {
         if (! $this->canPost()) {
             return null;
@@ -716,6 +810,8 @@ class SubledgerService
             'source_document_type' => $sourceType,
             'source_document_id' => $sourceId,
             'branch_id' => $branchId,
+            'department_id' => $departmentId,
+            'job_id' => $jobId,
             'period_id' => $this->accountingContext->resolvePeriodId($entryDate, $companyId),
             'currency_code' => config('pos.currency', 'QAR'),
             'status' => 'posted',
@@ -838,6 +934,10 @@ class SubledgerService
 
     private function apInvoiceDebitKey(ApInvoice $invoice): string
     {
+        if ($invoice->document_type === 'landed_cost_adjustment') {
+            return 'ap_invoice_inventory';
+        }
+
         if ($invoice->purchase_order_id) {
             return 'inventory_clearing';
         }
@@ -898,6 +998,21 @@ class SubledgerService
         $reference = $transaction->reference_type ?? 'manual';
         $refId = $transaction->reference_id ? '#'.$transaction->reference_id : '';
         return trim('Inventory '.$transaction->transaction_type.' '.$reference.' '.$refId);
+    }
+
+    /**
+     * @return array<string, float>
+     */
+    private function purchaseOrderMatchingSummary(ApInvoice $invoice): array
+    {
+        $matches = PurchaseOrderInvoiceMatch::query()
+            ->where('ap_invoice_id', $invoice->id)
+            ->get();
+
+        return [
+            'matched_amount' => round((float) $matches->sum('matched_amount'), 2),
+            'variance_amount' => round((float) $matches->sum('price_variance'), 2),
+        ];
     }
 
     private function moneyFromCents(int $cents): float

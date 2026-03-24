@@ -25,7 +25,7 @@ class BankingController extends Controller
             ->get();
 
         $transactions = BankTransaction::query()
-            ->with(['bankAccount', 'statementImport'])
+            ->with(['bankAccount', 'statementImport', 'matchedTransaction'])
             ->when($bankAccountId > 0, fn ($query) => $query->where('bank_account_id', $bankAccountId))
             ->latest('transaction_date')
             ->limit(100)
@@ -67,5 +67,58 @@ class BankingController extends Controller
         $result = $service->reconcile($bankAccount, $request->validated(), (int) $request->user()->id);
 
         return response()->json($result, 201);
+    }
+
+    public function match(Request $request, BankReconciliationRun $reconciliation, BankReconciliationService $service): JsonResponse
+    {
+        $data = $request->validate([
+            'statement_transaction_id' => ['required', 'integer', 'exists:bank_transactions,id'],
+            'book_transaction_id' => ['required', 'integer', 'exists:bank_transactions,id'],
+        ]);
+
+        $result = $service->match(
+            $reconciliation,
+            (int) $data['statement_transaction_id'],
+            (int) $data['book_transaction_id'],
+            (int) $request->user()->id
+        );
+
+        return response()->json($result);
+    }
+
+    public function unmatch(Request $request, BankReconciliationRun $reconciliation, BankReconciliationService $service): JsonResponse
+    {
+        $data = $request->validate([
+            'transaction_id' => ['required', 'integer', 'exists:bank_transactions,id'],
+        ]);
+
+        $result = $service->unmatch($reconciliation, (int) $data['transaction_id'], (int) $request->user()->id);
+
+        return response()->json($result);
+    }
+
+    public function markException(Request $request, BankReconciliationRun $reconciliation, BankReconciliationService $service): JsonResponse
+    {
+        $data = $request->validate([
+            'statement_transaction_id' => ['required', 'integer', 'exists:bank_transactions,id'],
+        ]);
+
+        $result = $service->markException($reconciliation, (int) $data['statement_transaction_id'], (int) $request->user()->id);
+
+        return response()->json($result);
+    }
+
+    public function close(Request $request, BankReconciliationRun $reconciliation, BankReconciliationService $service): JsonResponse
+    {
+        $result = $service->close($reconciliation, (int) $request->user()->id);
+
+        return response()->json($result);
+    }
+
+    public function reopen(Request $request, BankReconciliationRun $reconciliation, BankReconciliationService $service): JsonResponse
+    {
+        $result = $service->reopen($reconciliation, (int) $request->user()->id);
+
+        return response()->json($result);
     }
 }

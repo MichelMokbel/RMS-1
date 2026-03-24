@@ -15,6 +15,7 @@ use App\Services\Accounting\AccountingPeriodGateService;
 use App\Services\AP\ApInvoicePostingService;
 use App\Services\AP\ApInvoiceTotalsService;
 use App\Services\AP\ApInvoiceVoidService;
+use App\Services\AP\SupplierAccountingPolicyService;
 use App\Services\Spend\ExpenseWorkflowService;
 use App\Support\AP\DocumentTypeMap;
 use Illuminate\Http\JsonResponse;
@@ -47,6 +48,7 @@ class ApInvoiceController extends Controller
         ApInvoiceTotalsService $totalsService,
         AccountingContextService $accountingContext,
         AccountingPeriodGateService $periodGate,
+        SupplierAccountingPolicyService $supplierPolicy,
         ExpenseWorkflowService $expenseWorkflowService
     ): JsonResponse {
         $data = $request->validated();
@@ -54,6 +56,7 @@ class ApInvoiceController extends Controller
         $companyId = $accountingContext->resolveCompanyId($data['branch_id'] ?? null, $data['company_id'] ?? null);
         $periodId = $accountingContext->resolvePeriodId($data['invoice_date'] ?? null, $data['company_id'] ?? null);
         $periodGate->assertDateOpen((string) $data['invoice_date'], $companyId, $periodId, 'ap', 'invoice_date');
+        $supplierPolicy->assertCanCreateDraft($request->supplier());
 
         $invoice = DB::transaction(function () use ($data, $totalsService, $document, $expenseWorkflowService, $companyId, $periodId) {
             $invoice = ApInvoice::create([
@@ -83,6 +86,7 @@ class ApInvoiceController extends Controller
                 $lineTotal = round((float) $item['quantity'] * (float) $item['unit_price'], 2);
                 ApInvoiceItem::create([
                     'invoice_id' => $invoice->id,
+                    'purchase_order_item_id' => $item['purchase_order_item_id'] ?? null,
                     'description' => $item['description'],
                     'quantity' => $item['quantity'],
                     'unit_price' => $item['unit_price'],
@@ -112,6 +116,7 @@ class ApInvoiceController extends Controller
         ApInvoiceTotalsService $totalsService,
         AccountingContextService $accountingContext,
         AccountingPeriodGateService $periodGate,
+        SupplierAccountingPolicyService $supplierPolicy,
         ExpenseWorkflowService $expenseWorkflowService
     ): JsonResponse {
         $data = $request->validated();
@@ -124,6 +129,7 @@ class ApInvoiceController extends Controller
         $companyId = $accountingContext->resolveCompanyId($data['branch_id'] ?? $invoice->branch_id, $data['company_id'] ?? $invoice->company_id);
         $periodId = $accountingContext->resolvePeriodId($data['invoice_date'] ?? null, $data['company_id'] ?? $invoice->company_id);
         $periodGate->assertDateOpen((string) $data['invoice_date'], $companyId, $periodId, 'ap', 'invoice_date');
+        $supplierPolicy->assertCanCreateDraft($request->supplier());
 
         $invoice = DB::transaction(function () use ($invoice, $data, $totalsService, $document, $expenseWorkflowService, $companyId, $periodId) {
             $invoice->update([
@@ -150,6 +156,7 @@ class ApInvoiceController extends Controller
                 $lineTotal = round((float) $item['quantity'] * (float) $item['unit_price'], 2);
                 ApInvoiceItem::create([
                     'invoice_id' => $invoice->id,
+                    'purchase_order_item_id' => $item['purchase_order_item_id'] ?? null,
                     'description' => $item['description'],
                     'quantity' => $item['quantity'],
                     'unit_price' => $item['unit_price'],
@@ -180,7 +187,12 @@ class ApInvoiceController extends Controller
         ApInvoice $invoice,
         ApInvoicePostingService $postingService
     ): JsonResponse {
-        $invoice = $postingService->post($invoice, Auth::id());
+        $invoice = $postingService->post(
+            $invoice,
+            Auth::id(),
+            (bool) $request->boolean('matching_override'),
+            $request->input('matching_override_reason')
+        );
 
         return response()->json($invoice);
     }

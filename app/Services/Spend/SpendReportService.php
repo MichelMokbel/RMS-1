@@ -56,6 +56,10 @@ class SpendReportService
             ->where('is_expense', true)
             ->whereNotIn('status', ['void'])
             ->with(['supplier', 'category', 'items', 'allocations.payment', 'expenseProfile.wallet'])
+            ->when(! empty($filters['company_id']), fn ($q) => $q->where('company_id', (int) $filters['company_id']))
+            ->when(! empty($filters['branch_id']), fn ($q) => $q->where('branch_id', (int) $filters['branch_id']))
+            ->when(! empty($filters['department_id']), fn ($q) => $q->where('department_id', (int) $filters['department_id']))
+            ->when(! empty($filters['job_id']), fn ($q) => $q->where('job_id', (int) $filters['job_id']))
             ->when($sourceChannel, fn ($q) => $q->whereHas('expenseProfile', fn ($sub) => $sub->where('channel', $sourceChannel)))
             ->when(! empty($filters['search']), fn ($q) => $q->where(function ($sub) use ($filters) {
                 $search = (string) $filters['search'];
@@ -85,11 +89,16 @@ class SpendReportService
                     'date' => optional($i->invoice_date)->toDateString(),
                     'reference' => (string) ($i->invoice_number ?? ''),
                     'description' => (string) ($firstLine?->description ?? $i->notes ?? ''),
+                    'supplier_id' => $i->supplier_id,
                     'supplier' => (string) ($i->supplier?->name ?? ''),
                     'category' => (string) ($i->category?->name ?? ''),
                     'status' => (string) ($profile?->approval_status ?? $i->status ?? ''),
                     'amount' => (float) ($i->total_amount ?? 0),
                     'payment_method' => $paymentMethod,
+                    'company_id' => $i->company_id,
+                    'branch_id' => $i->branch_id,
+                    'department_id' => $i->department_id,
+                    'job_id' => $i->job_id,
                 ];
             });
     }

@@ -11,6 +11,7 @@ use App\Models\ApInvoice;
 use App\Models\ApInvoiceItem;
 use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\Accounting\AccountingContextService;
+use App\Services\Accounting\JobCostingService;
 use App\Services\Ledger\SubledgerService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -153,6 +154,18 @@ class PurchaseOrderReceivingService
         ]);
 
         app(SubledgerService::class)->recordInventoryTransaction($transaction, $userId);
+
+        if ($po->job_id && $po->job) {
+            app(JobCostingService::class)->recordSourceTransaction($po->job, [
+                'transaction_date' => optional($transaction->transaction_date)->toDateString() ?? now()->toDateString(),
+                'amount' => round((float) ($transaction->total_cost ?? ($unitPrice * $delta)), 2),
+                'transaction_type' => 'cost',
+                'memo' => __('Inventory receipt from PO :po for :item', [
+                    'po' => $po->po_number,
+                    'item' => $item->name,
+                ]),
+            ], PurchaseOrder::class, (int) $po->id, $userId);
+        }
     }
 
     private function resolveBranchId(PurchaseOrder $po): int
@@ -221,6 +234,7 @@ class PurchaseOrderReceivingService
             $subtotal += $lineTotal;
             ApInvoiceItem::create([
                 'invoice_id' => $invoice->id,
+                'purchase_order_item_id' => $poItem->id,
                 'description' => 'PO '.$po->po_number.' item '.$poItem->item_id,
                 'quantity' => $lineQty,
                 'unit_price' => $unit,

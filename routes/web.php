@@ -1126,7 +1126,9 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|fin
     Volt::route('accounting/journals', 'accounting.journals')->name('accounting.journals');
     Volt::route('accounting/budgets', 'accounting.budgets')->name('accounting.budgets');
     Volt::route('accounting/jobs', 'accounting.jobs')->name('accounting.jobs');
-    Volt::route('accounting/reports', 'accounting.reports')->name('accounting.reports');
+    Route::get('accounting/reports', function () {
+        return redirect()->route('reports.index', ['category' => 'accounting']);
+    })->name('accounting.reports');
     Volt::route('accounting/period-close', 'accounting.period-close')->name('accounting.period-close');
 });
 
@@ -1223,6 +1225,19 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Volt::route('customer-aging-summary', 'reports.customer-aging-summary')->name('customer-aging-summary');
     Volt::route('supplier-aging-summary', 'reports.supplier-aging-summary')->name('supplier-aging-summary');
     Volt::route('subscription-details', 'reports.subscription-details')->name('subscription-details');
+    Volt::route('accounting/trial-balance', 'reports.accounting-report')->name('accounting-trial-balance');
+    Volt::route('accounting/profit-loss', 'reports.accounting-report')->name('accounting-profit-loss');
+    Volt::route('accounting/balance-sheet', 'reports.accounting-report')->name('accounting-balance-sheet');
+    Volt::route('accounting/cash-flow', 'reports.accounting-report')->name('accounting-cash-flow');
+    Volt::route('accounting/bank-reconciliation', 'reports.accounting-report')->name('accounting-bank-reconciliation');
+    Volt::route('accounting/budget-variance', 'reports.accounting-report')->name('accounting-budget-variance');
+    Volt::route('accounting/job-profitability', 'reports.accounting-report')->name('accounting-job-profitability');
+    Volt::route('accounting/ap-aging', 'reports.accounting-report')->name('accounting-ap-aging');
+    Volt::route('accounting/vendor-ledger', 'reports.accounting-report')->name('accounting-vendor-ledger');
+    Volt::route('accounting/expense-analysis', 'reports.accounting-report')->name('accounting-expense-analysis');
+    Volt::route('accounting/inventory-valuation', 'reports.accounting-report')->name('accounting-inventory-valuation');
+    Volt::route('accounting/purchase-accruals', 'reports.accounting-report')->name('accounting-purchase-accruals');
+    Volt::route('accounting/multi-company-summary', 'reports.accounting-report')->name('accounting-multi-company-summary');
 
     Route::get('orders/print', [\App\Http\Controllers\Reports\OrdersReportController::class, 'print'])->name('orders.print');
     Route::get('orders/csv', [\App\Http\Controllers\Reports\OrdersReportController::class, 'csv'])->name('orders.csv');
@@ -1302,6 +1317,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Route::get('supplier-aging-summary/print', [\App\Http\Controllers\Reports\SupplierAgingSummaryReportController::class, 'print'])->name('supplier-aging-summary.print');
     Route::get('supplier-aging-summary/csv', [\App\Http\Controllers\Reports\SupplierAgingSummaryReportController::class, 'csv'])->name('supplier-aging-summary.csv');
     Route::get('supplier-aging-summary/pdf', [\App\Http\Controllers\Reports\SupplierAgingSummaryReportController::class, 'pdf'])->name('supplier-aging-summary.pdf');
+    Route::get('accounting/export/{report}.csv', [\App\Http\Controllers\Reports\AccountingReportExportController::class, 'csv'])->name('accounting.export.csv');
     Route::get('subscription-details/print', [\App\Http\Controllers\Reports\SubscriptionDetailsReportController::class, 'print'])->name('subscription-details.print');
     Route::get('subscription-details/csv', [\App\Http\Controllers\Reports\SubscriptionDetailsReportController::class, 'csv'])->name('subscription-details.csv');
 });

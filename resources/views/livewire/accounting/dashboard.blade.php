@@ -72,7 +72,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="flex flex-wrap gap-2">
             <flux:button :href="route('settings.accounting', ['tab' => 'chart'])" wire:navigate variant="ghost">{{ __('Chart of Accounts') }}</flux:button>
             <flux:button :href="route('accounting.banking')" wire:navigate variant="ghost">{{ __('Banking') }}</flux:button>
-            <flux:button :href="route('accounting.reports')" wire:navigate variant="ghost">{{ __('Reports') }}</flux:button>
+            <flux:button :href="route('reports.index', ['category' => 'accounting'])" wire:navigate variant="ghost">{{ __('Reports') }}</flux:button>
             <flux:button :href="route('accounting.period-close')" wire:navigate>{{ __('Period Close') }}</flux:button>
         </div>
     </div>

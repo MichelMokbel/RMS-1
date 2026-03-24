@@ -16,6 +16,8 @@ class ArInvoice extends Model
 
     protected $fillable = [
         'branch_id',
+        'company_id',
+        'job_id',
         'terminal_id',
         'pos_shift_id',
         'customer_id',
@@ -58,6 +60,8 @@ class ArInvoice extends Model
     protected $casts = [
         'issue_date' => 'date',
         'due_date' => 'date',
+        'company_id' => 'integer',
+        'job_id' => 'integer',
         'terminal_id' => 'integer',
         'pos_shift_id' => 'integer',
         'restaurant_table_id' => 'integer',
@@ -139,6 +143,16 @@ class ArInvoice extends Model
     public function items(): HasMany
     {
         return $this->hasMany(ArInvoiceItem::class, 'invoice_id');
+    }
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(AccountingCompany::class, 'company_id');
+    }
+
+    public function job(): BelongsTo
+    {
+        return $this->belongsTo(Job::class, 'job_id');
     }
 
     public function paymentAllocations(): \Illuminate\Database\Eloquent\Relations\MorphMany

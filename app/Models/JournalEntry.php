@@ -40,4 +40,14 @@ class JournalEntry extends Model
     {
         return $this->hasMany(JournalEntryLine::class, 'journal_entry_id');
     }
+
+    public function period(): BelongsTo
+    {
+        return $this->belongsTo(AccountingPeriod::class, 'period_id');
+    }
+
+    public function postedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'posted_by');
+    }
 }
