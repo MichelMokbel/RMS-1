@@ -24,6 +24,8 @@ class ApInvoice extends Model
         'branch_id',
         'department_id',
         'job_id',
+        'job_phase_id',
+        'job_cost_code_id',
         'period_id',
         'supplier_id',
         'purchase_order_id',
@@ -54,6 +56,8 @@ class ApInvoice extends Model
         'branch_id' => 'integer',
         'department_id' => 'integer',
         'job_id' => 'integer',
+        'job_phase_id' => 'integer',
+        'job_cost_code_id' => 'integer',
         'period_id' => 'integer',
         'is_expense' => 'boolean',
         'invoice_date' => 'date',
@@ -178,6 +182,16 @@ class ApInvoice extends Model
     public function job(): BelongsTo
     {
         return $this->belongsTo(Job::class, 'job_id');
+    }
+
+    public function jobPhase(): BelongsTo
+    {
+        return $this->belongsTo(JobPhase::class, 'job_phase_id');
+    }
+
+    public function jobCostCode(): BelongsTo
+    {
+        return $this->belongsTo(JobCostCode::class, 'job_cost_code_id');
     }
 
     public function period(): BelongsTo

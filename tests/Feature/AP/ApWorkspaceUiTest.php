@@ -3,9 +3,13 @@
 use App\Models\AccountingCompany;
 use App\Models\AccountingPeriod;
 use App\Models\ApInvoice;
+use App\Models\ApPayment;
+use App\Models\ApPaymentAllocation;
 use App\Models\BankAccount;
 use App\Models\ExpenseProfile;
 use App\Models\Job;
+use App\Models\JobCostCode;
+use App\Models\JobPhase;
 use App\Models\LedgerAccount;
 use App\Models\Supplier;
 use App\Models\User;
@@ -75,7 +79,7 @@ it('removes the is_expense checkbox from create and edit forms', function () {
         ->assertDontSee('is_expense', false);
 });
 
-it('shows the job field on AP create and edit pages and the assigned job on the show page', function () {
+it('shows the job, phase, and cost code fields on AP create and edit pages and the assigned values on the show page', function () {
     $user = User::factory()->create();
     $user->assignRole('admin');
 
@@ -94,10 +98,26 @@ it('shows the job field on AP create and edit pages and the assigned job on the 
         'status' => 'active',
     ]);
 
+    $phase = JobPhase::query()->create([
+        'job_id' => $job->id,
+        'name' => 'Electrical',
+        'code' => 'ELEC',
+        'status' => 'active',
+    ]);
+
+    $costCode = JobCostCode::query()->create([
+        'company_id' => $company->id,
+        'name' => 'Materials',
+        'code' => 'MAT',
+        'is_active' => true,
+    ]);
+
     $supplier = Supplier::factory()->create();
     $invoice = ApInvoice::factory()->create([
         'supplier_id' => $supplier->id,
         'job_id' => $job->id,
+        'job_phase_id' => $phase->id,
+        'job_cost_code_id' => $costCode->id,
         'status' => 'draft',
         'document_type' => 'vendor_bill',
         'is_expense' => false,
@@ -107,19 +127,27 @@ it('shows the job field on AP create and edit pages and the assigned job on the 
         ->get('/payables/invoices/create?document_type=vendor_bill')
         ->assertOk()
         ->assertSee('Job')
+        ->assertSee('Phase')
+        ->assertSee('Cost Code')
         ->assertSee('JOB-AP-01');
 
     $this->actingAs($user)
         ->get("/payables/invoices/{$invoice->id}/edit")
         ->assertOk()
         ->assertSee('Job')
+        ->assertSee('Phase')
+        ->assertSee('Cost Code')
         ->assertSee('JOB-AP-01');
 
     $this->actingAs($user)
         ->get("/payables/invoices/{$invoice->id}")
         ->assertOk()
         ->assertSee('JOB-AP-01')
-        ->assertSee('Office Fit-Out');
+        ->assertSee('Office Fit-Out')
+        ->assertSee('ELEC')
+        ->assertSee('Electrical')
+        ->assertSee('MAT')
+        ->assertSee('Materials');
 });
 
 it('shows the derived period finalization state on AP pages', function () {
@@ -152,6 +180,43 @@ it('shows the derived period finalization state on AP pages', function () {
         ->assertSee('Period Finalization')
         ->assertSee('Finalized by Period Close')
         ->assertSee('This document is finalized because its accounting period is closed.');
+});
+
+it('shows payment references in the allocations table on the AP document page', function () {
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+
+    $supplier = Supplier::factory()->create();
+    $invoice = ApInvoice::factory()->create([
+        'supplier_id' => $supplier->id,
+        'status' => 'partially_paid',
+        'document_type' => 'vendor_bill',
+        'total_amount' => 250,
+    ]);
+
+    $payment = ApPayment::query()->create([
+        'supplier_id' => $supplier->id,
+        'payment_date' => now()->toDateString(),
+        'amount' => 100,
+        'payment_method' => 'bank_transfer',
+        'reference' => 'PAY-REF-1001',
+        'currency_code' => 'QAR',
+        'created_by' => $user->id,
+        'posted_at' => now(),
+        'posted_by' => $user->id,
+    ]);
+
+    ApPaymentAllocation::query()->create([
+        'payment_id' => $payment->id,
+        'invoice_id' => $invoice->id,
+        'allocated_amount' => 100,
+    ]);
+
+    $this->actingAs($user)
+        ->get("/payables/invoices/{$invoice->id}")
+        ->assertOk()
+        ->assertSee('Reference')
+        ->assertSee('PAY-REF-1001');
 });
 
 it('allows a manager to approve a submitted expense from the AP workspace', function () {

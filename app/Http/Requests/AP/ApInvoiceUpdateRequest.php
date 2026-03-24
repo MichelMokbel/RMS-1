@@ -6,6 +6,9 @@ use App\Models\Supplier;
 use App\Support\AP\DocumentTypeMap;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Schema;
+use App\Models\Job;
+use App\Models\JobCostCode;
+use App\Models\JobPhase;
 use Illuminate\Validation\Rule;
 
 class ApInvoiceUpdateRequest extends FormRequest
@@ -26,6 +29,8 @@ class ApInvoiceUpdateRequest extends FormRequest
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'department_id' => ['nullable', 'integer', 'exists:departments,id'],
             'job_id' => ['nullable', 'integer', 'exists:accounting_jobs,id'],
+            'job_phase_id' => ['nullable', 'integer', 'exists:accounting_job_phases,id'],
+            'job_cost_code_id' => ['nullable', 'integer', 'exists:accounting_job_cost_codes,id'],
             'purchase_order_id' => ['nullable', 'integer', Rule::exists('purchase_orders', 'id')],
             'category_id' => ['nullable', 'integer', Rule::exists('expense_categories', 'id')],
             'expense_channel' => ['nullable', 'in:vendor,petty_cash,reimbursement'],
@@ -70,6 +75,29 @@ class ApInvoiceUpdateRequest extends FormRequest
                 foreach ((array) $this->input('items', []) as $index => $item) {
                     if (empty($item['purchase_order_item_id'])) {
                         $v->errors()->add("items.$index.purchase_order_item_id", __('PO-linked invoice lines must reference a purchase order line.'));
+                    }
+                }
+            }
+
+            $jobId = (int) $this->input('job_id', $this->route('invoice')?->job_id ?? 0);
+            $phaseId = (int) $this->input('job_phase_id', $this->route('invoice')?->job_phase_id ?? 0);
+            $costCodeId = (int) $this->input('job_cost_code_id', $this->route('invoice')?->job_cost_code_id ?? 0);
+
+            if (($phaseId > 0 || $costCodeId > 0) && $jobId <= 0) {
+                $v->errors()->add('job_id', __('Select a job before assigning a phase or cost code.'));
+            }
+
+            if ($jobId > 0) {
+                $job = Job::query()->find($jobId);
+
+                if ($phaseId > 0 && (! $job || ! JobPhase::query()->whereKey($phaseId)->where('job_id', $jobId)->exists())) {
+                    $v->errors()->add('job_phase_id', __('The selected phase must belong to the selected job.'));
+                }
+
+                if ($costCodeId > 0) {
+                    $costCode = JobCostCode::query()->find($costCodeId);
+                    if (! $costCode || ! $costCode->is_active || (int) $costCode->company_id !== (int) $job?->company_id) {
+                        $v->errors()->add('job_cost_code_id', __('The selected cost code must be active and belong to the job company.'));
                     }
                 }
             }

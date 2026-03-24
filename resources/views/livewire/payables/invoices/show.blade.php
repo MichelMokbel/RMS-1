@@ -21,7 +21,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(ApInvoice $invoice): void
     {
-        $this->invoice = $invoice->load(['items', 'allocations.payment', 'supplier', 'job', 'expenseProfile.wallet', 'attachments', 'period']);
+        $this->invoice = $invoice->load(['items', 'allocations.payment', 'supplier', 'job', 'jobPhase', 'jobCostCode', 'expenseProfile.wallet', 'attachments', 'period']);
     }
 
     public function post(ApInvoicePostingService $postingService): void
@@ -49,7 +49,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
 
             $this->new_attachments = [];
-            $this->invoice = $this->invoice->fresh(['items', 'allocations.payment', 'supplier', 'job', 'expenseProfile.wallet', 'attachments', 'period']);
+            $this->invoice = $this->invoice->fresh(['items', 'allocations.payment', 'supplier', 'job', 'jobPhase', 'jobCostCode', 'expenseProfile.wallet', 'attachments', 'period']);
             session()->flash('status', __('Attachments uploaded.'));
         } catch (ValidationException $exception) {
             session()->flash('error', collect($exception->errors())->flatten()->first() ?: __('Attachments could not be updated.'));
@@ -61,7 +61,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         try {
             $attachment = $this->invoice->attachments()->findOrFail($attachmentId);
             $attachmentService->delete($attachment, (int) auth()->id());
-            $this->invoice = $this->invoice->fresh(['items', 'allocations.payment', 'supplier', 'job', 'expenseProfile.wallet', 'attachments', 'period']);
+            $this->invoice = $this->invoice->fresh(['items', 'allocations.payment', 'supplier', 'job', 'jobPhase', 'jobCostCode', 'expenseProfile.wallet', 'attachments', 'period']);
             session()->flash('status', __('Attachment deleted.'));
         } catch (ValidationException $exception) {
             session()->flash('error', collect($exception->errors())->flatten()->first() ?: __('Attachments could not be updated.'));
@@ -123,6 +123,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Type') }}: {{ $invoice->documentTypeLabel() }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Supplier') }}: {{ $invoice->supplier->name ?? '—' }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Job') }}: {{ $invoice->job ? $invoice->job->code.' · '.$invoice->job->name : '—' }}</p>
+            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Phase') }}: {{ $invoice->jobPhase ? $invoice->jobPhase->code.' · '.$invoice->jobPhase->name : '—' }}</p>
+            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Cost Code') }}: {{ $invoice->jobCostCode ? $invoice->jobCostCode->code.' · '.$invoice->jobCostCode->name : '—' }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Invoice Date') }}: {{ $invoice->invoice_date?->format('Y-m-d') }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Due Date') }}: {{ $invoice->due_date?->format('Y-m-d') }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('PO') }}: {{ $invoice->purchase_order_id ?? '—' }}</p>
@@ -247,6 +249,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Payment Date') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Amount') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Method') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Reference') }}</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -255,9 +258,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $alloc->payment->payment_date?->format('Y-m-d') }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ number_format((float)$alloc->allocated_amount, 2) }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $alloc->payment->payment_method }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $alloc->payment->reference ?: '—' }}</td>
                     </tr>
                 @empty
-                    <tr><td colspan="3" class="px-3 py-3 text-sm text-neutral-600 dark:text-neutral-300 text-center">{{ __('No allocations yet.') }}</td></tr>
+                    <tr><td colspan="4" class="px-3 py-3 text-sm text-neutral-600 dark:text-neutral-300 text-center">{{ __('No allocations yet.') }}</td></tr>
                 @endforelse
             </tbody>
         </table>

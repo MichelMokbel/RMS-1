@@ -17,5 +17,7 @@ it('renders the accounting dashboard for finance users', function () {
     $this->actingAs($user)
         ->get('/accounting')
         ->assertOk()
-        ->assertSee('Accounting');
+        ->assertSee('Accounting')
+        ->assertSee('Jobs')
+        ->assertSee('/accounting/jobs', false);
 });

@@ -108,6 +108,8 @@ class ApInvoicePostingService
             'transaction_date' => optional($invoice->invoice_date)->toDateString() ?? now()->toDateString(),
             'amount' => (float) $invoice->total_amount,
             'transaction_type' => $type,
+            'job_phase_id' => $invoice->job_phase_id,
+            'job_cost_code_id' => $invoice->job_cost_code_id,
             'memo' => __('AP invoice :invoice', ['invoice' => $invoice->invoice_number]),
         ], ApInvoice::class, (int) $invoice->id, $userId);
     }

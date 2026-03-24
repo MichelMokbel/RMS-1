@@ -4,6 +4,8 @@ use App\Models\ApInvoice;
 use App\Models\ApInvoiceItem;
 use App\Models\ExpenseCategory;
 use App\Models\Job;
+use App\Models\JobCostCode;
+use App\Models\JobPhase;
 use App\Models\PettyCashWallet;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
@@ -27,6 +29,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?int $supplier_id = null;
     public ?int $purchase_order_id = null;
     public ?int $job_id = null;
+    public ?int $job_phase_id = null;
+    public ?int $job_cost_code_id = null;
     public string $document_type = 'vendor_bill';
     public ?int $category_id = null;
     public ?string $expense_channel = null;
@@ -92,6 +96,23 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $this->resetErrorBag('supplier_id');
+    }
+
+    public function updatedJobId(): void
+    {
+        if (! $this->job_id) {
+            $this->job_phase_id = null;
+            $this->job_cost_code_id = null;
+            return;
+        }
+
+        if ($this->job_phase_id && ! $this->phaseOptions()->contains('id', (int) $this->job_phase_id)) {
+            $this->job_phase_id = null;
+        }
+
+        if ($this->job_cost_code_id && ! $this->costCodeOptions()->contains('id', (int) $this->job_cost_code_id)) {
+            $this->job_cost_code_id = null;
+        }
     }
 
     public function addLine(): void
@@ -202,6 +223,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             $invoice = ApInvoice::query()->create([
                 'supplier_id' => $supplierId,
                 'job_id' => $data['job_id'] ?? null,
+                'job_phase_id' => $data['job_phase_id'] ?? null,
+                'job_cost_code_id' => $data['job_cost_code_id'] ?? null,
                 'purchase_order_id' => $data['purchase_order_id'] ?? null,
                 'category_id' => $data['category_id'] ?? null,
                 'is_expense' => $document['is_expense'],
@@ -261,6 +284,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
             'purchase_order_id' => ['nullable', 'integer', 'exists:purchase_orders,id'],
             'job_id' => ['nullable', 'integer', 'exists:accounting_jobs,id'],
+            'job_phase_id' => ['nullable', 'integer', 'exists:accounting_job_phases,id'],
+            'job_cost_code_id' => ['nullable', 'integer', 'exists:accounting_job_cost_codes,id'],
             'category_id' => ['nullable', 'integer', 'exists:expense_categories,id'],
             'document_type' => ['required', Rule::in(DocumentTypeMap::types())],
             'expense_channel' => ['nullable', 'in:vendor,petty_cash,reimbursement'],
@@ -306,6 +331,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             $supplier = $this->selectedSupplier();
             if ($supplier && app(SupplierAccountingPolicyService::class)->blocksDraft($supplier)) {
                 $validator->errors()->add('supplier_id', app(SupplierAccountingPolicyService::class)->draftBlockedMessage($supplier));
+            }
+
+            if (($this->job_phase_id || $this->job_cost_code_id) && ! $this->job_id) {
+                $validator->errors()->add('job_id', __('Select a job before assigning a phase or cost code.'));
+            }
+
+            if ($this->job_phase_id && ! $this->phaseOptions()->contains('id', (int) $this->job_phase_id)) {
+                $validator->errors()->add('job_phase_id', __('The selected phase must belong to the selected job.'));
+            }
+
+            if ($this->job_cost_code_id && ! $this->costCodeOptions()->contains('id', (int) $this->job_cost_code_id)) {
+                $validator->errors()->add('job_cost_code_id', __('The selected cost code must be active and belong to the job company.'));
             }
         });
     }
@@ -386,6 +423,38 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function jobs()
     {
         return Schema::hasTable('accounting_jobs') ? Job::query()->orderBy('code')->get() : collect();
+    }
+
+    public function selectedJob(): ?Job
+    {
+        return $this->job_id ? Job::query()->find((int) $this->job_id) : null;
+    }
+
+    public function phaseOptions()
+    {
+        if (! Schema::hasTable('accounting_job_phases') || ! $this->job_id) {
+            return collect();
+        }
+
+        return JobPhase::query()
+            ->where('job_id', $this->job_id)
+            ->where('status', 'active')
+            ->orderBy('code')
+            ->get();
+    }
+
+    public function costCodeOptions()
+    {
+        $job = $this->selectedJob();
+        if (! Schema::hasTable('accounting_job_cost_codes') || ! $job?->company_id) {
+            return collect();
+        }
+
+        return JobCostCode::query()
+            ->where('company_id', $job->company_id)
+            ->where('is_active', true)
+            ->orderBy('code')
+            ->get();
     }
 
     public function wallets()
@@ -488,16 +557,36 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endif
             </div>
 
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div>
                     <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Job') }}</label>
-                    <select wire:model="job_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                    <select wire:model.live="job_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                         <option value="">{{ __('Unassigned') }}</option>
                         @foreach($this->jobs() as $job)
                             <option value="{{ $job->id }}">{{ $job->code }} · {{ $job->name }}</option>
                         @endforeach
                     </select>
                     @error('job_id') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                </div>
+                <div>
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Phase') }}</label>
+                    <select wire:model="job_phase_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" @disabled(! $job_id)>
+                        <option value="">{{ $job_id ? __('None') : __('Select a job first') }}</option>
+                        @foreach($this->phaseOptions() as $phase)
+                            <option value="{{ $phase->id }}">{{ $phase->code }} · {{ $phase->name }}</option>
+                        @endforeach
+                    </select>
+                    @error('job_phase_id') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                </div>
+                <div>
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Cost Code') }}</label>
+                    <select wire:model="job_cost_code_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" @disabled(! $job_id)>
+                        <option value="">{{ $job_id ? __('None') : __('Select a job first') }}</option>
+                        @foreach($this->costCodeOptions() as $costCode)
+                            <option value="{{ $costCode->id }}">{{ $costCode->code }} · {{ $costCode->name }}</option>
+                        @endforeach
+                    </select>
+                    @error('job_cost_code_id') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
                 </div>
             </div>
 
