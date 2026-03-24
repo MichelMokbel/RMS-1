@@ -119,9 +119,19 @@ class ApInvoice extends Model
         return $this->belongsTo(PurchaseOrder::class, 'purchase_order_id');
     }
 
+    public function recurringTemplate(): BelongsTo
+    {
+        return $this->belongsTo(RecurringBillTemplate::class, 'recurring_template_id');
+    }
+
     public function items(): HasMany
     {
         return $this->hasMany(ApInvoiceItem::class, 'invoice_id');
+    }
+
+    public function purchaseOrderMatches(): HasMany
+    {
+        return $this->hasMany(PurchaseOrderInvoiceMatch::class, 'ap_invoice_id');
     }
 
     public function allocations(): HasMany

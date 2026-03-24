@@ -3,22 +3,30 @@
 use App\Models\ApInvoice;
 use App\Models\ApInvoiceItem;
 use App\Models\ExpenseCategory;
+use App\Models\Job;
 use App\Models\PettyCashWallet;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
+use App\Services\AP\ApInvoiceAttachmentService;
 use App\Services\AP\ApInvoicePostingService;
+use App\Services\AP\SupplierAccountingPolicyService;
 use App\Services\AP\ApInvoiceTotalsService;
 use App\Services\Spend\ExpenseWorkflowService;
 use App\Support\AP\DocumentTypeMap;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
+use Livewire\WithFileUploads;
 
 new #[Layout('components.layouts.app')] class extends Component {
+    use WithFileUploads;
+
     public ?int $supplier_id = null;
     public ?int $purchase_order_id = null;
+    public ?int $job_id = null;
     public string $document_type = 'vendor_bill';
     public ?int $category_id = null;
     public ?string $expense_channel = null;
@@ -29,6 +37,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public float $tax_amount = 0.0;
     public ?string $notes = null;
     public array $lines = [];
+    public array $new_attachments = [];
 
     public function mount(): void
     {
@@ -45,7 +54,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         );
         $this->invoice_date = now()->toDateString();
         $this->due_date = now()->addDays(30)->toDateString();
-        $this->lines = [['description' => '', 'quantity' => 1, 'unit_price' => 0, 'line_total' => 0]];
+        $this->lines = [['purchase_order_item_id' => null, 'description' => '', 'quantity' => 1, 'unit_price' => 0, 'line_total' => 0]];
 
         if ($this->expense_channel === 'petty_cash' && config('spend.petty_cash_internal_supplier_id')) {
             $this->supplier_id = (int) config('spend.petty_cash_internal_supplier_id');
@@ -74,9 +83,20 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
+    public function updatedSupplierId(): void
+    {
+        $supplier = $this->selectedSupplier();
+        if ($supplier && app(SupplierAccountingPolicyService::class)->blocksDraft($supplier)) {
+            $this->addError('supplier_id', app(SupplierAccountingPolicyService::class)->draftBlockedMessage($supplier));
+            return;
+        }
+
+        $this->resetErrorBag('supplier_id');
+    }
+
     public function addLine(): void
     {
-        $this->lines[] = ['description' => '', 'quantity' => 1, 'unit_price' => 0, 'line_total' => 0];
+        $this->lines[] = ['purchase_order_item_id' => null, 'description' => '', 'quantity' => 1, 'unit_price' => 0, 'line_total' => 0];
     }
 
     public function removeLine(int $idx): void
@@ -108,6 +128,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $this->supplier_id = $po->supplier_id;
+        if (! $this->job_id && $po->job_id) {
+            $this->job_id = (int) $po->job_id;
+        }
         $this->lines = $po->items->map(function ($item) {
             $inv = $item->item;
             $code = $inv->item_code ?? $inv->code ?? null;
@@ -115,6 +138,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $label = trim(($code ? '['.$code.'] ' : '').($name ?? ''), ' []');
 
             return [
+                'purchase_order_item_id' => $item->id,
                 'description' => $label !== '' ? $label : ($item->description ?? __('Item')),
                 'quantity' => $item->quantity,
                 'unit_price' => $item->unit_price,
@@ -123,14 +147,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         })->toArray();
     }
 
-    public function saveDraft(ApInvoiceTotalsService $totalsService, ExpenseWorkflowService $expenseWorkflowService): void
+    public function saveDraft(ApInvoiceTotalsService $totalsService, ExpenseWorkflowService $expenseWorkflowService, ApInvoiceAttachmentService $attachmentService): void
     {
-        $this->persist('draft', $totalsService, $expenseWorkflowService);
+        $this->persist('draft', $totalsService, $expenseWorkflowService, $attachmentService);
     }
 
-    public function saveAndPost(ApInvoicePostingService $postingService, ApInvoiceTotalsService $totalsService, ExpenseWorkflowService $expenseWorkflowService): void
+    public function saveAndPost(ApInvoicePostingService $postingService, ApInvoiceTotalsService $totalsService, ExpenseWorkflowService $expenseWorkflowService, ApInvoiceAttachmentService $attachmentService): void
     {
-        $invoice = $this->persist('draft', $totalsService, $expenseWorkflowService, false);
+        $invoice = $this->persist('draft', $totalsService, $expenseWorkflowService, $attachmentService, false);
         if (! $invoice) {
             return;
         }
@@ -146,7 +170,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->redirectRoute('payables.invoices.show', $invoice, navigate: true);
     }
 
-    private function persist(string $status, ApInvoiceTotalsService $totalsService, ExpenseWorkflowService $expenseWorkflowService, bool $redirect = true): ?ApInvoice
+    private function persist(
+        string $status,
+        ApInvoiceTotalsService $totalsService,
+        ExpenseWorkflowService $expenseWorkflowService,
+        ApInvoiceAttachmentService $attachmentService,
+        bool $redirect = true
+    ): ?ApInvoice
     {
         $this->recalc();
         $this->lines = collect($this->lines)
@@ -157,6 +187,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $data = $this->validate($this->rules());
         $document = DocumentTypeMap::derive($data['document_type'], $data['expense_channel'] ?? null);
         $supplierId = $this->resolveSupplierId($data, $document['expense_channel']);
+        $supplier = Supplier::query()->find($supplierId);
+        app(SupplierAccountingPolicyService::class)->assertCanCreateDraft($supplier);
 
         if (($data['purchase_order_id'] ?? null) !== null) {
             $po = PurchaseOrder::query()->find($data['purchase_order_id']);
@@ -169,6 +201,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $invoice = DB::transaction(function () use ($data, $status, $totalsService, $expenseWorkflowService, $document, $supplierId) {
             $invoice = ApInvoice::query()->create([
                 'supplier_id' => $supplierId,
+                'job_id' => $data['job_id'] ?? null,
                 'purchase_order_id' => $data['purchase_order_id'] ?? null,
                 'category_id' => $data['category_id'] ?? null,
                 'is_expense' => $document['is_expense'],
@@ -189,6 +222,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $lineTotal = round((float) $item['quantity'] * (float) $item['unit_price'], 2);
                 ApInvoiceItem::query()->create([
                     'invoice_id' => $invoice->id,
+                    'purchase_order_item_id' => $item['purchase_order_item_id'] ?? null,
                     'description' => $item['description'],
                     'quantity' => $item['quantity'],
                     'unit_price' => $item['unit_price'],
@@ -209,6 +243,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             return $invoice->fresh(['items', 'expenseProfile']);
         });
 
+        $this->storeAttachments($invoice, $attachmentService);
+
         session()->flash('status', __('Document saved.'));
         if ($redirect) {
             $this->redirectRoute('payables.invoices.show', $invoice, navigate: true);
@@ -224,6 +260,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         return [
             'supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
             'purchase_order_id' => ['nullable', 'integer', 'exists:purchase_orders,id'],
+            'job_id' => ['nullable', 'integer', 'exists:accounting_jobs,id'],
             'category_id' => ['nullable', 'integer', 'exists:expense_categories,id'],
             'document_type' => ['required', Rule::in(DocumentTypeMap::types())],
             'expense_channel' => ['nullable', 'in:vendor,petty_cash,reimbursement'],
@@ -238,7 +275,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             'due_date' => ['required', 'date', 'after_or_equal:invoice_date'],
             'tax_amount' => ['required', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string'],
+            'new_attachments' => ['nullable', 'array'],
+            'new_attachments.*' => ['file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:7096'],
             'lines' => ['required', 'array', 'min:1'],
+            'lines.*.purchase_order_item_id' => ['nullable', 'integer', 'exists:purchase_order_items,id'],
             'lines.*.description' => ['required', 'string', 'max:255'],
             'lines.*.quantity' => ['required', 'numeric', 'min:0.001'],
             'lines.*.unit_price' => ['required', 'numeric', 'min:0'],
@@ -261,6 +301,11 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             if (DocumentTypeMap::requiresWallet($documentType, $expenseChannel) && empty($this->wallet_id)) {
                 $validator->errors()->add('wallet_id', __('Wallet is required for petty cash expenses.'));
+            }
+
+            $supplier = $this->selectedSupplier();
+            if ($supplier && app(SupplierAccountingPolicyService::class)->blocksDraft($supplier)) {
+                $validator->errors()->add('supplier_id', app(SupplierAccountingPolicyService::class)->draftBlockedMessage($supplier));
             }
         });
     }
@@ -298,7 +343,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
         }
 
-        throw new \RuntimeException('Supplier is required.');
+        throw ValidationException::withMessages(['supplier_id' => __('Supplier is required for this document.')]);
     }
 
     private function invoiceSupplierId(): ?int
@@ -338,6 +383,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         return Schema::hasTable('expense_categories') ? ExpenseCategory::query()->orderBy('name')->get() : collect();
     }
 
+    public function jobs()
+    {
+        return Schema::hasTable('accounting_jobs') ? Job::query()->orderBy('code')->get() : collect();
+    }
+
     public function wallets()
     {
         if (! Schema::hasTable('petty_cash_wallets')) {
@@ -350,6 +400,27 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function documentTypeOptions(): array
     {
         return DocumentTypeMap::labels();
+    }
+
+    public function selectedSupplier(): ?Supplier
+    {
+        $supplierId = $this->invoiceSupplierId();
+
+        return $supplierId ? Supplier::query()->find($supplierId) : null;
+    }
+
+    public function supplierDraftWarning(): ?string
+    {
+        return app(SupplierAccountingPolicyService::class)->draftWarning($this->selectedSupplier());
+    }
+
+    private function storeAttachments(ApInvoice $invoice, ApInvoiceAttachmentService $attachmentService): void
+    {
+        foreach ($this->new_attachments as $file) {
+            $attachmentService->upload($invoice, $file, (int) auth()->id());
+        }
+
+        $this->new_attachments = [];
     }
 }; ?>
 
@@ -417,6 +488,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endif
             </div>
 
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Job') }}</label>
+                    <select wire:model="job_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                        <option value="">{{ __('Unassigned') }}</option>
+                        @foreach($this->jobs() as $job)
+                            <option value="{{ $job->id }}">{{ $job->code }} · {{ $job->name }}</option>
+                        @endforeach
+                    </select>
+                    @error('job_id') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                </div>
+            </div>
+
             @if(DocumentTypeMap::requiresCategory($document_type) || $document_type === 'landed_cost_adjustment')
                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
@@ -446,6 +530,26 @@ new #[Layout('components.layouts.app')] class extends Component {
             @endif
 
             <flux:textarea wire:model="notes" :label="__('Notes')" rows="2" />
+
+            @if($this->supplierDraftWarning())
+                <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+                    {{ $this->supplierDraftWarning() }}
+                </div>
+            @endif
+        </div>
+
+        <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
+            <div>
+                <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Attachments') }}</h2>
+                <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Upload receipts or supporting documents. Files are attached when the draft is saved.') }}</p>
+            </div>
+            <flux:input type="file" wire:model="new_attachments" accept=".jpg,.jpeg,.png,.webp,.pdf" multiple :label="__('Files')" />
+            @error('new_attachments.*') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+            @if(count($new_attachments) > 0)
+                <div class="rounded-md border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
+                    {{ trans_choice(':count file ready to attach after save.|:count files ready to attach after save.', count($new_attachments), ['count' => count($new_attachments)]) }}
+                </div>
+            @endif
         </div>
 
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">

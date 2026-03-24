@@ -17,6 +17,7 @@ class ApInvoiceItem extends Model
 
     protected $fillable = [
         'invoice_id',
+        'purchase_order_item_id',
         'description',
         'quantity',
         'unit_price',
@@ -48,5 +49,15 @@ class ApInvoiceItem extends Model
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(ApInvoice::class, 'invoice_id');
+    }
+
+    public function purchaseOrderItem(): BelongsTo
+    {
+        return $this->belongsTo(PurchaseOrderItem::class, 'purchase_order_item_id');
+    }
+
+    public function matches(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PurchaseOrderInvoiceMatch::class, 'ap_invoice_item_id');
     }
 }

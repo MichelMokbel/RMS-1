@@ -30,4 +30,24 @@ class JournalEntryLine extends Model
     {
         return $this->belongsTo(JournalEntry::class, 'journal_entry_id');
     }
+
+    public function account(): BelongsTo
+    {
+        return $this->belongsTo(LedgerAccount::class, 'account_id');
+    }
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class, 'branch_id');
+    }
+
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'department_id');
+    }
+
+    public function job(): BelongsTo
+    {
+        return $this->belongsTo(Job::class, 'job_id');
+    }
 }

@@ -3,6 +3,7 @@
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\ArInvoice;
+use App\Models\Job;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\PaymentTerm;
@@ -18,6 +19,7 @@ use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
     public int $branch_id = 1;
+    public ?int $job_id = null;
 
     public ?int $customer_id = null;
     public string $customer_search = '';
@@ -78,6 +80,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->branch_id = (int) $invoice->branch_id;
         $this->invoice_date = $invoice->issue_date?->toDateString() ?? now()->toDateString();
         $this->payment_type = (string) ($invoice->payment_type ?: 'credit');
+        $this->job_id = $invoice->job_id ? (int) $invoice->job_id : null;
         $this->payment_term_id = $invoice->payment_term_id ? (int) $invoice->payment_term_id : null;
         $this->sales_person_id = $invoice->sales_person_id ? (int) $invoice->sales_person_id : Auth::id();
         $this->lpo_reference = $invoice->lpo_reference;
@@ -287,6 +290,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             'salesPeople' => User::query()->orderBy('username')->get(),
             'paymentTerms' => $paymentTerms,
             'categories' => Schema::hasTable('categories') ? Category::query()->orderBy('name')->get() : collect(),
+            'jobs' => Schema::hasTable('accounting_jobs')
+                ? Job::query()->orderBy('code')->get()
+                : collect(),
             'branches' => Schema::hasTable('branches')
                 ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
                 : collect(),
@@ -662,6 +668,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $existing = ArInvoice::query()->findOrFail($this->editing_invoice_id);
                 $invoice = $service->updateDraft($existing, [
                     'branch_id' => $this->branch_id,
+                    'job_id' => $this->job_id,
                     'customer_id' => $this->customer_id,
                     'items' => $items,
                     'issue_date' => $this->invoice_date,
@@ -690,6 +697,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     paymentTermId: $this->payment_term_id,
                     paymentTermDays: 0,
                     salesPersonId: $this->sales_person_id,
+                    jobId: $this->job_id,
                     lpoReference: $this->lpo_reference,
                     invoiceDiscountType: $this->invoice_discount_type,
                     invoiceDiscountValue: $invoiceDiscountValue,
@@ -877,6 +885,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <option value="">{{ __('Select') }}</option>
                     @foreach ($salesPeople as $person)
                         <option value="{{ $person->id }}">{{ $person->username }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div>
+                <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Job') }}</label>
+                <select wire:model.live="job_id" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                    <option value="">{{ __('Unassigned') }}</option>
+                    @foreach ($jobs as $job)
+                        <option value="{{ $job->id }}">{{ $job->code }} · {{ $job->name }}</option>
                     @endforeach
                 </select>
             </div>

@@ -4,15 +4,21 @@ namespace App\Services\Spend;
 
 use App\Models\ApInvoice;
 use App\Models\ExpenseProfile;
+use App\Services\AP\SupplierAccountingPolicyService;
 
 class ExpenseApprovalPolicyService
 {
+    public function __construct(
+        protected SupplierAccountingPolicyService $supplierPolicy
+    ) {
+    }
+
     /**
      * @return array<int, string>
      */
     public function exceptionFlags(ApInvoice $invoice, ExpenseProfile $profile): array
     {
-        $invoice->loadMissing('attachments');
+        $invoice->loadMissing(['attachments', 'supplier']);
         $profile->loadMissing('wallet');
 
         $flags = [];
@@ -20,6 +26,10 @@ class ExpenseApprovalPolicyService
         $threshold = (float) config('spend.approval_exception_threshold', 1000.0);
         if ((float) $invoice->total_amount > $threshold) {
             $flags[] = 'amount_over_threshold';
+        }
+
+        if ($this->supplierPolicy->exceedsApprovalThreshold($invoice->supplier, (float) $invoice->total_amount)) {
+            $flags[] = 'supplier_threshold_exceeded';
         }
 
         if ($invoice->attachments->count() === 0) {

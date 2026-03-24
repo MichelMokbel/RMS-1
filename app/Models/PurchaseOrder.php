@@ -63,6 +63,11 @@ class PurchaseOrder extends Model
         return $this->hasMany(PurchaseOrderItem::class, 'purchase_order_id');
     }
 
+    public function invoiceMatches(): HasMany
+    {
+        return $this->hasMany(PurchaseOrderInvoiceMatch::class, 'purchase_order_id');
+    }
+
     public function supplier(): BelongsTo
     {
         return $this->belongsTo(Supplier::class, 'supplier_id');

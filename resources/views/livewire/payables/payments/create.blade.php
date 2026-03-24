@@ -4,6 +4,7 @@ use App\Models\ApInvoice;
 use App\Models\BankAccount;
 use App\Models\Supplier;
 use App\Services\AP\ApAllocationService;
+use App\Services\AP\SupplierAccountingPolicyService;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -26,6 +27,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function updatedSupplierId(): void
     {
+        $supplier = $this->selectedSupplier();
+        $preferredMethod = app(SupplierAccountingPolicyService::class)->preferredPaymentMethod($supplier);
+        if ($preferredMethod) {
+            $this->payment_method = $preferredMethod;
+            if ($preferredMethod !== 'bank_transfer') {
+                $this->bank_account_id = null;
+            }
+        }
+
         $this->loadInvoices();
     }
 
@@ -97,6 +107,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'allocations' => ['sometimes', 'array'],
         ]);
 
+        app(SupplierAccountingPolicyService::class)->assertCanPay($this->selectedSupplier());
+
         $payment = $allocationService->createPaymentWithAllocations($payload, Auth::id());
 
         session()->flash('status', __('Payment saved.'));
@@ -121,6 +133,25 @@ new #[Layout('components.layouts.app')] class extends Component {
         return Schema::hasTable('bank_accounts')
             ? BankAccount::query()->where('is_active', true)->orderBy('name')->get()
             : collect();
+    }
+
+    public function selectedSupplier(): ?Supplier
+    {
+        return $this->supplier_id ? Supplier::query()->find((int) $this->supplier_id) : null;
+    }
+
+    public function supplierPaymentWarning(): ?string
+    {
+        $supplier = $this->selectedSupplier();
+        if (! $supplier) {
+            return null;
+        }
+
+        return match (app(SupplierAccountingPolicyService::class)->resolveHoldStatus($supplier)) {
+            'hold' => __('This supplier is on hold. Payments cannot be released until the hold is cleared.'),
+            'blocked' => __('This supplier is blocked. Payment creation is disabled.'),
+            default => null,
+        };
     }
 }; ?>
 
@@ -184,6 +215,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <flux:input wire:model="reference" :label="__('Reference')" />
             </div>
             <flux:textarea wire:model="notes" :label="__('Notes')" rows="2" />
+
+            @if($this->supplierPaymentWarning())
+                <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+                    {{ $this->supplierPaymentWarning() }}
+                </div>
+            @endif
         </div>
 
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">

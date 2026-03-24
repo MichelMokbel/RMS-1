@@ -210,6 +210,11 @@ Route::middleware(['api', $apiAuthMiddleware])->group(function () {
         Route::post('spend/expenses/{invoice}/reject', [SpendExpenseController::class, 'reject'])->name('api.spend.expenses.reject');
         Route::post('accounting/banking/imports', [AccountingBankingController::class, 'storeImport'])->name('api.accounting.banking.imports.store');
         Route::post('accounting/banking/reconciliations', [AccountingBankingController::class, 'reconcile'])->name('api.accounting.banking.reconciliations.store');
+        Route::post('accounting/banking/reconciliations/{reconciliation}/match', [AccountingBankingController::class, 'match'])->name('api.accounting.banking.reconciliations.match');
+        Route::post('accounting/banking/reconciliations/{reconciliation}/unmatch', [AccountingBankingController::class, 'unmatch'])->name('api.accounting.banking.reconciliations.unmatch');
+        Route::post('accounting/banking/reconciliations/{reconciliation}/exception', [AccountingBankingController::class, 'markException'])->name('api.accounting.banking.reconciliations.exception');
+        Route::post('accounting/banking/reconciliations/{reconciliation}/close', [AccountingBankingController::class, 'close'])->name('api.accounting.banking.reconciliations.close');
+        Route::post('accounting/banking/reconciliations/{reconciliation}/reopen', [AccountingBankingController::class, 'reopen'])->name('api.accounting.banking.reconciliations.reopen');
         Route::post('accounting/budgets', [AccountingBudgetController::class, 'store'])->name('api.accounting.budgets.store');
         Route::get('accounting/budgets/{budgetVersion}/variance', [AccountingBudgetController::class, 'variance'])->name('api.accounting.budgets.variance');
         Route::post('accounting/jobs', [AccountingJobController::class, 'store'])->name('api.accounting.jobs.store');

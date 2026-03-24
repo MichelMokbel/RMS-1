@@ -1,0 +1,86 @@
+<?php
+
+use App\Models\AccountingCompany;
+use App\Models\JournalEntry;
+use App\Models\LedgerAccount;
+use App\Models\SubledgerEntry;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
+use Spatie\Permission\Models\Role;
+
+uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    Role::findOrCreate('admin');
+    $this->user = User::factory()->create(['status' => 'active']);
+    $this->user->assignRole('admin');
+});
+
+it('creates drafts, posts journals, and creates posted reversals', function () {
+    $company = AccountingCompany::query()->where('is_default', true)->firstOrFail();
+    $cash = LedgerAccount::query()->where('code', '1000')->firstOrFail();
+    $expense = LedgerAccount::query()->where('code', '6000')->firstOrFail();
+
+    $this->actingAs($this->user);
+
+    Livewire::test('accounting.journals')
+        ->set('company_id', $company->id)
+        ->set('entry_date', '2026-03-20')
+        ->set('memo', 'Month-end accrual')
+        ->set('lines', [
+            [
+                'account_id' => $expense->id,
+                'branch_id' => null,
+                'department_id' => null,
+                'job_id' => null,
+                'debit' => 250,
+                'credit' => 0,
+                'memo' => 'Expense accrual',
+            ],
+            [
+                'account_id' => $cash->id,
+                'branch_id' => null,
+                'department_id' => null,
+                'job_id' => null,
+                'debit' => 0,
+                'credit' => 250,
+                'memo' => 'Cash offset',
+            ],
+        ])
+        ->call('saveDraft')
+        ->assertHasNoErrors();
+
+    $journal = JournalEntry::query()->latest('id')->firstOrFail();
+    expect($journal->status)->toBe('draft');
+
+    Livewire::test('accounting.journals')
+        ->call('postJournal', $journal->id)
+        ->assertHasNoErrors();
+
+    $journal->refresh();
+    expect($journal->status)->toBe('posted')
+        ->and(SubledgerEntry::query()
+            ->where('source_type', 'journal_entry')
+            ->where('source_id', $journal->id)
+            ->where('event', 'post')
+            ->exists())->toBeTrue();
+
+    Livewire::test('accounting.journals')
+        ->call('reverseJournal', $journal->id)
+        ->assertHasNoErrors();
+
+    $reversal = JournalEntry::query()
+        ->where('source_type', JournalEntry::class)
+        ->where('source_id', $journal->id)
+        ->latest('id')
+        ->firstOrFail();
+
+    expect($reversal->status)->toBe('posted')
+        ->and($reversal->entry_type)->toBe('reversal')
+        ->and(SubledgerEntry::query()
+            ->where('source_type', 'journal_entry')
+            ->where('source_id', $reversal->id)
+            ->where('event', 'post')
+            ->exists())->toBeTrue();
+});

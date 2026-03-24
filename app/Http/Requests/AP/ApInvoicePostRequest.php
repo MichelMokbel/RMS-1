@@ -13,6 +13,9 @@ class ApInvoicePostRequest extends FormRequest
 
     public function rules(): array
     {
-        return [];
+        return [
+            'matching_override' => ['nullable', 'boolean'],
+            'matching_override_reason' => ['nullable', 'string', 'max:255', 'required_with:matching_override'],
+        ];
     }
 }

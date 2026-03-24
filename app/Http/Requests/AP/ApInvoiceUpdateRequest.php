@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\AP;
 
+use App\Models\Supplier;
 use App\Support\AP\DocumentTypeMap;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Schema;
@@ -44,6 +45,7 @@ class ApInvoiceUpdateRequest extends FormRequest
             'tax_amount' => ['required', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string'],
             'items' => ['required', 'array', 'min:1'],
+            'items.*.purchase_order_item_id' => ['nullable', 'integer', Rule::exists('purchase_order_items', 'id')],
             'items.*.description' => ['required', 'string', 'max:255'],
             'items.*.quantity' => ['required', 'numeric', 'min:0.001'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0'],
@@ -63,6 +65,21 @@ class ApInvoiceUpdateRequest extends FormRequest
             if (DocumentTypeMap::requiresWallet($documentType, $expenseChannel) && empty($this->wallet_id)) {
                 $v->errors()->add('wallet_id', __('Wallet is required for petty cash expenses.'));
             }
+
+            if ($this->filled('purchase_order_id')) {
+                foreach ((array) $this->input('items', []) as $index => $item) {
+                    if (empty($item['purchase_order_item_id'])) {
+                        $v->errors()->add("items.$index.purchase_order_item_id", __('PO-linked invoice lines must reference a purchase order line.'));
+                    }
+                }
+            }
         });
+    }
+
+    public function supplier(): ?Supplier
+    {
+        $supplierId = (int) $this->input('supplier_id', $this->route('invoice')?->supplier_id ?? 0);
+
+        return $supplierId > 0 ? Supplier::query()->find($supplierId) : null;
     }
 }
