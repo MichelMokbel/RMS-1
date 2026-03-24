@@ -8,6 +8,7 @@ use App\Services\AP\SupplierAccountingPolicyService;
 use App\Services\AP\ApInvoiceVoidService;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithFileUploads;
@@ -20,7 +21,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(ApInvoice $invoice): void
     {
-        $this->invoice = $invoice->load(['items', 'allocations.payment', 'supplier', 'job', 'expenseProfile.wallet', 'attachments']);
+        $this->invoice = $invoice->load(['items', 'allocations.payment', 'supplier', 'job', 'expenseProfile.wallet', 'attachments', 'period']);
     }
 
     public function post(ApInvoicePostingService $postingService): void
@@ -37,31 +38,39 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function uploadAttachments(ApInvoiceAttachmentService $attachmentService): void
     {
-        $this->validate([
-            'new_attachments' => ['required', 'array', 'min:1'],
-            'new_attachments.*' => ['file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:7096'],
-        ]);
+        try {
+            $this->validate([
+                'new_attachments' => ['required', 'array', 'min:1'],
+                'new_attachments.*' => ['file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:7096'],
+            ]);
 
-        foreach ($this->new_attachments as $file) {
-            $attachmentService->upload($this->invoice, $file, (int) auth()->id());
+            foreach ($this->new_attachments as $file) {
+                $attachmentService->upload($this->invoice, $file, (int) auth()->id());
+            }
+
+            $this->new_attachments = [];
+            $this->invoice = $this->invoice->fresh(['items', 'allocations.payment', 'supplier', 'job', 'expenseProfile.wallet', 'attachments', 'period']);
+            session()->flash('status', __('Attachments uploaded.'));
+        } catch (ValidationException $exception) {
+            session()->flash('error', collect($exception->errors())->flatten()->first() ?: __('Attachments could not be updated.'));
         }
-
-        $this->new_attachments = [];
-        $this->invoice = $this->invoice->fresh(['items', 'allocations.payment', 'supplier', 'job', 'expenseProfile.wallet', 'attachments']);
-        session()->flash('status', __('Attachments uploaded.'));
     }
 
     public function deleteAttachment(int $attachmentId, ApInvoiceAttachmentService $attachmentService): void
     {
-        $attachment = $this->invoice->attachments()->findOrFail($attachmentId);
-        $attachmentService->delete($attachment);
-        $this->invoice = $this->invoice->fresh(['items', 'allocations.payment', 'supplier', 'job', 'expenseProfile.wallet', 'attachments']);
-        session()->flash('status', __('Attachment deleted.'));
+        try {
+            $attachment = $this->invoice->attachments()->findOrFail($attachmentId);
+            $attachmentService->delete($attachment, (int) auth()->id());
+            $this->invoice = $this->invoice->fresh(['items', 'allocations.payment', 'supplier', 'job', 'expenseProfile.wallet', 'attachments', 'period']);
+            session()->flash('status', __('Attachment deleted.'));
+        } catch (ValidationException $exception) {
+            session()->flash('error', collect($exception->errors())->flatten()->first() ?: __('Attachments could not be updated.'));
+        }
     }
 
     public function canManageAttachments(): bool
     {
-        return ! in_array($this->invoice->status, ['paid', 'void'], true);
+        return $this->invoice->canMutateAttachments();
     }
 
     public function supplierControlMessage(): ?string
@@ -103,6 +112,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     @endif
 
+    @if (session('error'))
+        <div class="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-100">
+            {{ session('error') }}
+        </div>
+    @endif
+
     <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-2">
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Type') }}: {{ $invoice->documentTypeLabel() }}</p>
@@ -117,6 +132,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Approval') }}: {{ Str::headline(str_replace('_', ' ', $invoice->approvalStatusLabel())) }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Workflow') }}: {{ Str::headline(str_replace('_', ' ', $invoice->workflowStateLabel())) }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Payment') }}: {{ Str::headline(str_replace('_', ' ', $invoice->paymentStateLabel())) }}</p>
+            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Period Finalization') }}: {{ $invoice->periodFinalizationLabel() }}</p>
             @if($invoice->expenseProfile?->channel)
                 <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Expense Channel') }}: {{ Str::headline(str_replace('_', ' ', $invoice->expenseProfile->channel)) }}</p>
             @endif
@@ -143,6 +159,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     @if($invoice->is_expense && $invoice->attachments->isEmpty())
         <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
             {{ __('No supporting attachments have been added yet. Expense approvals may escalate until receipts are uploaded.') }}
+        </div>
+    @endif
+
+    @if($invoice->isPeriodFinalized())
+        <div class="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-100">
+            {{ __('This document is finalized because its accounting period is closed. Financial changes and attachment changes are no longer allowed.') }}
         </div>
     @endif
 

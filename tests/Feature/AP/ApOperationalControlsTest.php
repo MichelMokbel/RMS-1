@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\AccountingCompany;
+use App\Models\AccountingPeriod;
 use App\Models\ApInvoice;
 use App\Models\ApInvoiceAttachment;
 use App\Models\ApInvoiceItem;
@@ -124,12 +125,17 @@ it('blocks AP payment creation for held suppliers', function () {
         ->assertJsonValidationErrors('supplier_id');
 });
 
-it('allows AP attachment upload and deletion from the payables screens', function () {
+it('allows AP attachment upload and deletion on paid documents while the period is open', function () {
     $supplier = Supplier::factory()->create();
+    $company = AccountingCompany::query()->where('is_default', true)->firstOrFail();
+    $period = AccountingPeriod::query()->where('company_id', $company->id)->orderBy('period_number')->firstOrFail();
+    $period->update(['status' => 'open']);
 
     $invoice = ApInvoice::factory()->create([
+        'company_id' => $company->id,
+        'period_id' => $period->id,
         'supplier_id' => $supplier->id,
-        'status' => 'draft',
+        'status' => 'paid',
         'document_type' => 'vendor_bill',
     ]);
 
@@ -145,11 +151,52 @@ it('allows AP attachment upload and deletion from the payables screens', functio
     expect($attachment)->not->toBeNull();
     expect(Storage::disk('public')->exists($attachment->file_path))->toBeTrue();
 
-    Livewire::test('payables.invoices.edit', ['invoice' => $invoice->fresh()])
+    Livewire::test('payables.invoices.show', ['invoice' => $invoice->fresh()])
         ->call('deleteAttachment', $attachment->id)
         ->assertHasNoErrors();
 
     $this->assertDatabaseMissing('ap_invoice_attachments', [
+        'id' => $attachment->id,
+    ]);
+});
+
+it('blocks AP attachment changes once the invoice period is closed', function () {
+    $supplier = Supplier::factory()->create();
+    $company = AccountingCompany::query()->where('is_default', true)->firstOrFail();
+    $period = AccountingPeriod::query()->where('company_id', $company->id)->orderBy('period_number')->firstOrFail();
+    $period->update(['status' => 'closed']);
+
+    $invoice = ApInvoice::factory()->create([
+        'company_id' => $company->id,
+        'period_id' => $period->id,
+        'supplier_id' => $supplier->id,
+        'status' => 'paid',
+        'document_type' => 'vendor_bill',
+    ]);
+
+    $attachment = ApInvoiceAttachment::query()->create([
+        'invoice_id' => $invoice->id,
+        'file_path' => 'ap-invoices/'.$invoice->id.'/existing.pdf',
+        'original_name' => 'existing.pdf',
+        'uploaded_by' => $this->admin->id,
+    ]);
+
+    Storage::disk('public')->put($attachment->file_path, 'stub');
+
+    $this->actingAs($this->admin);
+
+    Livewire::test('payables.invoices.show', ['invoice' => $invoice])
+        ->set('new_attachments', [UploadedFile::fake()->image('late-receipt.jpg')])
+        ->call('uploadAttachments')
+        ->assertHasNoErrors();
+
+    expect(ApInvoiceAttachment::query()->where('invoice_id', $invoice->id)->count())->toBe(1);
+
+    Livewire::test('payables.invoices.show', ['invoice' => $invoice->fresh()])
+        ->call('deleteAttachment', $attachment->id)
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('ap_invoice_attachments', [
         'id' => $attachment->id,
     ]);
 });

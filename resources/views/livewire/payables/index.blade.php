@@ -352,7 +352,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function documentQuery(): Builder
     {
         $query = ApInvoice::query()
-            ->with(['supplier', 'category', 'expenseProfile.wallet'])
+            ->with(['supplier', 'category', 'expenseProfile.wallet', 'period'])
             ->withSum('allocations as paid_sum', 'allocated_amount');
 
         $query
@@ -650,6 +650,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Approval') }}</th>
                             <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Accounting') }}</th>
                             <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Payment') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Period Finalization') }}</th>
                             <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Total') }}</th>
                             <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Actions') }}</th>
                         </tr>
@@ -672,6 +673,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ Str::headline(str_replace('_', ' ', $invoice->approvalStatusLabel())) }}</td>
                                 <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ Str::headline(str_replace('_', ' ', $invoice->workflowStateLabel())) }}</td>
                                 <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ Str::headline(str_replace('_', ' ', $invoice->paymentStateLabel())) }}</td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $invoice->periodFinalizationLabel() }}</td>
                                 <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">
                                     <div>{{ number_format((float) $invoice->total_amount, 2) }}</div>
                                     <div class="text-xs text-neutral-500">{{ __('Open') }}: {{ number_format((float) $invoice->total_amount - (float) $invoice->paid_sum, 2) }}</div>
@@ -719,7 +721,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 </td>
                             </tr>
                         @empty
-                            <tr><td colspan="8" class="px-3 py-4 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No AP documents found.') }}</td></tr>
+                            <tr><td colspan="9" class="px-3 py-4 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No AP documents found.') }}</td></tr>
                         @endforelse
                     </tbody>
                 </table>

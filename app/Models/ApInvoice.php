@@ -214,6 +214,43 @@ class ApInvoice extends Model
         return in_array($this->status, ['draft', 'posted'], true) && $this->allocations()->count() === 0;
     }
 
+    public function isPeriodFinalized(): bool
+    {
+        return $this->period?->status === 'closed';
+    }
+
+    public function canMutateAttachments(): bool
+    {
+        return ! $this->isVoid() && ! $this->isPeriodFinalized();
+    }
+
+    public function periodFinalizationState(): string
+    {
+        if (! $this->period_id || ! $this->period) {
+            return 'no_period';
+        }
+
+        return match ((string) $this->period->status) {
+            'open' => 'open',
+            'ended_open' => 'ended_open',
+            'reopened' => 'reopened',
+            'closed' => 'closed',
+            default => (string) $this->period->status,
+        };
+    }
+
+    public function periodFinalizationLabel(): string
+    {
+        return match ($this->periodFinalizationState()) {
+            'open' => 'Open Period',
+            'ended_open' => 'Ended Open Period',
+            'reopened' => 'Reopened Period',
+            'closed' => 'Finalized by Period Close',
+            'no_period' => 'No Period Assigned',
+            default => ucfirst(str_replace('_', ' ', $this->periodFinalizationState())),
+        };
+    }
+
     public function isOverdue(): bool
     {
         return ! $this->isVoid()

@@ -329,7 +329,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function deleteAttachment(int $attachmentId, ApInvoiceAttachmentService $attachmentService): void
     {
         $attachment = $this->invoice->attachments()->findOrFail($attachmentId);
-        $attachmentService->delete($attachment);
+        $attachmentService->delete($attachment, (int) auth()->id());
         $this->invoice = $this->invoice->fresh(['items', 'expenseProfile', 'attachments']);
         session()->flash('status', __('Attachment deleted.'));
     }

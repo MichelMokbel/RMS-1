@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\AccountingCompany;
+use App\Models\AccountingPeriod;
 use App\Models\ApInvoice;
 use App\Models\BankAccount;
 use App\Models\ExpenseProfile;
@@ -119,6 +120,38 @@ it('shows the job field on AP create and edit pages and the assigned job on the 
         ->assertOk()
         ->assertSee('JOB-AP-01')
         ->assertSee('Office Fit-Out');
+});
+
+it('shows the derived period finalization state on AP pages', function () {
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+
+    $company = AccountingCompany::query()->where('is_default', true)->firstOrFail();
+    $period = AccountingPeriod::query()->where('company_id', $company->id)->orderBy('period_number')->firstOrFail();
+    $period->update(['status' => 'closed']);
+
+    $supplier = Supplier::factory()->create();
+    $invoice = ApInvoice::factory()->create([
+        'company_id' => $company->id,
+        'period_id' => $period->id,
+        'supplier_id' => $supplier->id,
+        'status' => 'paid',
+        'document_type' => 'vendor_bill',
+        'invoice_number' => 'PERIOD-FINAL-01',
+    ]);
+
+    $this->actingAs($user)
+        ->get('/payables')
+        ->assertOk()
+        ->assertSee('Period Finalization')
+        ->assertSee('Finalized by Period Close');
+
+    $this->actingAs($user)
+        ->get("/payables/invoices/{$invoice->id}")
+        ->assertOk()
+        ->assertSee('Period Finalization')
+        ->assertSee('Finalized by Period Close')
+        ->assertSee('This document is finalized because its accounting period is closed.');
 });
 
 it('allows a manager to approve a submitted expense from the AP workspace', function () {
