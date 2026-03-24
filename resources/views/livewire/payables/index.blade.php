@@ -12,11 +12,13 @@ use App\Services\AP\ApInvoicePostingService;
 use App\Services\AP\ApInvoiceVoidService;
 use App\Services\AP\ApReportsService;
 use App\Services\AP\RecurringBillService;
+use App\Services\Accounting\LedgerAccountMappingService;
 use App\Services\Spend\ExpenseWorkflowService;
 use App\Support\AP\DocumentTypeMap;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
@@ -89,57 +91,96 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         abort_unless($this->canManagerApprove(), 403);
         $invoice = ApInvoice::query()->with('expenseProfile')->findOrFail($invoiceId);
-        $service->approve($invoice, (int) auth()->id(), 'manager');
-        session()->flash('status', __('Manager approval recorded.'));
+        try {
+            $service->approve($invoice, (int) auth()->id(), 'manager');
+            session()->flash('status', __('Manager approval recorded.'));
+        } catch (ValidationException $exception) {
+            $this->flashValidationError($exception);
+        }
     }
 
     public function approveFinance(int $invoiceId, ExpenseWorkflowService $service): void
     {
         abort_unless($this->canFinanceApprove(), 403);
         $invoice = ApInvoice::query()->with('expenseProfile')->findOrFail($invoiceId);
-        $service->approve($invoice, (int) auth()->id(), 'finance');
-        session()->flash('status', __('Finance approval recorded.'));
+        try {
+            $service->approve($invoice, (int) auth()->id(), 'finance');
+            session()->flash('status', __('Finance approval recorded.'));
+        } catch (ValidationException $exception) {
+            $this->flashValidationError($exception);
+        }
     }
 
     public function rejectExpense(int $invoiceId, ExpenseWorkflowService $service): void
     {
         abort_unless($this->canManagerApprove() || $this->canFinanceApprove(), 403);
         $invoice = ApInvoice::query()->with('expenseProfile')->findOrFail($invoiceId);
-        $service->reject($invoice, (int) auth()->id(), 'Rejected from AP workspace');
-        session()->flash('status', __('Document rejected.'));
+        try {
+            $service->reject($invoice, (int) auth()->id(), 'Rejected from AP workspace');
+            session()->flash('status', __('Document rejected.'));
+        } catch (ValidationException $exception) {
+            $this->flashValidationError($exception);
+        }
     }
 
     public function postDocument(int $invoiceId, ApInvoicePostingService $postingService, ExpenseWorkflowService $expenseWorkflowService): void
     {
         $invoice = ApInvoice::query()->with('expenseProfile')->findOrFail($invoiceId);
 
-        if ($invoice->is_expense) {
-            abort_unless($this->canFinanceApprove(), 403);
-            $expenseWorkflowService->post($invoice, (int) auth()->id());
-            session()->flash('status', __('Expense posted.'));
+        try {
+            if ($invoice->is_expense) {
+                abort_unless($this->canFinanceApprove(), 403);
+                $expenseWorkflowService->post($invoice, (int) auth()->id());
+                session()->flash('status', __('Expense posted.'));
 
-            return;
+                return;
+            }
+
+            abort_unless($this->canManageAp(), 403);
+            $postingService->post($invoice, (int) auth()->id());
+            session()->flash('status', __('Bill posted.'));
+        } catch (ValidationException $exception) {
+            $this->flashValidationError($exception);
         }
-
-        abort_unless($this->canManageAp(), 403);
-        $postingService->post($invoice, (int) auth()->id());
-        session()->flash('status', __('Bill posted.'));
     }
 
-    public function settleExpense(int $invoiceId, ExpenseWorkflowService $service): void
+    public function settleExpense(int $invoiceId, ExpenseWorkflowService $service, LedgerAccountMappingService $mappingService): void
     {
         abort_unless($this->canFinanceApprove(), 403);
-        $invoice = ApInvoice::query()->with('expenseProfile')->findOrFail($invoiceId);
-        $service->settle($invoice, (int) auth()->id());
-        session()->flash('status', __('Expense settled.'));
+        $invoice = ApInvoice::query()->with(['expenseProfile.wallet', 'supplier'])->findOrFail($invoiceId);
+
+        $paymentMethod = $mappingService->normalizePaymentMethod((string) (
+            $invoice->expenseProfile?->channel === 'petty_cash'
+                ? 'petty_cash'
+                : ($invoice->supplier?->preferred_payment_method ?: 'bank_transfer')
+        ));
+
+        $payload = ['payment_method' => $paymentMethod];
+        if ($paymentMethod === 'bank_transfer') {
+            $bankAccountId = $mappingService->resolveBankAccount(null, (int) $invoice->company_id)?->id;
+            if ($bankAccountId) {
+                $payload['bank_account_id'] = $bankAccountId;
+            }
+        }
+
+        try {
+            $service->settle($invoice, (int) auth()->id(), $payload);
+            session()->flash('status', __('Expense settled.'));
+        } catch (ValidationException $exception) {
+            $this->flashValidationError($exception);
+        }
     }
 
     public function voidDocument(int $invoiceId, ApInvoiceVoidService $voidService): void
     {
         abort_unless($this->canManageAp(), 403);
         $invoice = ApInvoice::query()->with('allocations')->findOrFail($invoiceId);
-        $voidService->void($invoice, (int) auth()->id());
-        session()->flash('status', __('Document voided.'));
+        try {
+            $voidService->void($invoice, (int) auth()->id());
+            session()->flash('status', __('Document voided.'));
+        } catch (ValidationException $exception) {
+            $this->flashValidationError($exception);
+        }
     }
 
     public function addRecurringLine(): void
@@ -440,6 +481,20 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         return (bool) ($user?->hasRole('admin') || $user?->can('finance.access'));
     }
+
+    public function canReviewExpense(ApInvoice $invoice): bool
+    {
+        return (int) ($invoice->expenseProfile?->submitted_by ?? 0) !== (int) auth()->id();
+    }
+
+    private function flashValidationError(ValidationException $exception): void
+    {
+        $message = collect($exception->errors())
+            ->flatten()
+            ->first();
+
+        session()->flash('error', $message ?: __('The action could not be completed.'));
+    }
 }; ?>
 
 <div class="app-page space-y-6">
@@ -459,6 +514,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     @if (session('status'))
         <div class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">
             {{ session('status') }}
+        </div>
+    @endif
+
+    @if (session('error'))
+        <div class="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-100">
+            {{ session('error') }}
         </div>
     @endif
 
@@ -628,12 +689,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                                                 <flux:button size="xs" type="button" wire:click="submitExpense({{ $invoice->id }})">{{ __('Submit') }}</flux:button>
                                             @endif
 
-                                            @if($invoice->approvalStatusLabel() === 'submitted' && $this->canManagerApprove())
+                                            @if($invoice->approvalStatusLabel() === 'submitted' && $this->canManagerApprove() && $this->canReviewExpense($invoice))
                                                 <flux:button size="xs" type="button" wire:click="approveManager({{ $invoice->id }})">{{ __('Manager Approve') }}</flux:button>
                                                 <flux:button size="xs" type="button" wire:click="rejectExpense({{ $invoice->id }})" variant="ghost">{{ __('Reject') }}</flux:button>
                                             @endif
 
-                                            @if($invoice->approvalStatusLabel() === 'manager_approved' && $this->canFinanceApprove())
+                                            @if($invoice->approvalStatusLabel() === 'manager_approved' && $this->canFinanceApprove() && $this->canReviewExpense($invoice))
                                                 <flux:button size="xs" type="button" wire:click="approveFinance({{ $invoice->id }})">{{ __('Finance Approve') }}</flux:button>
                                                 <flux:button size="xs" type="button" wire:click="rejectExpense({{ $invoice->id }})" variant="ghost">{{ __('Reject') }}</flux:button>
                                             @endif

@@ -253,6 +253,11 @@ class LedgerAccountMappingService
             return $account;
         }
 
+        $account = LedgerAccount::query()->where('code', $code)->first();
+        if ($account) {
+            return $account;
+        }
+
         if (! $meta) {
             return null;
         }
