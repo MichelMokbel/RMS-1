@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ArInvoice;
+use App\Models\BankAccount;
 use App\Models\Customer;
 use App\Services\AR\ArPaymentService;
 use App\Support\Money\MinorUnits;
@@ -17,7 +18,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $customer_search = '';
 
     public string $payment_date = '';
-    public string $payment_method = 'bank';
+    public string $payment_method = 'bank_transfer';
+    public ?int $bank_account_id = null;
     public string $amount = '0.00';
     public ?string $reference = null;
     public ?string $notes = null;
@@ -50,6 +52,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             'customers' => $customers,
             'branches' => Schema::hasTable('branches')
                 ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
+                : collect(),
+            'bankAccounts' => Schema::hasTable('bank_accounts')
+                ? BankAccount::query()->where('is_active', true)->orderBy('name')->get()
                 : collect(),
         ];
     }
@@ -219,6 +224,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'branch_id' => $this->branch_id,
                 'amount_cents' => $amountCents,
                 'method' => $this->payment_method,
+                'bank_account_id' => $this->bank_account_id,
                 'received_at' => $this->payment_date ? now()->parse($this->payment_date)->toDateTimeString() : now(),
                 'reference' => $this->reference,
                 'notes' => $this->notes,
@@ -366,14 +372,37 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div>
                     <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Method') }}</label>
                     <select wire:model.live="payment_method" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                        <option value="bank">{{ __('Bank') }}</option>
+                        <option value="bank_transfer">{{ __('Bank Transfer') }}</option>
                         <option value="cash">{{ __('Cash') }}</option>
                         <option value="card">{{ __('Card') }}</option>
-                        <option value="online">{{ __('Online') }}</option>
-                        <option value="voucher">{{ __('Voucher') }}</option>
+                        <option value="cheque">{{ __('Cheque') }}</option>
+                        <option value="other">{{ __('Other') }}</option>
                     </select>
                 </div>
                 <flux:input wire:model.live="reference" :label="__('Reference')" />
+            </div>
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Bank Account') }}</label>
+                    <select wire:model.live="bank_account_id" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                        <option value="">{{ __('Default') }}</option>
+                        @foreach ($bankAccounts as $account)
+                            <option value="{{ $account->id }}">{{ $account->name }}</option>
+                        @endforeach
+                    </select>
+                    <p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                        @if($payment_method === 'bank_transfer')
+                            {{ __('Required for bank transfers. This drives both the ledger posting and bank reconciliation account.') }}
+                        @elseif($payment_method === 'card')
+                            {{ __('Card receipts post to the configured card-clearing account.') }}
+                        @elseif($payment_method === 'cash')
+                            {{ __('Cash receipts post to the configured cash account.') }}
+                        @else
+                            {{ __('Cheque and other receipts post to their configured clearing accounts.') }}
+                        @endif
+                    </p>
+                    @error('bank_account_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                </div>
             </div>
             @error('amount') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
             <flux:textarea wire:model.live="notes" :label="__('Notes')" rows="2" />

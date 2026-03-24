@@ -2,7 +2,9 @@
 
 namespace App\Services\Ledger;
 
+use App\Models\AccountingPeriod;
 use App\Models\GlBatch;
+use App\Services\Accounting\AccountingPeriodCloseService;
 use App\Services\Finance\FinanceSettingsService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -10,7 +12,10 @@ use Illuminate\Validation\ValidationException;
 
 class GlBatchPostingService
 {
-    public function __construct(protected FinanceSettingsService $financeSettings)
+    public function __construct(
+        protected FinanceSettingsService $financeSettings,
+        protected AccountingPeriodCloseService $periodCloseService
+    )
     {
     }
 
@@ -45,11 +50,17 @@ class GlBatchPostingService
 
             if ($closePeriod) {
                 $target = $batch->period_end ? Carbon::parse($batch->period_end)->toDateString() : null;
-                if ($target) {
-                    $current = $this->financeSettings->getLockDate();
-                    if ($current && Carbon::parse($target)->lessThan(Carbon::parse($current))) {
-                        throw ValidationException::withMessages(['lock_date' => __('Lock date cannot move backwards.')]);
-                    }
+                $period = $target && $batch->company_id
+                    ? AccountingPeriod::query()
+                        ->where('company_id', $batch->company_id)
+                        ->whereDate('start_date', '<=', $target)
+                        ->whereDate('end_date', '>=', $target)
+                        ->first()
+                    : null;
+
+                if ($period) {
+                    $this->periodCloseService->close($period, $userId, __('Closed from GL batch posting #:batch', ['batch' => $batch->id]));
+                } elseif ($target) {
                     $this->financeSettings->setLockDate($target, $userId);
                 }
             }

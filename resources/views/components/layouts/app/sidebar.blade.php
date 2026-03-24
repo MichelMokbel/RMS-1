@@ -30,7 +30,8 @@
                     || request()->routeIs('spend.*')
                     || request()->routeIs('expenses.*')
                     || request()->routeIs('petty-cash.*')
-                    || request()->routeIs('ledger.*');
+                    || request()->routeIs('ledger.*')
+                    || request()->routeIs('accounting.*');
                 $inReports = request()->routeIs('reports.*');
                 $inAdministration = request()->routeIs('categories.*')
                     || request()->routeIs('customers.*')
@@ -103,11 +104,14 @@
 
                 @if ($isManager)
                     <flux:navlist.group expandable :expanded="$inFinance" :heading="__('Finance')">
-                        <flux:navlist.item icon="banknotes" :href="route('payables.index')" :current="request()->routeIs('payables.*')" wire:navigate>
-                            {{ __('Payables') }}
+                        <flux:navlist.item icon="building-library" :href="route('accounting.dashboard')" :current="request()->routeIs('accounting.*')" wire:navigate>
+                            {{ __('Accounting') }}
                         </flux:navlist.item>
-                        <flux:navlist.item icon="wallet" :href="route('spend.index')" :current="request()->routeIs('spend.*') || request()->routeIs('expenses.*') || request()->routeIs('petty-cash.*')" wire:navigate>
-                            {{ __('Spend') }}
+                        <flux:navlist.item icon="briefcase" :href="route('accounting.jobs')" :current="request()->routeIs('accounting.jobs')" wire:navigate>
+                            {{ __('Jobs') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="banknotes" :href="route('payables.index')" :current="request()->routeIs('payables.*')" wire:navigate>
+                            {{ __('Accounts Payable') }}
                         </flux:navlist.item>
                         <flux:navlist.item icon="calculator" :href="route('ledger.batches.index')" :current="request()->routeIs('ledger.*')" wire:navigate>
                             {{ __('Ledger Batches') }}

@@ -19,7 +19,7 @@ it('posts draft invoice', function () {
 
     $response = $this->actingAs($this->user)->postJson('/api/ap/invoices', [
         'supplier_id' => $supplier->id,
-        'is_expense' => false,
+        'document_type' => 'vendor_bill',
         'invoice_number' => 'INV-100',
         'invoice_date' => now()->toDateString(),
         'due_date' => now()->addDays(10)->toDateString(),

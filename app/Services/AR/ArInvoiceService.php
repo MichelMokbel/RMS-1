@@ -12,6 +12,8 @@ use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Models\PaymentTerm;
 use App\Models\Sale;
+use App\Services\Accounting\AccountingContextService;
+use App\Services\Accounting\JobCostingService;
 use App\Services\Sequences\DocumentSequenceService;
 use App\Services\Ledger\SubledgerService;
 use App\Support\Money\MinorUnits;
@@ -22,7 +24,9 @@ class ArInvoiceService
 {
     public function __construct(
         protected DocumentSequenceService $sequences,
-        protected SubledgerService $subledgerService
+        protected SubledgerService $subledgerService,
+        protected AccountingContextService $accountingContext,
+        protected JobCostingService $jobCostingService
     )
     {
     }
@@ -42,6 +46,7 @@ class ArInvoiceService
         ?int $paymentTermId = null,
         int $paymentTermDays = 0,
         ?int $salesPersonId = null,
+        ?int $jobId = null,
         ?string $lpoReference = null,
         string $invoiceDiscountType = 'fixed',
         int $invoiceDiscountValue = 0,
@@ -59,7 +64,7 @@ class ArInvoiceService
             throw ValidationException::withMessages(['customer_id' => __('Customer not found.')]);
         }
 
-        return DB::transaction(function () use ($branchId, $customer, $items, $actorId, $currency, $posReference, $source, $sourceSaleId, $type, $issueDate, $paymentType, $paymentTermId, $paymentTermDays, $salesPersonId, $lpoReference, $invoiceDiscountType, $invoiceDiscountValue) {
+        return DB::transaction(function () use ($branchId, $customer, $items, $actorId, $currency, $posReference, $source, $sourceSaleId, $type, $issueDate, $paymentType, $paymentTermId, $paymentTermDays, $salesPersonId, $jobId, $lpoReference, $invoiceDiscountType, $invoiceDiscountValue) {
             $currency = $currency ?: (string) config('pos.currency');
             $source = $source ?: 'dashboard';
             if ($type === 'credit_note') {
@@ -86,6 +91,7 @@ class ArInvoiceService
                 'payment_term_id' => $paymentTermId,
                 'payment_term_days' => $termDays,
                 'sales_person_id' => $salesPersonId,
+                'job_id' => $jobId,
                 'lpo_reference' => $lpoReference,
                 'issue_date' => $issueDate,
                 'due_date' => $issueDate ? now()->parse($issueDate)->addDays($termDays)->toDateString() : null,
@@ -436,11 +442,13 @@ class ArInvoiceService
 
             $locked->issue_date = $issueDate;
             $locked->due_date = $locked->due_date ?: $dueDate;
+            $locked->company_id = $locked->company_id ?: $this->accountingContext->resolveCompanyId((int) $locked->branch_id, (int) ($locked->company_id ?? 0));
             $locked->status = 'issued';
             $locked->updated_by = $actorId;
             $locked->save();
 
             $this->subledgerService->recordArInvoiceIssued($locked->fresh(), $actorId);
+            $this->recordJobRevenue($locked->fresh(), $actorId);
 
             InvoiceIssued::dispatch($locked->fresh());
 
@@ -450,6 +458,31 @@ class ArInvoiceService
 
             return $issued->fresh(['items']);
         });
+    }
+
+    private function recordJobRevenue(ArInvoice $invoice, int $actorId): void
+    {
+        if (! $invoice->job_id) {
+            return;
+        }
+
+        $job = $invoice->job()->first();
+        if (! $job) {
+            return;
+        }
+
+        $scale = (int) config('pos.money_scale', 100);
+        $amount = $scale > 0 ? round((float) ($invoice->total_cents ?? 0) / $scale, 2) : 0.0;
+        if ($amount <= 0) {
+            return;
+        }
+
+        $this->jobCostingService->recordSourceTransaction($job, [
+            'transaction_date' => optional($invoice->issue_date)->toDateString() ?? now()->toDateString(),
+            'amount' => $amount,
+            'transaction_type' => 'revenue',
+            'memo' => __('AR invoice :invoice', ['invoice' => $invoice->invoice_number]),
+        ], ArInvoice::class, (int) $invoice->id, $actorId);
     }
 
     /**
@@ -472,6 +505,7 @@ class ArInvoiceService
                 'payment_term_id' => $payload['payment_term_id'] ?? $locked->payment_term_id,
                 'payment_term_days' => (int) ($payload['payment_term_days'] ?? $locked->payment_term_days),
                 'sales_person_id' => $payload['sales_person_id'] ?? $locked->sales_person_id,
+                'job_id' => $payload['job_id'] ?? $locked->job_id,
                 'lpo_reference' => $payload['lpo_reference'] ?? $locked->lpo_reference,
                 'issue_date' => $payload['issue_date'] ?? $locked->issue_date?->toDateString(),
                 'due_date' => null,

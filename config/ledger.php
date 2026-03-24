@@ -3,6 +3,10 @@
 return [
     'accounts' => [
         'cash' => ['code' => '1000', 'name' => 'Cash', 'type' => 'asset'],
+        'bank_operating' => ['code' => '1010', 'name' => 'Operating Bank', 'type' => 'asset'],
+        'card_clearing' => ['code' => '1020', 'name' => 'Card Clearing', 'type' => 'asset'],
+        'cheque_clearing' => ['code' => '1030', 'name' => 'Cheque Clearing', 'type' => 'asset'],
+        'other_clearing' => ['code' => '1040', 'name' => 'Other Clearing', 'type' => 'asset'],
         'petty_cash_asset' => ['code' => '1100', 'name' => 'Petty Cash', 'type' => 'asset'],
         'inventory_asset' => ['code' => '1200', 'name' => 'Inventory', 'type' => 'asset'],
         'ap_prepay' => ['code' => '1300', 'name' => 'Supplier Advances', 'type' => 'asset'],
@@ -39,5 +43,11 @@ return [
         'petty_cash_issue_cash' => 'cash',
         'petty_cash_expense' => 'expense_default',
         'petty_cash_over_short' => 'petty_cash_over_short',
+        'ap_payment_card' => 'card_clearing',
+        'ar_payment_card' => 'card_clearing',
+        'ap_payment_cheque' => 'cheque_clearing',
+        'ar_payment_cheque' => 'cheque_clearing',
+        'ap_payment_other' => 'other_clearing',
+        'ar_payment_other' => 'other_clearing',
     ],
 ];

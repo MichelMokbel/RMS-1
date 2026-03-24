@@ -17,10 +17,17 @@ class SubledgerEntry extends Model
     protected $fillable = [
         'source_type',
         'source_id',
+        'company_id',
         'event',
         'entry_date',
         'description',
+        'source_document_type',
+        'source_document_id',
         'branch_id',
+        'department_id',
+        'job_id',
+        'period_id',
+        'currency_code',
         'status',
         'posted_at',
         'posted_by',
@@ -29,6 +36,11 @@ class SubledgerEntry extends Model
     ];
 
     protected $casts = [
+        'company_id' => 'integer',
+        'branch_id' => 'integer',
+        'department_id' => 'integer',
+        'job_id' => 'integer',
+        'period_id' => 'integer',
         'entry_date' => 'date',
         'posted_at' => 'datetime',
         'voided_at' => 'datetime',
@@ -60,5 +72,20 @@ class SubledgerEntry extends Model
     public function voidedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'voided_by');
+    }
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(AccountingCompany::class, 'company_id');
+    }
+
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'department_id');
+    }
+
+    public function job(): BelongsTo
+    {
+        return $this->belongsTo(Job::class, 'job_id');
     }
 }

@@ -3,11 +3,16 @@
 namespace App\Services\Purchasing;
 
 use App\Models\PurchaseOrder;
+use App\Services\Accounting\AccountingAuditLogService;
 use Illuminate\Validation\ValidationException;
 
 class PurchaseOrderWorkflowService
 {
-    public function approve(PurchaseOrder $po): PurchaseOrder
+    public function __construct(protected AccountingAuditLogService $auditLog)
+    {
+    }
+
+    public function approve(PurchaseOrder $po, ?int $actorId = null): PurchaseOrder
     {
         $po->loadMissing('items');
 
@@ -19,12 +24,18 @@ class PurchaseOrderWorkflowService
             throw ValidationException::withMessages(['status' => __('Supplier and at least one line are required.')]);
         }
 
-        $po->update(['status' => PurchaseOrder::STATUS_APPROVED]);
+        $po->update([
+            'status' => PurchaseOrder::STATUS_APPROVED,
+            'workflow_state' => PurchaseOrder::STATUS_APPROVED,
+            'approved_at' => now(),
+            'approved_by' => $actorId,
+        ]);
+        $this->auditLog->log('purchase_order.approved', $actorId, $po, [], (int) ($po->company_id ?? 0) ?: null);
 
         return $po->fresh(['items.item', 'supplier', 'creator']);
     }
 
-    public function cancel(PurchaseOrder $po): PurchaseOrder
+    public function cancel(PurchaseOrder $po, ?int $actorId = null): PurchaseOrder
     {
         $po->loadMissing('items');
 
@@ -36,9 +47,14 @@ class PurchaseOrderWorkflowService
             throw ValidationException::withMessages(['status' => __('Cannot cancel after receiving items.')]);
         }
 
-        $po->update(['status' => PurchaseOrder::STATUS_CANCELLED]);
+        $po->update([
+            'status' => PurchaseOrder::STATUS_CANCELLED,
+            'workflow_state' => PurchaseOrder::STATUS_CANCELLED,
+            'closed_at' => now(),
+            'closed_by' => $actorId,
+        ]);
+        $this->auditLog->log('purchase_order.cancelled', $actorId, $po, [], (int) ($po->company_id ?? 0) ?: null);
 
         return $po->fresh(['items.item', 'supplier', 'creator']);
     }
 }
-

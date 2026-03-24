@@ -48,6 +48,11 @@ class PurchaseOrderItem extends Model
         return $this->hasMany(PurchaseOrderReceivingLine::class, 'purchase_order_item_id');
     }
 
+    public function invoiceMatches(): HasMany
+    {
+        return $this->hasMany(PurchaseOrderInvoiceMatch::class, 'purchase_order_item_id');
+    }
+
     public function remainingToReceive(): float
     {
         $qty = (float) $this->quantity;

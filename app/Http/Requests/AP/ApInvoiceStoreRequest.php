@@ -2,8 +2,13 @@
 
 namespace App\Http\Requests\AP;
 
+use App\Models\Supplier;
+use App\Support\AP\DocumentTypeMap;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Schema;
+use App\Models\Job;
+use App\Models\JobCostCode;
+use App\Models\JobPhase;
 use Illuminate\Validation\Rule;
 
 class ApInvoiceStoreRequest extends FormRequest
@@ -19,9 +24,18 @@ class ApInvoiceStoreRequest extends FormRequest
 
         return [
             'supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
+            'company_id' => ['nullable', 'integer', 'exists:accounting_companies,id'],
+            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+            'department_id' => ['nullable', 'integer', 'exists:departments,id'],
+            'job_id' => ['nullable', 'integer', 'exists:accounting_jobs,id'],
+            'job_phase_id' => ['nullable', 'integer', 'exists:accounting_job_phases,id'],
+            'job_cost_code_id' => ['nullable', 'integer', 'exists:accounting_job_cost_codes,id'],
             'purchase_order_id' => ['nullable', 'integer', Rule::exists('purchase_orders', 'id')],
             'category_id' => ['nullable', 'integer', Rule::exists('expense_categories', 'id')],
-            'is_expense' => ['required', 'boolean'],
+            'expense_channel' => ['nullable', 'in:vendor,petty_cash,reimbursement'],
+            'wallet_id' => ['nullable', 'integer', 'exists:petty_cash_wallets,id'],
+            'document_type' => ['required', Rule::in(DocumentTypeMap::types())],
+            'currency_code' => ['nullable', 'string', 'max:10'],
             'invoice_number' => [
                 'required',
                 'string',
@@ -33,6 +47,7 @@ class ApInvoiceStoreRequest extends FormRequest
             'tax_amount' => ['required', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string'],
             'items' => ['required', 'array', 'min:1'],
+            'items.*.purchase_order_item_id' => ['nullable', 'integer', Rule::exists('purchase_order_items', 'id')],
             'items.*.description' => ['required', 'string', 'max:255'],
             'items.*.quantity' => ['required', 'numeric', 'min:0.001'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0'],
@@ -42,9 +57,54 @@ class ApInvoiceStoreRequest extends FormRequest
     public function withValidator($validator)
     {
         $validator->after(function ($v) {
-            if ($this->boolean('is_expense') && Schema::hasTable('expense_categories') && empty($this->category_id)) {
+            $documentType = DocumentTypeMap::normalizeDocumentType($this->input('document_type'));
+            $expenseChannel = DocumentTypeMap::normalizeExpenseChannel($documentType, $this->input('expense_channel'));
+
+            if (DocumentTypeMap::requiresCategory($documentType) && Schema::hasTable('expense_categories') && empty($this->category_id)) {
                 $v->errors()->add('category_id', __('Category is required for expenses.'));
             }
+
+            if (DocumentTypeMap::requiresWallet($documentType, $expenseChannel) && empty($this->wallet_id)) {
+                $v->errors()->add('wallet_id', __('Wallet is required for petty cash expenses.'));
+            }
+
+            if ($this->filled('purchase_order_id')) {
+                foreach ((array) $this->input('items', []) as $index => $item) {
+                    if (empty($item['purchase_order_item_id'])) {
+                        $v->errors()->add("items.$index.purchase_order_item_id", __('PO-linked invoice lines must reference a purchase order line.'));
+                    }
+                }
+            }
+
+            $jobId = (int) $this->input('job_id', 0);
+            $phaseId = (int) $this->input('job_phase_id', 0);
+            $costCodeId = (int) $this->input('job_cost_code_id', 0);
+
+            if (($phaseId > 0 || $costCodeId > 0) && $jobId <= 0) {
+                $v->errors()->add('job_id', __('Select a job before assigning a phase or cost code.'));
+            }
+
+            if ($jobId > 0) {
+                $job = Job::query()->find($jobId);
+
+                if ($phaseId > 0 && (! $job || ! JobPhase::query()->whereKey($phaseId)->where('job_id', $jobId)->exists())) {
+                    $v->errors()->add('job_phase_id', __('The selected phase must belong to the selected job.'));
+                }
+
+                if ($costCodeId > 0) {
+                    $costCode = JobCostCode::query()->find($costCodeId);
+                    if (! $costCode || ! $costCode->is_active || (int) $costCode->company_id !== (int) $job?->company_id) {
+                        $v->errors()->add('job_cost_code_id', __('The selected cost code must be active and belong to the job company.'));
+                    }
+                }
+            }
         });
+    }
+
+    public function supplier(): ?Supplier
+    {
+        $supplierId = (int) $this->input('supplier_id', 0);
+
+        return $supplierId > 0 ? Supplier::query()->find($supplierId) : null;
     }
 }

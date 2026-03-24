@@ -24,6 +24,7 @@ use App\Console\Commands\ImportMenuItemArabicNames;
 use App\Console\Commands\PrunePosPrintStreamEvents;
 use App\Console\Commands\HelpSeedDemoCommand;
 use App\Console\Commands\HelpCaptureScreenshotsCommand;
+use App\Console\Commands\GenerateRecurringBills;
 use App\Services\Orders\SubscriptionOrderGenerationService;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
@@ -49,6 +50,7 @@ return Application::configure(basePath: dirname(__DIR__))
         PrunePosPrintStreamEvents::class,
         HelpSeedDemoCommand::class,
         HelpCaptureScreenshotsCommand::class,
+        GenerateRecurringBills::class,
     ])
     ->withSchedule(function (Schedule $schedule) {
         if (! (bool) config('subscriptions.auto_generate', false)) {
@@ -73,6 +75,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $retentionHours = max(1, (int) config('pos.print_jobs.stream_event_retention_hours', 24));
         $schedule->command("pos:prune-print-stream-events --hours={$retentionHours}")
             ->hourly()
+            ->withoutOverlapping();
+
+        $schedule->command('accounting:generate-recurring-bills')
+            ->dailyAt('01:00')
             ->withoutOverlapping();
     })
     ->withMiddleware(function (Middleware $middleware): void {

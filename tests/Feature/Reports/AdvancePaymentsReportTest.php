@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\ArInvoice;
 use App\Models\Customer;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
@@ -46,9 +47,17 @@ it('shows only unallocated ar payments on the advance payments report', function
         'received_at' => now()->subDay()->toDateTimeString(),
     ]);
 
+    $invoice = ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'status' => 'issued',
+        'total_cents' => 12000,
+        'balance_cents' => 12000,
+    ]);
+
     PaymentAllocation::query()->create([
         'payment_id' => $fullyAllocated->id,
-        'invoice_id' => null,
+        'allocatable_type' => ArInvoice::class,
+        'allocatable_id' => $invoice->id,
         'amount_cents' => 12000,
         'allocated_at' => now(),
         'created_by' => $user->id,

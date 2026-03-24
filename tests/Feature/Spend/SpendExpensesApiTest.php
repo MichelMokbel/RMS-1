@@ -153,6 +153,32 @@ it('manager approval goes to manager_approved when exception flags exist', funct
     expect($response->json('exception_flags'))->toContain('missing_attachment');
 });
 
+it('supplier-specific approval thresholds escalate expense approval', function () {
+    $supplier = Supplier::factory()->create([
+        'approval_threshold' => 50,
+    ]);
+
+    $draft = createDraftExpense($this->staff, [
+        'supplier_id' => $supplier->id,
+        'amount' => 100,
+    ]);
+
+    attachReceipt($this->staff, (int) $draft['id']);
+
+    $this->actingAs($this->staff)
+        ->postJson(route('api.spend.expenses.submit', $draft['id']))
+        ->assertOk();
+
+    $response = $this->actingAs($this->manager)
+        ->postJson(route('api.spend.expenses.approve', $draft['id']), ['stage' => 'manager'])
+        ->assertOk();
+
+    $response->assertJsonPath('approval_status', 'manager_approved')
+        ->assertJsonPath('requires_finance_approval', true);
+
+    expect($response->json('exception_flags'))->toContain('supplier_threshold_exceeded');
+});
+
 it('requires finance approval for manager approved expenses', function () {
     $draft = createDraftExpense($this->staff, ['amount' => 1500]);
 

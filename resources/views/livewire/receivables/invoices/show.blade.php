@@ -16,7 +16,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $void_reason = '';
     public string $active_tab = 'allocations';
 
-    public string $payment_method = 'bank';
+    public string $payment_method = 'bank_transfer';
     public string $payment_amount = '0.00';
 
     public string $credit_amount = '0.00';
@@ -27,7 +27,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(ArInvoice $invoice): void
     {
-        $this->invoice = $invoice->load(['items', 'customer', 'paymentAllocations.payment']);
+        $this->invoice = $invoice->load(['items', 'customer', 'job', 'paymentAllocations.payment']);
         $this->payment_amount = $this->moneyZero();
         $this->credit_amount = $this->moneyZero();
         $this->advance_amount = $this->moneyZero();
@@ -54,7 +54,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            $this->invoice = $service->issue($this->invoice, $userId)->load(['items', 'customer', 'paymentAllocations.payment']);
+            $this->invoice = $service->issue($this->invoice, $userId)->load(['items', 'customer', 'job', 'paymentAllocations.payment']);
         } catch (ValidationException $e) {
             foreach ($e->errors() as $field => $messages) {
                 foreach ($messages as $m) {
@@ -143,7 +143,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
-        $this->invoice = ArInvoice::with(['items', 'customer', 'paymentAllocations.payment'])->findOrFail($this->invoice->id);
+        $this->invoice = ArInvoice::with(['items', 'customer', 'job', 'paymentAllocations.payment'])->findOrFail($this->invoice->id);
         $this->payment_amount = $this->moneyZero();
         $this->loadAdvances();
         $applied = (int) ($result['allocated_cents'] ?? 0);
@@ -195,6 +195,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             source: $this->invoice->source ?? 'dashboard',
             sourceSaleId: null,
             type: 'credit_note',
+            jobId: $this->invoice->job_id ? (int) $this->invoice->job_id : null,
         );
         $credit = $invoices->issue($credit, $userId);
 
@@ -209,7 +210,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
-        $this->invoice = ArInvoice::with(['items', 'customer', 'paymentAllocations.payment'])->findOrFail($this->invoice->id);
+        $this->invoice = ArInvoice::with(['items', 'customer', 'job', 'paymentAllocations.payment'])->findOrFail($this->invoice->id);
         $this->credit_amount = $this->moneyZero();
         $this->loadAdvances();
         session()->flash('status', __('Credit note applied.'));
@@ -246,7 +247,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
-        $this->invoice = ArInvoice::with(['items', 'customer', 'paymentAllocations.payment'])->findOrFail($this->invoice->id);
+        $this->invoice = ArInvoice::with(['items', 'customer', 'job', 'paymentAllocations.payment'])->findOrFail($this->invoice->id);
         $this->advance_amount = $this->moneyZero();
         $this->advance_payment_id = null;
         $this->loadAdvances();
@@ -403,7 +404,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-3 text-sm">
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-4 text-sm">
             <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
                 <div class="text-neutral-500 dark:text-neutral-400">{{ __('Status') }}</div>
                 <div class="font-semibold text-neutral-900 dark:text-neutral-100">{{ $invoice->status }}</div>
@@ -415,6 +416,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
                 <div class="text-neutral-500 dark:text-neutral-400">{{ __('Balance') }}</div>
                 <div class="font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($invoice->balance_cents) }}</div>
+            </div>
+            <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
+                <div class="text-neutral-500 dark:text-neutral-400">{{ __('Job') }}</div>
+                <div class="font-semibold text-neutral-900 dark:text-neutral-100">{{ $invoice->job ? $invoice->job->code.' · '.$invoice->job->name : '—' }}</div>
             </div>
         </div>
 

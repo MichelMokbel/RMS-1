@@ -5,6 +5,7 @@ namespace App\Services\Ledger;
 use App\Models\GlBatch;
 use App\Models\GlBatchLine;
 use App\Models\SubledgerLine;
+use App\Services\Accounting\AccountingContextService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -12,16 +13,31 @@ use Illuminate\Validation\ValidationException;
 
 class GlSummaryService
 {
+    public function __construct(
+        protected AccountingContextService $accountingContext
+    ) {
+    }
+
     public function generateForPeriod(Carbon $periodStart, Carbon $periodEnd, int $userId): GlBatch
     {
         if (! $this->canSummarize()) {
             throw ValidationException::withMessages(['ledger' => __('Ledger tables are not available.')]);
         }
 
+        $companyId = $this->accountingContext->defaultCompanyId();
+        $periodId = $companyId
+            ? $this->accountingContext->resolvePeriodId($periodEnd->toDateString(), $companyId)
+            : null;
+
         $batch = GlBatch::firstOrCreate(
             ['period_start' => $periodStart->toDateString(), 'period_end' => $periodEnd->toDateString()],
-            ['status' => 'open', 'created_by' => $userId]
+            ['company_id' => $companyId, 'period_id' => $periodId, 'status' => 'open', 'created_by' => $userId]
         );
+
+        $batch->forceFill([
+            'company_id' => $batch->company_id ?: $companyId,
+            'period_id' => $batch->period_id ?: $periodId,
+        ])->save();
 
         if ($batch->status !== 'open') {
             throw ValidationException::withMessages(['ledger' => __('GL batch is closed.')]);

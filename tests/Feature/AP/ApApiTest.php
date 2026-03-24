@@ -26,7 +26,7 @@ it('prevents duplicate invoice number for supplier', function () {
     $supplier = Supplier::factory()->create();
     $payload = [
         'supplier_id' => $supplier->id,
-        'is_expense' => false,
+        'document_type' => 'vendor_bill',
         'invoice_number' => 'INV-XYZ',
         'invoice_date' => now()->toDateString(),
         'due_date' => now()->addDays(10)->toDateString(),

@@ -1,7 +1,9 @@
 <?php
 
+use App\Models\AccountingCompany;
 use App\Models\ArInvoice;
 use App\Models\Customer;
+use App\Models\Job;
 use App\Models\Payment;
 use App\Models\User;
 use App\Services\AR\ArAllocationService;
@@ -71,6 +73,72 @@ it('issues invoices with one global INV sequence across branches', function () {
 
     expect($a->invoice_number)->toBe('INV7893');
     expect($b->invoice_number)->toBe('INV7894');
+});
+
+it('persists job assignments when creating and updating AR drafts', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $company = AccountingCompany::query()->create([
+        'name' => 'Main Company',
+        'code' => 'MAIN',
+        'base_currency' => 'QAR',
+        'is_active' => true,
+        'is_default' => true,
+    ]);
+
+    $jobA = Job::query()->create([
+        'company_id' => $company->id,
+        'name' => 'Corporate Catering',
+        'code' => 'JOB-AR-A',
+        'status' => 'active',
+    ]);
+
+    $jobB = Job::query()->create([
+        'company_id' => $company->id,
+        'name' => 'Event Rollout',
+        'code' => 'JOB-AR-B',
+        'status' => 'active',
+    ]);
+
+    $customer = Customer::factory()->corporate()->create();
+
+    /** @var ArInvoiceService $svc */
+    $svc = app(ArInvoiceService::class);
+
+    $invoice = $svc->createDraft(
+        branchId: 1,
+        customerId: $customer->id,
+        items: [
+            ['description' => 'Service', 'qty' => '1.000', 'unit_price_cents' => 10000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 10000],
+        ],
+        actorId: $user->id,
+        jobId: $jobA->id,
+    );
+
+    expect($invoice->job_id)->toBe($jobA->id);
+
+    $updated = $svc->updateDraft($invoice, [
+        'branch_id' => 1,
+        'customer_id' => $customer->id,
+        'job_id' => $jobB->id,
+        'currency' => 'QAR',
+        'type' => 'invoice',
+        'payment_type' => null,
+        'payment_term_id' => null,
+        'payment_term_days' => 0,
+        'sales_person_id' => null,
+        'lpo_reference' => null,
+        'issue_date' => null,
+        'notes' => null,
+        'invoice_discount_type' => 'fixed',
+        'invoice_discount_value' => 0,
+        'items' => [
+            ['description' => 'Updated service', 'qty' => '1.000', 'unit_price_cents' => 12000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 12000],
+        ],
+    ], $user->id);
+
+    expect($updated->job_id)->toBe($jobB->id);
 });
 
 it('applies partial and full payments and updates invoice balance/status', function () {

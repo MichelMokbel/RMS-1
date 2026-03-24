@@ -3,6 +3,11 @@
 use App\Http\Controllers\Api\AP\ApInvoiceController;
 use App\Http\Controllers\Api\AP\ApPaymentController;
 use App\Http\Controllers\Api\AP\ApReportsController;
+use App\Http\Controllers\Api\Accounting\BankingController as AccountingBankingController;
+use App\Http\Controllers\Api\Accounting\BudgetController as AccountingBudgetController;
+use App\Http\Controllers\Api\Accounting\JobController as AccountingJobController;
+use App\Http\Controllers\Api\Accounting\PeriodCloseController as AccountingPeriodCloseController;
+use App\Http\Controllers\Api\Accounting\ReportController as AccountingReportController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DailyDishMenuController;
@@ -133,6 +138,14 @@ Route::middleware(['api', $apiAuthMiddleware])->group(function () {
     Route::get('ap/payments/{payment}', [ApPaymentController::class, 'show'])->name('api.ap.payments.show');
     Route::get('ap/aging', [ApReportsController::class, 'aging'])->name('api.ap.aging');
 
+    Route::get('accounting/banking', [AccountingBankingController::class, 'index'])->name('api.accounting.banking.index');
+    Route::get('accounting/budgets', [AccountingBudgetController::class, 'index'])->name('api.accounting.budgets.index');
+    Route::get('accounting/jobs', [AccountingJobController::class, 'index'])->name('api.accounting.jobs.index');
+    Route::get('accounting/jobs/{job}/profitability', [AccountingJobController::class, 'profitability'])->name('api.accounting.jobs.profitability');
+    Route::get('accounting/period-close', [AccountingPeriodCloseController::class, 'index'])->name('api.accounting.period-close.index');
+    Route::get('accounting/period-close/{period}', [AccountingPeriodCloseController::class, 'show'])->name('api.accounting.period-close.show');
+    Route::get('accounting/reports/summary', [AccountingReportController::class, 'summary'])->name('api.accounting.reports.summary');
+
     // Spend (AP expense invoices)
     Route::get('spend/expenses', [SpendExpenseController::class, 'index'])->name('api.spend.expenses.index');
     Route::get('spend/expenses/{invoice}', [SpendExpenseController::class, 'show'])->name('api.spend.expenses.show');
@@ -195,11 +208,30 @@ Route::middleware(['api', $apiAuthMiddleware])->group(function () {
     Route::middleware(['role_or_permission:admin|manager|finance.access'])->group(function () {
         Route::post('spend/expenses/{invoice}/approve', [SpendExpenseController::class, 'approve'])->name('api.spend.expenses.approve');
         Route::post('spend/expenses/{invoice}/reject', [SpendExpenseController::class, 'reject'])->name('api.spend.expenses.reject');
+        Route::post('accounting/banking/imports', [AccountingBankingController::class, 'storeImport'])->name('api.accounting.banking.imports.store');
+        Route::post('accounting/banking/reconciliations', [AccountingBankingController::class, 'reconcile'])->name('api.accounting.banking.reconciliations.store');
+        Route::post('accounting/banking/reconciliations/{reconciliation}/match', [AccountingBankingController::class, 'match'])->name('api.accounting.banking.reconciliations.match');
+        Route::post('accounting/banking/reconciliations/{reconciliation}/unmatch', [AccountingBankingController::class, 'unmatch'])->name('api.accounting.banking.reconciliations.unmatch');
+        Route::post('accounting/banking/reconciliations/{reconciliation}/exception', [AccountingBankingController::class, 'markException'])->name('api.accounting.banking.reconciliations.exception');
+        Route::post('accounting/banking/reconciliations/{reconciliation}/close', [AccountingBankingController::class, 'close'])->name('api.accounting.banking.reconciliations.close');
+        Route::post('accounting/banking/reconciliations/{reconciliation}/reopen', [AccountingBankingController::class, 'reopen'])->name('api.accounting.banking.reconciliations.reopen');
+        Route::post('accounting/budgets', [AccountingBudgetController::class, 'store'])->name('api.accounting.budgets.store');
+        Route::get('accounting/budgets/{budgetVersion}/variance', [AccountingBudgetController::class, 'variance'])->name('api.accounting.budgets.variance');
+        Route::post('accounting/jobs', [AccountingJobController::class, 'store'])->name('api.accounting.jobs.store');
+        Route::post('accounting/jobs/{job}/transactions', [AccountingJobController::class, 'storeTransaction'])->name('api.accounting.jobs.transactions.store');
+        Route::post('accounting/period-close/{period}/refresh', [AccountingPeriodCloseController::class, 'refresh'])->name('api.accounting.period-close.refresh');
+        Route::post('accounting/closing-checklists/{checklist}/complete', [AccountingPeriodCloseController::class, 'completeChecklist'])->name('api.accounting.closing-checklists.complete');
+        Route::post('accounting/closing-checklists/{checklist}/reset', [AccountingPeriodCloseController::class, 'resetChecklist'])->name('api.accounting.closing-checklists.reset');
+        Route::post('accounting/period-close/{period}/close', [AccountingPeriodCloseController::class, 'close'])->name('api.accounting.period-close.close');
     });
 
     Route::middleware(['role_or_permission:admin|finance.access'])->group(function () {
         Route::post('spend/expenses/{invoice}/post', [SpendExpenseController::class, 'post'])->name('api.spend.expenses.post');
         Route::post('spend/expenses/{invoice}/settle', [SpendExpenseController::class, 'settle'])->name('api.spend.expenses.settle');
+    });
+
+    Route::middleware(['role:admin'])->group(function () {
+        Route::post('accounting/period-close/{period}/reopen', [AccountingPeriodCloseController::class, 'reopen'])->name('api.accounting.period-close.reopen');
     });
 
 });

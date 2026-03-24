@@ -10,6 +10,7 @@ use App\Models\PurchaseOrder;
 use App\Services\Purchasing\PurchaseOrderNumberService;
 use App\Services\Purchasing\PurchaseOrderPersistService;
 use App\Services\Purchasing\PurchaseOrderReceivingService;
+use App\Services\Purchasing\PurchaseOrderWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -44,7 +45,8 @@ class PurchaseOrderController extends Controller
 
     public function store(
         PurchaseOrderStoreRequest $request,
-        PurchaseOrderNumberService $numberService
+        PurchaseOrderNumberService $numberService,
+        PurchaseOrderPersistService $persist
     ): JsonResponse {
         $data = $request->validated();
 
@@ -52,36 +54,7 @@ class PurchaseOrderController extends Controller
             $data['po_number'] = $numberService->generate();
         }
 
-        $po = DB::transaction(function () use ($data) {
-            $po = PurchaseOrder::create([
-                'po_number' => $data['po_number'],
-                'supplier_id' => $data['supplier_id'] ?? null,
-                'order_date' => $data['order_date'] ?? null,
-                'expected_delivery_date' => $data['expected_delivery_date'] ?? null,
-                'notes' => $data['notes'] ?? null,
-                'payment_terms' => $data['payment_terms'] ?? null,
-                'payment_type' => $data['payment_type'] ?? null,
-                'status' => $data['status'],
-                'created_by' => Auth::id(),
-            ]);
-
-            $total = 0;
-            foreach ($data['lines'] as $line) {
-                $line['total_price'] = (float) $line['quantity'] * (float) $line['unit_price'];
-                $total += $line['total_price'];
-                $po->items()->create([
-                    'item_id' => $line['item_id'],
-                    'quantity' => $line['quantity'],
-                    'unit_price' => $line['unit_price'],
-                    'total_price' => $line['total_price'],
-                    'received_quantity' => 0,
-                ]);
-            }
-
-            $po->update(['total_amount' => $total]);
-
-            return $po;
-        });
+        $po = $persist->create($data, (string) $data['status'], (int) Auth::id());
 
         return response()->json($po->load('items'), 201);
     }
@@ -119,22 +92,11 @@ class PurchaseOrderController extends Controller
         return response()->json($purchaseOrder->fresh());
     }
 
-    public function approve(PurchaseOrder $purchaseOrder): JsonResponse
+    public function approve(PurchaseOrder $purchaseOrder, PurchaseOrderWorkflowService $workflowService): JsonResponse
     {
-        $purchaseOrder->load('items');
-        if (! $purchaseOrder->isPending()) {
-            throw ValidationException::withMessages(['status' => __('Only pending purchase orders can be approved.')]);
-        }
-        if (! $purchaseOrder->supplier_id) {
-            throw ValidationException::withMessages(['supplier_id' => __('Supplier is required to approve.')]);
-        }
-        if ($purchaseOrder->items->isEmpty()) {
-            throw ValidationException::withMessages(['lines' => __('Add at least one line before approving.')]);
-        }
+        $purchaseOrder = $workflowService->approve($purchaseOrder, (int) Auth::id());
 
-        $purchaseOrder->update(['status' => PurchaseOrder::STATUS_APPROVED]);
-
-        return response()->json($purchaseOrder->fresh());
+        return response()->json($purchaseOrder);
     }
 
     public function receive(
@@ -153,24 +115,11 @@ class PurchaseOrderController extends Controller
         return response()->json($po);
     }
 
-    public function cancel(PurchaseOrder $purchaseOrder): JsonResponse
+    public function cancel(PurchaseOrder $purchaseOrder, PurchaseOrderWorkflowService $workflowService): JsonResponse
     {
-        $purchaseOrder->load('items');
+        $purchaseOrder = $workflowService->cancel($purchaseOrder, (int) Auth::id());
 
-        if ($purchaseOrder->isReceived()) {
-            throw ValidationException::withMessages(['status' => __('Cannot cancel a received purchase order.')]);
-        }
-
-        if ($purchaseOrder->isApproved()) {
-            $receivedAny = $purchaseOrder->items->sum('received_quantity') > 0;
-            if ($receivedAny) {
-                throw ValidationException::withMessages(['status' => __('Cannot cancel after receiving items.')]);
-            }
-        }
-
-        $purchaseOrder->update(['status' => PurchaseOrder::STATUS_CANCELLED]);
-
-        return response()->json($purchaseOrder->fresh());
+        return response()->json($purchaseOrder);
     }
 
     public function destroy(PurchaseOrder $purchaseOrder): JsonResponse

@@ -1,8 +1,10 @@
 <?php
 
+use App\Models\AccountingCompany;
 use App\Models\ArInvoice;
 use App\Models\ArInvoiceItem;
 use App\Models\Customer;
+use App\Models\Job;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
@@ -113,4 +115,42 @@ it('lets users clear the selected customer when editing a draft invoice', functi
         ->assertSet('customer_id', $currentCustomer->id)
         ->set('customer_search', 'Replacement Customer')
         ->assertSet('customer_id', null);
+});
+
+it('shows the job field on create and the assigned job on the invoice show page', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $company = AccountingCompany::query()->create([
+        'name' => 'Main Company',
+        'code' => 'MAIN',
+        'base_currency' => 'QAR',
+        'is_active' => true,
+        'is_default' => true,
+    ]);
+
+    $job = Job::query()->create([
+        'company_id' => $company->id,
+        'name' => 'Catering Launch',
+        'code' => 'JOB-AR-01',
+        'status' => 'active',
+    ]);
+
+    $customer = Customer::factory()->create();
+    $invoice = ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'job_id' => $job->id,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('invoices.create'))
+        ->assertOk()
+        ->assertSee('Job')
+        ->assertSee('JOB-AR-01');
+
+    $this->actingAs($user)
+        ->get(route('invoices.show', $invoice))
+        ->assertOk()
+        ->assertSee('JOB-AR-01')
+        ->assertSee('Catering Launch');
 });

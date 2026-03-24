@@ -34,7 +34,7 @@ class ApPaymentController extends Controller
 
     public function show(ApPayment $payment): JsonResponse
     {
-        return response()->json($payment->load(['allocations.invoice', 'supplier']));
+        return response()->json($payment->load(['allocations.invoice', 'supplier', 'bankAccount']));
     }
 
     public function store(
