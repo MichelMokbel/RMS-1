@@ -2237,6 +2237,12 @@
         return;
       }
 
+      const customerToken = getCustomerPortalToken();
+      if (!customerToken) {
+        alert("Please log in to your customer account before placing an order.");
+        return;
+      }
+
       submitOrderBtn.disabled = true;
       const oldText = submitOrderBtn.textContent;
       submitOrderBtn.textContent = "Submitting...";
@@ -2246,20 +2252,32 @@
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Accept': 'application/json'
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${customerToken}`
           },
           body: JSON.stringify(lastOrderPayload)
         });
 
         const json = await res.json().catch(() => ({}));
         if (!res.ok || json.success === false) {
-          throw new Error(json.message || "Failed to submit order.");
+          const error = new Error(json.message || "Failed to submit order.");
+          error.status = res.status;
+          error.code = json.code || null;
+          throw error;
         }
 
         submitOrderBtn.textContent = "Submitted";
       }catch(err){
         console.warn('Order API error', err);
-        alert("Failed to submit order. Please try again or use WhatsApp draft.");
+        if (err && err.status === 401) {
+          alert("Please log in to your customer account before placing an order.");
+        } else if (err && err.status === 403 && err.code === 'PHONE_NOT_VERIFIED') {
+          alert("Your phone number must be verified before placing an order.");
+        } else if (err && err.status === 403) {
+          alert("Your account is not allowed to place Daily Dish orders.");
+        } else {
+          alert("Failed to submit order. Please try again or use WhatsApp draft.");
+        }
         submitOrderBtn.disabled = false;
         submitOrderBtn.textContent = oldText;
       }
@@ -2309,7 +2327,48 @@
       updateMealPlanStatus();
       updateAllCardStates();
     });
+
+    function getCustomerPortalToken(){
+      const storageKeys = [
+        'customerPortalToken',
+        'customer_portal_token',
+        'layla_customer_token',
+        'customerToken'
+      ];
+
+      for (const key of storageKeys) {
+        try {
+          const value = window.localStorage.getItem(key) || window.sessionStorage.getItem(key);
+          if (value && value.trim()) {
+            return value.trim();
+          }
+        } catch (_) {}
+      }
+
+      const sessionKeys = [
+        'customerPortalSession',
+        'customer_portal_session',
+        'layla_customer_session',
+        'customerSession'
+      ];
+
+      for (const key of sessionKeys) {
+        try {
+          const raw = window.localStorage.getItem(key) || window.sessionStorage.getItem(key);
+          if (!raw) {
+            continue;
+          }
+
+          const parsed = JSON.parse(raw);
+          const token = parsed && typeof parsed.token === 'string' ? parsed.token.trim() : '';
+          if (token) {
+            return token;
+          }
+        } catch (_) {}
+      }
+
+      return '';
+    }
   </script>
 </body>
 </html>
-

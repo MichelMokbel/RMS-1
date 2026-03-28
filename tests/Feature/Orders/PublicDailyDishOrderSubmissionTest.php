@@ -271,3 +271,51 @@ it('rejects unverified customer order submission', function () {
         ]],
     ])->assertStatus(403);
 });
+
+it('uses the authenticated user customer link for verification even when another customer has the same phone', function () {
+    $phone = '66752347';
+
+    Customer::factory()->create([
+        'phone' => $phone,
+        'phone_e164' => '+974'.$phone,
+        'phone_verified_at' => null,
+        'email' => 'guest-duplicate@example.com',
+    ]);
+
+    $customer = Customer::factory()->create([
+        'phone' => $phone,
+        'phone_e164' => '+974'.$phone,
+        'phone_verified_at' => now(),
+        'email' => 'verified-linked@example.com',
+    ]);
+
+    $user = User::factory()->create([
+        'email' => 'verified-linked@example.com',
+        'customer_id' => $customer->id,
+    ]);
+    $user->assignRole('customer');
+    Sanctum::actingAs($user, ['customer:*']);
+
+    $main = MenuItem::factory()->create(['code' => 'MAIN-DUP', 'name' => 'Duplicate Main']);
+    $salad = MenuItem::factory()->create(['code' => 'SALAD-DUP', 'name' => 'Duplicate Salad']);
+    $dessert = MenuItem::factory()->create(['code' => 'DES-DUP', 'name' => 'Duplicate Dessert']);
+    createPublishedMenuForDate('2026-03-06', 1, $main, $salad, $dessert);
+
+    $this->postJson('/api/public/daily-dish/orders', [
+        'branch_id' => 1,
+        'customerName' => 'Verified Linked',
+        'phone' => $phone,
+        'email' => 'verified-linked@example.com',
+        'address' => 'Doha',
+        'items' => [[
+            'key' => '2026-03-06',
+            'mains' => [['name' => 'Duplicate Main', 'portion' => 'plate', 'qty' => 1]],
+            'salad_qty' => 1,
+            'dessert_qty' => 1,
+            'day_total' => 18.5,
+        ]],
+    ])->assertOk()->assertJson(['success' => true]);
+
+    $order = Order::query()->latest('id')->firstOrFail();
+    expect((int) $order->customer_id)->toBe($customer->id);
+});

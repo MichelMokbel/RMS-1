@@ -86,11 +86,31 @@ if (empty($payload['items']) || ! is_array($payload['items'])) {
 }
 
 $url = $dashboardBase.'/api/public/daily-dish/orders';
+$incomingAuth = '';
+if (isset($_SERVER['HTTP_AUTHORIZATION']) && is_string($_SERVER['HTTP_AUTHORIZATION'])) {
+    $incomingAuth = trim($_SERVER['HTTP_AUTHORIZATION']);
+} elseif (function_exists('apache_request_headers')) {
+    $headers = apache_request_headers();
+    if (is_array($headers)) {
+        foreach ($headers as $name => $value) {
+            if (strcasecmp((string) $name, 'Authorization') === 0 && is_string($value)) {
+                $incomingAuth = trim($value);
+                break;
+            }
+        }
+    }
+}
+
+$proxyHeaders = "Content-Type: application/json\r\nAccept: application/json\r\n";
+if ($incomingAuth !== '') {
+    $proxyHeaders .= "Authorization: {$incomingAuth}\r\n";
+}
+
 $context = stream_context_create([
     'http' => [
         'method' => 'POST',
         'timeout' => 12,
-        'header' => "Content-Type: application/json\r\nAccept: application/json\r\n",
+        'header' => $proxyHeaders,
         'content' => json_encode($payload),
         // Let us read response body even on 4xx/5xx so we can pass it through.
         'ignore_errors' => true,
