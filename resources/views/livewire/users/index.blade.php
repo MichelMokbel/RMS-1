@@ -36,6 +36,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         return User::query()
             ->with(['roles', 'permissions', 'branches'])
+            ->whereDoesntHave('roles', fn ($query) => $query->where('name', 'customer')->where('guard_name', 'web'))
             ->when($this->search, function ($query): void {
                 $query->where(function ($inner): void {
                     $inner
@@ -52,9 +53,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
             <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Identity & Access') }}</h1>
-            <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Manage users, roles, direct permissions, POS access, and branch allowlists.') }}</p>
+            <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Manage backoffice users, roles, direct permissions, POS access, and branch allowlists.') }}</p>
         </div>
         <div class="flex items-center gap-2">
+            <flux:button :href="route('customers.accounts.index')" wire:navigate variant="ghost">{{ __('Customer Accounts') }}</flux:button>
             <flux:button :href="route('iam.roles.index')" wire:navigate variant="ghost">{{ __('Roles') }}</flux:button>
             <flux:button :href="route('iam.permissions.index')" wire:navigate variant="ghost">{{ __('Permissions') }}</flux:button>
             <flux:button :href="route('settings.pos-terminals')" wire:navigate variant="ghost">{{ __('POS Devices') }}</flux:button>

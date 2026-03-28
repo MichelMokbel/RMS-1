@@ -35,6 +35,7 @@
                 $inReports = request()->routeIs('reports.*');
                 $inAdministration = request()->routeIs('categories.*')
                     || request()->routeIs('customers.*')
+                    || request()->routeIs('customers.accounts.*')
                     || request()->routeIs('suppliers.*')
                     || request()->routeIs('iam.*')
                     || request()->routeIs('users.*');
@@ -54,6 +55,9 @@
                     <flux:navlist.group expandable :expanded="$inAdministration" :heading="__('Administration')">
                         <flux:navlist.item icon="shield-check" :href="route('iam.users.index')" :current="request()->routeIs('iam.*') || request()->routeIs('users.*')" wire:navigate>
                             {{ __('Identity & Access') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="user-circle" :href="route('customers.accounts.index')" :current="request()->routeIs('customers.accounts.*')" wire:navigate>
+                            {{ __('Customer Accounts') }}
                         </flux:navlist.item>
                         @if ($isCashier)
                             <flux:navlist.item icon="users" :href="route('customers.index')" :current="request()->routeIs('customers.*')" wire:navigate>

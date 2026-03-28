@@ -10,6 +10,9 @@ use App\Http\Controllers\Api\Accounting\PeriodCloseController as AccountingPerio
 use App\Http\Controllers\Api\Accounting\ReportController as AccountingReportController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\CustomerController;
+use App\Http\Controllers\Api\CustomerPortalAuthController;
+use App\Http\Controllers\Api\CustomerPortalDashboardController;
+use App\Http\Controllers\Api\CustomerPortalProfileController;
 use App\Http\Controllers\Api\DailyDishMenuController;
 use App\Http\Controllers\Api\PublicCompanyFoodController;
 use App\Http\Controllers\Api\PublicCompanyFoodOrderController;
@@ -52,11 +55,40 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('subscriptions/{subscription}/cancel', [MealSubscriptionController::class, 'cancel']);
 });
 
+Route::prefix('customer')->group(function () {
+    Route::prefix('auth')->middleware('throttle:5,1')->group(function () {
+        Route::post('register/start', [CustomerPortalAuthController::class, 'registerStart']);
+        Route::post('register/verify', [CustomerPortalAuthController::class, 'registerVerify']);
+        Route::post('register/resend', [CustomerPortalAuthController::class, 'registerResend']);
+        Route::post('login', [CustomerPortalAuthController::class, 'login']);
+    });
+
+    Route::middleware(['auth:sanctum', 'customer.portal'])->group(function () {
+        Route::post('auth/logout', [CustomerPortalAuthController::class, 'logout']);
+        Route::get('me', [CustomerPortalAuthController::class, 'me']);
+
+        Route::get('dashboard', [CustomerPortalDashboardController::class, 'dashboard']);
+        Route::get('orders', [CustomerPortalDashboardController::class, 'orders']);
+        Route::get('subscriptions', [CustomerPortalDashboardController::class, 'subscriptions']);
+        Route::get('subscriptions/{subscription}', [CustomerPortalDashboardController::class, 'showSubscription']);
+        Route::get('invoices', [CustomerPortalDashboardController::class, 'invoices']);
+        Route::get('invoices/{invoice}', [CustomerPortalDashboardController::class, 'showInvoice']);
+        Route::get('payments', [CustomerPortalDashboardController::class, 'payments']);
+        Route::get('payments/{payment}', [CustomerPortalDashboardController::class, 'showPayment']);
+
+        Route::middleware('customer.phone.verified')->group(function () {
+            Route::post('profile/phone/start-change', [CustomerPortalProfileController::class, 'startPhoneChange']);
+            Route::post('profile/phone/verify-change', [CustomerPortalProfileController::class, 'verifyPhoneChange']);
+        });
+    });
+});
+
 // Public endpoints for the external website form (no session/cookies)
 Route::middleware('api')->prefix('public')->group(function () {
     Route::middleware('throttle:60,1')->group(function () {
         Route::get('daily-dish/menus', [PublicDailyDishController::class, 'menus']);
-        Route::post('daily-dish/orders', [PublicDailyDishOrderController::class, 'store'])->middleware('throttle:20,1');
+        Route::post('daily-dish/orders', [PublicDailyDishOrderController::class, 'store'])
+            ->middleware(['auth:sanctum', 'customer.portal', 'customer.phone.verified', 'throttle:20,1']);
     });
 
     // Company Food (standalone module - no integration with orders/daily-dish)
@@ -72,7 +104,7 @@ Route::middleware('api')->prefix('public')->group(function () {
 
 $apiAuthMiddleware =  'auth';
 
-Route::middleware(['api', $apiAuthMiddleware])->group(function () {
+Route::middleware(['api', $apiAuthMiddleware, 'reject.customer.backoffice'])->group(function () {
     Route::get('categories', [CategoryController::class, 'index'])->name('api.categories.index');
 
     Route::middleware(['role:admin|manager'])->group(function () {

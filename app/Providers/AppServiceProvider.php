@@ -2,8 +2,11 @@
 
 namespace App\Providers;
 
+use App\Contracts\PhoneVerificationProvider;
 use App\Services\Ai\AiProviderInterface;
 use App\Services\Ai\GeminiProvider;
+use App\Services\Customers\AwsSnsPhoneVerificationProvider;
+use InvalidArgumentException;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
@@ -18,6 +21,12 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(AiProviderInterface::class, GeminiProvider::class);
+        $this->app->bind(PhoneVerificationProvider::class, function ($app) {
+            return match ((string) config('services.customer_sms.provider', 'aws_sns')) {
+                'aws_sns' => $app->make(AwsSnsPhoneVerificationProvider::class),
+                default => throw new InvalidArgumentException('Unsupported customer SMS provider configured.'),
+            };
+        });
     }
 
     /**

@@ -28,6 +28,17 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'customer_sms' => [
+        'provider' => env('CUSTOMER_SMS_PROVIDER', 'aws_sns'),
+        'region' => env('AWS_SMS_REGION', env('AWS_DEFAULT_REGION', 'us-east-1')),
+        'sender_id' => env('AWS_SMS_SENDER_ID'),
+        'origination_number' => env('AWS_SMS_ORIGINATION_NUMBER'),
+        'sms_type' => env('AWS_SMS_TYPE', 'Transactional'),
+        'monthly_spend_limit_usd' => env('AWS_SMS_MONTHLY_SPEND_LIMIT_USD'),
+        'delivery_status_iam_role_arn' => env('AWS_SMS_DELIVERY_STATUS_IAM_ROLE_ARN'),
+        'delivery_status_success_sampling_rate' => env('AWS_SMS_DELIVERY_STATUS_SUCCESS_SAMPLING_RATE'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Facades\Schema;
 
@@ -14,6 +15,8 @@ class MealPlanRequest extends Model
     protected $table = 'meal_plan_requests';
 
     protected $fillable = [
+        'customer_id',
+        'user_id',
         'customer_name',
         'customer_phone',
         'customer_email',
@@ -24,10 +27,22 @@ class MealPlanRequest extends Model
     ];
 
     protected $casts = [
+        'customer_id' => 'integer',
+        'user_id' => 'integer',
         'plan_meals' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
+
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class, 'customer_id');
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
 
     public function orders(): BelongsToMany
     {

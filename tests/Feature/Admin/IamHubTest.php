@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Customer;
 use App\Models\User;
 use App\Services\Security\IamUserService;
 use App\Services\Security\RolePermissionService;
@@ -28,12 +29,56 @@ test('admin can access iam users hub', function () {
         ->assertOk();
 });
 
+test('admin can access customer accounts hub', function () {
+    $this->actingAs(iamAdmin())
+        ->get(route('customers.accounts.index'))
+        ->assertOk()
+        ->assertSeeText('Customer Accounts');
+});
+
 test('non-admin cannot access iam users hub', function () {
     $user = User::factory()->create(['status' => 'active']);
 
     $this->actingAs($user)
         ->get(route('iam.users.index'))
         ->assertForbidden();
+});
+
+test('non-admin cannot access customer accounts hub', function () {
+    $user = User::factory()->create(['status' => 'active']);
+
+    $this->actingAs($user)
+        ->get(route('customers.accounts.index'))
+        ->assertForbidden();
+});
+
+test('iam users hub excludes customer portal accounts', function () {
+    Role::findOrCreate('customer', 'web');
+
+    $admin = iamAdmin();
+    $backofficeUser = User::factory()->create([
+        'username' => 'backoffice-user',
+        'email' => 'backoffice@example.com',
+        'status' => 'active',
+    ]);
+    $customer = Customer::factory()->create([
+        'name' => 'Portal Customer',
+        'email' => 'portal-customer@example.com',
+    ]);
+    $customerPortalUser = User::factory()->create([
+        'username' => 'portal-user',
+        'email' => 'portal-user@example.com',
+        'customer_id' => $customer->id,
+        'status' => 'active',
+    ]);
+    $customerPortalUser->assignRole('customer');
+
+    $this->actingAs($admin)
+        ->get(route('iam.users.index'))
+        ->assertOk()
+        ->assertSeeText('backoffice-user')
+        ->assertDontSeeText('portal-user')
+        ->assertSeeText('Customer Accounts');
 });
 
 test('cannot deactivate the last active admin from iam edit', function () {

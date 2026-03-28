@@ -5,6 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use App\Models\User;
 
 class Customer extends Model
@@ -23,6 +25,8 @@ class Customer extends Model
         'customer_type',
         'contact_name',
         'phone',
+        'phone_e164',
+        'phone_verified_at',
         'email',
         'billing_address',
         'delivery_address',
@@ -42,6 +46,7 @@ class Customer extends Model
         'credit_limit' => 'decimal:3',
         'credit_terms_days' => 'integer',
         'default_payment_method_id' => 'integer',
+        'phone_verified_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -92,5 +97,30 @@ class Customer extends Model
         return class_exists(User::class)
             ? $this->belongsTo(User::class, 'updated_by')
             : null;
+    }
+
+    public function user(): HasOne
+    {
+        return $this->hasOne(User::class, 'customer_id');
+    }
+
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class, 'customer_id');
+    }
+
+    public function subscriptions(): HasMany
+    {
+        return $this->hasMany(MealSubscription::class, 'customer_id');
+    }
+
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(ArInvoice::class, 'customer_id');
+    }
+
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class, 'customer_id');
     }
 }

@@ -9,7 +9,10 @@ use App\Http\Middleware\CheckActiveUser;
 use App\Http\Middleware\EnsureBranchAccess;
 use App\Http\Middleware\EnsureAdmin;
 use App\Http\Middleware\EnsureActiveBranch;
+use App\Http\Middleware\EnsureCustomerPortalUser;
+use App\Http\Middleware\EnsureVerifiedCustomerPhone;
 use App\Http\Middleware\ApplyReportDateDefaults;
+use App\Http\Middleware\RejectCustomerBackofficeAccess;
 use App\Http\Middleware\ResolveAllowedBranches;
 use App\Console\Commands\UsersHashPasswords;
 use App\Console\Commands\GenerateSubscriptionOrders;
@@ -85,6 +88,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             ResolveAllowedBranches::class,
             EnsureBranchAccess::class,
+            RejectCustomerBackofficeAccess::class,
         ]);
 
         $middleware->api(append: [
@@ -100,6 +104,9 @@ return Application::configure(basePath: dirname(__DIR__))
             'role_or_permission' => RoleOrPermissionMiddleware::class,
             'pos.token' => \App\Http\Middleware\EnsurePosToken::class,
             'reports.default-dates' => ApplyReportDateDefaults::class,
+            'customer.portal' => EnsureCustomerPortalUser::class,
+            'customer.phone.verified' => EnsureVerifiedCustomerPhone::class,
+            'reject.customer.backoffice' => RejectCustomerBackofficeAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

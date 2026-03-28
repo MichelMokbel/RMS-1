@@ -11,12 +11,16 @@ class CustomerFactory extends Factory
 
     public function definition(): array
     {
+        $phone = '5'.$this->faker->numerify('#######');
+
         return [
             'customer_code' => $this->faker->bothify('CUST-###??'),
             'name' => $this->faker->company(),
             'customer_type' => Customer::TYPE_RETAIL,
             'contact_name' => $this->faker->name(),
-            'phone' => $this->faker->phoneNumber(),
+            'phone' => $phone,
+            'phone_e164' => '+974'.$phone,
+            'phone_verified_at' => now(),
             'email' => $this->faker->unique()->safeEmail(),
             'billing_address' => $this->faker->address(),
             'delivery_address' => $this->faker->address(),

@@ -2,12 +2,15 @@
 
 use App\Models\DailyDishMenu;
 use App\Models\DailyDishMenuItem;
+use App\Models\Customer;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Laravel\Sanctum\Sanctum;
+use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
@@ -53,14 +56,41 @@ function createPublishedMenuForDate(string $date, int $branchId, MenuItem $main,
 }
 
 beforeEach(function () {
-    Config::set('services.recaptcha.enabled', false);
     Config::set('subscriptions.default_appetizer_code', 'APP-DEFAULT');
-    $userId = User::factory()->create()->id;
-    Config::set('app.system_user_id', $userId);
+    Role::findOrCreate('customer', 'web');
     seedActiveBranch(1);
 });
 
+function actingAsVerifiedCustomer(): array
+{
+    $customer = Customer::factory()->create([
+        'phone_verified_at' => now(),
+        'email' => 'portal@example.com',
+    ]);
+    $user = User::factory()->create([
+        'email' => 'portal@example.com',
+        'customer_id' => $customer->id,
+    ]);
+    $user->assignRole('customer');
+
+    Sanctum::actingAs($user, ['customer:*']);
+
+    return [$user, $customer];
+}
+
+it('rejects guest daily dish order submission', function () {
+    $this->postJson('/api/public/daily-dish/orders', [
+        'branch_id' => 1,
+        'customerName' => 'Guest',
+        'phone' => '123456',
+        'email' => 'guest@example.com',
+        'address' => 'Doha',
+        'items' => [],
+    ])->assertStatus(401);
+});
+
 it('creates only subscription orders with fixed 40 total and auto appetizer for mealPlan 20', function () {
+    [, $customer] = actingAsVerifiedCustomer();
     $appetizer = MenuItem::factory()->create(['code' => 'APP-DEFAULT', 'name' => 'Default Appetizer', 'is_active' => true]);
 
     $main1 = MenuItem::factory()->create(['code' => 'MAIN-001', 'name' => 'Chicken Biryani']);
@@ -103,6 +133,7 @@ it('creates only subscription orders with fixed 40 total and auto appetizer for 
     $orders = Order::query()->orderBy('id')->get();
     expect($orders)->toHaveCount(2);
     expect($orders->pluck('source')->unique()->values()->all())->toBe(['Subscription']);
+    expect($orders->pluck('customer_id')->unique()->values()->all())->toBe([$customer->id]);
     expect((float) $orders[0]->total_amount)->toBe(40.0);
     expect((float) $orders[1]->total_amount)->toBe(40.0);
 
@@ -115,6 +146,7 @@ it('creates only subscription orders with fixed 40 total and auto appetizer for 
 });
 
 it('uses fixed 42.3 total for mealPlan 26', function () {
+    actingAsVerifiedCustomer();
     MenuItem::factory()->create(['code' => 'APP-DEFAULT', 'name' => 'Default Appetizer', 'is_active' => true]);
     $main = MenuItem::factory()->create(['code' => 'MAIN-026', 'name' => 'Fish Fillet']);
     $salad = MenuItem::factory()->create(['code' => 'SALAD-026', 'name' => 'Tabbouleh']);
@@ -149,6 +181,7 @@ it('uses fixed 42.3 total for mealPlan 26', function () {
 });
 
 it('returns 422 when subscription appetizer code is not configured to an active menu item', function () {
+    actingAsVerifiedCustomer();
     Config::set('subscriptions.default_appetizer_code', 'MISSING-APP');
 
     $main = MenuItem::factory()->create(['code' => 'MAIN-ERR', 'name' => 'Main Dish']);
@@ -179,6 +212,7 @@ it('returns 422 when subscription appetizer code is not configured to an active 
 });
 
 it('creates website order and trusts submitted day_total for non-subscription requests', function () {
+    [, $customer] = actingAsVerifiedCustomer();
     $main = MenuItem::factory()->create(['code' => 'MAIN-WEB', 'name' => 'Website Main']);
     $salad = MenuItem::factory()->create(['code' => 'SALAD-WEB', 'name' => 'Website Salad']);
     $dessert = MenuItem::factory()->create(['code' => 'DES-WEB', 'name' => 'Website Dessert']);
@@ -206,5 +240,34 @@ it('creates website order and trusts submitted day_total for non-subscription re
 
     $order = Order::query()->firstOrFail();
     expect($order->source)->toBe('Website');
+    expect((int) $order->customer_id)->toBe($customer->id);
     expect((float) $order->total_amount)->toBe(123.45);
+});
+
+it('rejects unverified customer order submission', function () {
+    $customer = Customer::factory()->create([
+        'phone_verified_at' => null,
+        'email' => 'portal@example.com',
+    ]);
+    $user = User::factory()->create([
+        'email' => 'portal@example.com',
+        'customer_id' => $customer->id,
+    ]);
+    $user->assignRole('customer');
+    Sanctum::actingAs($user, ['customer:*']);
+
+    $this->postJson('/api/public/daily-dish/orders', [
+        'branch_id' => 1,
+        'customerName' => 'Portal User',
+        'phone' => '55123456',
+        'email' => 'portal@example.com',
+        'address' => 'Doha',
+        'items' => [[
+            'key' => '2026-03-05',
+            'mains' => [['name' => 'Website Main', 'portion' => 'plate', 'qty' => 1]],
+            'salad_qty' => 1,
+            'dessert_qty' => 1,
+            'day_total' => 123.45,
+        ]],
+    ])->assertStatus(403);
 });

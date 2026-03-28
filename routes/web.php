@@ -174,6 +174,7 @@ Route::middleware(['auth', 'active', 'role:admin', 'ensure.admin'])->group(funct
     Volt::route('iam/users/{user}/edit', 'users.edit')->name('iam.users.edit');
     Volt::route('iam/roles', 'users.roles')->name('iam.roles.index');
     Volt::route('iam/permissions', 'users.permissions')->name('iam.permissions.index');
+    Volt::route('customer-accounts', 'customers.accounts')->name('customers.accounts.index');
 
     Route::redirect('users', 'iam/users')->name('users.index');
     Route::redirect('users/create', 'iam/users/create')->name('users.create');

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
@@ -25,6 +26,7 @@ class User extends Authenticatable
         'name',
         'username',
         'email',
+        'customer_id',
         'password',
         'status',
         'pos_enabled',
@@ -58,6 +60,7 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'customer_id' => 'integer',
             'password' => 'hashed',
             'pos_enabled' => 'boolean',
         ];
@@ -81,6 +84,16 @@ class User extends Authenticatable
         return $this->isActive()
             && (bool) ($this->pos_enabled ?? false)
             && ($this->hasRole('admin') || $this->can('pos.login'));
+    }
+
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class, 'customer_id');
+    }
+
+    public function isCustomerPortalUser(): bool
+    {
+        return $this->hasRole('customer') && $this->customer_id !== null;
     }
 
     /**
