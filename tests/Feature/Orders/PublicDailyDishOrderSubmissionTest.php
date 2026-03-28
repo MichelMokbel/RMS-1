@@ -78,6 +78,25 @@ function actingAsVerifiedCustomer(): array
     return [$user, $customer];
 }
 
+function createWebsiteOrderPayload(array $overrides = []): array
+{
+    return array_replace_recursive([
+        'branch_id' => 1,
+        'customerName' => 'Website User',
+        'phone' => '123456',
+        'email' => 'web@example.com',
+        'address' => 'Doha',
+        'mealPlan' => null,
+        'items' => [[
+            'key' => '2026-03-05',
+            'mains' => [['name' => 'Website Main', 'portion' => 'plate', 'qty' => 1]],
+            'salad_qty' => 1,
+            'dessert_qty' => 1,
+            'day_total' => 123.45,
+        ]],
+    ], $overrides);
+}
+
 it('rejects guest daily dish order submission', function () {
     $this->postJson('/api/public/daily-dish/orders', [
         'branch_id' => 1,
@@ -218,21 +237,7 @@ it('creates website order and trusts submitted day_total for non-subscription re
     $dessert = MenuItem::factory()->create(['code' => 'DES-WEB', 'name' => 'Website Dessert']);
     createPublishedMenuForDate('2026-03-05', 1, $main, $salad, $dessert);
 
-    $payload = [
-        'branch_id' => 1,
-        'customerName' => 'Website User',
-        'phone' => '123456',
-        'email' => 'web@example.com',
-        'address' => 'Doha',
-        'mealPlan' => null,
-        'items' => [[
-            'key' => '2026-03-05',
-            'mains' => [['name' => 'Website Main', 'portion' => 'plate', 'qty' => 1]],
-            'salad_qty' => 1,
-            'dessert_qty' => 1,
-            'day_total' => 123.45,
-        ]],
-    ];
+    $payload = createWebsiteOrderPayload();
 
     $this->postJson('/api/public/daily-dish/orders', $payload)
         ->assertOk()
@@ -242,6 +247,30 @@ it('creates website order and trusts submitted day_total for non-subscription re
     expect($order->source)->toBe('Website');
     expect((int) $order->customer_id)->toBe($customer->id);
     expect((float) $order->total_amount)->toBe(123.45);
+});
+
+it('allows verified customer orders without branch access and forces branch 1', function () {
+    [, $customer] = actingAsVerifiedCustomer();
+    seedActiveBranch(99);
+
+    $main = MenuItem::factory()->create(['code' => 'MAIN-WEB', 'name' => 'Website Main']);
+    $salad = MenuItem::factory()->create(['code' => 'SALAD-WEB', 'name' => 'Website Salad']);
+    $dessert = MenuItem::factory()->create(['code' => 'DES-WEB', 'name' => 'Website Dessert']);
+    createPublishedMenuForDate('2026-03-05', 1, $main, $salad, $dessert);
+
+    $payload = createWebsiteOrderPayload([
+        'branch_id' => 99,
+        'phone' => '66752347',
+        'email' => 'portal@example.com',
+    ]);
+
+    $this->postJson('/api/public/daily-dish/orders', $payload)
+        ->assertOk()
+        ->assertJson(['success' => true]);
+
+    $order = Order::query()->latest('id')->firstOrFail();
+    expect((int) $order->customer_id)->toBe($customer->id);
+    expect((int) $order->branch_id)->toBe(1);
 });
 
 it('rejects unverified customer order submission', function () {
@@ -269,7 +298,7 @@ it('rejects unverified customer order submission', function () {
             'dessert_qty' => 1,
             'day_total' => 123.45,
         ]],
-    ])->assertStatus(403);
+    ])->assertStatus(403)->assertJson(['code' => 'PHONE_NOT_VERIFIED']);
 });
 
 it('uses the authenticated user customer link for verification even when another customer has the same phone', function () {

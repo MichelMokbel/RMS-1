@@ -20,6 +20,8 @@ use Illuminate\Validation\ValidationException;
 
 class CustomerDailyDishOrderService
 {
+    private const PUBLIC_ORDER_BRANCH_ID = 1;
+
     public function __construct(
         private readonly OrderNumberService $numberService,
         private readonly MealPlanPricingService $pricingService,
@@ -39,7 +41,7 @@ class CustomerDailyDishOrderService
             ]);
         }
 
-        $branchId = (int) ($payload['branch_id'] ?? 1);
+        $branchId = self::PUBLIC_ORDER_BRANCH_ID;
         if (Schema::hasTable('branches')) {
             $q = DB::table('branches')->where('id', $branchId);
             if (Schema::hasColumn('branches', 'is_active')) {

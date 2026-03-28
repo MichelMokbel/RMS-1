@@ -5,8 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Services\Orders\CustomerDailyDishOrderService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Schema;
-use Illuminate\Validation\Rule;
 
 class PublicDailyDishOrderController extends Controller
 {
@@ -17,13 +15,8 @@ class PublicDailyDishOrderController extends Controller
 
     public function store(Request $request)
     {
-        $branchRule = ['nullable', 'integer'];
-        if (Schema::hasTable('branches')) {
-            $branchRule[] = Rule::exists('branches', 'id');
-        }
-
         $payload = $request->validate([
-            'branch_id' => $branchRule,
+            'branch_id' => ['nullable', 'integer'],
             'customerName' => ['required', 'string', 'max:255'],
             'phone' => ['required', 'string', 'max:50'],
             'email' => ['nullable', 'email', 'max:255'],
