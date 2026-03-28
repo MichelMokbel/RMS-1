@@ -1,7 +1,0 @@
-deployment:
-  tasks:
-    - export DEPLOYPATH=/home1/ilwlvmmy/store.layla-kitchen.com
-    - /bin/mkdir -p "$DEPLOYPATH"
-    - /usr/bin/rsync -av --delete --exclude='.git/' --exclude='.github/' --exclude='node_modules/' --exclude='storage/logs/*' --exclude='.env' ./ "$DEPLOYPATH"/
-    - cd "$DEPLOYPATH" && composer install --no-dev --optimize-autoloader --no-interaction
-    - cd "$DEPLOYPATH" && php artisan optimize:clear
