@@ -1,7 +1,9 @@
 <?php
 
+use App\Models\Customer;
 use App\Models\User;
 use Laravel\Fortify\Features;
+use Spatie\Permission\Models\Role;
 
 test('login screen can be rendered', function () {
     $response = $this->get(route('login'));
@@ -64,6 +66,22 @@ test('users with two factor enabled are redirected to two factor challenge', fun
 
 test('users can logout', function () {
     $user = User::factory()->create();
+
+    $response = $this->actingAs($user)->post(route('logout'));
+
+    $response->assertRedirect(route('home'));
+
+    $this->assertGuest();
+});
+
+test('customer portal users can logout from a blocked backoffice session', function () {
+    Role::findOrCreate('customer', 'web');
+
+    $customer = Customer::factory()->create();
+    $user = User::factory()->create([
+        'customer_id' => $customer->id,
+    ]);
+    $user->assignRole('customer');
 
     $response = $this->actingAs($user)->post(route('logout'));
 

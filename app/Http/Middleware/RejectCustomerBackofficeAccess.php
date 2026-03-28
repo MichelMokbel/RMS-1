@@ -16,6 +16,10 @@ class RejectCustomerBackofficeAccess
             return $next($request);
         }
 
+        if ($request->routeIs('logout') || $request->isMethod('post') && $request->is('logout')) {
+            return $next($request);
+        }
+
         if ($request->expectsJson() || $request->is('api/*')) {
             return response()->json(['message' => 'Backoffice access is not available for customer accounts.'], 403);
         }
