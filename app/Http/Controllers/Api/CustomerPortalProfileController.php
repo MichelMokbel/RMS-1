@@ -21,6 +21,13 @@ class CustomerPortalProfileController extends Controller
 
     public function startPhoneChange(Request $request): JsonResponse
     {
+        if ($this->verificationBypassEnabled()) {
+            return response()->json([
+                'message' => 'Phone changes are temporarily unavailable while phone verification is bypassed.',
+                'code' => 'PHONE_CHANGE_TEMPORARILY_DISABLED',
+            ], 409);
+        }
+
         $data = $request->validate([
             'phone' => ['required', 'string', 'max:50'],
         ]);
@@ -72,6 +79,13 @@ class CustomerPortalProfileController extends Controller
 
     public function verifyPhoneChange(Request $request): JsonResponse
     {
+        if ($this->verificationBypassEnabled()) {
+            return response()->json([
+                'message' => 'Phone changes are temporarily unavailable while phone verification is bypassed.',
+                'code' => 'PHONE_CHANGE_TEMPORARILY_DISABLED',
+            ], 409);
+        }
+
         $data = $request->validate([
             'phone_change_token' => ['required', 'string'],
             'code' => ['required', 'string', 'size:'.(int) config('customers.verification_code_length', 6)],
@@ -117,5 +131,10 @@ class CustomerPortalProfileController extends Controller
                 ],
             ],
         ]);
+    }
+
+    private function verificationBypassEnabled(): bool
+    {
+        return (bool) config('customers.verification_bypass', false);
     }
 }

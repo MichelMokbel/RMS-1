@@ -5,6 +5,7 @@ use App\Models\Customer;
 use App\Models\CustomerPhoneVerificationChallenge;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Config;
 use Spatie\Permission\Models\Role;
 use Tests\Support\FakePhoneVerificationProvider;
 
@@ -125,4 +126,50 @@ it('enforces resend cooldown for signup verification codes', function () {
     $this->postJson('/api/customer/auth/register/resend', [
         'registration_token' => $start->json('registration_token'),
     ])->assertStatus(422);
+});
+
+it('can bypass signup verification and issue a token immediately', function () {
+    Config::set('customers.verification_bypass', true);
+
+    $response = $this->postJson('/api/customer/auth/register/start', [
+        'name' => 'Portal Customer',
+        'email' => 'portal@example.com',
+        'password' => 'password123',
+        'phone' => '55123456',
+        'address' => 'West Bay',
+    ]);
+
+    $response->assertCreated()
+        ->assertJsonStructure([
+            'token',
+            'account' => [
+                'user' => ['id', 'name', 'email'],
+                'customer' => ['id', 'phone_verified_at'],
+            ],
+        ])
+        ->assertJson(['verification_bypassed' => true]);
+
+    $user = User::query()->where('email', 'portal@example.com')->firstOrFail();
+    $customer = Customer::query()->whereKey($user->customer_id)->firstOrFail();
+
+    expect($customer->phone_verified_at)->not->toBeNull();
+    expect(CustomerPhoneVerificationChallenge::query()->count())->toBe(0);
+    expect($this->sms->messages)->toHaveCount(0);
+});
+
+it('rejects verify and resend while verification bypass is enabled', function () {
+    Config::set('customers.verification_bypass', true);
+
+    $this->postJson('/api/customer/auth/register/verify', [
+        'registration_token' => 'unused',
+        'code' => '123456',
+    ])->assertStatus(409)->assertJson([
+        'code' => 'PHONE_VERIFICATION_BYPASSED',
+    ]);
+
+    $this->postJson('/api/customer/auth/register/resend', [
+        'registration_token' => 'unused',
+    ])->assertStatus(409)->assertJson([
+        'code' => 'PHONE_VERIFICATION_BYPASSED',
+    ]);
 });

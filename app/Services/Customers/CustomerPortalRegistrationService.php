@@ -53,6 +53,31 @@ class CustomerPortalRegistrationService
         });
     }
 
+    /**
+     * @param  array{name:string,email:string,password:string,phone:string,address?:string|null}  $data
+     * @return array{user:User,customer:Customer}
+     */
+    public function startWithoutVerification(array $data): array
+    {
+        $email = Str::lower(trim($data['email']));
+        $phoneRaw = trim($data['phone']);
+        $phoneE164 = $this->phoneNumbers->normalizeOrFail($phoneRaw);
+
+        return DB::transaction(function () use ($data, $email, $phoneRaw, $phoneE164) {
+            $customer = $this->resolveCustomer($data['name'], $email, $phoneRaw, $phoneE164, $data['address'] ?? null);
+            $user = $this->resolveUser($customer, $data['name'], $email, $data['password']);
+
+            $customer->forceFill([
+                'phone_verified_at' => now(),
+            ])->save();
+
+            return [
+                'user' => $user->fresh('customer'),
+                'customer' => $customer->fresh('user'),
+            ];
+        });
+    }
+
     private function resolveCustomer(
         string $name,
         string $email,

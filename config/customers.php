@@ -6,6 +6,7 @@ return [
     'enforce_unique_customer_code' => env('CUSTOMERS_ENFORCE_UNIQUE_CUSTOMER_CODE', false),
     'default_country_code' => env('CUSTOMERS_DEFAULT_COUNTRY_CODE', '+974'),
     'local_phone_length' => env('CUSTOMERS_LOCAL_PHONE_LENGTH', 8),
+    'verification_bypass' => env('CUSTOMER_PHONE_VERIFICATION_BYPASS', false),
     'verification_code_length' => env('CUSTOMER_VERIFICATION_CODE_LENGTH', 6),
     'verification_code_ttl_minutes' => env('CUSTOMER_VERIFICATION_CODE_TTL_MINUTES', 10),
     'verification_max_attempts' => env('CUSTOMER_VERIFICATION_MAX_ATTEMPTS', 5),

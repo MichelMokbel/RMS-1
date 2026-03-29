@@ -108,6 +108,34 @@ it('rejects guest daily dish order submission', function () {
     ])->assertStatus(401);
 });
 
+it('allows newly registered bypassed customers to order because they are marked verified', function () {
+    Config::set('customers.verification_bypass', true);
+
+    seedActiveBranch(1);
+
+    $main = MenuItem::factory()->create(['code' => 'MAIN-BYPASS', 'name' => 'Website Main']);
+    $salad = MenuItem::factory()->create(['code' => 'SALAD-BYPASS', 'name' => 'Website Salad']);
+    $dessert = MenuItem::factory()->create(['code' => 'DES-BYPASS', 'name' => 'Website Dessert']);
+    createPublishedMenuForDate('2026-03-05', 1, $main, $salad, $dessert);
+
+    $register = $this->postJson('/api/customer/auth/register/start', [
+        'name' => 'Portal Customer',
+        'email' => 'portal@example.com',
+        'password' => 'password123',
+        'phone' => '55123456',
+        'address' => 'West Bay',
+    ])->assertCreated();
+
+    $user = User::query()->where('email', 'portal@example.com')->firstOrFail();
+    Sanctum::actingAs($user, ['customer:*']);
+
+    $this->postJson('/api/public/daily-dish/orders', createWebsiteOrderPayload())
+        ->assertOk()
+        ->assertJson(['success' => true]);
+
+    expect($user->customer()->firstOrFail()->phone_verified_at)->not->toBeNull();
+});
+
 it('creates only subscription orders with fixed 40 total and auto appetizer for mealPlan 20', function () {
     [, $customer] = actingAsVerifiedCustomer();
     $appetizer = MenuItem::factory()->create(['code' => 'APP-DEFAULT', 'name' => 'Default Appetizer', 'is_active' => true]);

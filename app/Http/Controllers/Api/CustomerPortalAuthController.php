@@ -33,6 +33,17 @@ class CustomerPortalAuthController extends Controller
         ]);
 
         try {
+            if ($this->verificationBypassEnabled()) {
+                $result = $this->registration->startWithoutVerification($data);
+                $token = $result['user']->createToken('customer:'.$result['user']->id, ['customer:*']);
+
+                return response()->json([
+                    'token' => $token->plainTextToken,
+                    'account' => $this->serializeAccount($result['user']->fresh('customer')),
+                    'verification_bypassed' => true,
+                ], 201);
+            }
+
             $result = $this->registration->start($data, $request->ip(), $request->userAgent());
         } catch (CustomerPortalConflictException $e) {
             return response()->json(['message' => $e->getMessage()], 409);
@@ -49,6 +60,13 @@ class CustomerPortalAuthController extends Controller
 
     public function registerVerify(Request $request): JsonResponse
     {
+        if ($this->verificationBypassEnabled()) {
+            return response()->json([
+                'message' => 'Phone verification is temporarily bypassed. Complete registration in the first step.',
+                'code' => 'PHONE_VERIFICATION_BYPASSED',
+            ], 409);
+        }
+
         $data = $request->validate([
             'registration_token' => ['required', 'string'],
             'code' => ['required', 'string', 'size:'.(int) config('customers.verification_code_length', 6)],
@@ -77,6 +95,13 @@ class CustomerPortalAuthController extends Controller
 
     public function registerResend(Request $request): JsonResponse
     {
+        if ($this->verificationBypassEnabled()) {
+            return response()->json([
+                'message' => 'Phone verification is temporarily bypassed. Registration codes are not being sent.',
+                'code' => 'PHONE_VERIFICATION_BYPASSED',
+            ], 409);
+        }
+
         $data = $request->validate([
             'registration_token' => ['required', 'string'],
         ]);
@@ -173,5 +198,10 @@ class CustomerPortalAuthController extends Controller
                 'customer_type' => $customer?->customer_type,
             ],
         ];
+    }
+
+    private function verificationBypassEnabled(): bool
+    {
+        return (bool) config('customers.verification_bypass', false);
     }
 }
