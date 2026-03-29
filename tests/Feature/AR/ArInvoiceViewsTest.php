@@ -5,6 +5,7 @@ use App\Models\ArInvoice;
 use App\Models\ArInvoiceItem;
 use App\Models\Customer;
 use App\Models\Job;
+use App\Models\MenuItem;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
@@ -93,6 +94,41 @@ it('shows inline menu item creation controls on invoice create', function () {
         ->assertSee('Category')
         ->assertSee('Selling Price')
         ->assertSee('Unit');
+});
+
+it('can create and auto-select a customer from invoice create', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    Volt::actingAs($user);
+
+    Volt::test('receivables.invoices.create')
+        ->call('prepareCustomerModal')
+        ->set('new_customer_name', 'Invoice Modal Customer')
+        ->set('new_customer_phone', '55112233')
+        ->call('createCustomer')
+        ->assertHasNoErrors()
+        ->assertSet('customer_id', Customer::query()->where('name', 'Invoice Modal Customer')->value('id'));
+
+    $customer = Customer::query()->where('name', 'Invoice Modal Customer')->firstOrFail();
+    expect($customer->customer_code)->toBe('CUST-0001');
+});
+
+it('auto-generates menu item code from invoice create modal', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    Volt::actingAs($user);
+
+    Volt::test('receivables.invoices.create')
+        ->call('prepareMenuItemModal')
+        ->set('menu_item_name', 'Invoice Modal Menu Item')
+        ->set('menu_item_price', 15)
+        ->call('createMenuItem')
+        ->assertHasNoErrors();
+
+    $item = MenuItem::query()->where('name', 'Invoice Modal Menu Item')->firstOrFail();
+    expect($item->code)->toBe('MI-000001');
 });
 
 it('lets users clear the selected customer when editing a draft invoice', function () {

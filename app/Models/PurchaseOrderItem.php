@@ -22,6 +22,7 @@ class PurchaseOrderItem extends Model
         'quantity',
         'unit_price',
         'total_price',
+        'line_notes',
         'received_quantity',
     ];
 
@@ -30,6 +31,7 @@ class PurchaseOrderItem extends Model
         'received_quantity' => 'decimal:3',
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
+        'line_notes' => 'string',
         'created_at' => 'datetime',
     ];
 

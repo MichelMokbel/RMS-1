@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Schema;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\getJson;
+use function Pest\Laravel\postJson;
 
 function apiMenuAdmin(): User
 {
@@ -44,4 +45,19 @@ it('rejects inactive branch for branch-scoped menu items api', function () {
     $user = apiMenuAdmin();
     $res = actingAs($user)->getJson('/api/menu-items?branch_id=999');
     $res->assertStatus(422);
+});
+
+it('auto-generates menu item code when api payload omits it', function () {
+    $user = apiMenuAdmin();
+
+    actingAs($user)->postJson('/api/menu-items', [
+        'name' => 'API Generated Menu Item',
+        'selling_price_per_unit' => 10,
+        'tax_rate' => 0,
+        'is_active' => true,
+        'display_order' => 1,
+    ])->assertCreated();
+
+    $item = MenuItem::query()->where('name', 'API Generated Menu Item')->firstOrFail();
+    expect($item->code)->toBe('MI-000001');
 });

@@ -19,7 +19,6 @@ it('admin can create menu item', function () {
 
     Volt::actingAs($user);
     Volt::test('menu-items.create')
-        ->set('code', $item->code)
         ->set('name', $item->name)
         ->set('selling_price_per_unit', $item->selling_price_per_unit)
         ->set('tax_rate', $item->tax_rate)
@@ -28,7 +27,8 @@ it('admin can create menu item', function () {
         ->call('save')
         ->assertHasNoErrors();
 
-    expect(MenuItem::where('code', $item->code)->exists())->toBeTrue();
+    $created = MenuItem::query()->where('name', $item->name)->firstOrFail();
+    expect($created->code)->toBe('MI-000001');
 });
 
 it('search works on code and name', function () {

@@ -2,6 +2,7 @@
 
 use App\Models\Category;
 use App\Models\MenuItem;
+use App\Services\Menu\MenuItemCodeService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
@@ -20,8 +21,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     public int $display_order = 0;
     public array $branch_ids = [];
 
-    public function mount(): void
+    public function mount(MenuItemCodeService $codes): void
     {
+        $this->code = $codes->previewCode();
+
         if (Schema::hasTable('branches')) {
             $defaultBranch = (int) config('inventory.default_branch_id', 1);
             $this->branch_ids = [$defaultBranch > 0 ? $defaultBranch : 1];
@@ -40,6 +43,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function save(): void
     {
         $data = $this->validate($this->rules());
+        $data['code'] = null;
         $branchIds = $data['branch_ids'] ?? [];
         unset($data['branch_ids']);
         $menuItem = MenuItem::create($data);
@@ -51,7 +55,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function rules(): array
     {
         $rules = [
-            'code' => ['required', 'string', 'max:50', 'unique:menu_items,code'],
+            'code' => ['nullable', 'string', 'max:50'],
             'name' => ['required', 'string', 'max:255'],
             'arabic_name' => ['nullable', 'string', 'max:255'],
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],
@@ -112,7 +116,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <form wire:submit="save" class="space-y-4">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <flux:input wire:model="code" :label="__('Code')" required maxlength="50" />
+            <flux:input wire:model="code" :label="__('Code')" maxlength="50" readonly />
             <flux:input wire:model="name" :label="__('Name')" required maxlength="255" />
             <flux:input wire:model="arabic_name" :label="__('Arabic Name')" maxlength="255" />
         </div>

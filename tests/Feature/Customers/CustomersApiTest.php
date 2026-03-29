@@ -6,6 +6,7 @@ use Spatie\Permission\Models\Role;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\getJson;
+use function Pest\Laravel\postJson;
 
 function adminCustomerUser(): User
 {
@@ -35,4 +36,21 @@ it('returns single customer', function () {
     actingAs($user)->getJson('/api/customers/'.$customer->id)
         ->assertOk()
         ->assertJsonFragment(['id' => $customer->id]);
+});
+
+it('auto-generates customer code when api payload omits it', function () {
+    $user = adminCustomerUser();
+
+    actingAs($user)->postJson('/api/customers', [
+        'name' => 'API Generated Customer',
+        'customer_type' => Customer::TYPE_RETAIL,
+        'phone' => '12345678',
+        'credit_limit' => 0,
+        'credit_terms_days' => 0,
+        'is_active' => true,
+    ])->assertCreated();
+
+    $customer = Customer::query()->where('name', 'API Generated Customer')->firstOrFail();
+
+    expect($customer->customer_code)->toBe('CUST-0001');
 });

@@ -3,6 +3,8 @@
 use App\Models\ArInvoice;
 use App\Models\BankAccount;
 use App\Models\Customer;
+use App\Services\AR\ArAllocationService;
+use App\Services\AR\ArInvoiceService;
 use App\Services\AR\ArPaymentService;
 use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\Auth;
@@ -21,6 +23,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $payment_method = 'bank_transfer';
     public ?int $bank_account_id = null;
     public string $amount = '0.00';
+    public string $credit_note_amount = '0.00';
     public ?string $reference = null;
     public ?string $notes = null;
 
@@ -32,9 +35,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
-        $this->branch_id = (int) config('inventory.default_branch_id', 1) ?: 1;
+        $this->branch_id = request()->integer('branch_id') ?: ((int) config('inventory.default_branch_id', 1) ?: 1);
         $this->payment_date = now()->toDateString();
         $this->amount = $this->moneyZero();
+        $this->credit_note_amount = $this->moneyZero();
+
+        $customerId = request()->integer('customer_id');
+        if ($customerId > 0 && Customer::query()->whereKey($customerId)->exists()) {
+            $this->selectCustomer($customerId);
+        }
     }
 
     public function with(): array
@@ -65,6 +74,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->customer_id = null;
             $this->allocations = [];
             $this->select_all_allocations = false;
+            $this->credit_note_amount = $this->moneyZero();
             $this->syncAmount();
         }
     }
@@ -74,6 +84,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->customer_id = $id;
         $c = Customer::find($id);
         $this->customer_search = $c ? trim($c->name.' '.($c->phone ?? '')) : '';
+        $this->credit_note_amount = $this->moneyZero();
         $this->loadInvoices();
     }
 
@@ -253,6 +264,94 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->redirectRoute('receivables.payments.show', $payment, navigate: true);
     }
 
+    public function createCreditNote(ArInvoiceService $invoices, ArAllocationService $allocations): void
+    {
+        $this->resetErrorBag();
+
+        $userId = Auth::id();
+        if (! $userId) {
+            abort(403);
+        }
+
+        if (! $this->customer_id) {
+            $this->addError('customer_id', __('Customer is required.'));
+            return;
+        }
+
+        $selected = collect($this->allocations)
+            ->filter(fn ($row) => (bool) ($row['selected'] ?? false))
+            ->values();
+
+        if ($selected->count() !== 1) {
+            $this->addError('credit_note_amount', __('Select exactly one invoice to create a credit note.'));
+            return;
+        }
+
+        try {
+            $amountCents = MinorUnits::parsePos($this->credit_note_amount);
+        } catch (\InvalidArgumentException $e) {
+            $this->addError('credit_note_amount', __('Invalid amount.'));
+            return;
+        }
+
+        if ($amountCents <= 0) {
+            $this->addError('credit_note_amount', __('Credit amount must be positive.'));
+            return;
+        }
+
+        $selectedInvoiceId = (int) ($selected->first()['invoice_id'] ?? 0);
+        $targetInvoice = ArInvoice::query()->find($selectedInvoiceId);
+        if (! $targetInvoice) {
+            $this->addError('credit_note_amount', __('Invoice not found.'));
+            return;
+        }
+
+        $outstanding = (int) ($targetInvoice->balance_cents ?? 0);
+        if ($amountCents > $outstanding) {
+            $this->addError('credit_note_amount', __('Credit note amount cannot exceed the selected invoice balance.'));
+            return;
+        }
+
+        try {
+            $credit = $invoices->createDraft(
+                branchId: (int) $targetInvoice->branch_id,
+                customerId: (int) $targetInvoice->customer_id,
+                items: [[
+                    'description' => __('Credit Note for invoice :no', ['no' => $targetInvoice->invoice_number ?: '#'.$targetInvoice->id]),
+                    'qty' => '1.000',
+                    'unit_price_cents' => -$amountCents,
+                    'discount_cents' => 0,
+                    'tax_cents' => 0,
+                    'line_total_cents' => -$amountCents,
+                ]],
+                actorId: $userId,
+                currency: (string) ($targetInvoice->currency ?: config('pos.currency')),
+                source: $targetInvoice->source ?? 'dashboard',
+                type: 'credit_note',
+                jobId: $targetInvoice->job_id ? (int) $targetInvoice->job_id : null,
+            );
+            $credit = $invoices->issue($credit, $userId);
+            $allocations->applyCreditNote($credit, $targetInvoice, $userId);
+        } catch (ValidationException $e) {
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $this->addError($field, $message);
+                }
+            }
+            return;
+        }
+
+        $this->credit_note_amount = $this->moneyZero();
+        $this->loadInvoices();
+        $this->dispatch('modal-close', name: 'create-credit-note');
+        session()->flash('status', __('Credit note applied.'));
+    }
+
+    public function prepareCreditNoteModal(): void
+    {
+        $this->resetErrorBag(['credit_note_amount']);
+    }
+
     public function formatMoney(?int $cents): string
     {
         return MinorUnits::format((int) ($cents ?? 0));
@@ -320,6 +419,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('New Customer Payment') }}</h1>
         <flux:button :href="route('receivables.payments.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
     </div>
+
+    @if(session('status'))
+        <div class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">
+            {{ session('status') }}
+        </div>
+    @endif
 
     <form wire:submit="save" class="space-y-6">
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
@@ -411,12 +516,22 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
             <div class="flex items-center justify-between">
                 <h3 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Allocations') }}</h3>
-                <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Remaining') }}: {{ $this->formatMoney($this->remainingCents()) }}</p>
+                <div class="flex items-center gap-3">
+                    @if($customer_id)
+                        <flux:button
+                            type="button"
+                            variant="ghost"
+                            x-data=""
+                            x-on:click.prevent="$wire.prepareCreditNoteModal(); $dispatch('modal-show', { name: 'create-credit-note' })"
+                        >{{ __('Discount / Credit Note') }}</flux:button>
+                    @endif
+                    <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Remaining') }}: {{ $this->formatMoney($this->remainingCents()) }}</p>
+                </div>
             </div>
 
             {{-- Date filters --}}
             @if($customer_id)
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-4 items-end">
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-3 items-end">
                     <div>
                         <label class="text-xs font-medium text-neutral-600 dark:text-neutral-300">{{ __('Invoice Date From') }}</label>
                         <input type="date" wire:model.live="invoice_date_from" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" />
@@ -424,16 +539,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <div>
                         <label class="text-xs font-medium text-neutral-600 dark:text-neutral-300">{{ __('Invoice Date To') }}</label>
                         <input type="date" wire:model.live="invoice_date_to" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" />
-                    </div>
-                    <div>
-                        <label class="inline-flex items-center gap-2 text-sm font-medium text-neutral-700 dark:text-neutral-200">
-                            <input
-                                type="checkbox"
-                                wire:model.live="select_all_allocations"
-                                class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500"
-                            >
-                            <span>{{ __('Select All') }}</span>
-                        </label>
                     </div>
                     <div class="text-right text-sm text-neutral-600 dark:text-neutral-300">
                         {{ count($allocations) }} {{ __('invoice(s)') }}
@@ -446,7 +551,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
                     <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                         <tr>
-                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Select') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">
+                                <label class="inline-flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        wire:model.live="select_all_allocations"
+                                        class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500"
+                                    >
+                                    <span>{{ __('Select') }}</span>
+                                </label>
+                            </th>
                             <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Invoice') }}</th>
                             <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Issue') }}</th>
                             <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Due') }}</th>
@@ -480,4 +594,25 @@ new #[Layout('components.layouts.app')] class extends Component {
             <flux:button type="submit" variant="primary">{{ __('Save Payment') }}</flux:button>
         </div>
     </form>
+
+    <flux:modal name="create-credit-note" focusable class="max-w-lg">
+        <div class="space-y-4">
+            <div class="space-y-1">
+                <flux:heading size="lg">{{ __('Discount / Credit Note') }}</flux:heading>
+                <flux:subheading>{{ __('Select exactly one invoice in the table, then create and apply a credit note to it.') }}</flux:subheading>
+            </div>
+
+            <div class="w-full">
+                <flux:input wire:model.live="credit_note_amount" type="number" step="{{ $this->moneyStep() }}" min="0" :label="__('Credit Note Amount')" />
+                @error('credit_note_amount') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+            </div>
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button variant="filled" type="button">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+                <flux:button type="button" wire:click="createCreditNote" variant="primary">{{ __('Create Credit Note') }}</flux:button>
+            </div>
+        </div>
+    </flux:modal>
 </div>

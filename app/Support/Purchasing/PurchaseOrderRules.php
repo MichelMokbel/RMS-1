@@ -34,7 +34,7 @@ class PurchaseOrderRules
             'lines.*.item_id' => ['required', 'integer', 'exists:inventory_items,id'],
             'lines.*.quantity' => ['required', 'numeric', 'min:0.001'],
             'lines.*.unit_price' => ['required', 'numeric', 'min:0'],
+            'lines.*.line_notes' => ['nullable', 'string'],
         ];
     }
 }
-

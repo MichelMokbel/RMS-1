@@ -148,7 +148,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Customer') }}</th>
-                    <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Login') }}</th>
+                    <th class="w-64 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Login') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Phone') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Verification') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Account Status') }}</th>
@@ -164,9 +164,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <div class="font-medium text-neutral-900 dark:text-neutral-100">{{ $account->customer?->name ?? __('Unlinked customer') }}</div>
                             <div class="text-xs text-neutral-500 dark:text-neutral-400">{{ $account->customer?->customer_code ?: '—' }}</div>
                         </td>
-                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">
-                            <div>{{ $account->email ?: '—' }}</div>
-                            <div class="text-xs text-neutral-500 dark:text-neutral-400">{{ $account->username }}</div>
+                        <td class="w-64 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">
+                            <div class="truncate" title="{{ $account->email }}">{{ $account->email ?: '—' }}</div>
+                            <div class="truncate text-xs text-neutral-500 dark:text-neutral-400" title="{{ $account->username }}">{{ $account->username }}</div>
                         </td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">
                             <div>{{ $account->customer?->phone ?: '—' }}</div>

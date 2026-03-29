@@ -9,10 +9,12 @@ use App\Models\Order;
 use App\Models\PaymentTerm;
 use App\Models\User;
 use App\Services\AR\ArInvoiceService;
+use App\Services\Menu\MenuItemCodeService;
 use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -42,6 +44,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?int $menu_item_category_id = null;
     public float $menu_item_price = 0.0;
     public string $menu_item_unit = MenuItem::UNIT_EACH;
+    public string $new_customer_name = '';
+    public string $new_customer_phone = '';
 
     // Order prefill
     public ?int $source_order_id = null;
@@ -472,7 +476,58 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->item_search[$index] = '';
     }
 
-    public function prepareMenuItemModal(): void
+    public function prepareCustomerModal(): void
+    {
+        $this->resetErrorBag([
+            'new_customer_name',
+            'new_customer_phone',
+        ]);
+        $this->new_customer_name = '';
+        $this->new_customer_phone = '';
+    }
+
+    public function createCustomer(): void
+    {
+        $payload = $this->validate([
+            'new_customer_name' => ['required', 'string', 'max:255'],
+            'new_customer_phone' => array_filter([
+                'required',
+                'string',
+                'max:50',
+                config('customers.enforce_unique_phone') ? Rule::unique('customers', 'phone') : null,
+            ]),
+        ]);
+
+        $data = [
+            'customer_code' => null,
+            'name' => $payload['new_customer_name'],
+            'customer_type' => Customer::TYPE_RETAIL,
+            'contact_name' => null,
+            'phone' => $payload['new_customer_phone'],
+            'email' => null,
+            'billing_address' => null,
+            'delivery_address' => null,
+            'country' => null,
+            'default_payment_method_id' => null,
+            'credit_limit' => 0,
+            'credit_terms_days' => 0,
+            'credit_status' => null,
+            'is_active' => true,
+            'notes' => null,
+        ];
+
+        if (Schema::hasColumn('customers', 'created_by')) {
+            $data['created_by'] = Auth::id();
+        }
+
+        $customer = Customer::create($data);
+        $this->selectCustomer((int) $customer->id);
+        $this->new_customer_name = '';
+        $this->new_customer_phone = '';
+        $this->dispatch('modal-close', name: 'create-customer');
+    }
+
+    public function prepareMenuItemModal(MenuItemCodeService $codes): void
     {
         $this->resetErrorBag([
             'menu_item_code',
@@ -481,7 +536,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'menu_item_price',
             'menu_item_unit',
         ]);
-        $this->menu_item_code = $this->nextMenuItemCode();
+        $this->menu_item_code = $codes->previewCode();
         $this->menu_item_name = '';
         $this->menu_item_category_id = null;
         $this->menu_item_price = 0.0;
@@ -491,7 +546,6 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function createMenuItem(): void
     {
         $data = $this->validate([
-            'menu_item_code' => ['required', 'string', 'max:50', 'unique:menu_items,code'],
             'menu_item_name' => ['required', 'string', 'max:255'],
             'menu_item_category_id' => ['nullable', 'integer', 'exists:categories,id'],
             'menu_item_price' => ['required', 'numeric', 'min:0'],
@@ -501,7 +555,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         $displayOrder = ((int) MenuItem::query()->max('display_order')) + 1;
 
         $menuItem = MenuItem::create([
-            'code' => $data['menu_item_code'],
             'name' => $data['menu_item_name'],
             'arabic_name' => null,
             'category_id' => $data['menu_item_category_id'],
@@ -547,31 +600,6 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->dispatch('modal-close', name: 'create-menu-item');
     }
-
-    private function nextMenuItemCode(): string
-    {
-        $lastCode = MenuItem::query()
-            ->whereNotNull('code')
-            ->where('code', 'like', 'MI-%')
-            ->orderByRaw("CAST(SUBSTRING_INDEX(code, '-', -1) AS UNSIGNED) DESC")
-            ->orderByDesc('id')
-            ->value('code');
-
-        if (! $lastCode) {
-            return 'MI-000001';
-        }
-
-        if (preg_match('/^(MI-)(\d+)$/', (string) $lastCode, $matches)) {
-            $prefix = $matches[1];
-            $number = (int) $matches[2];
-            $width = strlen($matches[2]);
-
-            return $prefix.str_pad((string) ($number + 1), $width, '0', STR_PAD_LEFT);
-        }
-
-        return 'MI-000001';
-    }
-
     public function saveDraft(ArInvoiceService $service): void
     {
         $this->persist($service, issue: false);
@@ -826,7 +854,17 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
 
             <div class="md:col-span-2 relative">
-                <flux:input wire:model.live.debounce.300ms="customer_search" :label="__('Customer')" placeholder="{{ __('Search by name/phone/code') }}" />
+                <div class="flex items-end gap-2">
+                    <div class="flex-1">
+                        <flux:input wire:model.live.debounce.300ms="customer_search" :label="__('Customer')" placeholder="{{ __('Search by name/phone/code') }}" />
+                    </div>
+                    <flux:button
+                        type="button"
+                        variant="ghost"
+                        x-data=""
+                        x-on:click.prevent="$wire.prepareCustomerModal(); $dispatch('modal-show', { name: 'create-customer' })"
+                    >{{ __('Create Customer') }}</flux:button>
+                </div>
                 @error('customer_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                 @if($customer_id === null && trim($customer_search) !== '')
                     <div class="absolute z-10 mt-1 w-full overflow-hidden rounded-md border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
@@ -1121,6 +1159,29 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endforeach
                     </select>
                 </div>
+            </div>
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button variant="filled" type="button">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+                <flux:button variant="primary" type="submit">{{ __('Create') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
+
+    <flux:modal name="create-customer" focusable class="max-w-lg">
+        <form wire:submit="createCustomer" class="space-y-4">
+            <div class="space-y-1">
+                <flux:heading size="lg">{{ __('Create Customer') }}</flux:heading>
+                <flux:subheading>{{ __('Add a customer without leaving invoice creation.') }}</flux:subheading>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4">
+                <flux:input wire:model="new_customer_name" :label="__('Name')" required />
+                @error('new_customer_name') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
+                <flux:input wire:model="new_customer_phone" :label="__('Phone')" required />
+                @error('new_customer_phone') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
             </div>
 
             <div class="flex justify-end gap-2">

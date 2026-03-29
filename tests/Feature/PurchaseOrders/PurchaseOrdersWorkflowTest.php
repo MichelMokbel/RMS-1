@@ -28,7 +28,7 @@ it('creates draft purchase order with lines', function () {
         'order_date' => now()->toDateString(),
         'status' => 'draft',
         'lines' => [
-            ['item_id' => $item->id, 'quantity' => 2, 'unit_price' => 10.00],
+            ['item_id' => $item->id, 'quantity' => 2, 'unit_price' => 10.00, 'line_notes' => 'Fresh stock only'],
         ],
     ]);
 
@@ -38,6 +38,7 @@ it('creates draft purchase order with lines', function () {
     expect($poId)->not->toBeNull();
     $qty = \App\Models\PurchaseOrderItem::where('purchase_order_id', $poId)->value('quantity');
     expect((float) $qty)->toBe(2.0);
+    expect(\App\Models\PurchaseOrderItem::where('purchase_order_id', $poId)->value('line_notes'))->toBe('Fresh stock only');
 });
 
 it('approves and receives purchase order', function () {
@@ -99,12 +100,13 @@ it('allows approved purchase-order edits with incremental revision numbers', fun
         'payment_terms' => 'Credit',
         'payment_type' => 'Credit',
         'lines' => [
-            ['item_id' => $itemA->id, 'quantity' => 2, 'unit_price' => 11],
+            ['item_id' => $itemA->id, 'quantity' => 2, 'unit_price' => 11, 'line_notes' => 'edit-note-1'],
         ],
     ], PurchaseOrder::STATUS_DRAFT);
 
     expect($first->status)->toBe(PurchaseOrder::STATUS_APPROVED);
     expect($first->po_number)->toBe('PO-900001V1');
+    expect($first->items->first()?->line_notes)->toBe('edit-note-1');
 
     $second = $persist->update($first->fresh(), [
         'po_number' => 'SHOULD-BE-IGNORED-2',
@@ -115,12 +117,13 @@ it('allows approved purchase-order edits with incremental revision numbers', fun
         'payment_terms' => 'Credit',
         'payment_type' => 'Credit',
         'lines' => [
-            ['item_id' => $itemB->id, 'quantity' => 3, 'unit_price' => 20],
+            ['item_id' => $itemB->id, 'quantity' => 3, 'unit_price' => 20, 'line_notes' => 'edit-note-2'],
         ],
     ], PurchaseOrder::STATUS_PENDING);
 
     expect($second->status)->toBe(PurchaseOrder::STATUS_APPROVED);
     expect($second->po_number)->toBe('PO-900001V2');
+    expect($second->items->first()?->line_notes)->toBe('edit-note-2');
 });
 
 it('stores purchase order receiving events and lines with the received timestamp', function () {

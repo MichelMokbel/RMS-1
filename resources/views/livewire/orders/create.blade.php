@@ -7,6 +7,7 @@ use App\Models\MealSubscription;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Services\Menu\MenuItemCodeService;
 use App\Services\Orders\OrderCreateService;
 use App\Support\Orders\OrderCreateRules;
 use Illuminate\Support\Facades\DB;
@@ -261,10 +262,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->item_search[$index] = '';
     }
 
-    public function prepareMenuItemModal(): void
+    public function prepareMenuItemModal(MenuItemCodeService $codes): void
     {
         $this->resetErrorBag(['menu_item_code', 'menu_item_name', 'menu_item_category_id', 'menu_item_price']);
-        $this->menu_item_code = $this->nextMenuItemCode();
+        $this->menu_item_code = $codes->previewCode();
         $this->menu_item_name = '';
         $this->menu_item_category_id = null;
         $this->menu_item_price = 0.0;
@@ -274,7 +275,6 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function createMenuItem(): void
     {
         $data = $this->validate([
-            'menu_item_code' => ['required', 'string', 'max:50', 'unique:menu_items,code'],
             'menu_item_name' => ['required', 'string', 'max:255'],
             'menu_item_category_id' => ['nullable', 'integer', 'exists:categories,id'],
             'menu_item_price' => ['required', 'numeric', 'min:0'],
@@ -284,7 +284,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         $displayOrder = ((int) MenuItem::query()->max('display_order')) + 1;
 
         $menuItem = MenuItem::create([
-            'code' => $data['menu_item_code'],
             'name' => $data['menu_item_name'],
             'arabic_name' => null,
             'category_id' => $data['menu_item_category_id'],
@@ -315,32 +314,6 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->dispatch('modal-close', name: 'create-menu-item');
     }
-
-    private function nextMenuItemCode(): string
-    {
-        $lastCode = MenuItem::query()
-            ->whereNotNull('code')
-            ->orderByRaw('CAST(code AS UNSIGNED) DESC')
-            ->orderByDesc('id')
-            ->value('code');
-
-        if (! $lastCode) {
-            return '1';
-        }
-
-        if (is_numeric($lastCode)) {
-            return (string) (((int) $lastCode) + 1);
-        }
-
-        if (preg_match('/^(\D*)(\d+)$/', (string) $lastCode, $matches)) {
-            $prefix = $matches[1];
-            $number = (int) $matches[2];
-            return $prefix.($number + 1);
-        }
-
-        return $lastCode.'1';
-    }
-
     private function ensureTrailingItemRow(): void
     {
         if ($this->is_daily_dish) {

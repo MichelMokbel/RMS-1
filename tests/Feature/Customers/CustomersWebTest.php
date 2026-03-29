@@ -38,6 +38,7 @@ it('admin can create retail customer with credit forced to zero', function () {
     // Assert via float conversion for business logic expectation.
     expect((float) $customer->credit_limit)->toBe(0.0);
     expect($customer->credit_terms_days)->toBe(0);
+    expect($customer->customer_code)->toMatch('/^CUST-\d{4}$/');
 });
 
 it('search filter works', function () {

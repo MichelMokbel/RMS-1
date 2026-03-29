@@ -7,13 +7,11 @@ class DailyDishMenuEditRules
     public function rules(): array
     {
         return [
-            'notes' => ['nullable', 'string'],
-            'items' => ['required', 'array', 'min:1'],
-            'items.*.menu_item_id' => ['required', 'integer'],
-            'items.*.role' => ['required', 'in:main,diet,vegetarian,salad,dessert,addon,appetizer,water'],
-            'items.*.sort_order' => ['nullable', 'integer'],
+            'items' => ['required', 'array', 'size:5'],
+            'items.*.menu_item_id' => ['nullable', 'integer'],
+            'items.*.role' => ['required', 'in:main,salad,dessert'],
+            'items.*.sort_order' => ['required', 'integer'],
             'items.*.is_required' => ['boolean'],
         ];
     }
 }
-

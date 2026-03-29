@@ -38,6 +38,7 @@ class PurchaseOrderUpdateRequest extends FormRequest
             'lines.*.item_id' => ['required_with:lines', 'integer', 'exists:inventory_items,id'],
             'lines.*.quantity' => ['required_with:lines', 'numeric', 'min:0.001'],
             'lines.*.unit_price' => ['required_with:lines', 'numeric', 'min:0'],
+            'lines.*.line_notes' => ['nullable', 'string'],
         ];
     }
 }

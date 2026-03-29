@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Menu\MenuItemCodeService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -118,6 +119,12 @@ class MenuItem extends Model
 
     protected static function booted(): void
     {
+        static::creating(function (MenuItem $item) {
+            if (blank($item->code)) {
+                $item->code = app(MenuItemCodeService::class)->nextCode();
+            }
+        });
+
         static::created(function (MenuItem $item) {
             if (! Schema::hasTable('menu_item_branches')) {
                 return;

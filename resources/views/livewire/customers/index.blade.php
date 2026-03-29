@@ -126,7 +126,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Name') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Type') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Phone') }}</th>
-                    <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Email') }}</th>
+                    <th class="w-56 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Email') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Credit Limit') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Terms (days)') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Active') }}</th>
@@ -145,7 +145,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </span>
                         </td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $customer->phone }}</td>
-                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $customer->email }}</td>
+                        <td class="w-56 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">
+                            <div class="truncate" title="{{ $customer->email }}">{{ $customer->email ?: '—' }}</div>
+                        </td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">
                             {{ rtrim(rtrim(number_format((float) $customer->credit_limit, 3, '.', ''), '0'), '.') }}
                         </td>

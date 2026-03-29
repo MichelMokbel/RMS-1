@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Customer;
+use App\Services\Customers\CustomerCodeService;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -22,9 +23,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $is_active = true;
     public ?string $notes = null;
 
+    public function mount(CustomerCodeService $codes): void
+    {
+        $this->customer_code = $codes->previewCode();
+    }
+
     public function create(): void
     {
         $data = $this->validate($this->rules());
+        $data['customer_code'] = null;
 
         if ($data['customer_type'] === Customer::TYPE_RETAIL) {
             $data['credit_limit'] = 0;
@@ -93,7 +100,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <form wire:submit="create" class="space-y-5">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <flux:input wire:model="customer_code" :label="__('Customer Code')" maxlength="50" />
+            <flux:input wire:model="customer_code" :label="__('Customer Code')" maxlength="50" readonly />
             <flux:input wire:model="name" :label="__('Name')" required maxlength="255" />
             <div>
                 <label class="block text-sm font-medium text-neutral-800 dark:text-neutral-200 mb-1">{{ __('Customer Type') }}</label>

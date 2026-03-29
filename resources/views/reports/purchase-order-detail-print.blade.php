@@ -33,6 +33,7 @@
                 <th>Order Date</th>
                 <th>Status</th>
                 <th>Item</th>
+                <th>Notes</th>
                 <th class="right">Qty</th>
                 <th class="right">Unit Price</th>
                 <th class="right">Total</th>
@@ -48,18 +49,19 @@
                     <td>{{ $po?->order_date?->format('Y-m-d') }}</td>
                     <td>{{ $po?->status ?? '—' }}</td>
                     <td>{{ $item->item?->name ?? $item->item_id }}</td>
+                    <td>{{ $item->line_notes ?: '—' }}</td>
                     <td class="right">{{ number_format((float) $item->quantity, 3) }}</td>
                     <td class="right">{{ $formatMoney($item->unit_price) }}</td>
                     <td class="right">{{ $formatMoney($item->total_price) }}</td>
                     <td class="right">{{ number_format((float) ($item->received_quantity ?? 0), 3) }}</td>
                 </tr>
             @empty
-                <tr><td colspan="9">No purchase order items found.</td></tr>
+                <tr><td colspan="10">No purchase order items found.</td></tr>
             @endforelse
         </tbody>
         <tfoot>
             <tr>
-                <td colspan="5"><strong>Total</strong></td>
+                <td colspan="6"><strong>Total</strong></td>
                 <td class="right"><strong>{{ number_format((float) $items->sum('quantity'), 3) }}</strong></td>
                 <td class="right"></td>
                 <td class="right"><strong>{{ $formatMoney((float) $items->sum('total_price')) }}</strong></td>

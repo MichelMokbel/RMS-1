@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Customers\CustomerCodeService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -122,5 +123,14 @@ class Customer extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class, 'customer_id');
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (Customer $customer) {
+            if (blank($customer->customer_code)) {
+                $customer->customer_code = app(CustomerCodeService::class)->nextCode();
+            }
+        });
     }
 }

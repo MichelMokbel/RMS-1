@@ -43,14 +43,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->order_date = now()->toDateString();
         $this->items = $queryService->inventoryItemsArray();
         $this->lines = [
-            ['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0],
+            ['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0, 'line_notes' => null],
         ];
         $this->lineSearch = [''];
     }
 
     public function addLine(): void
     {
-        $this->lines[] = ['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0];
+        $this->lines[] = ['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0, 'line_notes' => null];
         $this->lineSearch[] = '';
     }
 
@@ -139,7 +139,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function maybeAppendNewLine(int $index): void
     {
         if ($index === array_key_last($this->lines)) {
-            $this->lines[] = ['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0];
+            $this->lines[] = ['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0, 'line_notes' => null];
             $this->lineSearch[] = '';
         }
     }
@@ -446,6 +446,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Qty') }}</th>
                             <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Unit Price') }}</th>
                             <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Line Total') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Notes') }}</th>
                             <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Actions') }}</th>
                         </tr>
                     </thead>
@@ -515,6 +516,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 </td>
                                 <td class="px-3 py-3 text-sm text-neutral-900 dark:text-neutral-100">
                                     {{ number_format((float) ($line['quantity'] ?? 0) * (float) ($line['unit_price'] ?? 0), 2) }}
+                                </td>
+                                <td class="px-3 py-3 text-sm">
+                                    <flux:input wire:model.live="lines.{{ $index }}.line_notes" />
+                                    @error("lines.$index.line_notes") <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                                 </td>
                                 <td class="px-3 py-3 text-sm text-right">
                                     <flux:button type="button" wire:click="removeLine({{ $index }})" variant="ghost">

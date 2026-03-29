@@ -240,7 +240,12 @@
                 <tr class="{{ $hasSpacer && $loop->last ? 'no-bottom' : '' }}">
                     <td class="c">{{ $index + 1 }}</td>
                     <td>{{ $line->item?->item_code ?? '' }}</td>
-                    <td class="desc">{{ $line->item?->name ?? '' }}</td>
+                    <td class="desc">
+                        <div>{{ $line->item?->name ?? '' }}</div>
+                        @if (filled($line->line_notes))
+                            <div style="margin-top: 2mm; font-size: 10px; font-weight: 400; white-space: pre-wrap;">{{ $line->line_notes }}</div>
+                        @endif
+                    </td>
                     <td class="c">{{ $line->item?->unit_of_measure ?? 'EA' }}</td>
                     <td class="r">{{ number_format((float) $line->quantity, 2) }}</td>
                     <td class="r">{{ number_format((float) $line->unit_price, 2) }}</td>

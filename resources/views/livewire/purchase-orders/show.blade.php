@@ -170,7 +170,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @foreach ($purchaseOrder->items as $line)
                         <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
                             @php($accrual = $this->accrualRows()->firstWhere('purchase_order_item_id', $line->id))
-                            <td class="px-3 py-3 text-sm text-neutral-900 dark:text-neutral-100">{{ $line->item?->name ?? '—' }}</td>
+                            <td class="px-3 py-3 text-sm text-neutral-900 dark:text-neutral-100">
+                                <div>{{ $line->item?->name ?? '—' }}</div>
+                                @if (filled($line->line_notes))
+                                    <div class="mt-1 whitespace-pre-wrap text-xs text-neutral-500 dark:text-neutral-400">{{ $line->line_notes }}</div>
+                                @endif
+                            </td>
                             <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $line->quantity }}</td>
                             <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $line->received_quantity ?? 0 }}</td>
                             <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ number_format((float) ($accrual['matched_quantity'] ?? $line->invoiceMatches->sum('matched_quantity')), 3) }}</td>

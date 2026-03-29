@@ -57,11 +57,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'item_id' => $item->item_id,
                 'quantity' => $item->quantity,
                 'unit_price' => $item->unit_price,
+                'line_notes' => $item->line_notes,
             ];
         })->toArray();
 
         if (empty($this->lines)) {
-            $this->lines = [['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0]];
+            $this->lines = [['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0, 'line_notes' => null]];
         }
 
         $this->lineSearch = collect($this->lines)
@@ -72,7 +73,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function addLine(): void
     {
-        $this->lines[] = ['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0];
+        $this->lines[] = ['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0, 'line_notes' => null];
         $this->lineSearch[] = '';
     }
 
@@ -161,7 +162,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function maybeAppendNewLine(int $index): void
     {
         if ($index === array_key_last($this->lines)) {
-            $this->lines[] = ['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0];
+            $this->lines[] = ['item_id' => null, 'quantity' => 1.0, 'unit_price' => 0, 'line_notes' => null];
             $this->lineSearch[] = '';
         }
     }
@@ -440,6 +441,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <div class="md:col-span-2">
                             <flux:input wire:model.live="lines.{{ $index }}.unit_price" type="number" step="0.01" min="0" :label="__('Unit Price (pkg)')" />
                             @error("lines.$index.unit_price") <p class="text-sm text-rose-600 mt-1">{{ $message }}</p> @enderror
+                        </div>
+                        <div class="md:col-span-12">
+                            <flux:input wire:model.live="lines.{{ $index }}.line_notes" :label="__('Notes')" />
+                            @error("lines.$index.line_notes") <p class="text-sm text-rose-600 mt-1">{{ $message }}</p> @enderror
                         </div>
                         <div class="md:col-span-2">
                             <label class="block text-sm font-medium text-neutral-800 dark:text-neutral-200 mb-1">{{ __('Total') }}</label>

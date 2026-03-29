@@ -47,6 +47,7 @@ class PurchaseOrderPersistService
                     'quantity' => $line['quantity'],
                     'unit_price' => $line['unit_price'],
                     'total_price' => $lineTotal,
+                    'line_notes' => $line['line_notes'] ?? null,
                     'received_quantity' => 0,
                 ]);
             }
@@ -106,6 +107,7 @@ class PurchaseOrderPersistService
                     'quantity' => $line['quantity'],
                     'unit_price' => $line['unit_price'],
                     'total_price' => $lineTotal,
+                    'line_notes' => $line['line_notes'] ?? null,
                     'received_quantity' => 0,
                 ]);
             }

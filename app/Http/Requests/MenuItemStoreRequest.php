@@ -15,7 +15,7 @@ class MenuItemStoreRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'code' => ['required', 'string', 'max:50', 'unique:menu_items,code'],
+            'code' => ['nullable', 'string', 'max:50', 'unique:menu_items,code'],
             'name' => ['required', 'string', 'max:255'],
             'arabic_name' => ['nullable', 'string', 'max:255'],
             'category_id' => ['nullable', 'integer', Rule::exists('categories', 'id')],

@@ -22,7 +22,11 @@ class DailyDishMenuService
                 throw ValidationException::withMessages(['status' => __('Only draft menus can be edited.')]);
             }
 
-            $items = $payload['items'] ?? [];
+            $items = collect($payload['items'] ?? [])
+                ->filter(fn ($row) => (int) ($row['menu_item_id'] ?? 0) > 0)
+                ->values()
+                ->all();
+
             if (empty($items)) {
                 throw ValidationException::withMessages(['items' => __('Menu must have at least one item.')]);
             }
@@ -65,9 +69,8 @@ class DailyDishMenuService
         if (! $menu->isDraft()) {
             throw ValidationException::withMessages(['status' => __('Only draft menus can be published.')]);
         }
-        if ($menu->items()->count() === 0) {
-            throw ValidationException::withMessages(['items' => __('Menu must have at least one item before publishing.')]);
-        }
+
+        $this->assertPublishable($menu->fresh(['items']));
 
         $menu->status = 'published';
         $menu->save();
@@ -117,5 +120,25 @@ class DailyDishMenuService
             return $target->fresh(['items']);
         });
     }
-}
 
+    private function assertPublishable(DailyDishMenu $menu): void
+    {
+        $items = $menu->items;
+        if ($items->count() !== 5) {
+            throw ValidationException::withMessages([
+                'items' => __('Menu must include exactly 3 mains, 1 salad, and 1 dessert before publishing.'),
+            ]);
+        }
+
+        $mainCount = $items->where('role', 'main')->count();
+        $saladCount = $items->where('role', 'salad')->count();
+        $dessertCount = $items->where('role', 'dessert')->count();
+        $otherCount = $items->whereNotIn('role', ['main', 'salad', 'dessert'])->count();
+
+        if ($mainCount !== 3 || $saladCount !== 1 || $dessertCount !== 1 || $otherCount !== 0) {
+            throw ValidationException::withMessages([
+                'items' => __('Menu must include exactly 3 mains, 1 salad, and 1 dessert before publishing.'),
+            ]);
+        }
+    }
+}
