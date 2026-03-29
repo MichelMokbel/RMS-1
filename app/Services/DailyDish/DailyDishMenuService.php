@@ -5,6 +5,7 @@ namespace App\Services\DailyDish;
 use App\Models\DailyDishMenu;
 use App\Models\DailyDishMenuItem;
 use App\Models\MenuItem;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -89,6 +90,40 @@ class DailyDishMenuService
         $menu->save();
 
         return $menu->fresh();
+    }
+
+    /**
+     * @return array{published:int, failed_dates:array<int, string>, draft_count:int}
+     */
+    public function publishAllDraftsForMonth(int $branchId, int $year, int $month, int $userId): array
+    {
+        /** @var Collection<int, DailyDishMenu> $draftMenus */
+        $draftMenus = DailyDishMenu::query()
+            ->where('branch_id', $branchId)
+            ->whereYear('service_date', $year)
+            ->whereMonth('service_date', $month)
+            ->where('status', 'draft')
+            ->with('items')
+            ->orderBy('service_date')
+            ->get();
+
+        $published = 0;
+        $failedDates = [];
+
+        foreach ($draftMenus as $menu) {
+            try {
+                $this->publish($menu, $userId);
+                $published++;
+            } catch (ValidationException) {
+                $failedDates[] = $menu->service_date?->format('Y-m-d') ?? (string) $menu->service_date;
+            }
+        }
+
+        return [
+            'published' => $published,
+            'failed_dates' => $failedDates,
+            'draft_count' => $draftMenus->count(),
+        ];
     }
 
     public function cloneMenu(DailyDishMenu $from, string $toDate, int $branchId, int $userId): DailyDishMenu

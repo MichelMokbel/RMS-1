@@ -38,13 +38,21 @@ class DailyDishMenuSlots
                 'is_required' => (bool) data_get($item, 'is_required', false),
             ];
 
-            if ($role === 'salad' && $saladRow === null) {
-                $saladRow = $normalized;
+            if ($role === 'salad') {
+                if ($saladRow === null) {
+                    $saladRow = $normalized;
+                }
                 continue;
             }
 
-            if ($role === 'dessert' && $dessertRow === null) {
-                $dessertRow = $normalized;
+            if ($role === 'dessert') {
+                if ($dessertRow === null) {
+                    $dessertRow = $normalized;
+                }
+                continue;
+            }
+
+            if (! in_array($role, ['main', 'diet', 'vegetarian'], true)) {
                 continue;
             }
 

@@ -13,7 +13,7 @@ class DailyDishMenuEditQueryService
     {
         return DailyDishMenu::where('branch_id', $branchId)
             ->whereDate('service_date', $serviceDate)
-            ->with('items')
+            ->with('items.menuItem')
             ->first();
     }
 
@@ -29,4 +29,3 @@ class DailyDishMenuEditQueryService
             ->get();
     }
 }
-

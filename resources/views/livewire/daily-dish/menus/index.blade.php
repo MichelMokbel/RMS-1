@@ -63,6 +63,56 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->year = (string) $data['filter_year'];
     }
 
+    public function publishAll(DailyDishMenuService $service): void
+    {
+        if (! $this->canManageMenus()) {
+            session()->flash('status', __('You do not have permission to publish menus.'));
+            return;
+        }
+
+        $result = $service->publishAllDraftsForMonth(
+            $this->branch_id,
+            (int) $this->year,
+            (int) $this->month,
+            (int) Auth::id()
+        );
+
+        if ($this->showMenuDrawer && $this->drawer_service_date) {
+            $drawerMonth = now()->parse($this->drawer_service_date)->format('Y-m');
+            $currentMonth = sprintf('%04d-%02d', (int) $this->year, (int) $this->month);
+            if ($drawerMonth === $currentMonth) {
+                $this->loadDrawerMenu();
+            }
+        }
+
+        if ($result['draft_count'] === 0) {
+            session()->flash('status', __('No draft menus found for this month.'));
+            return;
+        }
+
+        if ($result['published'] === $result['draft_count']) {
+            session()->flash('status', __('Published :count menus.', ['count' => $result['published']]));
+            return;
+        }
+
+        if ($result['published'] === 0) {
+            session()->flash(
+                'status',
+                __('No menus were published. Fix these dates first: :dates', ['dates' => implode(', ', $result['failed_dates'])])
+            );
+            return;
+        }
+
+        session()->flash(
+            'status',
+            __('Published :published of :total draft menus. These dates still need fixes: :dates', [
+                'published' => $result['published'],
+                'total' => $result['draft_count'],
+                'dates' => implode(', ', $result['failed_dates']),
+            ])
+        );
+    }
+
     public function with(): array
     {
         $menus = DailyDishMenu::query()
@@ -446,9 +496,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="w-full max-w-6xl mx-auto px-4 space-y-6">
     <div class="flex items-center justify-between">
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Daily Dish Planner') }}</h1>
-        <!-- <div class="flex gap-2">
-            <flux:button type="button" wire:click="$set('showCloneModal', true)">{{ __('Clone Menu') }}</flux:button>
-        </div> -->
+        @if(auth()->user()?->hasAnyRole(['admin','manager']))
+            <div class="flex gap-2">
+                <flux:button type="button" wire:click="publishAll" wire:loading.attr="disabled" wire:target="publishAll" variant="primary">
+                    {{ __('Publish All') }}
+                </flux:button>
+            </div>
+        @endif
     </div>
 
     @if (session('status'))
