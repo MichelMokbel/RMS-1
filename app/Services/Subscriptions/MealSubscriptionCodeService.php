@@ -3,20 +3,25 @@
 namespace App\Services\Subscriptions;
 
 use App\Models\MealSubscription;
-use Illuminate\Support\Str;
+use App\Services\Sequences\DocumentSequenceService;
 
 class MealSubscriptionCodeService
 {
+    public function __construct(
+        private readonly DocumentSequenceService $sequences,
+    ) {
+    }
+
     public function generate(): string
     {
         $year = now()->format('Y');
-        $prefix = "SUB-{$year}-";
+        $branchId = 1;
 
         do {
-            $code = $prefix . str_pad((string) random_int(1, 999999), 6, '0', STR_PAD_LEFT);
+            $sequence = $this->sequences->next('meal_subscription', $branchId, $year);
+            $code = sprintf('SUB-%s-%06d', $year, $sequence);
         } while (MealSubscription::where('subscription_code', $code)->exists());
 
         return $code;
     }
 }
-

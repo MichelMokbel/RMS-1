@@ -18,7 +18,7 @@ use Illuminate\Validation\ValidationException;
 new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
 
-    public string $status = 'new';
+    public string $status = 'all';
 
     public ?int $convertRequestId = null;
     public ?int $convertCustomerId = null;
@@ -387,11 +387,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Status') }}</label>
                 <select wire:model.live="status" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                    <option value="all">{{ __('All') }}</option>
                     <option value="new">{{ __('New') }}</option>
                     <option value="contacted">{{ __('Contacted') }}</option>
                     <option value="converted">{{ __('Converted') }}</option>
                     <option value="closed">{{ __('Closed') }}</option>
-                    <option value="all">{{ __('All') }}</option>
                 </select>
             </div>
         </div>

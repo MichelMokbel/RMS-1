@@ -40,6 +40,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ $mpr->customer_phone }} · {{ $mpr->customer_email ?? '—' }}</p>
         </div>
         <div class="flex flex-wrap items-center justify-end gap-2">
+            <flux:button :href="route('meal-plan-requests.print', $mpr)" variant="filled">
+                {{ __('Print Report') }}
+            </flux:button>
             @if($subscription)
                 <flux:button :href="route('subscriptions.show', $subscription)" wire:navigate variant="primary">
                     {{ __('View Subscription') }}
@@ -136,4 +139,3 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endif
     </div>
 </div>
-

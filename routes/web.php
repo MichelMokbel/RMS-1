@@ -304,6 +304,8 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operation
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operations.access'])->group(function () {
     Volt::route('meal-plan-requests', 'meal-plan-requests.index')->name('meal-plan-requests.index');
     Volt::route('meal-plan-requests/{mealPlanRequest}', 'meal-plan-requests.show')->name('meal-plan-requests.show');
+    Route::get('meal-plan-requests/{mealPlanRequest}/print', [\App\Http\Controllers\Reports\MealPlanRequestReportController::class, 'print'])
+        ->name('meal-plan-requests.print');
 });
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|cashier|operations.access'])->group(function () {
