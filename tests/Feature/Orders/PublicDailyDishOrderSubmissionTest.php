@@ -275,6 +275,14 @@ it('creates website order and trusts submitted day_total for non-subscription re
     expect($order->source)->toBe('Website');
     expect((int) $order->customer_id)->toBe($customer->id);
     expect((float) $order->total_amount)->toBe(123.45);
+    expect($order->items()->where('role', 'salad')->exists())->toBeTrue();
+    expect($order->items()->where('role', 'dessert')->exists())->toBeTrue();
+
+    $saladItem = $order->items()->where('role', 'salad')->first();
+    $dessertItem = $order->items()->where('role', 'dessert')->first();
+
+    expect((float) $saladItem->unit_price)->toBe(0.0);
+    expect((float) $dessertItem->unit_price)->toBe(0.0);
 });
 
 it('allows verified customer orders without branch access and forces branch 1', function () {

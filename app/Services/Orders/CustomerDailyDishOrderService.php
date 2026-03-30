@@ -301,7 +301,13 @@ class CustomerDailyDishOrderService
                                 }
                             }
 
-                            $bundles = $this->buildBundles($mainsWithQty, $saladQty, $dessertQty);
+                            $mainCount = count($mainsWithQty);
+                            $bundledSaladQty = min($saladQty, $mainCount);
+                            $bundledDessertQty = min($dessertQty, $mainCount);
+                            $extraSaladQty = max(0, $saladQty - $bundledSaladQty);
+                            $extraDessertQty = max(0, $dessertQty - $bundledDessertQty);
+
+                            $bundles = $this->buildBundles($mainsWithQty, $bundledSaladQty, $bundledDessertQty);
                             foreach ($bundles as $bundle) {
                                 $mainKey = mb_strtolower(trim((string) $bundle['main']));
                                 $menuItemId = $mainKey !== '' ? ($menuMainMap[$mainKey] ?? null) : null;
@@ -334,6 +340,84 @@ class CustomerDailyDishOrderService
                                 }
 
                                 $lineGroups[$key]['qty'] += 1;
+
+                                if (! empty($bundle['salad'])) {
+                                    $saladMenuItemId = $saladMenuItem?->getKey();
+                                    if (! $saladMenuItemId) {
+                                        throw ValidationException::withMessages([
+                                            'items' => __("Could not resolve salad item for {$date}."),
+                                        ]);
+                                    }
+
+                                    $saladKey = 'bundle-salad|'.$saladMenuItemId;
+                                    if (! isset($lineGroups[$saladKey])) {
+                                        $lineGroups[$saladKey] = [
+                                            'menu_item_id' => $saladMenuItemId,
+                                            'qty' => 0,
+                                            'unit_price' => 0.0,
+                                            'label' => 'Salad',
+                                            'role' => 'salad',
+                                        ];
+                                    }
+
+                                    $lineGroups[$saladKey]['qty'] += 1;
+                                }
+
+                                if (! empty($bundle['dessert'])) {
+                                    $dessertMenuItemId = $dessertMenuItem?->getKey();
+                                    if (! $dessertMenuItemId) {
+                                        throw ValidationException::withMessages([
+                                            'items' => __("Could not resolve dessert item for {$date}."),
+                                        ]);
+                                    }
+
+                                    $dessertKey = 'bundle-dessert|'.$dessertMenuItemId;
+                                    if (! isset($lineGroups[$dessertKey])) {
+                                        $lineGroups[$dessertKey] = [
+                                            'menu_item_id' => $dessertMenuItemId,
+                                            'qty' => 0,
+                                            'unit_price' => 0.0,
+                                            'label' => 'Dessert',
+                                            'role' => 'dessert',
+                                        ];
+                                    }
+
+                                    $lineGroups[$dessertKey]['qty'] += 1;
+                                }
+                            }
+
+                            if ($extraSaladQty > 0) {
+                                $saladMenuItemId = $saladMenuItem?->getKey();
+                                if (! $saladMenuItemId) {
+                                    throw ValidationException::withMessages([
+                                        'items' => __("Could not resolve salad item for {$date}."),
+                                    ]);
+                                }
+
+                                $lineGroups['salad-addon|'.$saladMenuItemId] = [
+                                    'menu_item_id' => $saladMenuItemId,
+                                    'qty' => $extraSaladQty,
+                                    'unit_price' => $this->pricingService->addonPrice('salad') ?? 0.0,
+                                    'label' => 'Salad Add-on',
+                                    'role' => 'salad',
+                                ];
+                            }
+
+                            if ($extraDessertQty > 0) {
+                                $dessertMenuItemId = $dessertMenuItem?->getKey();
+                                if (! $dessertMenuItemId) {
+                                    throw ValidationException::withMessages([
+                                        'items' => __("Could not resolve dessert item for {$date}."),
+                                    ]);
+                                }
+
+                                $lineGroups['dessert-addon|'.$dessertMenuItemId] = [
+                                    'menu_item_id' => $dessertMenuItemId,
+                                    'qty' => $extraDessertQty,
+                                    'unit_price' => $this->pricingService->addonPrice('dessert') ?? 0.0,
+                                    'label' => 'Dessert Add-on',
+                                    'role' => 'dessert',
+                                ];
                             }
                         }
                     }
