@@ -53,7 +53,7 @@ new class extends Component {
         $this->tab = in_array($requestedTab, array_keys($this->tabs()), true) ? $requestedTab : 'chart';
         $this->selected_company_id = AccountingCompany::query()->where('is_default', true)->value('id');
         $mappingService->bootstrapCompanyMappings($this->selected_company_id);
-        $this->hydrateMappingValues($mappingService);
+        $this->syncMappingValues($mappingService);
         $this->resetAccountForm();
         $this->resetBankForm();
     }
@@ -109,7 +109,7 @@ new class extends Component {
         /** @var LedgerAccountMappingService $mappingService */
         $mappingService = app(LedgerAccountMappingService::class);
         $mappingService->bootstrapCompanyMappings($this->selected_company_id);
-        $this->hydrateMappingValues($mappingService);
+        $this->syncMappingValues($mappingService);
         $this->resetAccountForm();
         $this->resetBankForm();
     }
@@ -350,7 +350,7 @@ new class extends Component {
         $auditLog->log('settings.bank_account.status_changed', (int) Auth::id(), $bank, ['is_active' => $next], (int) $bank->company_id);
     }
 
-    private function hydrateMappingValues(LedgerAccountMappingService $mappingService): void
+    private function syncMappingValues(LedgerAccountMappingService $mappingService): void
     {
         $rows = $mappingService->mappingsForCompany($this->selected_company_id);
         $values = [];
