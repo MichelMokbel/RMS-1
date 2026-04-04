@@ -91,7 +91,10 @@ new class extends Component {
             'parentAccountOptions' => $accounts->filter(fn (LedgerAccount $account) => $this->account_editing_id !== (int) $account->id),
             'companyAccounts' => $accounts->filter(fn (LedgerAccount $account) => $this->selected_company_id ? ((int) ($account->company_id ?? $this->selected_company_id) === (int) $this->selected_company_id) : true),
             'branches' => Branch::query()
-                ->when($this->selected_company_id, fn ($query) => $query->where('company_id', $this->selected_company_id))
+                ->when(
+                    $this->selected_company_id && Schema::hasColumn('branches', 'company_id'),
+                    fn ($query) => $query->where('company_id', $this->selected_company_id)
+                )
                 ->where('is_active', true)
                 ->orderBy('name')
                 ->get(),
@@ -238,6 +241,13 @@ new class extends Component {
     {
         $this->authorizeFinanceSettings();
 
+        $this->bank_code = strtoupper(trim($this->bank_code));
+        $this->bank_currency = strtoupper(trim($this->bank_currency));
+        $this->bank_name = trim($this->bank_name);
+        $this->bank_type = trim($this->bank_type);
+        $this->bank_institution_name = $this->bank_institution_name !== null ? trim($this->bank_institution_name) : null;
+        $this->bank_last4 = $this->bank_last4 !== null ? trim($this->bank_last4) : null;
+
         $data = $this->validate([
             'bank_company_id' => ['required', 'integer', 'exists:accounting_companies,id'],
             'bank_branch_id' => ['nullable', 'integer', 'exists:branches,id'],
@@ -261,10 +271,6 @@ new class extends Component {
             'bank_opening_balance_date' => ['nullable', 'date'],
         ]);
 
-        if ($data['bank_is_default']) {
-            BankAccount::query()->where('company_id', $data['bank_company_id'])->update(['is_default' => false]);
-        }
-
         $attributes = [
             'company_id' => $data['bank_company_id'],
             'branch_id' => $data['bank_branch_id'] ?: null,
@@ -281,18 +287,34 @@ new class extends Component {
             'opening_balance_date' => $data['bank_opening_balance_date'] ?: null,
         ];
 
-        $bank = $this->bank_editing_id
-            ? tap(BankAccount::query()->findOrFail($this->bank_editing_id))->update($attributes)
-            : BankAccount::query()->create($attributes);
+        try {
+            $bank = DB::transaction(function () use ($data, $attributes, $auditLog) {
+                if ($data['bank_is_default']) {
+                    BankAccount::query()->where('company_id', $data['bank_company_id'])->update(['is_default' => false]);
+                }
 
-        $bank = $bank->fresh();
-        $auditLog->log(
-            $this->bank_editing_id ? 'settings.bank_account.updated' : 'settings.bank_account.created',
-            (int) Auth::id(),
-            $bank,
-            ['code' => $bank->code, 'ledger_account_id' => (int) $bank->ledger_account_id],
-            (int) $bank->company_id
-        );
+                $bank = $this->bank_editing_id
+                    ? tap(BankAccount::query()->findOrFail($this->bank_editing_id))->update($attributes)
+                    : BankAccount::query()->create($attributes);
+
+                $bank = $bank->fresh();
+                $auditLog->log(
+                    $this->bank_editing_id ? 'settings.bank_account.updated' : 'settings.bank_account.created',
+                    (int) Auth::id(),
+                    $bank,
+                    ['code' => $bank->code, 'ledger_account_id' => (int) $bank->ledger_account_id],
+                    (int) $bank->company_id
+                );
+
+                return $bank;
+            });
+        } catch (\Throwable $e) {
+            report($e);
+
+            throw ValidationException::withMessages([
+                'bank_account' => __('Unable to save the bank account. Check the company, code, branch, and linked ledger account, then try again.'),
+            ]);
+        }
 
         session()->flash('status', $this->bank_editing_id ? __('Bank account updated.') : __('Bank account created.'));
         $this->resetBankForm();
