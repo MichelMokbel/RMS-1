@@ -115,4 +115,6 @@ return [
         'name' => env('MAIL_FROM_NAME', 'Example'),
     ],
 
+    'daily_dish_admin_email' => env('DAILY_DISH_ADMIN_EMAIL', 'info@layla-kitchen.com'),
+
 ];

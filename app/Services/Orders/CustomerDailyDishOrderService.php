@@ -553,33 +553,81 @@ class CustomerDailyDishOrderService
             ->orderBy('scheduled_date')
             ->get();
 
-        $emailSentAdmin = true;
-        $emailSentCustomer = true;
-        $adminEmail = (string) (env('DAILY_DISH_ADMIN_EMAIL') ?: 'info@layla-kitchen.com');
+        $defaultMailer = (string) config('mail.default', 'log');
+        $mailDeliveryDisabled = in_array($defaultMailer, ['log', 'array'], true);
+        $emailSentAdmin = ! $mailDeliveryDisabled;
+        $emailSentCustomer = ! $mailDeliveryDisabled;
+        $adminEmail = trim((string) config('mail.daily_dish_admin_email', 'info@layla-kitchen.com'));
+        $customerEmail = trim((string) ($payload['email'] ?? $user->email ?? ''));
 
-        try {
-            if ($adminEmail !== '') {
-                Mail::to($adminEmail)->send(new DailyDishOrderAdminMail(
-                    orders: $ordersForEmail,
-                    mealPlanMeals: $payload['mealPlan'] ? (int) $payload['mealPlan'] : null,
-                    mealPlanRequestId: $leadId
-                ));
-            }
-        } catch (\Throwable) {
-            $emailSentAdmin = false;
-        }
+        if ($mailDeliveryDisabled) {
+            logger()->warning('daily_dish_order_mail_delivery_disabled', [
+                'mailer' => $defaultMailer,
+                'order_ids' => $createdOrderIds,
+                'meal_plan_request_id' => $leadId,
+                'admin_email' => $adminEmail,
+                'customer_email' => $customerEmail,
+            ]);
+        } else {
+            if ($adminEmail === '') {
+                $emailSentAdmin = false;
 
-        try {
-            $customerEmail = (string) ($payload['email'] ?? $user->email ?? '');
-            if ($customerEmail !== '') {
-                Mail::to($customerEmail)->send(new DailyDishOrderCustomerMail(
-                    orders: $ordersForEmail,
-                    mealPlanMeals: $payload['mealPlan'] ? (int) $payload['mealPlan'] : null,
-                    mealPlanRequestId: $leadId
-                ));
+                logger()->warning('daily_dish_admin_email_missing', [
+                    'order_ids' => $createdOrderIds,
+                    'meal_plan_request_id' => $leadId,
+                ]);
+            } else {
+                try {
+                    Mail::to($adminEmail)->send(new DailyDishOrderAdminMail(
+                        orders: $ordersForEmail,
+                        mealPlanMeals: $payload['mealPlan'] ? (int) $payload['mealPlan'] : null,
+                        mealPlanRequestId: $leadId
+                    ));
+                } catch (\Throwable $e) {
+                    $emailSentAdmin = false;
+                    report($e);
+
+                    logger()->error('daily_dish_admin_email_failed', [
+                        'mailer' => $defaultMailer,
+                        'admin_email' => $adminEmail,
+                        'order_ids' => $createdOrderIds,
+                        'meal_plan_request_id' => $leadId,
+                        'exception' => $e::class,
+                        'message' => $e->getMessage(),
+                    ]);
+                }
             }
-        } catch (\Throwable) {
-            $emailSentCustomer = false;
+
+            if ($customerEmail === '') {
+                $emailSentCustomer = false;
+
+                logger()->warning('daily_dish_customer_email_missing', [
+                    'user_id' => $user->id,
+                    'order_ids' => $createdOrderIds,
+                    'meal_plan_request_id' => $leadId,
+                ]);
+            } else {
+                try {
+                    Mail::to($customerEmail)->send(new DailyDishOrderCustomerMail(
+                        orders: $ordersForEmail,
+                        mealPlanMeals: $payload['mealPlan'] ? (int) $payload['mealPlan'] : null,
+                        mealPlanRequestId: $leadId
+                    ));
+                } catch (\Throwable $e) {
+                    $emailSentCustomer = false;
+                    report($e);
+
+                    logger()->error('daily_dish_customer_email_failed', [
+                        'mailer' => $defaultMailer,
+                        'customer_email' => $customerEmail,
+                        'user_id' => $user->id,
+                        'order_ids' => $createdOrderIds,
+                        'meal_plan_request_id' => $leadId,
+                        'exception' => $e::class,
+                        'message' => $e->getMessage(),
+                    ]);
+                }
+            }
         }
 
         return [
