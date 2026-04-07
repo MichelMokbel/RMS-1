@@ -41,7 +41,7 @@ class MenuItemAvailabilityQueryService
         $perPage = max(min((int) $perPage, 200), 1);
 
         return MenuItem::query()
-            ->when($search !== '', fn ($q) => $q->where('name', 'like', '%'.$search.'%'))
+            ->search($search)
             ->orderBy('name', $dir)
             ->paginate($perPage, ['id', 'name']);
     }
@@ -97,4 +97,3 @@ class MenuItemAvailabilityQueryService
         return $labels;
     }
 }
-

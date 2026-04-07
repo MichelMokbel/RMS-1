@@ -77,15 +77,40 @@ class MenuItem extends Model
 
     public function scopeSearch(Builder $query, ?string $term): Builder
     {
-        if (! $term) {
+        $tokens = self::searchTokens($term);
+        if ($tokens === []) {
             return $query;
         }
 
-        return $query->where(function (Builder $inner) use ($term) {
-            $inner->where('code', 'like', '%'.$term.'%')
-                ->orWhere('name', 'like', '%'.$term.'%')
-                ->orWhere('arabic_name', 'like', '%'.$term.'%');
+        return $query->where(function (Builder $outer) use ($tokens) {
+            foreach ($tokens as $token) {
+                $like = '%'.$token.'%';
+
+                $outer->where(function (Builder $inner) use ($like) {
+                    $inner->where('code', 'like', $like)
+                        ->orWhere('name', 'like', $like)
+                        ->orWhere('arabic_name', 'like', $like);
+                });
+            }
         });
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private static function searchTokens(?string $term): array
+    {
+        $term = trim((string) $term);
+        if ($term === '') {
+            return [];
+        }
+
+        return collect(preg_split('/[\s\-_]+/u', mb_strtolower($term)) ?: [])
+            ->map(fn ($token) => trim((string) $token))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     public function scopeAvailableInBranch(Builder $query, ?int $branchId): Builder

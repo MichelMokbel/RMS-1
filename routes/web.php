@@ -228,14 +228,9 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|catalog.a
             return response()->json([]);
         }
 
-        $prefix = $term.'%';
         $items = MenuItem::query()
             ->active()
-            ->where(function ($q) use ($prefix) {
-                $q->where('code', 'like', $prefix)
-                    ->orWhere('name', 'like', $prefix)
-                    ->orWhere('arabic_name', 'like', $prefix);
-            })
+            ->search($term)
             ->orderBy('name')
             ->select(['id', 'name', 'code', 'selling_price_per_unit'])
             ->limit(12)
@@ -263,13 +258,9 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|catalog.a
             return response()->json([]);
         }
 
-        $prefix = $term.'%';
         $items = InventoryItem::query()
             ->where('status', 'active')
-            ->where(function ($q) use ($prefix) {
-                $q->where('item_code', 'like', $prefix)
-                    ->orWhere('name', 'like', $prefix);
-            })
+            ->search($term)
             ->orderBy('name')
             ->select(['id', 'name', 'item_code', 'unit_of_measure'])
             ->limit(12)
@@ -604,10 +595,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operation
 
         $query = InventoryItem::query()
             ->where('status', 'active')
-            ->where(function ($q) use ($prefix) {
-                $q->where('item_code', 'like', $prefix)
-                    ->orWhere('name', 'like', $prefix);
-            });
+            ->search($term);
 
         if ($branchId > 0 && Schema::hasTable('inventory_stocks')) {
             $query->join('inventory_stocks as inv_stock', function ($join) use ($branchId) {
@@ -658,15 +646,10 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|c
             }
         }
 
-        $prefix = $term.'%';
         $items = MenuItem::query()
             ->active()
             ->availableInBranch($branchId)
-            ->where(function ($q) use ($prefix) {
-                $q->where('code', 'like', $prefix)
-                    ->orWhere('name', 'like', $prefix)
-                    ->orWhere('arabic_name', 'like', $prefix);
-            })
+            ->search($term)
             ->orderBy('name')
             ->select(['id', 'name', 'code', 'selling_price_per_unit'])
             ->limit(12)
@@ -1063,12 +1046,8 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|catalog.a
             return response()->json([]);
         }
 
-        $like = '%'.$term.'%';
         $query = InventoryItem::query()
-            ->where(function ($q) use ($like) {
-                $q->where('item_code', 'like', $like)
-                    ->orWhere('name', 'like', $like);
-            });
+            ->search($term);
 
         if (Schema::hasColumn('inventory_items', 'status')) {
             $query->where('status', 'active');

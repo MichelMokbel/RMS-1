@@ -32,6 +32,23 @@ it('returns searchable purchase-order items', function () {
         ]);
 });
 
+it('matches purchase-order items regardless of token order', function () {
+    $item = InventoryItem::factory()->create([
+        'item_code' => '16003',
+        'name' => 'Chicken Strips Regular 6x1KG',
+        'status' => 'active',
+    ]);
+
+    $this->actingAs($this->admin)
+        ->get(route('purchase-orders.items.search', ['q' => 'regular chicken']))
+        ->assertOk()
+        ->assertJsonFragment([
+            'id' => $item->id,
+            'name' => 'Chicken Strips Regular 6x1KG',
+            'code' => '16003',
+        ]);
+});
+
 it('returns searchable purchase-order suppliers', function () {
     $supplier = Supplier::factory()->create([
         'name' => 'TREDOS TRADING',

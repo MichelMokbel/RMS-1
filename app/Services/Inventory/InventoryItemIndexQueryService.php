@@ -33,13 +33,7 @@ class InventoryItemIndexQueryService
             ->when($status !== 'all', fn ($q) => $q->where('status', $status))
             ->when($categoryId, fn ($q) => $q->whereIn('category_id', $this->categoryIdsForFilter($categoryId)))
             ->when($supplierId, fn ($q) => $q->where('supplier_id', $supplierId))
-            ->when($search !== '', function ($q) use ($search) {
-                $q->where(function ($inner) use ($search) {
-                    $inner->where('item_code', 'like', '%'.$search.'%')
-                        ->orWhere('name', 'like', '%'.$search.'%')
-                        ->orWhere('location', 'like', '%'.$search.'%');
-                });
-            })
+            ->search($search)
             ->orderBy('item_code')
             ->orderBy('name');
 
