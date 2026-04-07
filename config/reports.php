@@ -130,7 +130,7 @@ return [
             'label' => 'Advance Payments',
             'category' => 'accounts',
             'route' => 'reports.customer-advances',
-            'filters' => ['branch', 'customer', 'date_range'],
+            'filters' => ['company', 'branch', 'customer', 'date_range'],
             'outputs' => ['screen', 'print', 'csv', 'pdf'],
         ],
         'session-branch-sales' => [
@@ -339,6 +339,14 @@ return [
             'category' => 'accounting',
             'route' => 'reports.accounting-multi-company-summary',
             'filters' => ['as_of'],
+            'outputs' => ['screen', 'csv'],
+        ],
+        'accounting-ar-credit-exceptions' => [
+            'key' => 'accounting-ar-credit-exceptions',
+            'label' => 'AR Credit Balance Exceptions',
+            'category' => 'accounting',
+            'route' => 'reports.accounting-ar-credit-exceptions',
+            'filters' => ['company', 'as_of'],
             'outputs' => ['screen', 'csv'],
         ],
     ],

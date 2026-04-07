@@ -26,7 +26,8 @@ class ArInvoiceService
         protected DocumentSequenceService $sequences,
         protected SubledgerService $subledgerService,
         protected AccountingContextService $accountingContext,
-        protected JobCostingService $jobCostingService
+        protected JobCostingService $jobCostingService,
+        protected ArAllocationIntegrityService $allocationIntegrity,
     )
     {
     }
@@ -452,7 +453,7 @@ class ArInvoiceService
 
             InvoiceIssued::dispatch($locked->fresh());
 
-            // Auto-allocate available customer advances for credit invoices.
+            // Auto-allocate same-company customer advances for normal credit-term invoices.
             $issued = $locked->fresh(['items']);
             $this->autoAllocateAvailableAdvancePayments($issued, $actorId);
 
@@ -725,9 +726,15 @@ class ArInvoiceService
             return;
         }
 
+        $invoiceCompanyId = $this->allocationIntegrity->resolveInvoiceCompanyId($invoice);
+        if (! $invoiceCompanyId) {
+            return;
+        }
+
         $payments = Payment::query()
             ->where('customer_id', (int) $invoice->customer_id)
             ->where('branch_id', (int) $invoice->branch_id)
+            ->where('company_id', $invoiceCompanyId)
             ->where('source', 'ar')
             ->whereNull('voided_at')
             ->orderBy('received_at', 'asc')

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Reports;
 
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
+use App\Services\Accounting\AccountingContextService;
 use App\Support\Money\MinorUnits;
 use App\Support\Reports\CsvExport;
 use App\Support\Reports\PdfExport;
@@ -12,6 +13,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CustomerAdvancesReportController extends Controller
 {
+    public function __construct(protected AccountingContextService $accountingContext)
+    {
+    }
+
     private function formatCents(?int $cents): string
     {
         return MinorUnits::format((int) ($cents ?? 0));
@@ -19,11 +24,14 @@ class CustomerAdvancesReportController extends Controller
 
     private function query(Request $request, int $limit = 500)
     {
+        $companyId = $request->integer('company_id') ?: $this->accountingContext->defaultCompanyId();
+
         return Payment::query()
             ->where('source', 'ar')
             ->whereNull('voided_at')
             ->with(['customer'])
             ->withSum('allocations as allocated_sum', 'amount_cents')
+            ->when($companyId, fn ($q) => $q->where('company_id', $companyId))
             ->when($request->filled('branch_id') && $request->integer('branch_id') > 0, fn ($q) => $q->where('branch_id', $request->integer('branch_id')))
             ->when($request->filled('customer_id') && $request->integer('customer_id') > 0, fn ($q) => $q->where('customer_id', $request->integer('customer_id')))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('received_at', '>=', $request->date_from))
@@ -38,7 +46,7 @@ class CustomerAdvancesReportController extends Controller
     public function print(Request $request)
     {
         $payments = $this->query($request);
-        $filters = $request->only(['branch_id', 'customer_id', 'date_from', 'date_to']);
+        $filters = $request->only(['company_id', 'branch_id', 'customer_id', 'date_from', 'date_to']);
 
         return view('reports.customer-advances-print', [
             'payments' => $payments,
@@ -72,7 +80,7 @@ class CustomerAdvancesReportController extends Controller
     public function pdf(Request $request)
     {
         $payments = $this->query($request);
-        $filters = $request->only(['branch_id', 'customer_id', 'date_from', 'date_to']);
+        $filters = $request->only(['company_id', 'branch_id', 'customer_id', 'date_from', 'date_to']);
 
         return PdfExport::download('reports.customer-advances-print', [
             'payments' => $payments,

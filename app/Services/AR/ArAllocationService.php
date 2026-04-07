@@ -19,7 +19,8 @@ class ArAllocationService
         protected SubledgerService $subledgerService,
         protected AccountingContextService $accountingContext,
         protected LedgerAccountMappingService $mappingService,
-        protected BankTransactionService $bankTransactionService
+        protected BankTransactionService $bankTransactionService,
+        protected ArAllocationIntegrityService $allocationIntegrity,
     )
     {
     }
@@ -54,6 +55,13 @@ class ArAllocationService
                 throw ValidationException::withMessages(['invoice' => __('Invoice is already paid.')]);
             }
 
+            $invoiceCompanyId = $this->allocationIntegrity->resolveInvoiceCompanyId($invoice);
+            if (! $invoiceCompanyId) {
+                throw ValidationException::withMessages([
+                    'company_id' => __('Invoice company could not be resolved safely for AR payment allocation.'),
+                ]);
+            }
+
             $this->invoices->recalc($invoice);
             $invoice = $invoice->fresh();
 
@@ -67,9 +75,9 @@ class ArAllocationService
             $payment = Payment::create([
                 'branch_id' => $invoice->branch_id,
                 'customer_id' => $invoice->customer_id,
-                'company_id' => $this->accountingContext->resolveCompanyId((int) $invoice->branch_id, (int) ($invoice->company_id ?? 0)),
-                'bank_account_id' => $this->resolveBankAccountId($method, (int) ($invoice->company_id ?? 0)),
-                'period_id' => $this->accountingContext->resolvePeriodId((string) ($payload['received_at'] ?? now()), (int) ($invoice->company_id ?? 0)),
+                'company_id' => $invoiceCompanyId,
+                'bank_account_id' => $this->resolveBankAccountId($method, $invoiceCompanyId),
+                'period_id' => $this->accountingContext->resolvePeriodId((string) ($payload['received_at'] ?? now()), $invoiceCompanyId),
                 'source' => 'ar',
                 'method' => $method,
                 'amount_cents' => $amount,

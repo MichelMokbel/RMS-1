@@ -3,7 +3,11 @@
 namespace App\Services\Accounting;
 
 use App\Models\AccountingCompany;
+use App\Models\ArInvoice;
 use App\Models\ApInvoice;
+use App\Models\LedgerAccount;
+use App\Models\Payment;
+use App\Models\SubledgerEntry;
 use App\Models\Branch;
 use App\Models\BankReconciliationRun;
 use App\Models\BudgetVersion;
@@ -11,6 +15,7 @@ use App\Models\Department;
 use App\Models\Job;
 use App\Models\Supplier;
 use App\Services\AP\PurchaseOrderInvoiceMatchingService;
+use App\Services\AR\ArAllocationIntegrityService;
 use App\Services\Spend\SpendReportService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -22,7 +27,8 @@ class AccountingReportService
         protected BudgetService $budgetService,
         protected JobCostingService $jobCostingService,
         protected PurchaseOrderInvoiceMatchingService $matchingService,
-        protected SpendReportService $spendReportService
+        protected SpendReportService $spendReportService,
+        protected ArAllocationIntegrityService $allocationIntegrity,
     ) {
     }
 
@@ -452,5 +458,137 @@ class AccountingReportService
             });
 
         return ['rows' => $rows->all()];
+    }
+
+    public function arCreditBalanceExceptions(int $companyId, string $dateTo): array
+    {
+        $arAccount = LedgerAccount::query()
+            ->where('company_id', $companyId)
+            ->where('code', '1500')
+            ->first()
+            ?: LedgerAccount::query()->where('code', '1500')->first();
+
+        $creditNotes = ArInvoice::query()
+            ->with('customer')
+            ->where('company_id', $companyId)
+            ->where('type', 'credit_note')
+            ->whereNull('voided_at')
+            ->whereDate('issue_date', '<=', $dateTo)
+            ->where('balance_cents', '<', 0)
+            ->get()
+            ->map(fn (ArInvoice $invoice) => [
+                'kind' => 'credit_note',
+                'customer_name' => $invoice->customer?->name ?? '—',
+                'reference' => $invoice->invoice_number,
+                'date' => optional($invoice->issue_date)->toDateString(),
+                'amount' => round(abs((int) $invoice->balance_cents) / 100, 2),
+                'notes' => __('Unapplied credit note'),
+            ]);
+
+        $unappliedReceipts = Payment::query()
+            ->with('customer')
+            ->where('source', 'ar')
+            ->where('company_id', $companyId)
+            ->whereNull('voided_at')
+            ->whereDate('received_at', '<=', $dateTo)
+            ->withSum('allocations as allocated_sum', 'amount_cents')
+            ->get()
+            ->map(function (Payment $payment) {
+                $allocated = (int) ($payment->allocated_sum ?? 0);
+                $remaining = (int) $payment->amount_cents - $allocated;
+
+                if ($remaining <= 0) {
+                    return null;
+                }
+
+                return [
+                    'kind' => 'unapplied_receipt',
+                    'customer_name' => $payment->customer?->name ?? '—',
+                    'reference' => '#'.$payment->id,
+                    'date' => optional($payment->received_at)->toDateString(),
+                    'amount' => round($remaining / 100, 2),
+                    'notes' => __('Unapplied AR receipt currently parked in customer advances'),
+                ];
+            })
+            ->filter()
+            ->values();
+
+        $mismatches = $this->allocationIntegrity->mismatchedAllocations($companyId)
+            ->map(fn (array $row) => [
+                'kind' => 'cross_company_allocation',
+                'customer_name' => $row['customer_name'] ?: '—',
+                'reference' => '#'.$row['allocation']->id,
+                'date' => optional($row['payment']->received_at)->toDateString(),
+                'amount' => round((float) $row['amount'], 2),
+                'notes' => __('Payment company: :payment_company / Invoice company: :invoice_company', [
+                    'payment_company' => $row['payment_company_name'] ?: __('Unresolved'),
+                    'invoice_company' => $row['invoice_company_name'] ?: __('Unresolved'),
+                ]),
+            ]);
+
+        $otherEntries = collect();
+        $arCreditBalance = 0.0;
+
+        if ($arAccount) {
+            $totals = DB::table('subledger_lines as sl')
+                ->join('subledger_entries as se', 'se.id', '=', 'sl.entry_id')
+                ->where('sl.account_id', $arAccount->id)
+                ->where('se.company_id', $companyId)
+                ->whereNull('se.voided_at')
+                ->whereDate('se.entry_date', '<=', $dateTo)
+                ->selectRaw('SUM(sl.debit) as debit_total, SUM(sl.credit) as credit_total')
+                ->first();
+
+            $arCreditBalance = max(0, round(((float) ($totals->credit_total ?? 0)) - ((float) ($totals->debit_total ?? 0)), 2));
+
+            $otherEntries = SubledgerEntry::query()
+                ->with('lines')
+                ->where('company_id', $companyId)
+                ->whereNull('voided_at')
+                ->whereDate('entry_date', '<=', $dateTo)
+                ->whereNotIn('source_type', ['ar_invoice', 'ar_payment_allocation'])
+                ->whereHas('lines', fn ($query) => $query->where('account_id', $arAccount->id)->where('credit', '>', 0))
+                ->get()
+                ->map(function (SubledgerEntry $entry) use ($arAccount) {
+                    $creditAmount = round((float) $entry->lines
+                        ->where('account_id', $arAccount->id)
+                        ->sum('credit'), 2);
+
+                    return [
+                        'kind' => 'other_ar_credit_entry',
+                        'customer_name' => '—',
+                        'reference' => $entry->description ?: ($entry->source_type.'#'.$entry->source_id),
+                        'date' => optional($entry->entry_date)->toDateString(),
+                        'amount' => $creditAmount,
+                        'notes' => __('Source type: :type', ['type' => $entry->source_type ?: 'manual']),
+                    ];
+                });
+        }
+
+        $knownArCredit = round(
+            (float) $creditNotes->sum('amount')
+            + (float) $mismatches->sum('amount')
+            + (float) $otherEntries->sum('amount'),
+            2
+        );
+
+        return [
+            'as_of' => $dateTo,
+            'ar_credit_balance' => $arCreditBalance,
+            'known_ar_credit' => $knownArCredit,
+            'unresolved_ar_credit' => round(max(0, $arCreditBalance - $knownArCredit), 2),
+            'rows' => [
+                'credit_notes' => $creditNotes->values()->all(),
+                'cross_company_allocations' => $mismatches->values()->all(),
+                'other_entries' => $otherEntries->values()->all(),
+                'unapplied_receipts' => $unappliedReceipts->values()->all(),
+            ],
+            'totals' => [
+                'credit_notes' => round((float) $creditNotes->sum('amount'), 2),
+                'cross_company_allocations' => round((float) $mismatches->sum('amount'), 2),
+                'other_entries' => round((float) $otherEntries->sum('amount'), 2),
+                'unapplied_receipts' => round((float) $unappliedReceipts->sum('amount'), 2),
+            ],
+        ];
     }
 }

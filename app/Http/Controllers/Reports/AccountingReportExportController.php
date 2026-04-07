@@ -22,6 +22,7 @@ class AccountingReportExportController extends Controller
             'inventory-valuation' => $this->inventoryValuation($service, (int) $companyId, $dateTo),
             'purchase-accruals' => $this->purchaseAccruals($service, (int) $companyId, $request),
             'multi-company-summary' => $this->multiCompanySummary($service, $dateTo),
+            'ar-credit-exceptions' => $this->arCreditExceptions($service, (int) $companyId, $dateTo),
             'vendor-ledger' => $this->vendorLedger($service, (int) $companyId, $request),
             'expense-analysis' => $this->expenseAnalysis($service, (int) $companyId, $request),
             'job-profitability' => $this->jobProfitability($service, (int) $companyId, $dateTo),
@@ -126,6 +127,36 @@ class AccountingReportExportController extends Controller
                 number_format((float) $row['equity_total'], 2, '.', ''),
             ]),
             'multi-company-summary.csv'
+        );
+    }
+
+    private function arCreditExceptions(AccountingReportService $service, int $companyId, string $dateTo): StreamedResponse
+    {
+        $report = $service->arCreditBalanceExceptions($companyId, $dateTo);
+
+        $rows = collect($report['rows'])
+            ->flatMap(function ($sectionRows, $section) {
+                return collect($sectionRows)->map(fn ($row) => [
+                    'section' => $section,
+                    'customer_name' => $row['customer_name'] ?? '',
+                    'reference' => $row['reference'] ?? '',
+                    'date' => $row['date'] ?? '',
+                    'notes' => $row['notes'] ?? '',
+                    'amount' => $row['amount'] ?? 0,
+                ]);
+            });
+
+        return CsvExport::stream(
+            ['Section', 'Customer', 'Reference', 'Date', 'Notes', 'Amount'],
+            $rows->map(fn ($row) => [
+                $row['section'],
+                $row['customer_name'],
+                $row['reference'],
+                $row['date'],
+                $row['notes'],
+                number_format((float) $row['amount'], 2, '.', ''),
+            ]),
+            'ar-credit-exceptions.csv'
         );
     }
 

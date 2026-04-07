@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ArInvoice;
+use App\Models\AccountingCompany;
 use App\Models\Customer;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
@@ -81,4 +82,55 @@ it('shows only unallocated ar payments on the advance payments report', function
         ->assertSee('#'.$visibleAdvance->id)
         ->assertDontSee('#'.$fullyAllocated->id)
         ->assertDontSee('No advance payments found.');
+});
+
+it('filters advance payments by accounting company on screen and csv export', function () {
+    $user = makeAdvancePaymentsManager();
+
+    $companyA = AccountingCompany::query()->create([
+        'name' => 'Company A',
+        'code' => 'COMP-A',
+        'base_currency' => 'QAR',
+        'is_active' => true,
+        'is_default' => true,
+    ]);
+
+    $companyB = AccountingCompany::query()->create([
+        'name' => 'Company B',
+        'code' => 'COMP-B',
+        'base_currency' => 'QAR',
+        'is_active' => true,
+        'is_default' => false,
+    ]);
+
+    $customer = Customer::factory()->create(['name' => 'Scoped Customer']);
+
+    $visible = Payment::factory()->create([
+        'customer_id' => $customer->id,
+        'source' => 'ar',
+        'company_id' => $companyB->id,
+        'amount_cents' => 15000,
+        'received_at' => now()->toDateTimeString(),
+    ]);
+
+    $hidden = Payment::factory()->create([
+        'customer_id' => $customer->id,
+        'source' => 'ar',
+        'company_id' => $companyA->id,
+        'amount_cents' => 9000,
+        'received_at' => now()->subDay()->toDateTimeString(),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('reports.customer-advances', ['company_id' => $companyB->id]))
+        ->assertOk()
+        ->assertSee('#'.$visible->id)
+        ->assertDontSee('#'.$hidden->id);
+
+    $response = $this->actingAs($user)
+        ->get(route('reports.customer-advances.csv', ['company_id' => $companyB->id]));
+
+    $response->assertOk();
+    expect($response->streamedContent())->toContain((string) $visible->id)
+        ->not->toContain((string) $hidden->id);
 });

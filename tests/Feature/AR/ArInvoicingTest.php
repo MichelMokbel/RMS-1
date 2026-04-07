@@ -1,16 +1,21 @@
 <?php
 
 use App\Models\AccountingCompany;
+use App\Models\AccountingAuditLog;
 use App\Models\ArInvoice;
+use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\Job;
 use App\Models\Payment;
+use App\Models\PaymentAllocation;
 use App\Models\User;
+use App\Services\AR\ArAllocationIntegrityService;
 use App\Services\AR\ArAllocationService;
 use App\Services\AR\ArInvoiceService;
 use App\Services\AR\ArPaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -349,7 +354,7 @@ it('creates advance payment and applies it later', function () {
     expect($payment->unallocatedCents())->toBe(2000);
 });
 
-it('auto-allocates available customer advance when issuing a credit invoice', function () {
+it('auto-allocates available same-company customer advance when issuing a credit invoice', function () {
     $user = User::factory()->create();
     $user->assignRole('manager');
 
@@ -387,6 +392,59 @@ it('auto-allocates available customer advance when issuing a credit invoice', fu
 
     $advance = Payment::findOrFail($advance->id);
     expect($advance->unallocatedCents())->toBe(0);
+});
+
+it('does not auto-allocate advances from another accounting company', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $companyA = AccountingCompany::query()->create([
+        'name' => 'Company A',
+        'code' => 'COMP-A',
+        'base_currency' => 'QAR',
+        'is_active' => true,
+        'is_default' => true,
+    ]);
+
+    $companyB = AccountingCompany::query()->create([
+        'name' => 'Company B',
+        'code' => 'COMP-B',
+        'base_currency' => 'QAR',
+        'is_active' => true,
+        'is_default' => false,
+    ]);
+
+    $customer = Customer::factory()->corporate()->create();
+
+    $advance = Payment::factory()->create([
+        'branch_id' => 1,
+        'customer_id' => $customer->id,
+        'source' => 'ar',
+        'company_id' => $companyA->id,
+        'amount_cents' => 5000,
+        'received_at' => now()->toDateTimeString(),
+    ]);
+
+    /** @var ArInvoiceService $invoices */
+    $invoices = app(ArInvoiceService::class);
+    $invoice = $invoices->createDraft(
+        branchId: 1,
+        customerId: $customer->id,
+        items: [
+            ['description' => 'Service', 'qty' => '1.000', 'unit_price_cents' => 8000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 8000],
+        ],
+        actorId: $user->id,
+        paymentType: 'credit',
+    );
+    $invoice->forceFill(['company_id' => $companyB->id])->save();
+    $invoice = $invoices->issue($invoice->fresh(), $user->id);
+
+    expect($invoice->status)->toBe('issued');
+    expect($invoice->paid_total_cents)->toBe(0);
+    expect($invoice->balance_cents)->toBe(8000);
+
+    $advance = Payment::findOrFail($advance->id);
+    expect($advance->unallocatedCents())->toBe(5000);
 });
 
 it('does not auto-allocate advance when invoice payment type is not credit', function () {
@@ -427,6 +485,139 @@ it('does not auto-allocate advance when invoice payment type is not credit', fun
 
     $advance = Payment::findOrFail($advance->id);
     expect($advance->unallocatedCents())->toBe(5000);
+});
+
+it('rejects manual AR allocations across accounting companies', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $companyA = AccountingCompany::query()->create([
+        'name' => 'Company A',
+        'code' => 'COMP-A',
+        'base_currency' => 'QAR',
+        'is_active' => true,
+        'is_default' => true,
+    ]);
+
+    $companyB = AccountingCompany::query()->create([
+        'name' => 'Company B',
+        'code' => 'COMP-B',
+        'base_currency' => 'QAR',
+        'is_active' => true,
+        'is_default' => false,
+    ]);
+
+    Branch::query()->updateOrCreate(
+        ['id' => 1],
+        ['name' => 'Main Branch', 'code' => 'MAIN', 'is_active' => true, 'company_id' => $companyA->id]
+    );
+
+    $customer = Customer::factory()->corporate()->create();
+
+    /** @var ArInvoiceService $invoices */
+    $invoices = app(ArInvoiceService::class);
+    $invoice = $invoices->createDraft(
+        branchId: 1,
+        customerId: $customer->id,
+        items: [
+            ['description' => 'Service', 'qty' => '1.000', 'unit_price_cents' => 8000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 8000],
+        ],
+        actorId: $user->id,
+    );
+    $invoice->forceFill(['company_id' => $companyB->id])->save();
+    $invoice = $invoices->issue($invoice->fresh(), $user->id);
+
+    /** @var ArPaymentService $payments */
+    $payments = app(ArPaymentService::class);
+
+    expect(fn () => $payments->createPaymentWithAllocations([
+        'customer_id' => $customer->id,
+        'branch_id' => 1,
+        'amount_cents' => 3000,
+        'method' => 'bank_transfer',
+        'allocations' => [
+            ['invoice_id' => $invoice->id, 'amount_cents' => 3000],
+        ],
+    ], $user->id))->toThrow(ValidationException::class, 'same accounting company');
+});
+
+it('detects and repairs cross-company ar allocations', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $companyA = AccountingCompany::query()->create([
+        'name' => 'Company A',
+        'code' => 'COMP-A',
+        'base_currency' => 'QAR',
+        'is_active' => true,
+        'is_default' => true,
+    ]);
+
+    $companyB = AccountingCompany::query()->create([
+        'name' => 'Company B',
+        'code' => 'COMP-B',
+        'base_currency' => 'QAR',
+        'is_active' => true,
+        'is_default' => false,
+    ]);
+
+    $customer = Customer::factory()->corporate()->create();
+
+    /** @var ArInvoiceService $invoices */
+    $invoices = app(ArInvoiceService::class);
+    $invoice = $invoices->createDraft(
+        branchId: 1,
+        customerId: $customer->id,
+        items: [
+            ['description' => 'Service', 'qty' => '1.000', 'unit_price_cents' => 10000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 10000],
+        ],
+        actorId: $user->id,
+    );
+    $invoice->forceFill(['company_id' => $companyB->id])->save();
+    $invoice = $invoices->issue($invoice->fresh(), $user->id);
+
+    $payment = Payment::factory()->create([
+        'branch_id' => 1,
+        'customer_id' => $customer->id,
+        'source' => 'ar',
+        'company_id' => $companyA->id,
+        'amount_cents' => 4000,
+        'received_at' => now()->toDateTimeString(),
+    ]);
+
+    $allocation = PaymentAllocation::query()->create([
+        'payment_id' => $payment->id,
+        'allocatable_type' => ArInvoice::class,
+        'allocatable_id' => $invoice->id,
+        'amount_cents' => 4000,
+    ]);
+
+    $invoices->recalc($invoice);
+    $invoice = $invoice->fresh();
+    expect($invoice->balance_cents)->toBe(6000);
+
+    /** @var ArAllocationIntegrityService $integrity */
+    $integrity = app(ArAllocationIntegrityService::class);
+
+    $mismatches = $integrity->mismatchedAllocations($companyB->id);
+    expect($mismatches)->toHaveCount(1);
+    expect((int) $mismatches->first()['allocation']->id)->toBe((int) $allocation->id);
+
+    $integrity->repairAllocation($allocation, $user->id, 'Repair mismatch');
+
+    $allocation = $allocation->fresh();
+    $invoice = $invoice->fresh();
+    $payment = $payment->fresh();
+
+    expect($allocation->voided_at)->not->toBeNull();
+    expect($allocation->void_reason)->toBe('Repair mismatch');
+    expect($invoice->balance_cents)->toBe(10000);
+    expect($payment->unallocatedCents())->toBe(4000);
+
+    expect(AccountingAuditLog::query()
+        ->where('action', 'ar_allocation.repaired')
+        ->where('subject_id', $allocation->id)
+        ->exists())->toBeTrue();
 });
 
 it('uses QAR as default currency for payments and invoices', function () {

@@ -1227,6 +1227,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Volt::route('accounting/inventory-valuation', 'reports.accounting-report')->name('accounting-inventory-valuation');
     Volt::route('accounting/purchase-accruals', 'reports.accounting-report')->name('accounting-purchase-accruals');
     Volt::route('accounting/multi-company-summary', 'reports.accounting-report')->name('accounting-multi-company-summary');
+    Volt::route('accounting/ar-credit-exceptions', 'reports.accounting-report')->name('accounting-ar-credit-exceptions');
 
     Route::get('orders/print', [\App\Http\Controllers\Reports\OrdersReportController::class, 'print'])->name('orders.print');
     Route::get('orders/csv', [\App\Http\Controllers\Reports\OrdersReportController::class, 'csv'])->name('orders.csv');

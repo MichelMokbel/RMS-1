@@ -22,6 +22,7 @@ class ArPaymentService
         protected AccountingContextService $accountingContext,
         protected LedgerAccountMappingService $mappingService,
         protected BankTransactionService $bankTransactionService,
+        protected ArAllocationIntegrityService $allocationIntegrity,
     ) {
     }
 
@@ -155,6 +156,7 @@ class ArPaymentService
                 if (! $invoice) {
                     throw ValidationException::withMessages(['allocations' => __('Invoice not found.')]);
                 }
+                $this->allocationIntegrity->assertSameCompanyForPaymentAndInvoice($payment, $invoice);
                 if ($invoice->customer_id !== $customer->id) {
                     throw ValidationException::withMessages(['allocations' => __('Invoice customer must match payment customer.')]);
                 }
@@ -238,6 +240,7 @@ class ArPaymentService
             }
 
             $invoice = ArInvoice::whereKey($invoiceId)->lockForUpdate()->firstOrFail();
+            $this->allocationIntegrity->assertSameCompanyForPaymentAndInvoice($payment, $invoice);
 
             if ($payment->source !== 'ar') {
                 throw ValidationException::withMessages(['payment' => __('Payment must be an AR payment.')]);
@@ -333,6 +336,7 @@ class ArPaymentService
                 $amountCents = (int) ($row['amount_cents'] ?? 0);
 
                 $invoice = ArInvoice::whereKey($invoiceId)->lockForUpdate()->firstOrFail();
+                $this->allocationIntegrity->assertSameCompanyForPaymentAndInvoice($payment, $invoice);
 
                 if (! $payment->customer_id || $payment->customer_id !== $invoice->customer_id) {
                     throw ValidationException::withMessages(['allocations' => __('Payment customer must match invoice customer.')]);

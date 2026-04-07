@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\AccountingCompany;
 use App\Models\Customer;
 use App\Models\Payment;
 use App\Support\Money\MinorUnits;
@@ -12,6 +13,7 @@ use Livewire\WithPagination;
 new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
 
+    public ?int $company_id = null;
     public int $branch_id = 1;
     public ?int $customer_id = null;
     public string $customer_search = '';
@@ -22,6 +24,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
+        $this->company_id = AccountingCompany::query()->where('is_default', true)->value('id');
         $this->branch_id = (int) config('inventory.default_branch_id', 1) ?: 1;
         $this->date_from = now()->startOfMonth()->toDateString();
         $this->date_to = now()->endOfMonth()->toDateString();
@@ -29,7 +32,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function updating($name): void
     {
-        if (in_array($name, ['branch_id', 'customer_id', 'customer_search', 'date_from', 'date_to'], true)) {
+        if (in_array($name, ['company_id', 'branch_id', 'customer_id', 'customer_search', 'date_from', 'date_to'], true)) {
             $this->resetPage();
         }
     }
@@ -66,6 +69,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         return [
+            'companies' => AccountingCompany::query()->orderBy('name')->get(),
             'payments' => $this->query()->paginate(15),
             'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
             'customers' => $customers,
@@ -80,6 +84,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->whereNull('voided_at')
             ->with(['customer'])
             ->withSum('allocations as allocated_sum', 'amount_cents')
+            ->when($this->company_id, fn ($q) => $q->where('company_id', $this->company_id))
             ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id))
             ->when($this->customer_id, fn ($q) => $q->where('customer_id', $this->customer_id))
             ->when($this->date_from, fn ($q) => $q->whereDate('received_at', '>=', $this->date_from))
@@ -92,6 +97,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function exportParams(): array
     {
         return array_filter([
+            'company_id' => $this->company_id,
             'branch_id' => $this->branch_id,
             'customer_id' => $this->customer_id,
             'date_from' => $this->date_from,
@@ -123,6 +129,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
         <div class="app-filter-grid">
+            <div class="min-w-[220px]">
+                <label class="mb-1 block text-sm font-medium text-neutral-800 dark:text-neutral-200">{{ __('Company') }}</label>
+                <select wire:model.live="company_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                    @foreach ($companies as $company)
+                        <option value="{{ $company->id }}">{{ $company->name }}</option>
+                    @endforeach
+                </select>
+            </div>
             <x-reports.branch-select name="branch_id" :branches="$branches" />
             <div class="min-w-[220px] relative">
                 <flux:input wire:model.live.debounce.300ms="customer_search" :label="__('Customer')" placeholder="{{ __('Search by name/phone/code') }}" />

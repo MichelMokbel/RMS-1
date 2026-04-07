@@ -34,7 +34,8 @@ it('lists accounting report entries from the reports workspace', function () {
         ->assertSee('Bank Reconciliation Summary')
         ->assertSee('Budget Variance')
         ->assertSee('Job Profitability')
-        ->assertSee('AP Aging');
+        ->assertSee('AP Aging')
+        ->assertSee('AR Credit Balance Exceptions');
 });
 
 it('redirects the legacy accounting reports route to the reports accounting category', function () {
@@ -64,4 +65,14 @@ it('renders the accounting ap aging report route', function () {
         ->get(route('reports.accounting-ap-aging'))
         ->assertOk()
         ->assertSee('AP Aging');
+});
+
+it('renders the accounting ar credit balance exceptions report route', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    $user->assignRole('admin');
+
+    $this->actingAs($user)
+        ->get(route('reports.accounting-ar-credit-exceptions'))
+        ->assertOk()
+        ->assertSee('AR Credit Balance Exceptions');
 });

@@ -78,6 +78,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'date_to' => $this->date_to,
             ])],
             'multi_company_summary' => ['multi_company_summary' => $service->multiCompanySummary((string) $this->date_to)],
+            'ar_credit_exceptions' => ['ar_credit_exceptions' => $service->arCreditBalanceExceptions((int) $this->company_id, (string) $this->date_to)],
             default => $service->summary($this->company_id, $this->date_to),
         };
     }
@@ -149,6 +150,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'title' => __('Multi-Company Summary'),
                 'description' => __('Review high-level finance totals across all active accounting companies.'),
                 'section' => 'multi_company_summary',
+            ],
+            'reports.accounting-ar-credit-exceptions' => [
+                'title' => __('AR Credit Balance Exceptions'),
+                'description' => __('Explain AR credit balances by credit notes, cross-company allocations, and other AR credit entries.'),
+                'section' => 'ar_credit_exceptions',
             ],
             default => [
                 'title' => __('Accounting Report'),
@@ -299,6 +305,71 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </tbody>
                 </table>
             </div>
+        </div>
+    @elseif ($meta['section'] === 'ar_credit_exceptions')
+        <div class="space-y-4">
+            <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+                    <p class="text-xs uppercase tracking-wide text-neutral-500">{{ __('AR Credit Balance') }}</p>
+                    <p class="mt-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{{ number_format((float) ($report['ar_credit_exceptions']['ar_credit_balance'] ?? 0), 2) }}</p>
+                </div>
+                <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+                    <p class="text-xs uppercase tracking-wide text-neutral-500">{{ __('Known AR Credit Causes') }}</p>
+                    <p class="mt-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{{ number_format((float) ($report['ar_credit_exceptions']['known_ar_credit'] ?? 0), 2) }}</p>
+                </div>
+                <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+                    <p class="text-xs uppercase tracking-wide text-neutral-500">{{ __('Unresolved AR Credit') }}</p>
+                    <p class="mt-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{{ number_format((float) ($report['ar_credit_exceptions']['unresolved_ar_credit'] ?? 0), 2) }}</p>
+                </div>
+                <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+                    <p class="text-xs uppercase tracking-wide text-neutral-500">{{ __('Unapplied Receipts') }}</p>
+                    <p class="mt-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{{ number_format((float) ($report['ar_credit_exceptions']['totals']['unapplied_receipts'] ?? 0), 2) }}</p>
+                </div>
+            </div>
+
+            @php
+                $sections = [
+                    'credit_notes' => __('Unapplied Credit Notes'),
+                    'cross_company_allocations' => __('Cross-Company Allocation Repair Candidates'),
+                    'other_entries' => __('Other AR Credit Entries'),
+                    'unapplied_receipts' => __('Unapplied Receipts (Informational)'),
+                ];
+            @endphp
+
+            @foreach ($sections as $sectionKey => $sectionLabel)
+                <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+                    <div class="mb-3 flex items-center justify-between">
+                        <h2 class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $sectionLabel }}</h2>
+                        <span class="text-xs text-neutral-500">{{ __('Total') }}: {{ number_format((float) ($report['ar_credit_exceptions']['totals'][$sectionKey] ?? 0), 2) }}</span>
+                    </div>
+                    <div class="app-table-shell">
+                        <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
+                            <thead class="bg-neutral-50 dark:bg-neutral-800/90">
+                                <tr>
+                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Customer') }}</th>
+                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Reference') }}</th>
+                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Date') }}</th>
+                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Notes') }}</th>
+                                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Amount') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                                @forelse ($report['ar_credit_exceptions']['rows'][$sectionKey] ?? [] as $row)
+                                    <tr>
+                                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $row['customer_name'] ?? '—' }}</td>
+                                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $row['reference'] ?? '—' }}</td>
+                                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $row['date'] ?? '—' }}</td>
+                                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['notes'] ?? '—' }}</td>
+                                        <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">{{ number_format((float) ($row['amount'] ?? 0), 2) }}</td>
+                                    </tr>
+                                @empty
+                                    <tr><td colspan="5" class="px-3 py-4 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No rows found.') }}</td></tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            @endforeach
         </div>
     @elseif ($meta['section'] === 'profit_and_loss')
         <div class="space-y-4">

@@ -28,6 +28,7 @@ use App\Console\Commands\PrunePosPrintStreamEvents;
 use App\Console\Commands\HelpSeedDemoCommand;
 use App\Console\Commands\HelpCaptureScreenshotsCommand;
 use App\Console\Commands\GenerateRecurringBills;
+use App\Console\Commands\RepairArCrossCompanyAllocations;
 use App\Services\Orders\SubscriptionOrderGenerationService;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
@@ -54,6 +55,7 @@ return Application::configure(basePath: dirname(__DIR__))
         HelpSeedDemoCommand::class,
         HelpCaptureScreenshotsCommand::class,
         GenerateRecurringBills::class,
+        RepairArCrossCompanyAllocations::class,
     ])
     ->withSchedule(function (Schedule $schedule) {
         if (! (bool) config('subscriptions.auto_generate', false)) {
