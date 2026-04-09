@@ -1,6 +1,6 @@
 -- Generated SQL: AR invoices insert from legacy invoice log CSV
 -- Source file: /Users/mohamadsafar/Desktop/Layla Kitchen/RMS-1/docs/csv/import-01-01-2025.csv
--- Generated at: 2026-04-09T10:58:01
+-- Generated at: 2026-04-09T11:16:05
 -- Branch ID: 1
 -- Raw CSV rows: 343
 -- Blank separator rows skipped: 9
@@ -13,7 +13,7 @@
 -- Min invoice date: 2025-01-02
 -- Max invoice date: 2025-02-20
 -- Matching rule: insert only when (branch_id, invoice_number) does not already exist
--- Customer rule: customer by normalized name, auto-create when missing, skip when ambiguous
+-- Customer rule: customer by normalized name, auto-create when missing, resolve ambiguous matches to the lowest existing customer id
 -- Item rule: create one placeholder item line with description Legacy import
 
 START TRANSACTION;
@@ -249,9 +249,9 @@ INSERT INTO tmp_legacy_invoice_source (source_row_num, source_timestamp, busines
 (206, '2025-01-20 00:00:00', '2025-01-20', '25-0304', 'Manal', 'manal', 'credit', 'paid', 10000, NULL, 10000, 10000, 0),
 (207, '2025-01-20 00:00:00', '2025-01-20', '25-0305', 'Daniel', 'daniel', 'credit', 'paid', 5000, NULL, 5000, 5000, 0),
 (208, '2025-01-20 00:00:00', '2025-01-20', '25-0306', 'Pia', 'pia', 'credit', 'paid', 20000, NULL, 20000, 20000, 0),
-(209, '2025-02-17 00:00:00', '2025-02-17', '25-0307', 'Sandy Soudan', 'sandy soudan', 'credit', 'paid', 23000, NULL, 23000, 23000, 0),
-(210, '2025-02-09 00:00:00', '2025-02-09', '25-0308', 'Zeina Khoury', 'zeina khoury', 'credit', 'paid', 10000, NULL, 10000, 10000, 0),
-(211, '2025-02-20 00:00:00', '2025-02-20', '25-0647', 'Alex', 'alex', 'credit', 'paid', 13000, NULL, 13000, 13000, 0),
+(209, '2025-01-17 00:00:00', '2025-01-17', '25-0307', 'Sandy Soudan', 'sandy soudan', 'credit', 'paid', 23000, NULL, 23000, 23000, 0),
+(210, '2025-01-09 00:00:00', '2025-01-09', '25-0308', 'Zeina Khoury', 'zeina khoury', 'credit', 'paid', 10000, NULL, 10000, 10000, 0),
+(211, '2025-01-20 00:00:00', '2025-01-20', '25-0647', 'Alex', 'alex', 'credit', 'paid', 13000, NULL, 13000, 13000, 0),
 (212, '2025-01-21 00:00:00', '2025-01-21', '25-0310', 'Nour', 'nour', 'credit', 'paid', 5000, NULL, 5000, 5000, 0),
 (213, '2025-01-21 00:00:00', '2025-01-21', '25-0311', 'Jaymay', 'jaymay', 'credit', 'paid', 6500, NULL, 6500, 6500, 0),
 (214, '2025-01-21 00:00:00', '2025-01-21', '25-0312', 'Marc Aaraj', 'marc aaraj', 'credit', 'paid', 6500, NULL, 6500, 6500, 0),
@@ -365,13 +365,13 @@ INSERT INTO tmp_legacy_invoice_source (source_row_num, source_timestamp, busines
 (323, '2025-01-30 00:00:00', '2025-01-30', '25-0421', 'Ghada Maalouf', 'ghada maalouf', 'credit', 'paid', 55000, NULL, 55000, 55000, 0),
 (324, '2025-01-30 00:00:00', '2025-01-30', '25-0422', 'Rita', 'rita', 'credit', 'paid', 30000, NULL, 30000, 30000, 0),
 (325, '2025-01-31 00:00:00', '2025-01-31', '25-0423', 'UPTC', 'uptc', 'credit', 'paid', 2192400, NULL, 2192400, 2192400, 0),
-(326, '2025-02-01 00:00:00', '2025-02-01', '25-0424', 'GAT', 'gat', 'credit', 'paid', 5400000, NULL, 5400000, 5400000, 0),
-(327, '2025-02-01 00:00:00', '2025-02-01', '25-0425', 'Cherry On Top', 'cherry on top', 'credit', 'paid', 14400, NULL, 14400, 14400, 0),
-(328, '2025-02-01 00:00:00', '2025-02-01', '25-0426', 'Cherry On Top', 'cherry on top', 'credit', 'paid', 8000, NULL, 8000, 8000, 0),
-(329, '2025-02-01 00:00:00', '2025-02-01', '25-0427', 'Cherry On Top', 'cherry on top', 'credit', 'paid', 9600, NULL, 9600, 9600, 0),
-(330, '2025-02-01 00:00:00', '2025-02-01', '25-0428', 'Cherry On Top', 'cherry on top', 'credit', 'paid', 9600, NULL, 9600, 9600, 0),
-(331, '2025-02-01 00:00:00', '2025-02-01', '25-0429', 'Cherry On Top', 'cherry on top', 'credit', 'paid', 9600, NULL, 9600, 9600, 0),
-(332, '2025-02-01 00:00:00', '2025-02-01', '25-0430', 'Cherry On Top', 'cherry on top', 'credit', 'paid', 56000, NULL, 56000, 56000, 0),
+(326, '2025-01-02 00:00:00', '2025-01-01', '25-0424', 'GAT', 'gat', 'credit', 'paid', 5400000, NULL, 5400000, 5400000, 0),
+(327, '2025-01-02 00:00:00', '2025-01-01', '25-0425', 'Cherry On Top', 'cherry on top', 'credit', 'paid', 14400, NULL, 14400, 14400, 0),
+(328, '2025-01-02 00:00:00', '2025-01-01', '25-0426', 'Cherry On Top', 'cherry on top', 'credit', 'paid', 8000, NULL, 8000, 8000, 0),
+(329, '2025-01-02 00:00:00', '2025-01-01', '25-0427', 'Cherry On Top', 'cherry on top', 'credit', 'paid', 9600, NULL, 9600, 9600, 0),
+(330, '2025-01-02 00:00:00', '2025-01-01', '25-0428', 'Cherry On Top', 'cherry on top', 'credit', 'paid', 9600, NULL, 9600, 9600, 0),
+(331, '2025-01-02 00:00:00', '2025-01-01', '25-0429', 'Cherry On Top', 'cherry on top', 'credit', 'paid', 9600, NULL, 9600, 9600, 0),
+(332, '2025-01-02 00:00:00', '2025-01-01', '25-0430', 'Cherry On Top', 'cherry on top', 'credit', 'paid', 56000, NULL, 56000, 56000, 0),
 (333, '2025-01-31 00:00:00', '2025-01-31', '25-0431', 'Cherry On Top', 'cherry on top', 'credit', 'paid', 42900, NULL, 42900, 42900, 0),
 (334, '2025-01-31 00:00:00', '2025-01-31', '25-0432', 'Cherry On Top', 'cherry on top', 'credit', 'paid', 28800, NULL, 28800, 28800, 0),
 (335, '2025-01-31 00:00:00', '2025-01-31', '25-0433', 'Cherry On Top', 'cherry on top', 'credit', 'paid', 27200, NULL, 27200, 27200, 0),
@@ -443,6 +443,17 @@ ALTER TABLE tmp_customer_unique_names
   ADD PRIMARY KEY (customer_norm),
   ADD KEY idx_tmp_customer_unique_names_customer_id (customer_id);
 
+DROP TEMPORARY TABLE IF EXISTS tmp_customer_preferred_names;
+CREATE TEMPORARY TABLE tmp_customer_preferred_names AS
+SELECT
+  LOWER(TRIM(c.name)) COLLATE utf8mb4_unicode_ci AS customer_norm,
+  MIN(c.id) AS customer_id
+FROM customers c
+GROUP BY LOWER(TRIM(c.name)) COLLATE utf8mb4_unicode_ci;
+ALTER TABLE tmp_customer_preferred_names
+  ADD PRIMARY KEY (customer_norm),
+  ADD KEY idx_tmp_customer_preferred_names_customer_id (customer_id);
+
 DROP TEMPORARY TABLE IF EXISTS tmp_customer_ambiguous_names;
 CREATE TEMPORARY TABLE tmp_customer_ambiguous_names AS
 SELECT customer_norm, target_count
@@ -512,6 +523,17 @@ ALTER TABLE tmp_customer_unique_names_final
   ADD PRIMARY KEY (customer_norm),
   ADD KEY idx_tmp_customer_unique_names_final_customer_id (customer_id);
 
+DROP TEMPORARY TABLE IF EXISTS tmp_customer_preferred_names_final;
+CREATE TEMPORARY TABLE tmp_customer_preferred_names_final AS
+SELECT
+  LOWER(TRIM(c.name)) COLLATE utf8mb4_unicode_ci AS customer_norm,
+  MIN(c.id) AS customer_id
+FROM customers c
+GROUP BY LOWER(TRIM(c.name)) COLLATE utf8mb4_unicode_ci;
+ALTER TABLE tmp_customer_preferred_names_final
+  ADD PRIMARY KEY (customer_norm),
+  ADD KEY idx_tmp_customer_preferred_names_final_customer_id (customer_id);
+
 DROP TEMPORARY TABLE IF EXISTS tmp_customer_ambiguous_names_final;
 CREATE TEMPORARY TABLE tmp_customer_ambiguous_names_final AS
 SELECT customer_norm, target_count
@@ -525,14 +547,14 @@ CREATE TEMPORARY TABLE tmp_legacy_customer_resolution AS
 SELECT
   s.source_row_num,
   s.customer_norm,
-  cu.customer_id,
+  cp.customer_id,
   CASE
     WHEN ca.customer_norm IS NOT NULL THEN 'ambiguous'
-    WHEN cu.customer_id IS NULL THEN 'missing'
+    WHEN cp.customer_id IS NULL THEN 'missing'
     ELSE 'resolved'
   END AS customer_resolution
 FROM tmp_legacy_invoice_source s
-LEFT JOIN tmp_customer_unique_names_final cu ON cu.customer_norm = s.customer_norm
+LEFT JOIN tmp_customer_preferred_names_final cp ON cp.customer_norm = s.customer_norm
 LEFT JOIN tmp_customer_ambiguous_names_final ca ON ca.customer_norm = s.customer_norm;
 ALTER TABLE tmp_legacy_customer_resolution
   ADD PRIMARY KEY (source_row_num),
@@ -548,7 +570,7 @@ SELECT
   cr.customer_resolution,
   ai.id AS existing_invoice_id,
   CASE
-    WHEN cr.customer_resolution <> 'resolved' THEN 'skip_customer'
+    WHEN cr.customer_id IS NULL THEN 'skip_customer'
     WHEN ai.id IS NOT NULL THEN 'skip_existing'
     ELSE 'insert'
   END AS resolution_status
@@ -720,6 +742,18 @@ FROM tmp_legacy_invoice_resolution r
 JOIN tmp_legacy_invoice_source s ON s.source_row_num = r.source_row_num
 JOIN tmp_legacy_customer_resolution cr ON cr.source_row_num = r.source_row_num
 WHERE r.resolution_status = 'skip_customer'
+ORDER BY r.source_row_num;
+
+-- Ambiguous customer rows resolved to the lowest existing customer id
+SELECT
+  r.source_row_num,
+  s.invoice_number,
+  s.customer_name,
+  cr.customer_id
+FROM tmp_legacy_invoice_resolution r
+JOIN tmp_legacy_invoice_source s ON s.source_row_num = r.source_row_num
+JOIN tmp_legacy_customer_resolution cr ON cr.source_row_num = r.source_row_num
+WHERE cr.customer_resolution = 'ambiguous'
 ORDER BY r.source_row_num;
 
 -- Breakdown by imported status

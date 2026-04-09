@@ -39,6 +39,7 @@ EXPECTED_FACTS = {
     "max_date": "2025-02-20",
 }
 REQUIRED_HEADERS = ["Date", "Invoice No.", "Name", "Amount Paid", "AmountUnpaid"]
+FALLBACK_CUSTOMER_NAME = "Unknown Customer"
 
 
 def die(message: str) -> None:
@@ -196,6 +197,7 @@ def load_source(
     skipped_missing_amount: List[SkippedAmountRow] = []
     defaulted_missing_date: List[SkippedDateRow] = []
     seen_years: List[int] = []
+    blank_name_rows = 0
 
     for row_num, row in enumerate(raw_rows[2:], start=3):
         normalized = [normalize_spaces(col) for col in row]
@@ -215,7 +217,8 @@ def load_source(
         if invoice_number == "":
             die(f"Missing Invoice No. in source row {row_num}.")
         if customer_name == "":
-            die(f"Missing Name in source row {row_num}.")
+            customer_name = FALLBACK_CUSTOMER_NAME
+            blank_name_rows += 1
 
         date_raw = normalized[header_map["Date"]]
         if date_raw == "":
@@ -377,6 +380,7 @@ def load_source(
         "blank_separator_rows": blank_separator_rows,
         "total_rows_skipped": total_rows_skipped,
         "source_rows_considered": considered_rows,
+        "blank_name_rows": blank_name_rows,
         "defaulted_missing_date_rows": len(defaulted_missing_date),
         "distinct_invoices": len({row.invoice_number for row in source_rows}),
         "missing_amount_rows": len(skipped_missing_amount),
@@ -418,12 +422,13 @@ def render_sql(
             f"-- Source rows considered: {facts['source_rows_considered']}",
             f"-- Importable invoice rows: {len(rows)}",
             f"-- Distinct invoice numbers: {facts['distinct_invoices']}",
+            f"-- Blank customer names defaulted to {FALLBACK_CUSTOMER_NAME}: {facts['blank_name_rows']}",
             f"-- Rows defaulted to month-end for missing date: {facts['defaulted_missing_date_rows']}",
             f"-- Rows skipped for missing amount: {facts['missing_amount_rows']}",
             f"-- Min invoice date: {facts['min_date']}",
             f"-- Max invoice date: {facts['max_date']}",
             "-- Matching rule: insert only when (branch_id, invoice_number) does not already exist",
-            "-- Customer rule: customer by normalized name, auto-create when missing, skip when ambiguous",
+            "-- Customer rule: customer by normalized name, auto-create when missing, resolve ambiguous matches to the lowest existing customer id",
             "-- Item rule: create one placeholder item line with description Legacy import",
             "",
             "START TRANSACTION;",
@@ -600,6 +605,17 @@ def render_sql(
             "  ADD PRIMARY KEY (customer_norm),",
             "  ADD KEY idx_tmp_customer_unique_names_customer_id (customer_id);",
             "",
+            "DROP TEMPORARY TABLE IF EXISTS tmp_customer_preferred_names;",
+            "CREATE TEMPORARY TABLE tmp_customer_preferred_names AS",
+            "SELECT",
+            f"  LOWER(TRIM(c.name)) COLLATE {COLLATION} AS customer_norm,",
+            "  MIN(c.id) AS customer_id",
+            "FROM customers c",
+            f"GROUP BY LOWER(TRIM(c.name)) COLLATE {COLLATION};",
+            "ALTER TABLE tmp_customer_preferred_names",
+            "  ADD PRIMARY KEY (customer_norm),",
+            "  ADD KEY idx_tmp_customer_preferred_names_customer_id (customer_id);",
+            "",
             "DROP TEMPORARY TABLE IF EXISTS tmp_customer_ambiguous_names;",
             "CREATE TEMPORARY TABLE tmp_customer_ambiguous_names AS",
             "SELECT customer_norm, target_count",
@@ -669,6 +685,17 @@ def render_sql(
             "  ADD PRIMARY KEY (customer_norm),",
             "  ADD KEY idx_tmp_customer_unique_names_final_customer_id (customer_id);",
             "",
+            "DROP TEMPORARY TABLE IF EXISTS tmp_customer_preferred_names_final;",
+            "CREATE TEMPORARY TABLE tmp_customer_preferred_names_final AS",
+            "SELECT",
+            f"  LOWER(TRIM(c.name)) COLLATE {COLLATION} AS customer_norm,",
+            "  MIN(c.id) AS customer_id",
+            "FROM customers c",
+            f"GROUP BY LOWER(TRIM(c.name)) COLLATE {COLLATION};",
+            "ALTER TABLE tmp_customer_preferred_names_final",
+            "  ADD PRIMARY KEY (customer_norm),",
+            "  ADD KEY idx_tmp_customer_preferred_names_final_customer_id (customer_id);",
+            "",
             "DROP TEMPORARY TABLE IF EXISTS tmp_customer_ambiguous_names_final;",
             "CREATE TEMPORARY TABLE tmp_customer_ambiguous_names_final AS",
             "SELECT customer_norm, target_count",
@@ -682,14 +709,14 @@ def render_sql(
             "SELECT",
             "  s.source_row_num,",
             "  s.customer_norm,",
-            "  cu.customer_id,",
+            "  cp.customer_id,",
             "  CASE",
             "    WHEN ca.customer_norm IS NOT NULL THEN 'ambiguous'",
-            "    WHEN cu.customer_id IS NULL THEN 'missing'",
+            "    WHEN cp.customer_id IS NULL THEN 'missing'",
             "    ELSE 'resolved'",
             "  END AS customer_resolution",
             "FROM tmp_legacy_invoice_source s",
-            "LEFT JOIN tmp_customer_unique_names_final cu ON cu.customer_norm = s.customer_norm",
+            "LEFT JOIN tmp_customer_preferred_names_final cp ON cp.customer_norm = s.customer_norm",
             "LEFT JOIN tmp_customer_ambiguous_names_final ca ON ca.customer_norm = s.customer_norm;",
             "ALTER TABLE tmp_legacy_customer_resolution",
             "  ADD PRIMARY KEY (source_row_num),",
@@ -705,7 +732,7 @@ def render_sql(
             "  cr.customer_resolution,",
             "  ai.id AS existing_invoice_id,",
             "  CASE",
-            "    WHEN cr.customer_resolution <> 'resolved' THEN 'skip_customer'",
+            "    WHEN cr.customer_id IS NULL THEN 'skip_customer'",
             "    WHEN ai.id IS NOT NULL THEN 'skip_existing'",
             "    ELSE 'insert'",
             "  END AS resolution_status",
@@ -877,6 +904,18 @@ def render_sql(
             "JOIN tmp_legacy_invoice_source s ON s.source_row_num = r.source_row_num",
             "JOIN tmp_legacy_customer_resolution cr ON cr.source_row_num = r.source_row_num",
             "WHERE r.resolution_status = 'skip_customer'",
+            "ORDER BY r.source_row_num;",
+            "",
+            "-- Ambiguous customer rows resolved to the lowest existing customer id",
+            "SELECT",
+            "  r.source_row_num,",
+            "  s.invoice_number,",
+            "  s.customer_name,",
+            "  cr.customer_id",
+            "FROM tmp_legacy_invoice_resolution r",
+            "JOIN tmp_legacy_invoice_source s ON s.source_row_num = r.source_row_num",
+            "JOIN tmp_legacy_customer_resolution cr ON cr.source_row_num = r.source_row_num",
+            "WHERE cr.customer_resolution = 'ambiguous'",
             "ORDER BY r.source_row_num;",
             "",
             "-- Breakdown by imported status",

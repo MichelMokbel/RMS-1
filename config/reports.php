@@ -18,6 +18,10 @@ return [
             'key' => 'expenses',
             'label' => 'Expenses',
         ],
+        'inventory' => [
+            'key' => 'inventory',
+            'label' => 'Inventory',
+        ],
         'subscriptions' => [
             'key' => 'subscriptions',
             'label' => 'Subscriptions',
@@ -80,7 +84,7 @@ return [
         'costing' => [
             'key' => 'costing',
             'label' => 'Costing',
-            'category' => 'expenses',
+            'category' => 'inventory',
             'route' => 'reports.costing',
             'filters' => ['menu_item', 'category'],
             'outputs' => ['screen', 'print', 'csv', 'pdf'],
@@ -88,7 +92,7 @@ return [
         'inventory' => [
             'key' => 'inventory',
             'label' => 'Inventory',
-            'category' => 'expenses',
+            'category' => 'inventory',
             'route' => 'reports.inventory',
             'filters' => ['branch', 'category', 'search', 'low_stock'],
             'outputs' => ['screen', 'print', 'csv', 'pdf'],
@@ -96,9 +100,17 @@ return [
         'inventory-transactions' => [
             'key' => 'inventory-transactions',
             'label' => 'Inventory Transactions',
-            'category' => 'expenses',
+            'category' => 'inventory',
             'route' => 'reports.inventory-transactions',
             'filters' => ['branch', 'item', 'supplier', 'category', 'transaction_type', 'reference_type', 'date_range', 'search'],
+            'outputs' => ['screen', 'print', 'csv', 'pdf'],
+        ],
+        'purchase-order-inventory-list' => [
+            'key' => 'purchase-order-inventory-list',
+            'label' => 'PO Inventory List',
+            'category' => 'inventory',
+            'route' => 'reports.purchase-order-inventory-list',
+            'filters' => ['supplier', 'status', 'date_range', 'search'],
             'outputs' => ['screen', 'print', 'csv', 'pdf'],
         ],
         'sales' => [

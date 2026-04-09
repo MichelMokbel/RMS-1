@@ -1188,6 +1188,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Volt::route('purchase-orders', 'reports.purchase-orders')->name('purchase-orders');
     Volt::route('purchase-order-detail', 'reports.purchase-order-detail')->name('purchase-order-detail');
     Volt::route('purchase-order-receiving', 'reports.purchase-order-receiving')->name('purchase-order-receiving');
+    Volt::route('purchase-order-inventory-list', 'reports.purchase-order-inventory-list')->name('purchase-order-inventory-list');
     Volt::route('supplier-purchases', 'reports.supplier-purchases')->name('supplier-purchases');
     Volt::route('expenses', 'reports.expenses')->name('expenses');
     Volt::route('costing', 'reports.costing')->name('costing');
@@ -1241,6 +1242,9 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Route::get('purchase-order-receiving/print', [\App\Http\Controllers\Reports\PurchaseOrderReceivingReportController::class, 'print'])->name('purchase-order-receiving.print');
     Route::get('purchase-order-receiving/csv', [\App\Http\Controllers\Reports\PurchaseOrderReceivingReportController::class, 'csv'])->name('purchase-order-receiving.csv');
     Route::get('purchase-order-receiving/pdf', [\App\Http\Controllers\Reports\PurchaseOrderReceivingReportController::class, 'pdf'])->name('purchase-order-receiving.pdf');
+    Route::get('purchase-order-inventory-list/print', [\App\Http\Controllers\Reports\PurchaseOrderInventoryListReportController::class, 'print'])->name('purchase-order-inventory-list.print');
+    Route::get('purchase-order-inventory-list/csv', [\App\Http\Controllers\Reports\PurchaseOrderInventoryListReportController::class, 'csv'])->name('purchase-order-inventory-list.csv');
+    Route::get('purchase-order-inventory-list/pdf', [\App\Http\Controllers\Reports\PurchaseOrderInventoryListReportController::class, 'pdf'])->name('purchase-order-inventory-list.pdf');
     Route::get('supplier-purchases/print', [\App\Http\Controllers\Reports\SupplierPurchasesReportController::class, 'print'])->name('supplier-purchases.print');
     Route::get('supplier-purchases/csv', [\App\Http\Controllers\Reports\SupplierPurchasesReportController::class, 'csv'])->name('supplier-purchases.csv');
     Route::get('supplier-purchases/pdf', [\App\Http\Controllers\Reports\SupplierPurchasesReportController::class, 'pdf'])->name('supplier-purchases.pdf');
