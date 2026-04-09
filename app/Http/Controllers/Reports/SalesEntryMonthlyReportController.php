@@ -41,9 +41,9 @@ class SalesEntryMonthlyReportController extends Controller
     /**
      * @return Collection<int, array{month:string,branch_id:int,branch:string,count:int,total_cents:int}>
      */
-    private function query(Request $request, Carbon $from, Carbon $to, int $limit = 2000): Collection
+    private function query(Request $request, Carbon $from, Carbon $to, ?int $limit = null): Collection
     {
-        $rows = ArInvoice::query()
+        $query = ArInvoice::query()
             ->select(['issue_date', 'total_cents', 'customer_id', 'branch_id'])
             ->where('type', 'invoice')
             ->whereIn('status', ['issued', 'partially_paid', 'paid'])
@@ -51,9 +51,13 @@ class SalesEntryMonthlyReportController extends Controller
             ->when($request->filled('customer_id') && $request->integer('customer_id') > 0, fn ($q) => $q->where('customer_id', $request->integer('customer_id')))
             ->whereDate('issue_date', '>=', $from->toDateString())
             ->whereDate('issue_date', '<=', $to->toDateString())
-            ->orderByDesc('issue_date')
-            ->limit($limit)
-            ->get();
+            ->orderByDesc('issue_date');
+
+        if ($limit !== null) {
+            $query->limit($limit);
+        }
+
+        $rows = $query->get();
 
         $branchNames = Branch::query()
             ->whereIn('id', $rows->pluck('branch_id')->filter()->unique()->values())
