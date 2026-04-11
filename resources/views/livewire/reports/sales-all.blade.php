@@ -58,6 +58,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $customers = collect();
         if (Schema::hasTable('customers') && $this->customer_id === null && trim($this->customer_search) !== '') {
             $customers = Customer::query()
+                ->active()
                 ->search($this->customer_search)
                 ->orderBy('name')
                 ->limit(25)

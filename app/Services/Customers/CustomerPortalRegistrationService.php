@@ -86,6 +86,7 @@ class CustomerPortalRegistrationService
         ?string $address,
     ): Customer {
         $matchedByEmail = Customer::query()
+            ->active()
             ->whereRaw('LOWER(email) = ?', [$email])
             ->get();
 
@@ -98,6 +99,7 @@ class CustomerPortalRegistrationService
         }
 
         $matchedByPhone = Customer::query()
+            ->active()
             ->where('phone_e164', $phoneE164)
             ->get();
 

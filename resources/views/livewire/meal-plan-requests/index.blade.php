@@ -81,6 +81,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // Try auto-select customer match by email/phone
         $match = Customer::query()
+            ->active()
             ->when($this->convertCustomerEmail, fn ($q) => $q->orWhere('email', $this->convertCustomerEmail))
             ->orWhere('phone', $this->convertCustomerPhone)
             ->orderByDesc('id')
@@ -556,7 +557,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $phone = $convertCustomerPhone ? trim((string) $convertCustomerPhone) : '';
 
                 if ($email !== '' || $phone !== '') {
-                    $q = \App\Models\Customer::query();
+                    $q = \App\Models\Customer::query()->active();
                     if ($email !== '' && $phone !== '') {
                         $q->where(function ($qq) use ($email, $phone) {
                             $qq->where('email', $email)->orWhere('phone', $phone);

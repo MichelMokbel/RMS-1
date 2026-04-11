@@ -196,6 +196,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $customers = collect();
         if ($this->showCustomerModal && trim($this->customerSearch) !== '') {
             $customers = Customer::query()
+                ->active()
                 ->where(function ($q) {
                     $term = '%'.trim($this->customerSearch).'%';
                     $q->where('name', 'like', $term)

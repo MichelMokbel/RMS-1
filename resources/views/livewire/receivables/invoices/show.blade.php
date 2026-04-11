@@ -404,10 +404,18 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-4 text-sm">
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-6 text-sm">
             <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
                 <div class="text-neutral-500 dark:text-neutral-400">{{ __('Status') }}</div>
                 <div class="font-semibold text-neutral-900 dark:text-neutral-100">{{ $invoice->status }}</div>
+            </div>
+            <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
+                <div class="text-neutral-500 dark:text-neutral-400">{{ __('Issue Date') }}</div>
+                <div class="font-semibold text-neutral-900 dark:text-neutral-100">{{ $invoice->issue_date?->format('Y-m-d') ?: '—' }}</div>
+            </div>
+            <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
+                <div class="text-neutral-500 dark:text-neutral-400">{{ __('Due Date') }}</div>
+                <div class="font-semibold text-neutral-900 dark:text-neutral-100">{{ $invoice->due_date?->format('Y-m-d') ?: '—' }}</div>
             </div>
             <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
                 <div class="text-neutral-500 dark:text-neutral-400">{{ __('Total') }}</div>

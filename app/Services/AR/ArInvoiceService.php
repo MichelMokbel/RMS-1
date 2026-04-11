@@ -509,7 +509,7 @@ class ArInvoiceService
                 'job_id' => $payload['job_id'] ?? $locked->job_id,
                 'lpo_reference' => $payload['lpo_reference'] ?? $locked->lpo_reference,
                 'issue_date' => $payload['issue_date'] ?? $locked->issue_date?->toDateString(),
-                'due_date' => null,
+                'due_date' => array_key_exists('due_date', $payload) ? $payload['due_date'] : $locked->due_date?->toDateString(),
                 'currency' => $payload['currency'] ?? $locked->currency,
                 'notes' => $payload['notes'] ?? $locked->notes,
                 'source_order_id' => $payload['source_order_id'] ?? $locked->source_order_id,

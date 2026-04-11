@@ -106,6 +106,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
             if ($this->drawer_customer_id === null && $this->drawer_customer_search !== '' && Schema::hasTable('customers')) {
                 $drawerCustomers = Customer::query()
+                    ->active()
                     ->search($this->drawer_customer_search)
                     ->orderBy('name')
                     ->limit(25)

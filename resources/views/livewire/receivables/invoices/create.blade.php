@@ -27,6 +27,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $customer_search = '';
 
     public string $invoice_date;
+    public string $due_date = '';
     public string $payment_type = 'credit';
     public ?int $payment_term_id = null;
     public ?int $sales_person_id = null;
@@ -83,6 +84,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->editing_invoice_id = (int) $invoice->id;
         $this->branch_id = (int) $invoice->branch_id;
         $this->invoice_date = $invoice->issue_date?->toDateString() ?? now()->toDateString();
+        $this->due_date = $invoice->due_date?->toDateString() ?? '';
         $this->payment_type = (string) ($invoice->payment_type ?: 'credit');
         $this->job_id = $invoice->job_id ? (int) $invoice->job_id : null;
         $this->payment_term_id = $invoice->payment_term_id ? (int) $invoice->payment_term_id : null;
@@ -274,6 +276,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $customers = collect();
         if (Schema::hasTable('customers') && $this->customer_id === null && trim($this->customer_search) !== '') {
             $customers = Customer::query()
+                ->active()
                 ->search($this->customer_search)
                 ->orderBy('name')
                 ->limit(25)
@@ -700,6 +703,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'customer_id' => $this->customer_id,
                     'items' => $items,
                     'issue_date' => $this->invoice_date,
+                    'due_date' => $this->due_date ?: null,
                     'payment_type' => $this->payment_type,
                     'payment_term_id' => $this->payment_term_id,
                     'payment_term_days' => 0,
@@ -891,6 +895,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Invoice Date') }}</label>
                 <input type="date" wire:model.live="invoice_date" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" />
+            </div>
+            <div>
+                <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Due Date') }}</label>
+                <input type="date" wire:model.live="due_date" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" />
             </div>
         </div>
 
