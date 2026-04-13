@@ -444,6 +444,7 @@ class ArInvoiceService
             $locked->issue_date = $issueDate;
             $locked->due_date = $locked->due_date ?: $dueDate;
             $locked->company_id = $locked->company_id ?: $this->accountingContext->resolveCompanyId((int) $locked->branch_id, (int) ($locked->company_id ?? 0));
+            $locked->payment_type = filled($locked->payment_type) ? (string) $locked->payment_type : 'credit';
             $locked->status = 'issued';
             $locked->updated_by = $actorId;
             $locked->save();
@@ -717,7 +718,8 @@ class ArInvoiceService
             return;
         }
 
-        if ((string) $invoice->payment_type !== 'credit') {
+        $paymentType = filled($invoice->payment_type) ? (string) $invoice->payment_type : 'credit';
+        if ($paymentType !== 'credit') {
             return;
         }
 

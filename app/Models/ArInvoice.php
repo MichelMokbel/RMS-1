@@ -140,6 +140,11 @@ class ArInvoice extends Model
         return $this->belongsTo(Order::class, 'source_order_id');
     }
 
+    public function pastryOrder(): BelongsTo
+    {
+        return $this->belongsTo(PastryOrder::class, 'source_pastry_order_id');
+    }
+
     public function items(): HasMany
     {
         return $this->hasMany(ArInvoiceItem::class, 'invoice_id');

@@ -940,6 +940,51 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|c
     Volt::route('orders/create', 'orders.create')->name('orders.create');
     Volt::route('orders/{order}/edit', 'orders.edit')->name('orders.edit');
 
+    Volt::route('pastry-orders', 'pastry-orders.index')->name('pastry-orders.index');
+
+    Route::get('pastry-orders/menu-items/search', function (\Illuminate\Http\Request $request) {
+        $term = trim((string) $request->query('q', ''));
+        if (strlen($term) < 2) {
+            return response()->json([]);
+        }
+
+        $categoryId = \Illuminate\Support\Facades\DB::table('categories')
+            ->where('name', 'Pastry Items')
+            ->whereNull('deleted_at')
+            ->value('id');
+
+        if (! $categoryId) {
+            return response()->json([]);
+        }
+
+        $items = \App\Models\MenuItem::query()
+            ->where('category_id', $categoryId)
+            ->where('is_active', 1)
+            ->where(function ($q) use ($term) {
+                $q->where('name', 'like', '%'.$term.'%')
+                  ->orWhere('code', 'like', '%'.$term.'%');
+            })
+            ->orderBy('name')
+            ->select(['id', 'name', 'code', 'selling_price_per_unit'])
+            ->limit(20)
+            ->get()
+            ->map(function (\App\Models\MenuItem $item) {
+                $price = $item->selling_price_per_unit !== null ? (float) $item->selling_price_per_unit : null;
+                $label = trim(($item->code ? $item->code.' · ' : '').$item->name);
+                return [
+                    'id'              => $item->id,
+                    'name'            => $item->name,
+                    'code'            => $item->code,
+                    'label'           => $label,
+                    'price'           => $price,
+                    'price_formatted' => $price !== null ? number_format($price, 3, '.', '') : null,
+                ];
+            })
+            ->values();
+
+        return response()->json($items);
+    })->name('pastry-orders.menu-items.search');
+
     // Deprecated operational routes - redirect to new hubs
     Route::get('orders/daily-dish', function () {
         $branch = (int) request()->integer('branch', 1);
@@ -959,11 +1004,6 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|c
         return redirect()->route('kitchen.ops', [$branch, $date]);
     })->name('orders.kitchen.cards');
 
-    Route::get('orders/pastry', function () {
-        $branch = (int) request()->integer('branch', 1);
-        $date = (string) request()->input('date', now()->toDateString());
-        return redirect()->to(route('kitchen.ops', ['branch' => $branch, 'date' => $date, 'department' => 'Pastry']));
-    })->name('orders.pastry');
 
     Route::get('orders/items', function () {
         $branch = (int) request()->integer('branch', 1);
@@ -1185,6 +1225,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|receivabl
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|reports.access', 'reports.default-dates'])->prefix('reports')->name('reports.')->group(function () {
     Volt::route('/', 'reports.index')->name('index');
     Volt::route('orders', 'reports.orders')->name('orders');
+    Volt::route('pastry-orders', 'reports.pastry-orders')->name('pastry-orders');
     Volt::route('purchase-orders', 'reports.purchase-orders')->name('purchase-orders');
     Volt::route('purchase-order-detail', 'reports.purchase-order-detail')->name('purchase-order-detail');
     Volt::route('purchase-order-receiving', 'reports.purchase-order-receiving')->name('purchase-order-receiving');
@@ -1233,6 +1274,9 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Route::get('orders/print', [\App\Http\Controllers\Reports\OrdersReportController::class, 'print'])->name('orders.print');
     Route::get('orders/csv', [\App\Http\Controllers\Reports\OrdersReportController::class, 'csv'])->name('orders.csv');
     Route::get('orders/pdf', [\App\Http\Controllers\Reports\OrdersReportController::class, 'pdf'])->name('orders.pdf');
+    Route::get('pastry-orders/print', [\App\Http\Controllers\Reports\PastryOrdersReportController::class, 'print'])->name('pastry-orders.print');
+    Route::get('pastry-orders/csv', [\App\Http\Controllers\Reports\PastryOrdersReportController::class, 'csv'])->name('pastry-orders.csv');
+    Route::get('pastry-orders/pdf', [\App\Http\Controllers\Reports\PastryOrdersReportController::class, 'pdf'])->name('pastry-orders.pdf');
     Route::get('purchase-orders/print', [\App\Http\Controllers\Reports\PurchaseOrdersReportController::class, 'print'])->name('purchase-orders.print');
     Route::get('purchase-orders/csv', [\App\Http\Controllers\Reports\PurchaseOrdersReportController::class, 'csv'])->name('purchase-orders.csv');
     Route::get('purchase-orders/pdf', [\App\Http\Controllers\Reports\PurchaseOrdersReportController::class, 'pdf'])->name('purchase-orders.pdf');

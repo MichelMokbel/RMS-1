@@ -41,6 +41,14 @@ return [
             'filters' => ['branch', 'status', 'source', 'date', 'search'],
             'outputs' => ['screen', 'print', 'csv', 'pdf'],
         ],
+        'pastry-orders' => [
+            'key'      => 'pastry-orders',
+            'label'    => 'Pastry Orders',
+            'category' => 'sales',
+            'route'    => 'reports.pastry-orders',
+            'filters'  => ['branch', 'status', 'date_range', 'search'],
+            'outputs'  => ['screen', 'print', 'csv', 'pdf'],
+        ],
         'purchase-order-detail' => [
             'key' => 'purchase-order-detail',
             'label' => 'Purchase Order Detail',

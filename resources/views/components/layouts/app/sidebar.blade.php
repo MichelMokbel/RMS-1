@@ -17,6 +17,7 @@
                 $isStaff = $user?->hasAnyRole(['admin','manager','staff']) ?? false;
 
                 $inSales = request()->routeIs('orders.*')
+                    || request()->routeIs('pastry-orders.*')
                     || request()->routeIs('invoices.*')
                     || request()->routeIs('receivables.payments.*')
                     || request()->routeIs('receivables.orders-to-invoice');
@@ -77,6 +78,9 @@
                     <flux:navlist.group expandable :expanded="$inSales" :heading="__('Sales')">
                         <flux:navlist.item icon="clipboard-document" :href="route('orders.index')" :current="request()->routeIs('orders.*')" wire:navigate>
                             {{ __('Orders') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="cake" :href="route('pastry-orders.index')" :current="request()->routeIs('pastry-orders.*')" wire:navigate>
+                            {{ __('Pastry Orders') }}
                         </flux:navlist.item>
                         @if ($isManager)
                             <flux:navlist.item icon="clipboard-document-list" :href="route('receivables.orders-to-invoice')" :current="request()->routeIs('receivables.orders-to-invoice')" wire:navigate>
