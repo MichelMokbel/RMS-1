@@ -941,6 +941,10 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|c
     Volt::route('orders/{order}/edit', 'orders.edit')->name('orders.edit');
 
     Volt::route('pastry-orders', 'pastry-orders.index')->name('pastry-orders.index');
+    Route::get('pastry-orders/print/all', [\App\Http\Controllers\Reports\PastryOrdersReportController::class, 'printAll'])
+        ->name('pastry-orders.print-all');
+    Route::get('pastry-orders/{order}/print', [\App\Http\Controllers\Reports\PastryOrdersReportController::class, 'printSingle'])
+        ->name('pastry-orders.print-single');
 
     Route::get('pastry-orders/menu-items/search', function (\Illuminate\Http\Request $request) {
         $term = trim((string) $request->query('q', ''));

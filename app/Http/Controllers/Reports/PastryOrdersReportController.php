@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Reports;
 
 use App\Http\Controllers\Controller;
 use App\Models\PastryOrder;
+use App\Services\PastryOrders\PastryOrderImageService;
 use App\Support\Reports\CsvExport;
 use App\Support\Reports\PdfExport;
 use Illuminate\Http\Request;
@@ -97,5 +98,52 @@ class PastryOrdersReportController extends Controller
             'filters'     => $filters,
             'generatedAt' => now(),
         ], 'pastry-orders-report.pdf');
+    }
+
+    public function printSingle(PastryOrder $order, PastryOrderImageService $imageService)
+    {
+        $order->load(['items.menuItem', 'images']);
+
+        return view('reports.pastry-order-single-print', [
+            'order' => $order,
+            'images' => $imageService->presignedUrlsForOrder($order),
+            'generatedAt' => now(),
+        ]);
+    }
+
+    public function printAll(Request $request, PastryOrderImageService $imageService)
+    {
+        $orders = PastryOrder::query()
+            ->when(
+                $request->filled('status') && $request->status !== 'all',
+                fn ($q) => $q->where('status', $request->status)
+            )
+            ->when($request->filled('type'), fn ($q) => $q->where('type', $request->type))
+            ->when($request->filled('branch_id'), fn ($q) => $q->where('branch_id', $request->integer('branch_id')))
+            ->when($request->filled('scheduled_date'), fn ($q) => $q->whereDate('scheduled_date', $request->scheduled_date))
+            ->when($request->filled('search'), function ($q) use ($request) {
+                $term = '%'.$request->search.'%';
+                $q->where(fn ($qq) => $qq
+                    ->where('order_number', 'like', $term)
+                    ->orWhere('customer_name_snapshot', 'like', $term)
+                    ->orWhere('customer_phone_snapshot', 'like', $term)
+                );
+            })
+            ->with(['items.menuItem', 'images'])
+            ->orderByDesc('scheduled_date')
+            ->orderByDesc('id')
+            ->limit(300)
+            ->get();
+
+        $imageMap = [];
+        foreach ($orders as $order) {
+            $imageMap[$order->id] = $imageService->presignedUrlsForOrder($order);
+        }
+
+        return view('reports.pastry-orders-all-print', [
+            'orders' => $orders,
+            'imageMap' => $imageMap,
+            'generatedAt' => now(),
+        ]);
     }
 }

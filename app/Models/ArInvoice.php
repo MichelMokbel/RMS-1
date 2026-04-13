@@ -23,6 +23,7 @@ class ArInvoice extends Model
         'customer_id',
         'source_sale_id',
         'source_order_id',
+        'source_pastry_order_id',
         'pos_reference',
         'source',
         'client_uuid',

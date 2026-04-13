@@ -484,6 +484,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             <flux:button type="button" wire:click="openCreateDrawer" variant="primary" class="min-h-[44px] touch-manipulation">
                 {{ __('New Pastry Order') }}
             </flux:button>
+            <flux:button :href="route('pastry-orders.print-all', ['status' => $status, 'type' => $type, 'branch_id' => $branch_id, 'scheduled_date' => $scheduled_date, 'search' => $search])" target="_blank" variant="ghost">
+                {{ __('Print All') }}
+            </flux:button>
+            <flux:button :href="route('reports.pastry-orders.csv', ['status' => $status, 'type' => $type, 'branch_id' => $branch_id, 'scheduled_date' => $scheduled_date, 'search' => $search])" variant="ghost">
+                {{ __('Export CSV') }}
+            </flux:button>
             <flux:button :href="route('reports.pastry-orders')" wire:navigate variant="ghost">
                 {{ __('Reports') }}
             </flux:button>
@@ -542,7 +548,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @if ($firstImg)
                         <img src="{{ app(\App\Services\PastryOrders\PastryOrderImageService::class)->presignedUrl($firstImg->image_path) }}"
                              alt="{{ __('Order image') }}"
-                             class="h-16 w-16 flex-shrink-0 rounded-lg object-cover border border-neutral-200 dark:border-neutral-700" />
+                             class="h-24 w-24 flex-shrink-0 rounded-lg object-cover border border-neutral-200 dark:border-neutral-700" />
                     @else
                         <div class="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800">
                             <svg class="h-6 w-6 text-neutral-300 dark:text-neutral-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -570,11 +576,27 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <p class="text-xs text-neutral-500 dark:text-neutral-400">
                     {{ __('Scheduled') }}: {{ $order->scheduled_date?->format('Y-m-d') ?? '—' }}{{ $order->scheduled_time ? ' · '.$order->scheduled_time : '' }}
                 </p>
+                @if ($order->notes)
+                    <p class="rounded-md bg-neutral-50 px-2 py-1 text-xs text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
+                        {{ __('Notes') }}: {{ $order->notes }}
+                    </p>
+                @endif
                 @if ($order->isInvoiced())
                     <span class="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-100">{{ __('Invoiced') }}</span>
                 @endif
                 <div class="flex flex-wrap gap-2">
                     @if (! $order->isInvoiced())
+                        <select
+                            class="rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+                            wire:change="quickStatus({{ $order->id }}, $event.target.value)">
+                            <option value="">{{ __('Set Status') }}</option>
+                            <option value="Draft">{{ __('Draft') }}</option>
+                            <option value="Confirmed">{{ __('Confirmed') }}</option>
+                            <option value="InProduction">{{ __('In Production') }}</option>
+                            <option value="Ready">{{ __('Ready') }}</option>
+                            <option value="Delivered">{{ __('Delivered') }}</option>
+                            <option value="Cancelled">{{ __('Cancelled') }}</option>
+                        </select>
                         @if ($order->status === 'Draft')
                             <flux:button size="sm" type="button" variant="primary" wire:click="quickStatus({{ $order->id }},'Confirmed')" class="touch-target">{{ __('Confirm') }}</flux:button>
                         @elseif ($order->status === 'Confirmed')
@@ -588,8 +610,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @if (! in_array($order->status, ['Cancelled','Delivered'], true))
                             <flux:button size="sm" type="button" variant="danger" wire:click="quickStatus({{ $order->id }},'Cancelled')" wire:confirm="{{ __('Cancel this order?') }}" class="touch-target">{{ __('Cancel') }}</flux:button>
                         @endif
+                        <flux:button size="sm" :href="route('pastry-orders.print-single', ['order' => $order->id])" target="_blank" class="touch-target">
+                            {{ __('Print') }}
+                        </flux:button>
                     @else
                         <flux:button size="sm" type="button" wire:click="openEditDrawer({{ $order->id }})" class="touch-target">{{ __('View') }}</flux:button>
+                        <flux:button size="sm" :href="route('pastry-orders.print-single', ['order' => $order->id])" target="_blank" class="touch-target">
+                            {{ __('Print') }}
+                        </flux:button>
                     @endif
                 </div>
             </article>
@@ -609,7 +637,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Order #') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Status') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Type') }}</th>
-                    <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Customer') }}</th>
+                    <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Customer / Notes') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Scheduled') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Branch') }}</th>
                     <th class="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Total') }}</th>
@@ -633,22 +661,40 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="px-3 py-3 text-sm text-neutral-900 dark:text-neutral-100 align-middle font-medium">{{ $order->order_number }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">{{ $order->status }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">{{ $order->type }}</td>
-                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">{{ $order->customer_name_snapshot ?? '—' }}</td>
+                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">
+                            <div class="font-medium">{{ $order->customer_name_snapshot ?? '—' }}</div>
+                            @if ($order->notes)
+                                <div class="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">{{ \Illuminate\Support\Str::limit($order->notes, 140) }}</div>
+                            @endif
+                        </td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">{{ $order->scheduled_date?->format('Y-m-d') ?? '—' }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">{{ $order->branch_id ?? '—' }}</td>
                         <td class="px-3 py-3 text-sm text-right text-neutral-900 dark:text-neutral-100 align-middle font-semibold">{{ number_format((float)$order->total_amount, 3) }}</td>
                         <td class="px-3 py-3 text-sm text-right align-middle">
                             <div class="flex flex-wrap justify-end gap-2">
                                 @if (! $order->isInvoiced())
+                                    <select
+                                        class="rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+                                        wire:change="quickStatus({{ $order->id }}, $event.target.value)">
+                                        <option value="">{{ __('Set Status') }}</option>
+                                        <option value="Draft">{{ __('Draft') }}</option>
+                                        <option value="Confirmed">{{ __('Confirmed') }}</option>
+                                        <option value="InProduction">{{ __('In Production') }}</option>
+                                        <option value="Ready">{{ __('Ready') }}</option>
+                                        <option value="Delivered">{{ __('Delivered') }}</option>
+                                        <option value="Cancelled">{{ __('Cancelled') }}</option>
+                                    </select>
                                     @if ($order->status === 'Draft')
                                         <flux:button size="sm" type="button" variant="primary" wire:click="quickStatus({{ $order->id }},'Confirmed')" class="min-h-[44px]">{{ __('Confirm') }}</flux:button>
                                     @endif
                                     <flux:button size="sm" type="button" wire:click="openEditDrawer({{ $order->id }})" class="min-h-[44px]">{{ __('Edit') }}</flux:button>
+                                    <flux:button size="sm" :href="route('pastry-orders.print-single', ['order' => $order->id])" target="_blank" class="min-h-[44px]">{{ __('Print') }}</flux:button>
                                     @if (! in_array($order->status, ['Cancelled','Delivered'], true))
                                         <flux:button size="sm" type="button" variant="danger" wire:click="quickStatus({{ $order->id }},'Cancelled')" wire:confirm="{{ __('Cancel this order?') }}" class="min-h-[44px]">{{ __('Cancel') }}</flux:button>
                                     @endif
                                 @else
                                     <flux:button size="sm" type="button" wire:click="openEditDrawer({{ $order->id }})" class="min-h-[44px]">{{ __('View') }}</flux:button>
+                                    <flux:button size="sm" :href="route('pastry-orders.print-single', ['order' => $order->id])" target="_blank" class="min-h-[44px]">{{ __('Print') }}</flux:button>
                                 @endif
                             </div>
                         </td>

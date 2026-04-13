@@ -2,6 +2,7 @@
 
 use App\Models\Customer;
 use App\Models\Order;
+use App\Models\PastryOrder;
 use App\Services\AR\ArInvoiceService;
 use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\Auth;
@@ -42,6 +43,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->order_type === 'regular', fn ($q) => $q->where('is_daily_dish', false)->where('source', '!=', 'Subscription'))
             ->when($this->order_type === 'daily_dish', fn ($q) => $q->where('is_daily_dish', true)->where('source', '!=', 'Subscription'))
             ->when($this->order_type === 'subscription', fn ($q) => $q->where('source', 'Subscription'))
+            ->when($this->order_type === 'pastry', fn ($q) => $q->whereRaw('1 = 0'))
             ->when($this->customer_id, fn ($q) => $q->where('customer_id', $this->customer_id))
             ->when($this->search, function ($q) {
                 $term = '%' . $this->search . '%';
@@ -53,6 +55,30 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->orderBy('scheduled_date', 'desc')
             ->orderBy('id', 'desc')
             ->paginate(50);
+
+        $pastryOrders = PastryOrder::query()
+            ->with(['customer', 'items'])
+            ->whereIn('status', ['Confirmed', 'InProduction', 'Ready', 'Delivered'])
+            ->whereNull('invoiced_at')
+            ->whereNotNull('customer_id')
+            ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id))
+            ->when($this->date_from, fn ($q) => $q->whereDate('scheduled_date', '>=', $this->date_from))
+            ->when($this->date_to, fn ($q) => $q->whereDate('scheduled_date', '<=', $this->date_to))
+            ->when($this->order_type === 'regular', fn ($q) => $q->whereRaw('1 = 0'))
+            ->when($this->order_type === 'daily_dish', fn ($q) => $q->whereRaw('1 = 0'))
+            ->when($this->order_type === 'subscription', fn ($q) => $q->whereRaw('1 = 0'))
+            ->when($this->order_type === 'pastry', fn ($q) => $q)
+            ->when($this->customer_id, fn ($q) => $q->where('customer_id', $this->customer_id))
+            ->when($this->search, function ($q) {
+                $term = '%' . $this->search . '%';
+                $q->where(function ($sq) use ($term) {
+                    $sq->where('order_number', 'like', $term)
+                       ->orWhere('customer_name_snapshot', 'like', $term);
+                });
+            })
+            ->orderBy('scheduled_date', 'desc')
+            ->orderBy('id', 'desc')
+            ->get();
 
         $customers = collect();
         if (Schema::hasTable('customers') && $this->customer_id === null && trim($this->customer_search) !== '') {
@@ -66,6 +92,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         return [
             'orders' => $orders,
+            'pastryOrders' => $pastryOrders,
             'customers' => $customers,
             'branches' => Schema::hasTable('branches')
                 ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
@@ -140,6 +167,33 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
+    public function createPastryInvoice(int $orderId, ArInvoiceService $service): void
+    {
+        $order = PastryOrder::find($orderId);
+        if (! $order) {
+            session()->flash('error', __('Pastry order not found.'));
+            return;
+        }
+
+        if ($order->isInvoiced()) {
+            session()->flash('error', __('Pastry order has already been invoiced.'));
+            return;
+        }
+
+        if (! $order->customer_id) {
+            session()->flash('error', __('Pastry order has no customer.'));
+            return;
+        }
+
+        try {
+            $invoice = $service->createFromPastryOrder($order, Auth::id());
+            session()->flash('status', __('Invoice created successfully.'));
+            $this->redirectRoute('invoices.show', $invoice, navigate: true);
+        } catch (\Exception $e) {
+            session()->flash('error', $e->getMessage());
+        }
+    }
+
     public function formatMoney(float $amount): string
     {
         $scale = MinorUnits::posScale();
@@ -201,6 +255,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <option value="regular">{{ __('Regular Orders') }}</option>
                     <option value="daily_dish">{{ __('Daily Dish') }}</option>
                     <option value="subscription">{{ __('Subscription') }}</option>
+                    <option value="pastry">{{ __('Pastry Orders') }}</option>
                 </select>
             </div>
 
@@ -245,6 +300,44 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         </div>
     </div>
+
+    @if ($pastryOrders->count())
+        <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
+            <h2 class="text-base font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Pastry Orders to Invoice') }}</h2>
+            <div class="app-table-shell">
+                <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
+                    <thead class="bg-neutral-50 dark:bg-neutral-800/90">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Order #') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Date') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Customer') }}</th>
+                            <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Items') }}</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Total') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Status') }}</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Actions') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                        @foreach ($pastryOrders as $order)
+                            <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
+                                <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 font-medium">{{ $order->order_number }}</td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->scheduled_date?->format('d M Y') }}</td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->customer?->name ?: $order->customer_name_snapshot ?: '—' }}</td>
+                                <td class="px-3 py-2 text-sm text-center text-neutral-700 dark:text-neutral-200">{{ $order->items->count() }}</td>
+                                <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney((float) $order->total_amount) }}</td>
+                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->status }}</td>
+                                <td class="px-3 py-2 text-sm text-right">
+                                    <flux:button size="xs" wire:click="createPastryInvoice({{ $order->id }})" wire:loading.attr="disabled">
+                                        {{ __('Create Invoice') }}
+                                    </flux:button>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    @endif
 
     <div class="app-table-shell">
         <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">

@@ -7,7 +7,9 @@ use App\Models\ArInvoice;
 use App\Models\ArInvoiceItem;
 use App\Models\Customer;
 use App\Models\MenuItem;
+use App\Models\MealSubscriptionOrder;
 use App\Models\Order;
+use App\Models\PastryOrder;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Models\PaymentTerm;
@@ -253,6 +255,75 @@ class ArInvoiceService
             $invoice->update(['source_order_id' => $order->id, 'updated_by' => $actorId]);
 
             // Mark order as invoiced
+            $order->update(['invoiced_at' => now()]);
+
+            if ($notes) {
+                $invoice->update(['notes' => $notes, 'updated_by' => $actorId]);
+            }
+
+            return $invoice->fresh(['items']);
+        });
+    }
+
+    public function createFromPastryOrder(PastryOrder $order, int $actorId, ?string $notes = null): ArInvoice
+    {
+        if (! $order->customer_id) {
+            throw ValidationException::withMessages(['customer_id' => __('Customer is required to invoice a pastry order.')]);
+        }
+
+        if ($order->isInvoiced()) {
+            throw ValidationException::withMessages(['order' => __('Pastry order has already been invoiced.')]);
+        }
+
+        $order = $order->fresh(['items.menuItem', 'customer']);
+        $scale = MinorUnits::posScale();
+
+        $items = $order->items->map(function ($item) use ($scale) {
+            $unitPriceCents = MinorUnits::parse((string) ($item->unit_price ?? '0'), $scale);
+            $discountCents = MinorUnits::parse((string) ($item->discount_amount ?? '0'), $scale);
+            $qtyMilli = MinorUnits::parseQtyMilli((string) ($item->quantity ?? '1'));
+            $lineSubtotal = MinorUnits::mulQty($unitPriceCents, $qtyMilli);
+            $lineTotalCents = max(0, $lineSubtotal - $discountCents);
+
+            $menuItem = $item->menuItem;
+
+            return [
+                'description' => $item->description_snapshot ?: ($menuItem?->name ?? 'Item'),
+                'qty' => (string) $item->quantity,
+                'unit' => $menuItem?->unit ?? null,
+                'unit_price_cents' => $unitPriceCents,
+                'discount_cents' => $discountCents,
+                'tax_cents' => 0,
+                'line_total_cents' => $lineTotalCents,
+                'sellable_type' => $menuItem ? MenuItem::class : null,
+                'sellable_id' => $menuItem?->id,
+                'name_snapshot' => $menuItem?->name ?? $item->description_snapshot,
+                'sku_snapshot' => $menuItem?->code ?? null,
+                'meta' => [
+                    'source' => 'pastry_order',
+                    'pastry_order_id' => (int) $item->pastry_order_id,
+                ],
+            ];
+        })->all();
+
+        return DB::transaction(function () use ($order, $items, $actorId, $notes) {
+            $invoice = $this->createDraft(
+                branchId: (int) $order->branch_id,
+                customerId: (int) $order->customer_id,
+                items: $items,
+                actorId: $actorId,
+                currency: (string) config('pos.currency'),
+                posReference: $order->order_number,
+                source: 'pastry_order',
+                sourceSaleId: null,
+                type: 'invoice',
+            );
+
+            $invoice->update([
+                'source_pastry_order_id' => $order->id,
+                'updated_by' => $actorId,
+            ]);
+
             $order->update(['invoiced_at' => now()]);
 
             if ($notes) {
