@@ -799,7 +799,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         autocomplete="off" />
                                     <template x-teleport="body">
                                         <div x-show="open" x-ref="panel" x-bind:style="panelStyle"
-                                             class="z-[99999] overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+                                             class="z-[200000] overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
                                             <div class="max-h-60 overflow-auto">
                                                 <template x-for="item in results" :key="item.id">
                                                     <button type="button"
@@ -849,7 +849,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{-- Order discount --}}
                 <flux:input wire:model="c_order_discount" type="number" step="0.001" min="0" :label="__('Order Discount')" />
 
-                <div class="flex justify-end gap-3 pt-2 border-t border-neutral-200 dark:border-neutral-700">
+                <div class="sticky bottom-0 -mx-4 px-4 py-3 flex justify-end gap-3 border-t border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
                     <flux:button type="button" variant="ghost" wire:click="closeCreateDrawer">{{ __('Cancel') }}</flux:button>
                     <flux:button type="submit" variant="primary" wire:loading.attr="disabled">{{ __('Create Order') }}</flux:button>
                 </div>
@@ -1028,7 +1028,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                             autocomplete="off" />
                                         <template x-teleport="body">
                                             <div x-show="open" x-ref="panel" x-bind:style="panelStyle"
-                                                 class="z-[99999] overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+                                                 class="z-[200000] overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
                                                 <div class="max-h-60 overflow-auto">
                                                     <template x-for="item in results" :key="item.id">
                                                         <button type="button"
@@ -1080,12 +1080,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </fieldset>
 
                 @if (! $e_is_invoiced)
-                    <div class="flex justify-end gap-3 pt-2 border-t border-neutral-200 dark:border-neutral-700">
+                    <div class="sticky bottom-0 -mx-4 px-4 py-3 flex justify-end gap-3 border-t border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
                         <flux:button type="button" variant="ghost" wire:click="closeEditDrawer">{{ __('Cancel') }}</flux:button>
                         <flux:button type="submit" variant="primary" wire:loading.attr="disabled">{{ __('Save Changes') }}</flux:button>
                     </div>
                 @else
-                    <div class="flex justify-end pt-2 border-t border-neutral-200 dark:border-neutral-700">
+                    <div class="sticky bottom-0 -mx-4 px-4 py-3 flex justify-end border-t border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
                         <flux:button type="button" variant="ghost" wire:click="closeEditDrawer">{{ __('Close') }}</flux:button>
                     </div>
                 @endif
