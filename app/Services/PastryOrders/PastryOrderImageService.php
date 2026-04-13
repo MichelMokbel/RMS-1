@@ -4,10 +4,11 @@ namespace App\Services\PastryOrders;
 
 use App\Models\PastryOrder;
 use App\Models\PastryOrderImage;
-use Aws\S3\S3Client;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class PastryOrderImageService
 {
@@ -22,7 +23,23 @@ class PastryOrderImageService
         $uuid      = Str::uuid()->toString();
         $key       = "pastry-orders/{$year}/{$month}/{$orderNumber}/{$uuid}.{$extension}";
 
-        Storage::disk('s3')->put($key, fopen($file->getRealPath(), 'r'));
+        $stream = fopen($file->getRealPath(), 'r');
+        if ($stream === false) {
+            throw ValidationException::withMessages([
+                'images' => __('Unable to read the uploaded image. Please try again.'),
+            ]);
+        }
+
+        try {
+            Storage::disk('s3')->put($key, $stream);
+        } catch (Throwable $e) {
+            report($e);
+            throw ValidationException::withMessages([
+                'images' => __('Image upload failed. Please check storage settings and try again.'),
+            ]);
+        } finally {
+            fclose($stream);
+        }
 
         return $key;
     }
@@ -86,18 +103,23 @@ class PastryOrderImageService
         }
 
         $config = config('filesystems.disks.s3');
+        $s3ClientClass = 'Aws\\S3\\S3Client';
 
-        $s3 = new S3Client([
+        if (! class_exists($s3ClientClass)) {
+            return null;
+        }
+
+        $s3 = new $s3ClientClass([
             'version'     => 'latest',
             'region'      => $config['region'] ?? 'us-east-1',
             'credentials' => [
-                'key'    => $config['key'],
-                'secret' => $config['secret'],
+                'key'    => $config['key'] ?? null,
+                'secret' => $config['secret'] ?? null,
             ],
         ]);
 
         $command = $s3->getCommand('GetObject', [
-            'Bucket' => $config['bucket'],
+            'Bucket' => $config['bucket'] ?? null,
             'Key'    => $path,
         ]);
 
