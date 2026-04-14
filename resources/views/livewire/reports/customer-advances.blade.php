@@ -26,8 +26,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->company_id = AccountingCompany::query()->where('is_default', true)->value('id');
         $this->branch_id = (int) config('inventory.default_branch_id', 1) ?: 1;
-        $this->date_from = now()->startOfMonth()->toDateString();
-        $this->date_to = now()->endOfMonth()->toDateString();
+        $this->date_from = null;
+        $this->date_to = null;
     }
 
     public function updating($name): void
