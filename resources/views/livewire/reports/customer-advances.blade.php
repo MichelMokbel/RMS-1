@@ -25,7 +25,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function mount(): void
     {
         $this->company_id = AccountingCompany::query()->where('is_default', true)->value('id');
-        $this->branch_id = (int) config('inventory.default_branch_id', 1) ?: 1;
+        $this->branch_id = 0;
         $this->date_from = null;
         $this->date_to = null;
     }
