@@ -322,23 +322,25 @@ class CustomerStatementReportController extends Controller
                 ->whereDate('issue_date', '<', $dateFrom)
                 ->sum('balance_cents');
 
-            $previousAdvance = (int) \Illuminate\Support\Facades\DB::table('payments as p')
+            $prevPaidTotal = (int) \Illuminate\Support\Facades\DB::table('payments as p')
                 ->where('p.customer_id', $customerId)
                 ->where('p.source', 'ar')
                 ->whereNull('p.voided_at')
                 ->where('p.received_at', '<', $dateFrom)
                 ->when($branchId > 0, fn ($q) => $q->where('p.branch_id', $branchId))
-                ->selectRaw('
-                    COALESCE(SUM(p.amount_cents), 0)
-                    - COALESCE((
-                        SELECT SUM(pa.amount_cents)
-                        FROM payment_allocations pa
-                        WHERE pa.payment_id = p.id AND pa.voided_at IS NULL
-                    ), 0) as unallocated'
-                )
-                ->value('unallocated') ?? 0;
+                ->sum('p.amount_cents');
 
-            $previousAdvance = max(0, $previousAdvance);
+            $prevAllocatedTotal = (int) \Illuminate\Support\Facades\DB::table('payment_allocations as pa')
+                ->join('payments as p', 'p.id', '=', 'pa.payment_id')
+                ->where('p.customer_id', $customerId)
+                ->where('p.source', 'ar')
+                ->whereNull('p.voided_at')
+                ->whereNull('pa.voided_at')
+                ->where('p.received_at', '<', $dateFrom)
+                ->when($branchId > 0, fn ($q) => $q->where('p.branch_id', $branchId))
+                ->sum('pa.amount_cents');
+
+            $previousAdvance = max(0, $prevPaidTotal - $prevAllocatedTotal);
         }
 
         $previousBalance = max(0, $previousInvoiceBalance - $previousAdvance);

@@ -212,24 +212,27 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->sum('balance_cents');
 
             if (Schema::hasTable('payments') && Schema::hasTable('payment_allocations')) {
-                // Payments before the period whose total allocated amount < their total amount
-                $previousAdvance = (int) DB::table('payments as p')
+                // Total payments received before the period
+                $prevPaidTotal = (int) DB::table('payments as p')
                     ->where('p.customer_id', $this->customer_id)
                     ->where('p.source', 'ar')
                     ->whereNull('p.voided_at')
                     ->where('p.received_at', '<', $dateFrom)
                     ->when($this->branch_id > 0, fn ($q) => $q->where('p.branch_id', $this->branch_id))
-                    ->selectRaw('
-                        COALESCE(SUM(p.amount_cents), 0)
-                        - COALESCE((
-                            SELECT SUM(pa.amount_cents)
-                            FROM payment_allocations pa
-                            WHERE pa.payment_id = p.id AND pa.voided_at IS NULL
-                        ), 0) as unallocated'
-                    )
-                    ->value('unallocated') ?? 0;
+                    ->sum('p.amount_cents');
 
-                $previousAdvance = max(0, $previousAdvance);
+                // Total of those payments already allocated to invoices
+                $prevAllocatedTotal = (int) DB::table('payment_allocations as pa')
+                    ->join('payments as p', 'p.id', '=', 'pa.payment_id')
+                    ->where('p.customer_id', $this->customer_id)
+                    ->where('p.source', 'ar')
+                    ->whereNull('p.voided_at')
+                    ->whereNull('pa.voided_at')
+                    ->where('p.received_at', '<', $dateFrom)
+                    ->when($this->branch_id > 0, fn ($q) => $q->where('p.branch_id', $this->branch_id))
+                    ->sum('pa.amount_cents');
+
+                $previousAdvance = max(0, $prevPaidTotal - $prevAllocatedTotal);
             }
         }
 
