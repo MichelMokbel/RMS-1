@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Reports;
 use App\Http\Controllers\Controller;
 use App\Models\ArInvoice;
 use App\Models\Branch;
+use App\Models\Payment;
 use App\Support\Money\MinorUnits;
 use App\Support\Reports\CsvExport;
 use App\Support\Reports\PdfExport;
@@ -47,7 +48,7 @@ class CustomersStatementReportController extends Controller
     }
 
     /**
-     * @return Collection<int, array{customer_id:int,customer_name:string,customer_code:?string,rows:Collection<int,array<string,int|string>>,summary:array{period_amount_cents:int,period_paid_cents:int,period_balance_cents:int}}>
+     * @return Collection<int, array{customer_id:int,customer_name:string,customer_code:?string,rows:Collection<int,array<string,int|string>>,summary:array{period_amount_cents:int,period_received_cents:int,period_balance_cents:int}}>
      */
     private function querySections(Request $request): Collection
     {
@@ -70,6 +71,19 @@ class CustomersStatementReportController extends Controller
             return collect();
         }
 
+        $customerIds = $invoices->pluck('customer_id')->filter()->unique()->values()->all();
+
+        $paymentsByCustomer = Payment::query()
+            ->where('source', 'ar')
+            ->whereNull('voided_at')
+            ->whereIn('customer_id', $customerIds)
+            ->where('received_at', '>=', $from->toDateTimeString())
+            ->where('received_at', '<=', $to->toDateTimeString())
+            ->orderBy('received_at')
+            ->orderBy('id')
+            ->get()
+            ->groupBy('customer_id');
+
         $branchNames = Branch::query()
             ->whereIn('id', $invoices->pluck('branch_id')->filter()->unique()->values())
             ->pluck('name', 'id');
@@ -78,18 +92,18 @@ class CustomersStatementReportController extends Controller
 
         return $invoices
             ->groupBy(fn (ArInvoice $invoice) => (int) $invoice->customer_id)
-            ->map(function (Collection $group, int $customerId) use ($branchNames, $asOf): array {
+            ->map(function (Collection $group, int $customerId) use ($branchNames, $asOf, $paymentsByCustomer): array {
                 /** @var ArInvoice|null $first */
                 $first = $group->first();
                 $customer = $first?->customer;
 
-                $rows = $group->values()->map(function (ArInvoice $invoice, int $index) use ($branchNames, $asOf): array {
+                $invoiceRows = $group->values()->map(function (ArInvoice $invoice) use ($branchNames, $asOf): array {
                     $dueDate = $invoice->due_date ?: $invoice->issue_date;
                     $days = $dueDate ? max(0, (int) floor((float) $dueDate->diffInDays($asOf, false))) : 0;
                     $paymentType = strtolower((string) ($invoice->payment_type ?? 'credit'));
 
                     return [
-                        'line_no' => $index + 1,
+                        'row_type' => 'invoice',
                         'document_no' => $invoice->invoice_number ?: (string) $invoice->id,
                         'document_type' => 'AR Invoice',
                         'location' => (string) ($branchNames[(int) $invoice->branch_id] ?? ('Branch '.$invoice->branch_id)),
@@ -102,8 +116,46 @@ class CustomersStatementReportController extends Controller
                         'balance_cents' => (int) ($invoice->balance_cents ?? 0),
                         'aging_label' => $days.' Days',
                         'payment_no' => '-',
+                        '_sort_date' => $invoice->issue_date?->toDateString() ?? '0000-00-00',
+                        '_sort_id' => $invoice->id,
                     ];
                 });
+
+                $customerPayments = $paymentsByCustomer->get($customerId, collect());
+                $paymentRows = $customerPayments->map(function (Payment $payment) use ($branchNames): array {
+                    $method = ucwords(str_replace('_', ' ', (string) ($payment->method ?? '')));
+                    $receivedAt = $payment->received_at;
+
+                    return [
+                        'row_type' => 'payment',
+                        'document_no' => $payment->reference ?: ('PMT-'.$payment->id),
+                        'document_type' => 'Payment Receipt',
+                        'location' => (string) ($branchNames[(int) $payment->branch_id] ?? ('Branch '.$payment->branch_id)),
+                        'type' => $method ?: 'Payment',
+                        'date' => $receivedAt?->format('d-M-Y') ?? '-',
+                        'due_date' => '-',
+                        'reference_no' => $payment->reference ?: '-',
+                        'amount_cents' => 0,
+                        'paid_cents' => (int) ($payment->amount_cents ?? 0),
+                        'balance_cents' => 0,
+                        'aging_label' => '-',
+                        'payment_no' => $payment->reference ?: ('PMT-'.$payment->id),
+                        '_sort_date' => $receivedAt?->toDateString() ?? '0000-00-00',
+                        '_sort_id' => $payment->id,
+                    ];
+                });
+
+                $rows = $invoiceRows->concat($paymentRows)
+                    ->sortBy([['_sort_date', 'asc'], ['_sort_id', 'asc']])
+                    ->values()
+                    ->map(function (array $row, int $index): array {
+                        $row['line_no'] = $index + 1;
+
+                        return $row;
+                    });
+
+                $periodAmountCents = (int) $rows->where('row_type', 'invoice')->sum('amount_cents');
+                $periodReceivedCents = (int) $rows->where('row_type', 'payment')->sum('paid_cents');
 
                 return [
                     'customer_id' => $customerId,
@@ -111,9 +163,9 @@ class CustomersStatementReportController extends Controller
                     'customer_code' => $customer?->customer_code,
                     'rows' => $rows,
                     'summary' => [
-                        'period_amount_cents' => (int) $rows->sum('amount_cents'),
-                        'period_paid_cents' => (int) $rows->sum('paid_cents'),
-                        'period_balance_cents' => (int) $rows->sum('balance_cents'),
+                        'period_amount_cents' => $periodAmountCents,
+                        'period_received_cents' => $periodReceivedCents,
+                        'period_balance_cents' => $periodAmountCents - $periodReceivedCents,
                     ],
                 ];
             })
@@ -122,14 +174,14 @@ class CustomersStatementReportController extends Controller
     }
 
     /**
-     * @param  Collection<int, array{summary:array{period_amount_cents:int,period_paid_cents:int,period_balance_cents:int}}>  $sections
-     * @return array{period_amount_cents:int,period_paid_cents:int,period_balance_cents:int}
+     * @param  Collection<int, array{summary:array{period_amount_cents:int,period_received_cents:int,period_balance_cents:int}}>  $sections
+     * @return array{period_amount_cents:int,period_received_cents:int,period_balance_cents:int}
      */
     private function grandTotals(Collection $sections): array
     {
         return [
             'period_amount_cents' => (int) $sections->sum(fn (array $section) => (int) ($section['summary']['period_amount_cents'] ?? 0)),
-            'period_paid_cents' => (int) $sections->sum(fn (array $section) => (int) ($section['summary']['period_paid_cents'] ?? 0)),
+            'period_received_cents' => (int) $sections->sum(fn (array $section) => (int) ($section['summary']['period_received_cents'] ?? 0)),
             'period_balance_cents' => (int) $sections->sum(fn (array $section) => (int) ($section['summary']['period_balance_cents'] ?? 0)),
         ];
     }

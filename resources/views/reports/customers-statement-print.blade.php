@@ -66,18 +66,19 @@
                 </thead>
                 <tbody>
                     @foreach ($section['rows'] as $row)
-                        <tr>
+                        @php $isPayment = ($row['row_type'] === 'payment'); @endphp
+                        <tr @if($isPayment) style="background:#f0fdf4;" @endif>
                             <td>{{ $row['line_no'] }}</td>
                             <td>{{ $row['document_no'] }}</td>
-                            <td>{{ $row['document_type'] }}</td>
+                            <td>@if($isPayment)<strong style="color:#16a34a;">{{ $row['document_type'] }}</strong>@else{{ $row['document_type'] }}@endif</td>
                             <td>{{ $row['location'] }}</td>
                             <td>{{ $row['type'] }}</td>
                             <td>{{ $row['date'] }}</td>
                             <td>{{ $row['due_date'] }}</td>
                             <td>{{ $row['reference_no'] }}</td>
-                            <td class="right">{{ $formatCents($row['amount_cents']) }}</td>
-                            <td class="right">{{ $formatCents($row['paid_cents']) }}</td>
-                            <td class="right">{{ $formatCents($row['balance_cents']) }}</td>
+                            <td class="right">{{ $isPayment ? '-' : $formatCents($row['amount_cents']) }}</td>
+                            <td class="right">@if($isPayment)<strong style="color:#16a34a;">{{ $formatCents($row['paid_cents']) }}</strong>@else{{ $formatCents($row['paid_cents']) }}@endif</td>
+                            <td class="right">{{ $isPayment ? '-' : $formatCents($row['balance_cents']) }}</td>
                             <td>{{ $row['aging_label'] }}</td>
                             <td>{{ $row['payment_no'] }}</td>
                         </tr>
@@ -85,9 +86,9 @@
                 </tbody>
                 <tfoot>
                     <tr>
-                        <td colspan="8" class="right">TOTAL AMOUNT</td>
+                        <td colspan="8" class="right">TOTAL (Invoiced / Received / Net)</td>
                         <td class="right">{{ $formatCents($section['summary']['period_amount_cents']) }}</td>
-                        <td class="right">{{ $formatCents($section['summary']['period_paid_cents']) }}</td>
+                        <td class="right">{{ $formatCents($section['summary']['period_received_cents']) }}</td>
                         <td class="right">{{ $formatCents($section['summary']['period_balance_cents']) }}</td>
                         <td colspan="2"></td>
                     </tr>
@@ -106,8 +107,8 @@
                     <td class="right">{{ $formatCents($grandTotals['period_amount_cents']) }}</td>
                 </tr>
                 <tr>
-                    <td>Grand Paid</td>
-                    <td class="right">{{ $formatCents($grandTotals['period_paid_cents']) }}</td>
+                    <td>Grand Received</td>
+                    <td class="right">{{ $formatCents($grandTotals['period_received_cents']) }}</td>
                 </tr>
                 <tr>
                     <td>Grand Balance</td>

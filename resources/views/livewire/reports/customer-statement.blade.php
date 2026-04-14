@@ -86,9 +86,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $dateFrom = $this->date_from ? now()->parse($this->date_from)->startOfDay() : now()->startOfMonth()->startOfDay();
-        $dateTo = $this->date_to ? now()->parse($this->date_to)->endOfDay() : now()->endOfMonth()->endOfDay();
-        $asOf = $this->agingAsOf($dateTo);
+        $dateTo   = $this->date_to   ? now()->parse($this->date_to)->endOfDay()     : now()->endOfMonth()->endOfDay();
+        $asOf     = $this->agingAsOf($dateTo);
 
+        // ── Invoices ──────────────────────────────────────────────────────────
         $invoices = ArInvoice::query()
             ->where('customer_id', $this->customer_id)
             ->where('type', 'invoice')
@@ -101,50 +102,107 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->orderBy('id')
             ->get();
 
-        $branchNames = Schema::hasTable('branches')
-            ? DB::table('branches')
-                ->whereIn('id', $invoices->pluck('branch_id')->filter()->unique()->values())
-                ->pluck('name', 'id')
+        // ── Payment receipts ──────────────────────────────────────────────────
+        $payments = collect();
+        if (Schema::hasTable('payments')) {
+            $payments = DB::table('payments')
+                ->where('customer_id', $this->customer_id)
+                ->where('source', 'ar')
+                ->whereNull('voided_at')
+                ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id))
+                ->where('received_at', '>=', $dateFrom)
+                ->where('received_at', '<=', $dateTo)
+                ->orderBy('received_at')
+                ->orderBy('id')
+                ->get();
+        }
+
+        // ── Branch name lookup ────────────────────────────────────────────────
+        $allBranchIds = $invoices->pluck('branch_id')
+            ->merge($payments->pluck('branch_id'))
+            ->filter()->unique()->values();
+
+        $branchNames = (Schema::hasTable('branches') && $allBranchIds->isNotEmpty())
+            ? DB::table('branches')->whereIn('id', $allBranchIds)->pluck('name', 'id')
             : collect();
 
-        return $invoices->values()->map(function (ArInvoice $invoice, int $index) use ($asOf, $branchNames): array {
+        // ── Map invoice rows ──────────────────────────────────────────────────
+        $invoiceRows = $invoices->map(function (ArInvoice $invoice) use ($asOf, $branchNames): array {
             $dueDate = $invoice->due_date ?: $invoice->issue_date;
-            $days = $dueDate ? max(0, (int) floor((float) $dueDate->diffInDays($asOf, false))) : 0;
+            $days    = $dueDate ? max(0, (int) floor((float) $dueDate->diffInDays($asOf, false))) : 0;
             $paymentType = strtolower((string) ($invoice->payment_type ?? 'credit'));
 
             return [
-                'line_no' => $index + 1,
-                'document_no' => $invoice->invoice_number ?: (string) $invoice->id,
+                'row_type'      => 'invoice',
+                'sort_date'     => $invoice->issue_date?->timestamp ?? 0,
+                'document_no'   => $invoice->invoice_number ?: (string) $invoice->id,
                 'document_type' => 'AR Invoice',
-                'location' => (string) ($branchNames[(int) $invoice->branch_id] ?? ('Branch '.$invoice->branch_id)),
-                'type' => $paymentType === 'credit' ? 'On Credit' : ucfirst((string) ($invoice->payment_type ?: 'Credit')),
-                'date' => $invoice->issue_date?->format('d-M-Y') ?? '-',
-                'due_date' => $dueDate?->format('d-M-Y') ?? '-',
-                'reference_no' => $invoice->lpo_reference ?: ($invoice->pos_reference ?: '-'),
-                'amount_cents' => (int) ($invoice->total_cents ?? 0),
-                'paid_cents' => (int) ($invoice->paid_total_cents ?? 0),
+                'location'      => (string) ($branchNames[(int) $invoice->branch_id] ?? ('Branch '.$invoice->branch_id)),
+                'type'          => $paymentType === 'credit' ? 'On Credit' : ucfirst((string) ($invoice->payment_type ?: 'Credit')),
+                'date'          => $invoice->issue_date?->format('d-M-Y') ?? '-',
+                'due_date'      => $dueDate?->format('d-M-Y') ?? '-',
+                'reference_no'  => $invoice->lpo_reference ?: ($invoice->pos_reference ?: '-'),
+                'amount_cents'  => (int) ($invoice->total_cents ?? 0),
+                'paid_cents'    => (int) ($invoice->paid_total_cents ?? 0),
                 'balance_cents' => (int) ($invoice->balance_cents ?? 0),
-                'aging_label' => $days.' Days',
-                'payment_no' => '-',
+                'aging_label'   => $days.' Days',
+                'payment_no'    => '-',
             ];
         });
+
+        // ── Map payment rows ──────────────────────────────────────────────────
+        $paymentRows = $payments->map(function (object $payment) use ($branchNames): array {
+            $method     = ucwords(str_replace('_', ' ', (string) ($payment->method ?? '')));
+            $receivedAt = $payment->received_at ? now()->parse($payment->received_at) : null;
+
+            return [
+                'row_type'      => 'payment',
+                'sort_date'     => $receivedAt?->timestamp ?? 0,
+                'document_no'   => $payment->reference ?: ('PMT-'.$payment->id),
+                'document_type' => 'Payment Receipt',
+                'location'      => (string) ($branchNames[(int) $payment->branch_id] ?? ('Branch '.$payment->branch_id)),
+                'type'          => $method ?: 'Payment',
+                'date'          => $receivedAt?->format('d-M-Y') ?? '-',
+                'due_date'      => '-',
+                'reference_no'  => $payment->reference ?: '-',
+                'amount_cents'  => 0,
+                'paid_cents'    => (int) $payment->amount_cents,
+                'balance_cents' => 0,
+                'aging_label'   => '-',
+                'payment_no'    => $payment->reference ?: ('PMT-'.$payment->id),
+            ];
+        });
+
+        // ── Merge, sort by date, re-number ────────────────────────────────────
+        return $invoiceRows->merge($paymentRows)
+            ->sortBy([['sort_date', 'asc'], ['row_type', 'asc']])
+            ->values()
+            ->map(function (array $row, int $index): array {
+                $row['line_no'] = $index + 1;
+                return $row;
+            });
     }
 
     /**
      * @param  Collection<int, array<string, int|string>>  $rows
-     * @return array{period_amount_cents:int,period_paid_cents:int,period_balance_cents:int,previous_balance_cents:int,total_outstanding_cents:int}
+     * @return array{period_amount_cents:int,period_received_cents:int,period_balance_cents:int,previous_balance_cents:int,previous_advance_cents:int,total_outstanding_cents:int}
      */
     private function statementSummary(Collection $rows): array
     {
         $dateFrom = $this->date_from ? now()->parse($this->date_from)->startOfDay() : now()->startOfMonth()->startOfDay();
 
-        $periodAmount = (int) $rows->sum('amount_cents');
-        $periodPaid = (int) $rows->sum('paid_cents');
-        $periodBalance = (int) $rows->sum('balance_cents');
+        // Period invoiced & payments received (includes advances not yet allocated to invoices)
+        $periodAmount   = (int) $rows->where('row_type', 'invoice')->sum('amount_cents');
+        $periodReceived = (int) $rows->where('row_type', 'payment')->sum('paid_cents');
+        $periodBalance  = $periodAmount - $periodReceived;
 
-        $previousBalance = 0;
+        // Previous period: unpaid invoice balance before the date range
+        $previousInvoiceBalance = 0;
+        // Previous period: advance payments made before the date range not yet allocated to any invoice
+        $previousAdvance = 0;
+
         if ($this->customer_id) {
-            $previousBalance = (int) ArInvoice::query()
+            $previousInvoiceBalance = (int) ArInvoice::query()
                 ->where('customer_id', $this->customer_id)
                 ->where('type', 'invoice')
                 ->whereIn('status', ['issued', 'partially_paid', 'paid'])
@@ -152,13 +210,37 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id))
                 ->whereDate('issue_date', '<', $dateFrom)
                 ->sum('balance_cents');
+
+            if (Schema::hasTable('payments') && Schema::hasTable('payment_allocations')) {
+                // Payments before the period whose total allocated amount < their total amount
+                $previousAdvance = (int) DB::table('payments as p')
+                    ->where('p.customer_id', $this->customer_id)
+                    ->where('p.source', 'ar')
+                    ->whereNull('p.voided_at')
+                    ->where('p.received_at', '<', $dateFrom)
+                    ->when($this->branch_id > 0, fn ($q) => $q->where('p.branch_id', $this->branch_id))
+                    ->selectRaw('
+                        COALESCE(SUM(p.amount_cents), 0)
+                        - COALESCE((
+                            SELECT SUM(pa.amount_cents)
+                            FROM payment_allocations pa
+                            WHERE pa.payment_id = p.id AND pa.voided_at IS NULL
+                        ), 0) as unallocated'
+                    )
+                    ->value('unallocated') ?? 0;
+
+                $previousAdvance = max(0, $previousAdvance);
+            }
         }
 
+        $previousBalance = max(0, $previousInvoiceBalance - $previousAdvance);
+
         return [
-            'period_amount_cents' => $periodAmount,
-            'period_paid_cents' => $periodPaid,
-            'period_balance_cents' => $periodBalance,
+            'period_amount_cents'    => $periodAmount,
+            'period_received_cents'  => $periodReceived,
+            'period_balance_cents'   => $periodBalance,
             'previous_balance_cents' => $previousBalance,
+            'previous_advance_cents' => $previousAdvance,
             'total_outstanding_cents' => $previousBalance + $periodBalance,
         ];
     }
@@ -312,18 +394,25 @@ new #[Layout('components.layouts.app')] class extends Component {
             </thead>
             <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                 @forelse ($rows as $row)
-                    <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
+                    @php $isPayment = ($row['row_type'] === 'payment'); @endphp
+                    <tr class="{{ $isPayment ? 'bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-950/50' : 'hover:bg-neutral-50 dark:hover:bg-neutral-800/70' }}">
                         <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $row['line_no'] }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['document_no'] }}</td>
-                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['document_type'] }}</td>
+                        <td class="px-3 py-2 text-sm {{ $isPayment ? 'font-medium text-emerald-700 dark:text-emerald-400' : 'text-neutral-700 dark:text-neutral-200' }}">{{ $row['document_type'] }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['location'] }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['type'] }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['date'] }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['due_date'] }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['reference_no'] }}</td>
-                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($row['amount_cents']) }}</td>
-                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($row['paid_cents']) }}</td>
-                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($row['balance_cents']) }}</td>
+                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">
+                            {{ $isPayment ? '-' : $this->formatMoney($row['amount_cents']) }}
+                        </td>
+                        <td class="px-3 py-2 text-sm text-right {{ $isPayment ? 'font-semibold text-emerald-700 dark:text-emerald-400' : 'text-neutral-900 dark:text-neutral-100' }}">
+                            {{ $this->formatMoney($row['paid_cents']) }}
+                        </td>
+                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">
+                            {{ $isPayment ? '-' : $this->formatMoney($row['balance_cents']) }}
+                        </td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['aging_label'] }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['payment_no'] }}</td>
                     </tr>
@@ -332,13 +421,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endforelse
             </tbody>
             @if ($rows->count() > 0)
-                <tfoot class="bg-neutral-50 dark:bg-neutral-800/90">
+                <tfoot class="bg-neutral-50 dark:bg-neutral-800/90 divide-y divide-neutral-200 dark:divide-neutral-700">
                     <tr>
-                        <td colspan="8" class="px-3 py-2 text-right text-sm font-semibold text-neutral-700 dark:text-neutral-200">{{ __('Total Amount') }}</td>
+                        <td colspan="8" class="px-3 py-2 text-right text-sm font-semibold text-neutral-700 dark:text-neutral-200">{{ __('Period Total Invoiced') }}</td>
                         <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($summary['period_amount_cents']) }}</td>
-                        <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($summary['period_paid_cents']) }}</td>
+                        <td class="px-3 py-2 text-sm text-right font-semibold text-emerald-700 dark:text-emerald-400">{{ $this->formatMoney($summary['period_received_cents']) }}</td>
                         <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($summary['period_balance_cents']) }}</td>
-                        <td colspan="2"></td>
+                        <td colspan="2" class="px-3 py-2 text-xs text-neutral-500 dark:text-neutral-400">{{ __('Net = Invoiced − Received') }}</td>
                     </tr>
                 </tfoot>
             @endif

@@ -160,7 +160,8 @@
             </thead>
             <tbody>
                 @forelse ($rows as $row)
-                    <tr>
+                    @php $isPayment = ($row['row_type'] === 'payment'); @endphp
+                    <tr @if($isPayment) style="background:#f0fdf4;" @endif>
                         <td>{{ $row['line_no'] }}</td>
                         <td>{{ $row['document_no'] }}</td>
                         <td>{{ $row['document_type'] }}</td>
@@ -169,9 +170,9 @@
                         <td>{{ $row['date'] }}</td>
                         <td>{{ $row['due_date'] }}</td>
                         <td>{{ $row['reference_no'] }}</td>
-                        <td class="right">{{ $formatCents($row['amount_cents']) }}</td>
+                        <td class="right">{{ $isPayment ? '-' : $formatCents($row['amount_cents']) }}</td>
                         <td class="right">{{ $formatCents($row['paid_cents']) }}</td>
-                        <td class="right">{{ $formatCents($row['balance_cents']) }}</td>
+                        <td class="right">{{ $isPayment ? '-' : $formatCents($row['balance_cents']) }}</td>
                         <td>{{ $row['aging_label'] }}</td>
                         <td>{{ $row['payment_no'] }}</td>
                     </tr>
@@ -183,9 +184,9 @@
             </tbody>
             <tfoot>
                 <tr>
-                    <td colspan="8" class="right">TOTAL AMOUNT</td>
+                    <td colspan="8" class="right">TOTAL (Invoiced / Received / Net)</td>
                     <td class="right">{{ $formatCents($summary['period_amount_cents']) }}</td>
-                    <td class="right">{{ $formatCents($summary['period_paid_cents']) }}</td>
+                    <td class="right">{{ $formatCents($summary['period_received_cents']) }}</td>
                     <td class="right">{{ $formatCents($summary['period_balance_cents']) }}</td>
                     <td colspan="2"></td>
                 </tr>

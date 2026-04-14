@@ -133,11 +133,12 @@ class CustomerStatementReportController extends Controller
             return collect();
         }
 
-        $branchId = $request->integer('branch_id') ?? 0;
+        $branchId    = $request->integer('branch_id') ?? 0;
         [$dateFrom, $dateTo] = $this->resolvedRange($request);
-        $asOf = $this->agingAsOf($dateTo);
-        $onlyUnpaid = $this->onlyUnpaid($request);
+        $asOf        = $this->agingAsOf($dateTo);
+        $onlyUnpaid  = $this->onlyUnpaid($request);
 
+        // ── Invoices ──────────────────────────────────────────────────────────
         $invoices = ArInvoice::query()
             ->where('customer_id', $customerId)
             ->where('type', 'invoice')
@@ -150,32 +151,83 @@ class CustomerStatementReportController extends Controller
             ->orderBy('id')
             ->get();
 
+        // ── Payment receipts ──────────────────────────────────────────────────
+        $payments = Payment::query()
+            ->where('customer_id', $customerId)
+            ->where('source', 'ar')
+            ->whereNull('voided_at')
+            ->when($branchId > 0, fn ($q) => $q->where('branch_id', $branchId))
+            ->where('received_at', '>=', $dateFrom)
+            ->where('received_at', '<=', $dateTo)
+            ->orderBy('received_at')
+            ->orderBy('id')
+            ->get();
+
+        // ── Branch name lookup ────────────────────────────────────────────────
+        $allBranchIds = $invoices->pluck('branch_id')
+            ->merge($payments->pluck('branch_id'))
+            ->filter()->unique()->values();
+
         $branchNames = Branch::query()
-            ->whereIn('id', $invoices->pluck('branch_id')->filter()->unique()->values())
+            ->whereIn('id', $allBranchIds)
             ->pluck('name', 'id');
 
-        return $invoices->values()->map(function (ArInvoice $invoice, int $index) use ($branchNames, $asOf): array {
+        // ── Map invoice rows ──────────────────────────────────────────────────
+        $invoiceRows = $invoices->map(function (ArInvoice $invoice) use ($branchNames, $asOf): array {
             $dueDate = $invoice->due_date ?: $invoice->issue_date;
-            $days = $dueDate ? max(0, (int) floor((float) $dueDate->diffInDays($asOf, false))) : 0;
+            $days    = $dueDate ? max(0, (int) floor((float) $dueDate->diffInDays($asOf, false))) : 0;
 
             return [
-                'line_no' => $index + 1,
-                'document_no' => $invoice->invoice_number ?: (string) $invoice->id,
+                'row_type'      => 'invoice',
+                'sort_date'     => $invoice->issue_date?->timestamp ?? 0,
+                'line_no'       => 0,
+                'document_no'   => $invoice->invoice_number ?: (string) $invoice->id,
                 'document_type' => 'AR Invoice',
-                'location' => (string) ($branchNames[(int) $invoice->branch_id] ?? ('Branch '.$invoice->branch_id)),
-                'type' => strtolower((string) $invoice->payment_type) === 'credit'
+                'location'      => (string) ($branchNames[(int) $invoice->branch_id] ?? ('Branch '.$invoice->branch_id)),
+                'type'          => strtolower((string) $invoice->payment_type) === 'credit'
                     ? 'On Credit'
                     : ucfirst((string) ($invoice->payment_type ?: 'Credit')),
-                'date' => $invoice->issue_date?->format('d-M-Y') ?? '-',
-                'due_date' => $dueDate?->format('d-M-Y') ?? '-',
-                'reference_no' => $invoice->lpo_reference ?: ($invoice->pos_reference ?: '-'),
-                'amount_cents' => (int) ($invoice->total_cents ?? 0),
-                'paid_cents' => (int) ($invoice->paid_total_cents ?? 0),
+                'date'          => $invoice->issue_date?->format('d-M-Y') ?? '-',
+                'due_date'      => $dueDate?->format('d-M-Y') ?? '-',
+                'reference_no'  => $invoice->lpo_reference ?: ($invoice->pos_reference ?: '-'),
+                'amount_cents'  => (int) ($invoice->total_cents ?? 0),
+                'paid_cents'    => (int) ($invoice->paid_total_cents ?? 0),
                 'balance_cents' => (int) ($invoice->balance_cents ?? 0),
-                'aging_label' => $days.' Days',
-                'payment_no' => '-',
+                'aging_label'   => $days.' Days',
+                'payment_no'    => '-',
             ];
         });
+
+        // ── Map payment rows ──────────────────────────────────────────────────
+        $paymentRows = $payments->map(function (Payment $payment) use ($branchNames): array {
+            $method = ucwords(str_replace('_', ' ', (string) ($payment->method ?? '')));
+
+            return [
+                'row_type'      => 'payment',
+                'sort_date'     => $payment->received_at?->timestamp ?? 0,
+                'line_no'       => 0,
+                'document_no'   => $payment->reference ?: ('PMT-'.$payment->id),
+                'document_type' => 'Payment Receipt',
+                'location'      => (string) ($branchNames[(int) $payment->branch_id] ?? ('Branch '.$payment->branch_id)),
+                'type'          => $method ?: 'Payment',
+                'date'          => $payment->received_at?->format('d-M-Y') ?? '-',
+                'due_date'      => '-',
+                'reference_no'  => $payment->reference ?: '-',
+                'amount_cents'  => 0,
+                'paid_cents'    => (int) ($payment->amount_cents ?? 0),
+                'balance_cents' => 0,
+                'aging_label'   => '-',
+                'payment_no'    => $payment->reference ?: ('PMT-'.$payment->id),
+            ];
+        });
+
+        return $invoiceRows->merge($paymentRows)
+            ->sortBy([['sort_date', 'asc'], ['row_type', 'asc']])
+            ->values()
+            ->map(function (array $row, int $index): array {
+                $row['line_no'] = $index + 1;
+                return $row;
+            });
     }
 
     /**
@@ -245,21 +297,23 @@ class CustomerStatementReportController extends Controller
     }
 
     /**
-     * @return array{period_amount_cents:int,period_paid_cents:int,period_balance_cents:int,previous_balance_cents:int,total_outstanding_cents:int}
+     * @return array{period_amount_cents:int,period_received_cents:int,period_balance_cents:int,previous_balance_cents:int,total_outstanding_cents:int}
      */
     private function buildPrintSummary(Request $request, Collection $rows): array
     {
         $customerId = (int) ($request->integer('customer_id') ?? 0);
-        $branchId = $request->integer('branch_id') ?? 0;
+        $branchId   = $request->integer('branch_id') ?? 0;
         [$dateFrom] = $this->resolvedRange($request);
 
-        $periodAmount = (int) $rows->sum('amount_cents');
-        $periodPaid = (int) $rows->sum('paid_cents');
-        $periodBalance = (int) $rows->sum('balance_cents');
+        $periodAmount   = (int) $rows->where('row_type', 'invoice')->sum('amount_cents');
+        $periodReceived = (int) $rows->where('row_type', 'payment')->sum('paid_cents');
+        $periodBalance  = $periodAmount - $periodReceived;
 
-        $previousBalance = 0;
+        $previousInvoiceBalance = 0;
+        $previousAdvance        = 0;
+
         if ($customerId > 0) {
-            $previousBalance = (int) ArInvoice::query()
+            $previousInvoiceBalance = (int) ArInvoice::query()
                 ->where('customer_id', $customerId)
                 ->where('type', 'invoice')
                 ->whereIn('status', ['issued', 'partially_paid', 'paid'])
@@ -267,12 +321,32 @@ class CustomerStatementReportController extends Controller
                 ->when($branchId > 0, fn ($q) => $q->where('branch_id', $branchId))
                 ->whereDate('issue_date', '<', $dateFrom)
                 ->sum('balance_cents');
+
+            $previousAdvance = (int) \Illuminate\Support\Facades\DB::table('payments as p')
+                ->where('p.customer_id', $customerId)
+                ->where('p.source', 'ar')
+                ->whereNull('p.voided_at')
+                ->where('p.received_at', '<', $dateFrom)
+                ->when($branchId > 0, fn ($q) => $q->where('p.branch_id', $branchId))
+                ->selectRaw('
+                    COALESCE(SUM(p.amount_cents), 0)
+                    - COALESCE((
+                        SELECT SUM(pa.amount_cents)
+                        FROM payment_allocations pa
+                        WHERE pa.payment_id = p.id AND pa.voided_at IS NULL
+                    ), 0) as unallocated'
+                )
+                ->value('unallocated') ?? 0;
+
+            $previousAdvance = max(0, $previousAdvance);
         }
 
+        $previousBalance = max(0, $previousInvoiceBalance - $previousAdvance);
+
         return [
-            'period_amount_cents' => $periodAmount,
-            'period_paid_cents' => $periodPaid,
-            'period_balance_cents' => $periodBalance,
+            'period_amount_cents'    => $periodAmount,
+            'period_received_cents'  => $periodReceived,
+            'period_balance_cents'   => $periodBalance,
             'previous_balance_cents' => $previousBalance,
             'total_outstanding_cents' => $previousBalance + $periodBalance,
         ];

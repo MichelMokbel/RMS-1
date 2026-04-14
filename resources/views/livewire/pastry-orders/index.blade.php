@@ -452,7 +452,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->orderByDesc('scheduled_date')
             ->orderByDesc('id')
             ->withCount('items')
-            ->with(['images' => fn ($q) => $q->orderBy('sort_order')->limit(1)]);
+            ->with('images');
     }
 }; ?>
 
