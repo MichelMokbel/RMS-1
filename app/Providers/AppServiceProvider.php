@@ -47,5 +47,7 @@ class AppServiceProvider extends ServiceProvider
         } catch (\Throwable $e) {
             // Don't block app boot if DB is unavailable during install/migrate.
         }
+
+        // SyncSubscriptionMealsOnInvoiceIssued is auto-discovered by Laravel — do not register manually.
     }
 }

@@ -379,14 +379,16 @@ class ArInvoiceService
             }
         }
 
-        // For subscription orders with zero total, we may need to calculate from the subscription
-        if ($isSubscription && $totalAmountCents === 0) {
-            // Check if there's a subscription linked to get the per-meal price
+        // For subscription orders, look up the subscription order record so we can tag
+        // the invoice item meta with subscription_id (used by the invoice-tracking listener).
+        $subscriptionOrder = null;
+        if ($isSubscription) {
             $subscriptionOrder = MealSubscriptionOrder::where('order_id', $order->id)->first();
-            if ($subscriptionOrder) {
+
+            // For subscription orders with zero total, calculate from the subscription pricing.
+            if ($totalAmountCents === 0 && $subscriptionOrder) {
                 $subscription = \App\Models\MealSubscription::find($subscriptionOrder->subscription_id);
                 if ($subscription) {
-                    // Calculate per-meal price from subscription
                     $perMealPrice = $this->calculateSubscriptionMealPrice($subscription);
                     $totalAmountCents = $perMealPrice;
                 }
@@ -411,6 +413,7 @@ class ArInvoiceService
                     'order_id' => $order->id,
                     'is_daily_dish' => $order->is_daily_dish,
                     'is_subscription' => $isSubscription,
+                    'subscription_id' => $subscriptionOrder?->subscription_id,
                     'portion_type' => $portionType,
                     'portion_quantity' => $portionQty,
                 ],
@@ -523,11 +526,12 @@ class ArInvoiceService
             $this->subledgerService->recordArInvoiceIssued($locked->fresh(), $actorId);
             $this->recordJobRevenue($locked->fresh(), $actorId);
 
-            InvoiceIssued::dispatch($locked->fresh());
-
             // Auto-allocate same-company customer advances for normal credit-term invoices.
+            // Must happen BEFORE dispatching InvoiceIssued so listeners see the final allocation state.
             $issued = $locked->fresh(['items']);
             $this->autoAllocateAvailableAdvancePayments($issued, $actorId);
+
+            InvoiceIssued::dispatch($issued->fresh(['items', 'paymentAllocations.payment']));
 
             return $issued->fresh(['items']);
         });
@@ -640,6 +644,7 @@ class ArInvoiceService
             $locked->voided_by = $locked->voided_by ?? $actorId;
             $locked->void_reason = $reason ? trim($reason) : ($locked->void_reason ?: null);
             $locked->save();
+            $this->decrementSubscriptionMealsForVoidedInvoice($locked->fresh(['items']));
             $this->recalc($locked->fresh(['items']));
 
             return $locked->fresh(['items', 'customer', 'paymentAllocations.payment']);
@@ -679,6 +684,7 @@ class ArInvoiceService
             $locked->voided_by = $locked->voided_by ?? $actorId;
             $locked->void_reason = $reason ? trim($reason) : ($locked->void_reason ?: null);
             $locked->save();
+            $this->decrementSubscriptionMealsForVoidedInvoice($locked->fresh(['items']));
             $this->recalc($locked->fresh(['items']));
 
             $items = $locked->items->map(fn (ArInvoiceItem $item) => [
@@ -804,12 +810,15 @@ class ArInvoiceService
             return;
         }
 
+        // Subscription-linked payments (source_payment_id on meal_subscriptions) are sorted first
+        // so that the intended subscription advance is consumed before other advances.
         $payments = Payment::query()
             ->where('customer_id', (int) $invoice->customer_id)
             ->where('branch_id', (int) $invoice->branch_id)
             ->where('company_id', $invoiceCompanyId)
             ->where('source', 'ar')
             ->whereNull('voided_at')
+            ->orderByRaw('(SELECT COUNT(*) FROM meal_subscriptions WHERE meal_subscriptions.source_payment_id = payments.id) DESC')
             ->orderBy('received_at', 'asc')
             ->orderBy('id', 'asc')
             ->get();
@@ -937,5 +946,64 @@ class ArInvoiceService
 
             return $invoice->fresh();
         });
+    }
+
+    private function decrementSubscriptionMealsForVoidedInvoice(ArInvoice $invoice): void
+    {
+        $invoice->loadMissing('items');
+
+        // --- Path A: auto-generated subscription order items (meta.subscription_id) ---
+        $subIds = $invoice->items
+            ->filter(fn ($item) => ($item->meta['is_subscription'] ?? false) && isset($item->meta['subscription_id']))
+            ->pluck('meta.subscription_id')
+            ->unique()
+            ->filter()
+            ->values();
+
+        foreach ($subIds as $subId) {
+            $this->decrementMealsUsed((int) $subId, 1);
+        }
+
+        // --- Path B: manually created plan item invoices (MI-000084 / MI-000094) ---
+        $planItemIds = array_values(config('subscriptions.plan_menu_item_ids', []));
+        if (! empty($planItemIds) && $invoice->customer_id) {
+            $planItems = $invoice->items->filter(
+                fn ($item) => $item->sellable_type === \App\Models\MenuItem::class
+                    && in_array((int) $item->sellable_id, $planItemIds, true)
+            );
+
+            if ($planItems->isNotEmpty()) {
+                $sub = \App\Models\MealSubscription::where('customer_id', $invoice->customer_id)
+                    ->where('uses_invoice_tracking', true)
+                    ->whereIn('status', ['active', 'paused', 'expired'])
+                    ->orderByDesc('start_date')
+                    ->first();
+
+                if ($sub) {
+                    $mealCount = (int) $planItems->sum(fn ($item) => (float) ($item->qty ?? 1));
+                    if ($mealCount > 0) {
+                        $this->decrementMealsUsed($sub->id, $mealCount);
+                    }
+                }
+            }
+        }
+    }
+
+    private function decrementMealsUsed(int $subId, int $count): void
+    {
+        $sub = \App\Models\MealSubscription::lockForUpdate()->find($subId);
+
+        if (! $sub || ! $sub->uses_invoice_tracking || $sub->plan_meals_total === null) {
+            return;
+        }
+
+        $sub->meals_used = max(0, (int) ($sub->meals_used ?? 0) - $count);
+
+        if ($sub->status === 'expired' && $sub->meals_used < $sub->plan_meals_total) {
+            $sub->status   = 'active';
+            $sub->end_date = null;
+        }
+
+        $sub->save();
     }
 }

@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\Payment;
 
 class MealSubscription extends Model
 {
@@ -32,6 +33,8 @@ class MealSubscription extends Model
         'include_dessert',
         'notes',
         'created_by',
+        'source_payment_id',
+        'uses_invoice_tracking',
     ];
 
     protected $casts = [
@@ -42,6 +45,8 @@ class MealSubscription extends Model
         'plan_meals_total' => 'integer',
         'meals_used' => 'integer',
         'meal_plan_request_id' => 'integer',
+        'source_payment_id' => 'integer',
+        'uses_invoice_tracking' => 'boolean',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -49,6 +54,16 @@ class MealSubscription extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class, 'customer_id');
+    }
+
+    public function sourcePayment(): BelongsTo
+    {
+        return $this->belongsTo(Payment::class, 'source_payment_id');
+    }
+
+    public function subscriptionOrders(): HasMany
+    {
+        return $this->hasMany(MealSubscriptionOrder::class, 'subscription_id');
     }
 
     public function days(): HasMany

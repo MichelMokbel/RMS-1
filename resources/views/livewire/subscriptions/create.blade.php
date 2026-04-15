@@ -23,10 +23,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?string $notes = null;
     public array $weekdays = [7,1,2,3,4];
     public ?int $plan_meals_total = null;
+    public ?int $source_payment_id = null;
 
     public function mount(): void
     {
-        $this->start_date = now()->toDateString();
+        $this->start_date       = now()->toDateString();
+        $this->customer_id      = request()->integer('customer_id') ?: null;
+        $this->plan_meals_total = request()->integer('plan_meals_total') ?: null;
+        $this->source_payment_id = request()->integer('source_payment_id') ?: null;
     }
 
     public function with(): array
@@ -39,10 +43,18 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function save(MealSubscriptionService $service): void
     {
         $data = $this->validate($this->rules());
-        $data['weekdays'] = $this->weekdays;
+        $data['weekdays']       = $this->weekdays;
         $data['plan_meals_total'] = $this->plan_meals_total;
 
         $sub = $service->save($data, null, Illuminate\Support\Facades\Auth::id());
+
+        // MealSubscriptionService::save() does not handle source_payment_id or uses_invoice_tracking.
+        // Set them directly after creation when coming from a payment.
+        if ($this->source_payment_id) {
+            $sub->source_payment_id    = $this->source_payment_id;
+            $sub->uses_invoice_tracking = true;
+            $sub->save();
+        }
 
         session()->flash('status', __('Subscription created.'));
         $this->redirectRoute('subscriptions.show', $sub, navigate: true);

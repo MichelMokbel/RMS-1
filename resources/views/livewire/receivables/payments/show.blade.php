@@ -1,8 +1,10 @@
 <?php
 
 use App\Models\ArInvoice;
+use App\Models\MealSubscription;
 use App\Models\Payment;
 use App\Services\AR\ArPaymentService;
+use App\Services\Subscriptions\SubscriptionPaymentLinkService;
 use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
@@ -15,11 +17,61 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $select_all_allocations = false;
     public string $invoice_date_from = '';
     public string $invoice_date_to = '';
+    public ?int $link_subscription_id = null;
+    public string $new_subscription_plan = '';
 
     public function mount(Payment $payment): void
     {
         $this->refreshPayment($payment);
         $this->loadInvoices();
+    }
+
+    public function with(): array
+    {
+        // Always reload payment with fresh relations so re-renders after Livewire hydration
+        // (e.g., wire:model.live changes) show up-to-date allocations.
+        $this->payment = Payment::query()
+            ->with(['customer', 'allocations.allocatable'])
+            ->findOrFail($this->payment->id);
+
+        return [
+            'linkedSubscriptions'   => $this->payment->mealSubscriptions()->with('customer')->get(),
+            'linkableSubscriptions' => $this->payment->customer_id
+                ? MealSubscription::where('customer_id', $this->payment->customer_id)
+                    ->whereNull('source_payment_id')
+                    ->whereIn('status', ['active', 'paused'])
+                    ->orderByDesc('start_date')
+                    ->get()
+                : collect(),
+            'detectedPlans' => $this->payment->customer_id
+                ? app(SubscriptionPaymentLinkService::class)->detectPlanFromPayment($this->payment)
+                : [],
+        ];
+    }
+
+    public function linkSubscription(SubscriptionPaymentLinkService $service): void
+    {
+        $this->resetErrorBag();
+
+        $userId = Auth::id();
+        if (! $userId) {
+            abort(403);
+        }
+
+        $this->validate(['link_subscription_id' => ['required', 'integer']]);
+
+        try {
+            $sub = MealSubscription::findOrFail((int) $this->link_subscription_id);
+            $service->linkPaymentToSubscription($this->payment, $sub, $userId);
+            $this->link_subscription_id = null;
+            session()->flash('status', __('Subscription linked.'));
+        } catch (ValidationException $e) {
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $this->addError('link_subscription', $message);
+                }
+            }
+        }
     }
 
     public function formatMoney(?int $cents): string
@@ -338,6 +390,63 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         </div>
     @endif
+
+    {{-- Linked Subscriptions --}}
+    <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
+        <h3 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Linked Subscriptions') }}</h3>
+
+        @forelse ($linkedSubscriptions as $sub)
+            <div class="flex items-center justify-between text-sm">
+                <span class="text-neutral-800 dark:text-neutral-100">{{ $sub->subscription_code }} · {{ $sub->customer?->name ?? '—' }} · {{ $sub->plan_meals_total ? $sub->plan_meals_total . ' ' . __('meals') : __('Unlimited') }}</span>
+                <flux:button :href="route('subscriptions.show', $sub)" wire:navigate size="sm" variant="ghost">{{ __('View') }}</flux:button>
+            </div>
+        @empty
+            <p class="text-sm text-neutral-500 dark:text-neutral-400">{{ __('No subscriptions linked.') }}</p>
+        @endforelse
+
+        @error('link_subscription') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
+
+        @if($linkableSubscriptions->isNotEmpty())
+            <div class="flex items-center gap-2">
+                <select wire:model="link_subscription_id" class="flex-1 rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                    <option value="">{{ __('Select subscription to link…') }}</option>
+                    @foreach($linkableSubscriptions as $sub)
+                        <option value="{{ $sub->id }}">{{ $sub->subscription_code }} ({{ $sub->start_date?->format('Y-m-d') }} · {{ $sub->plan_meals_total ? $sub->plan_meals_total . ' meals' : 'Unlimited' }})</option>
+                    @endforeach
+                </select>
+                <flux:button wire:click="linkSubscription" size="sm">{{ __('Link') }}</flux:button>
+            </div>
+        @endif
+
+        @if($payment->customer_id)
+            @php
+                $planOptions = collect(config('subscriptions.plan_menu_item_ids', []))->keys()->sort()->values();
+                $detectedMeals = collect($detectedPlans)->pluck('plan_meals_total')->first();
+            @endphp
+            <div class="flex items-center gap-2">
+                <select wire:model.live="new_subscription_plan" class="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                    <option value="">{{ __('Select plan size…') }}</option>
+                    @foreach($planOptions as $meals)
+                        <option value="{{ $meals }}" @selected($detectedMeals == $meals)>{{ $meals }} {{ __('meals') }}</option>
+                    @endforeach
+                    <option value="0">{{ __('Unlimited') }}</option>
+                </select>
+                @if($new_subscription_plan !== '')
+                    <flux:button
+                        :href="route('subscriptions.create', [
+                            'customer_id'       => $payment->customer_id,
+                            'plan_meals_total'  => $new_subscription_plan > 0 ? $new_subscription_plan : null,
+                            'source_payment_id' => $payment->id,
+                        ])"
+                        wire:navigate size="sm" variant="primary">
+                        {{ __('Create Subscription') }}
+                    </flux:button>
+                @else
+                    <flux:button size="sm" variant="primary" disabled>{{ __('Create Subscription') }}</flux:button>
+                @endif
+            </div>
+        @endif
+    </div>
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
         <h3 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200 mb-2">{{ __('Allocations') }}</h3>

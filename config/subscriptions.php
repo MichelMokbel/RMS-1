@@ -8,4 +8,10 @@ return [
     'generation_time' => env('SUBSCRIPTIONS_GENERATION_TIME', '06:00'),
     'auto_generate' => (bool) env('SUBSCRIPTIONS_AUTO_GENERATE', false),
     'default_appetizer_code' => env('SUBSCRIPTIONS_APPETIZER_CODE', ''),
+
+    // Menu item IDs that represent subscription plan purchases (used to detect plan from payment)
+    'plan_menu_item_ids' => [
+        20 => (int) env('SUBSCRIPTION_MENU_ITEM_20', 84),
+        26 => (int) env('SUBSCRIPTION_MENU_ITEM_26', 94),
+    ],
 ];

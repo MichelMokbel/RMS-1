@@ -88,6 +88,11 @@ class Payment extends Model
             ->whereNull('voided_at');
     }
 
+    public function mealSubscriptions(): HasMany
+    {
+        return $this->hasMany(MealSubscription::class, 'source_payment_id');
+    }
+
     public function allAllocations(): HasMany
     {
         return $this->hasMany(PaymentAllocation::class, 'payment_id');

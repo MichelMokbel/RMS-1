@@ -3,9 +3,13 @@
 use App\Models\MealSubscription;
 use App\Models\MealSubscriptionOrder;
 use App\Models\Order;
+use App\Models\Payment;
 use App\Services\Orders\OrderWorkflowService;
 use App\Services\Subscriptions\MealSubscriptionService;
+use App\Services\Subscriptions\SubscriptionPaymentLinkService;
+use App\Support\Money\MinorUnits;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
@@ -20,13 +24,63 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?string $pause_end = null;
     public ?string $pause_reason = null;
     public bool $pause_cancel_generated_orders = false;
+    public ?int $link_payment_id = null;
+
+    public function formatMoney(?int $cents): string
+    {
+        return MinorUnits::format((int) ($cents ?? 0));
+    }
 
     public function with(): array
     {
-        $this->subscription->loadMissing(['days', 'pauses', 'customer']);
+        $this->subscription->loadMissing(['days', 'pauses', 'customer', 'sourcePayment']);
         return [
-            'subscription' => $this->subscription,
+            'subscription'    => $this->subscription,
+            'sourcePayment'   => $this->subscription->sourcePayment,
+            'linkablePayments' => Payment::where('customer_id', $this->subscription->customer_id)
+                ->whereNull('voided_at')
+                ->whereDoesntHave('mealSubscriptions')
+                ->orderByDesc('received_at')
+                ->limit(20)
+                ->get(),
         ];
+    }
+
+    public function linkPayment(SubscriptionPaymentLinkService $service): void
+    {
+        $this->resetErrorBag();
+
+        $userId = Auth::id();
+        if (! $userId) {
+            abort(403);
+        }
+
+        $this->validate(['link_payment_id' => ['required', 'integer']]);
+
+        try {
+            $payment = Payment::findOrFail((int) $this->link_payment_id);
+            $service->linkPaymentToSubscription($payment, $this->subscription, $userId);
+            $this->link_payment_id = null;
+            $this->subscription = $this->subscription->fresh(['days', 'pauses', 'customer', 'sourcePayment']);
+            session()->flash('status', __('Payment linked.'));
+        } catch (ValidationException $e) {
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $this->addError('link_payment', $message);
+                }
+            }
+        }
+    }
+
+    public function resyncMeals(SubscriptionPaymentLinkService $service): void
+    {
+        if (! Auth::user()?->hasRole('admin')) {
+            abort(403);
+        }
+
+        $count = $service->resyncMealsUsed($this->subscription);
+        $this->subscription = $this->subscription->fresh(['days', 'pauses', 'customer', 'sourcePayment']);
+        session()->flash('status', __('Resynced. Meals used: :n', ['n' => $count]));
     }
 
     public function pause(MealSubscriptionService $service, OrderWorkflowService $workflow): void
@@ -79,8 +133,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         }
                     }
 
-                    // Restore quota for cancelled generated days (our quota is currently "consumed at generation time")
-                    if ($cancelledCount > 0 && $this->subscription->plan_meals_total !== null) {
+                    // Restore quota for cancelled generated days.
+                    // Only applies to generation-time tracking; invoice-tracking subscriptions are decremented when the invoice is voided.
+                    if ($cancelledCount > 0 && $this->subscription->plan_meals_total !== null && ! $this->subscription->uses_invoice_tracking) {
                         DB::transaction(function () use ($cancelledCount) {
                             $sub = MealSubscription::query()->lockForUpdate()->find($this->subscription->id);
                             if (! $sub) {
@@ -181,6 +236,44 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <span class="text-sm text-neutral-600 dark:text-neutral-400">{{ __('No actions available') }}</span>
             @endif
         </div>
+    </div>
+
+    {{-- Source Payment --}}
+    <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
+        <h3 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Source Payment') }}</h3>
+
+        @if ($sourcePayment)
+            <div class="flex items-center justify-between text-sm">
+                <span class="text-neutral-800 dark:text-neutral-100">
+                    {{ $this->formatMoney($sourcePayment->amount_cents) }}
+                    · {{ $sourcePayment->received_at?->format('Y-m-d') ?? '—' }}
+                    · {{ strtoupper($sourcePayment->method ?? '—') }}
+                </span>
+                <flux:button :href="route('receivables.payments.show', $sourcePayment)" wire:navigate size="sm" variant="ghost">{{ __('View Payment') }}</flux:button>
+            </div>
+        @else
+            <p class="text-sm text-neutral-500 dark:text-neutral-400">{{ __('No payment linked.') }}</p>
+
+            @error('link_payment') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
+
+            @if($linkablePayments->isNotEmpty())
+                <div class="flex items-center gap-2">
+                    <select wire:model="link_payment_id" class="flex-1 rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                        <option value="">{{ __('Select payment to link…') }}</option>
+                        @foreach($linkablePayments as $pmt)
+                            <option value="{{ $pmt->id }}">
+                                #{{ $pmt->id }} · {{ $this->formatMoney($pmt->amount_cents) }} · {{ $pmt->received_at?->format('Y-m-d') }}
+                            </option>
+                        @endforeach
+                    </select>
+                    <flux:button wire:click="linkPayment" size="sm">{{ __('Link') }}</flux:button>
+                </div>
+            @endif
+        @endif
+
+        @if(auth()->user()?->hasRole('admin') && $subscription->uses_invoice_tracking)
+            <flux:button wire:click="resyncMeals" size="sm" variant="ghost">{{ __('Resync Meals from Invoices') }}</flux:button>
+        @endif
     </div>
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-2">

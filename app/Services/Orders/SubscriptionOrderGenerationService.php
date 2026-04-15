@@ -119,8 +119,9 @@ class SubscriptionOrderGenerationService
                         'branch_id' => $branchId,
                     ]);
 
-                    // Increment quota usage if this subscription is quota-bound.
-                    if ($sub->plan_meals_total !== null) {
+                    // Increment quota usage if this subscription is quota-bound and NOT using invoice tracking.
+                    // Subscriptions with uses_invoice_tracking=true are tracked via ArInvoiceItem events instead.
+                    if ($sub->plan_meals_total !== null && ! $sub->uses_invoice_tracking) {
                         $sub->meals_used = (int) ($sub->meals_used ?? 0) + 1;
                         // If quota reached, expire it at this date.
                         if ((int) $sub->meals_used >= (int) $sub->plan_meals_total) {
