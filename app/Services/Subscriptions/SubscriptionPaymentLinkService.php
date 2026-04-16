@@ -128,80 +128,51 @@ class SubscriptionPaymentLinkService
     }
 
     /**
-     * Recompute meals_used from invoiced subscription items and sync the stored counter.
-     * Primary path: ArInvoiceItem.meta.subscription_id (available after Step 5 deployed).
-     * Fallback path: join through meal_subscription_orders for older items.
+     * Recompute meals_used from invoiced records and sync the stored counter.
+     *
+     * When source_payment_id is set (payment-anchored subscriptions):
+     *   Every non-voided, non-credit-note invoice allocated to source_payment_id = 1 meal.
+     *   This is authoritative regardless of item metadata — it handles auto-generated invoices,
+     *   manually created MI-000084/94 invoices, and imported invoices with no metadata.
+     *
+     * When source_payment_id is null (legacy metadata-only subscriptions):
+     *   Falls back to subscription_id in item meta (primary) and the order chain (fallback).
      */
     public function resyncMealsUsed(MealSubscription $subscription): int
     {
-        // Path A-primary: items tagged with subscription_id in meta (auto-generated delivery invoices, Step 5+)
-        $primaryCount = \App\Models\ArInvoiceItem::query()
-            ->whereJsonContains('meta->is_subscription', true)
-            ->where(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(meta, '$.subscription_id'))"), (string) $subscription->id)
-            ->whereHas('invoice', fn ($q) => $q->whereNull('voided_at'))
-            ->count();
-
-        // Path A-fallback: delivery items linked via order chain (pre-Step-5 invoices without subscription_id in meta)
-        $orderIds = $subscription->subscriptionOrders()->pluck('order_id');
-        $fallbackCount = 0;
-        if ($orderIds->isNotEmpty()) {
-            $fallbackCount = \App\Models\ArInvoiceItem::query()
-                ->whereJsonContains('meta->is_subscription', true)
-                ->whereHas('invoice', function ($q) use ($orderIds) {
-                    $q->whereNull('voided_at')
-                      ->whereIn('source_order_id', $orderIds);
-                })
-                ->whereRaw("(JSON_EXTRACT(meta, '$.subscription_id') IS NULL OR JSON_EXTRACT(meta, '$.subscription_id') != ?)", [$subscription->id])
-                ->count();
-        }
-
-        // Path B: manually created invoices where MI-000084 / MI-000094 are real sellable items.
-        // These items have meta = null so neither path above finds them.
-        // IMPORTANT: only count invoices that are allocated to the subscription's source_payment_id.
-        // If source_payment_id is null there is no way to distinguish subscription invoices from
-        // unrelated historic purchases — count nothing (prod-safe default).
-        $planItemIds = array_values(config('subscriptions.plan_menu_item_ids', []));
-        $planBCount = 0;
-        if (! empty($planItemIds) && $subscription->source_payment_id) {
-            $sourcePaymentId = $subscription->source_payment_id;
-            $planBCount = (int) \App\Models\ArInvoiceItem::query()
-                ->where('sellable_type', \App\Models\MenuItem::class)
-                ->whereIn('sellable_id', $planItemIds)
-                ->whereHas('invoice', function ($q) use ($subscription, $sourcePaymentId) {
-                    $q->where('customer_id', $subscription->customer_id)
-                      ->whereNull('voided_at')
-                      ->whereHas('paymentAllocations', fn ($q2) => $q2->where('payment_id', $sourcePaymentId));
-                })
-                ->sum('qty');
-            $planBCount = max(0, (int) round($planBCount));
-        }
-
-        // Path C: delivery invoice items (meta.is_subscription=true) in invoices allocated to
-        // source_payment_id that are NOT already counted by Path A-primary or A-fallback.
-        // This covers meals invoiced before the subscription record existed: they have no
-        // meta.subscription_id and no meal_subscription_orders row, but the invoice IS allocated
-        // to the subscription's linked payment.
-        $pathCCount = 0;
         if ($subscription->source_payment_id) {
-            $sourcePaymentId = $subscription->source_payment_id;
-
-            $pathCCount = \App\Models\ArInvoiceItem::query()
-                ->whereJsonContains('meta->is_subscription', true)
-                // Not already counted by Path A-primary
-                ->whereRaw("(JSON_EXTRACT(meta, '$.subscription_id') IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(meta, '$.subscription_id')) != ?)", [(string) $subscription->id])
-                ->whereHas('invoice', function ($q) use ($subscription, $sourcePaymentId, $orderIds) {
-                    $q->where('customer_id', $subscription->customer_id)
-                      ->whereNull('voided_at')
-                      ->whereHas('paymentAllocations', fn ($q2) => $q2->where('payment_id', $sourcePaymentId));
-                    // Not already counted by Path A-fallback (not from the order chain)
-                    if ($orderIds->isNotEmpty()) {
-                        $q->whereNotIn('source_order_id', $orderIds);
-                    }
-                })
+            // Payment-anchored: each invoice allocated to the subscription's payment = 1 meal.
+            $total = \App\Models\ArInvoice::query()
+                ->whereNull('voided_at')
+                ->where('type', '!=', 'credit_note')
+                ->whereHas('paymentAllocations', fn ($q) => $q->where('payment_id', $subscription->source_payment_id))
                 ->count();
-        }
+        } else {
+            // Metadata-anchored: no payment link, derive from subscription item metadata.
 
-        $total = $primaryCount + $fallbackCount + $planBCount + $pathCCount;
+            // Primary: items tagged with subscription_id in meta (auto-generated, Step 5+)
+            $primaryCount = \App\Models\ArInvoiceItem::query()
+                ->whereJsonContains('meta->is_subscription', true)
+                ->where(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(meta, '$.subscription_id'))"), (string) $subscription->id)
+                ->whereHas('invoice', fn ($q) => $q->whereNull('voided_at'))
+                ->count();
+
+            // Fallback: items linked via order chain (pre-Step-5 invoices without subscription_id in meta)
+            $orderIds = $subscription->subscriptionOrders()->pluck('order_id');
+            $fallbackCount = 0;
+            if ($orderIds->isNotEmpty()) {
+                $fallbackCount = \App\Models\ArInvoiceItem::query()
+                    ->whereJsonContains('meta->is_subscription', true)
+                    ->whereHas('invoice', function ($q) use ($orderIds) {
+                        $q->whereNull('voided_at')
+                          ->whereIn('source_order_id', $orderIds);
+                    })
+                    ->whereRaw("(JSON_EXTRACT(meta, '$.subscription_id') IS NULL OR JSON_EXTRACT(meta, '$.subscription_id') != ?)", [$subscription->id])
+                    ->count();
+            }
+
+            $total = $primaryCount + $fallbackCount;
+        }
 
         DB::transaction(function () use ($subscription, $total) {
             $sub = MealSubscription::lockForUpdate()->findOrFail($subscription->id);
