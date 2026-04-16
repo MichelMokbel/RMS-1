@@ -6,25 +6,82 @@
     <title>Pastry Order {{ $order->order_number }}</title>
     <style>
         :root { color-scheme: light; }
-        body { font-family: Arial, sans-serif; color: #111827; margin: 10mm; }
-        .sheet { max-width: 190mm; }
-        .header { display: flex; justify-content: space-between; gap: 8mm; margin-bottom: 4mm; }
-        .title { font-size: 22px; font-weight: 700; margin: 0; }
-        .meta { font-size: 12px; color: #4b5563; margin-top: 1mm; }
-        .status { display: inline-block; padding: 2px 8px; border: 1px solid #d1d5db; border-radius: 999px; font-size: 12px; }
-        .content { display: grid; grid-template-columns: 62mm 1fr; gap: 6mm; }
-        .image-wrap { border: 1px solid #d1d5db; border-radius: 8px; padding: 4px; min-height: 62mm; display: flex; align-items: center; justify-content: center; }
-        .image-wrap img { width: 100%; max-height: 60mm; object-fit: cover; border-radius: 6px; }
-        .no-image { font-size: 12px; color: #6b7280; }
-        .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; margin-bottom: 6px; }
-        .card h3 { margin: 0 0 6px; font-size: 13px; }
-        .kv { font-size: 12px; margin: 2px 0; }
-        table { width: 100%; border-collapse: collapse; margin-top: 4px; }
-        th, td { border: 1px solid #e5e7eb; padding: 5px; font-size: 11px; text-align: left; }
-        th { background: #f9fafb; font-weight: 600; }
-        .num { text-align: right; white-space: nowrap; }
+
+        @page { size: A4 landscape; margin: 12mm; }
+
+        body { font-family: Arial, sans-serif; color: #111827; margin: 0; }
+
+        /* Landscape two-column shell */
+        .sheet {
+            display: grid;
+            grid-template-columns: 100mm 1fr;
+            gap: 10mm;
+            height: calc(210mm - 24mm); /* A4 landscape height minus margins */
+            align-items: start;
+        }
+
+        /* ── Left column: image ── */
+        .col-image {
+            display: flex;
+            flex-direction: column;
+            gap: 4mm;
+            height: 100%;
+        }
+        .image-wrap {
+            border: 1px solid #d1d5db;
+            border-radius: 10px;
+            overflow: hidden;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f9fafb;
+            max-height: 155mm;
+        }
+        .image-wrap img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+        .no-image {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+        }
+        .no-image-initials { font-size: 56px; font-weight: 800; color: #d1d5db; }
+
+        /* ── Right column: info ── */
+        .col-info { display: flex; flex-direction: column; gap: 5mm; }
+
+        /* Header */
+        .order-number { font-size: 26px; font-weight: 800; margin: 0 0 1mm; line-height: 1.1; }
+        .scheduled    { font-size: 15px; font-weight: 600; color: #374151; margin: 0; }
+        .status-badge { display: inline-block; margin-top: 2mm; padding: 2px 10px; border: 1.5px solid #d1d5db; border-radius: 999px; font-size: 12px; font-weight: 600; }
+
+        /* Items */
+        .items-section h2 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #6b7280; margin: 0 0 3px; }
+        .item-row { display: flex; align-items: baseline; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #e5e7eb; }
+        .item-row:last-child { border-bottom: none; }
+        .item-name { font-size: 18px; font-weight: 700; }
+        .item-qty  { font-size: 16px; font-weight: 700; color: #374151; white-space: nowrap; margin-left: 6mm; }
+
+        /* Notes */
+        .notes-section { border: 2px solid #f59e0b; border-radius: 8px; padding: 5px 9px; background: #fffbeb; }
+        .notes-section h2 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #b45309; margin: 0 0 2px; }
+        .notes-text { font-size: 14px; font-weight: 600; color: #111827; white-space: pre-wrap; margin: 0; }
+
+        /* Handoff */
+        .handoff { border: 1px solid #d1d5db; border-radius: 8px; padding: 6px 10px; }
+        .handoff h2 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #6b7280; margin: 0 0 3px; }
+        .handoff-name { font-size: 16px; font-weight: 700; margin: 0; }
+        .handoff-type { display: inline-block; margin-top: 3px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #e5e7eb; color: #374151; }
+
+        /* Tools (screen only) */
         .tools { margin-bottom: 8px; }
-        .btn { display: inline-block; padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 6px; color: #111827; text-decoration: none; font-size: 12px; background: #fff; }
+        .btn { display: inline-block; padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 6px; color: #111827; text-decoration: none; font-size: 12px; background: #fff; cursor: pointer; }
         @media print { .tools { display: none !important; } }
     </style>
 </head>
@@ -32,65 +89,63 @@
     <div class="tools">
         <button class="btn" onclick="window.print()">Print</button>
     </div>
-    <div class="sheet">
-        <div class="header">
-            <div>
-                <p class="title">Pastry Order</p>
-                <div class="meta">{{ $order->order_number }} · {{ $order->scheduled_date?->format('Y-m-d') ?? '—' }}</div>
-            </div>
-            <div class="status">{{ $order->status ?? '—' }}</div>
-        </div>
 
-        <div class="content">
+    <div class="sheet">
+
+        {{-- Left: image --}}
+        <div class="col-image">
             <div class="image-wrap">
                 @if (!empty($images) && !empty($images[0]['url']))
                     <img src="{{ $images[0]['url'] }}" alt="Order image" />
                 @else
-                    <div class="no-image">No image</div>
+                    @php
+                        $pParts    = preg_split('/\s+/', trim($order->customer_name_snapshot ?? '?'));
+                        $pInitials = strtoupper(mb_substr($pParts[0], 0, 1) . (count($pParts) > 1 ? mb_substr(end($pParts), 0, 1) : ''));
+                    @endphp
+                    <div class="no-image">
+                        <span class="no-image-initials">{{ $pInitials }}</span>
+                    </div>
                 @endif
-            </div>
-            <div>
-                <div class="card">
-                    <h3>Customer</h3>
-                    <div class="kv"><strong>Name:</strong> {{ $order->customer_name_snapshot ?? '—' }}</div>
-                    <div class="kv"><strong>Phone:</strong> {{ $order->customer_phone_snapshot ?? '—' }}</div>
-                    <div class="kv"><strong>Type:</strong> {{ $order->type ?? '—' }}</div>
-                    <div class="kv"><strong>Branch:</strong> {{ $order->branch_id ?? '—' }}</div>
-                    @if($order->notes)
-                        <div class="kv"><strong>Notes:</strong> {{ $order->notes }}</div>
-                    @endif
-                </div>
             </div>
         </div>
 
-        <table>
-            <thead>
-                <tr>
-                    <th>Item</th>
-                    <th class="num">Qty</th>
-                    <th class="num">Unit Price</th>
-                    <th class="num">Discount</th>
-                    <th class="num">Line Total</th>
-                </tr>
-            </thead>
-            <tbody>
+        {{-- Right: order info --}}
+        <div class="col-info">
+
+            {{-- Header --}}
+            <div>
+                <p class="order-number">{{ $order->order_number }}</p>
+                <p class="scheduled">{{ $order->scheduled_date?->format('D, d M Y') ?? '—' }}{{ $order->scheduled_time ? ' · ' . $order->scheduled_time : '' }}</p>
+                <span class="status-badge">{{ $order->status ?? '—' }}</span>
+            </div>
+
+            {{-- Items --}}
+            <div class="items-section">
+                <h2>{{ __('Items') }}</h2>
                 @foreach ($order->items as $item)
-                    <tr>
-                        <td>{{ $item->description_snapshot }}</td>
-                        <td class="num">{{ number_format((float) $item->quantity, 3) }}</td>
-                        <td class="num">{{ number_format((float) $item->unit_price, 3) }}</td>
-                        <td class="num">{{ number_format((float) $item->discount_amount, 3) }}</td>
-                        <td class="num">{{ number_format((float) $item->line_total, 3) }}</td>
-                    </tr>
+                    <div class="item-row">
+                        <span class="item-name">{{ $item->description_snapshot }}</span>
+                        <span class="item-qty">× {{ number_format((float) $item->quantity, 3) }}</span>
+                    </div>
                 @endforeach
-            </tbody>
-            <tfoot>
-                <tr>
-                    <td colspan="4" class="num"><strong>Total</strong></td>
-                    <td class="num"><strong>{{ number_format((float) $order->total_amount, 3) }}</strong></td>
-                </tr>
-            </tfoot>
-        </table>
+            </div>
+
+            {{-- Notes --}}
+            @if ($order->notes)
+                <div class="notes-section">
+                    <h2>{{ __('Notes') }}</h2>
+                    <p class="notes-text">{{ $order->notes }}</p>
+                </div>
+            @endif
+
+            {{-- Customer handoff --}}
+            <div class="handoff">
+                <h2>{{ __('Handoff') }}</h2>
+                <p class="handoff-name">{{ $order->customer_name_snapshot ?? '—' }}</p>
+                <span class="handoff-type">{{ $order->type ?? '—' }}</span>
+            </div>
+
+        </div>
     </div>
 </body>
 </html>

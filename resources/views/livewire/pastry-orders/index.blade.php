@@ -70,6 +70,19 @@ new #[Layout('components.layouts.app')] class extends Component {
     public array $e_remove_image_ids = [];
     public bool  $e_is_invoiced      = false;
 
+    // ── View drawer ────────────────────────────────────────────────────────────
+    public bool    $showViewDrawer   = false;
+    public ?int    $v_order_id       = null;
+    public string  $v_order_number   = '';
+    public string  $v_customer_name  = '';
+    public ?string $v_customer_phone = null;
+    public string  $v_status         = '';
+    public ?string $v_scheduled_date = null;
+    public string  $v_type           = '';
+    public ?string $v_notes          = null;
+    public array   $v_items          = [];
+    public array   $v_images         = [];
+
     protected $paginationTheme = 'tailwind';
 
     public function mount(): void
@@ -432,6 +445,34 @@ new #[Layout('components.layouts.app')] class extends Component {
         session()->flash('status_message', __('Status updated.'));
     }
 
+    // ── View drawer ───────────────────────────────────────────────────────────
+
+    public function openViewDrawer(int $orderId, PastryOrderImageService $imageService): void
+    {
+        $order = PastryOrder::with(['items', 'images'])->find($orderId);
+        if (! $order) return;
+
+        $this->v_order_id       = $order->id;
+        $this->v_order_number   = $order->order_number;
+        $this->v_customer_name  = $order->customer_name_snapshot ?? '';
+        $this->v_customer_phone = $order->customer_phone_snapshot;
+        $this->v_status         = $order->status;
+        $this->v_scheduled_date = $order->scheduled_date?->format('Y-m-d');
+        $this->v_type           = $order->type;
+        $this->v_notes          = $order->notes;
+        $this->v_items          = $order->items->sortBy('sort_order')
+            ->map(fn ($i) => ['description' => $i->description_snapshot, 'quantity' => (float) $i->quantity])
+            ->values()->toArray();
+        $this->v_images         = $imageService->presignedUrlsForOrder($order);
+        $this->showViewDrawer   = true;
+    }
+
+    public function closeViewDrawer(): void
+    {
+        $this->showViewDrawer = false;
+        $this->v_order_id     = null;
+    }
+
     // ── Query ─────────────────────────────────────────────────────────────────
 
     private function buildQuery()
@@ -470,6 +511,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     .po-drawer__backdrop { position:absolute;inset:0;background:rgba(0,0,0,.45);opacity:0;transition:opacity 200ms ease; }
     .po-drawer[data-open="1"] .po-drawer__backdrop { opacity:1; }
     .po-drawer__panel { position:absolute;top:0;right:0;height:100%;width:100%;max-width:560px;transform:translateX(100%);transition:transform 250ms ease;background:#fff;box-shadow:-20px 0 60px rgba(0,0,0,.2);border-left:1px solid rgba(0,0,0,.08);overflow-y:auto; }
+    .po-drawer__panel--wide { max-width:760px; }
     .po-drawer[data-open="1"] .po-drawer__panel { transform:translateX(0); }
     .dark .po-drawer__panel { background:rgb(23 23 23);border-left-color:rgba(255,255,255,.12); }
     .touch-target { min-height:44px;touch-action:manipulation; }
@@ -550,10 +592,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                              alt="{{ __('Order image') }}"
                              class="h-24 w-24 flex-shrink-0 rounded-lg object-cover border border-neutral-200 dark:border-neutral-700" />
                     @else
-                        <div class="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800">
-                            <svg class="h-6 w-6 text-neutral-300 dark:text-neutral-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3 19.5h18M3.75 4.5h16.5A.75.75 0 0121 5.25v13.5a.75.75 0 01-.75.75H3.75A.75.75 0 013 18.75V5.25A.75.75 0 013.75 4.5z"/>
-                            </svg>
+                        @php
+                            $mParts = preg_split('/\s+/', trim($order->customer_name_snapshot ?? '?'));
+                            $mInitials = strtoupper(mb_substr($mParts[0], 0, 1) . (count($mParts) > 1 ? mb_substr(end($mParts), 0, 1) : ''));
+                        @endphp
+                        <div class="flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-neutral-100 dark:border-neutral-600 dark:bg-neutral-800">
+                            <span class="text-xl font-bold text-neutral-400 dark:text-neutral-500 select-none">{{ $mInitials }}</span>
                         </div>
                     @endif
                     <div class="flex-1 min-w-0">
@@ -586,26 +630,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endif
                 <div class="flex flex-wrap gap-2">
                     @if (! $order->isInvoiced())
-                        <select
-                            class="rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
-                            wire:change="quickStatus({{ $order->id }}, $event.target.value)">
-                            <option value="">{{ __('Set Status') }}</option>
-                            <option value="Draft">{{ __('Draft') }}</option>
-                            <option value="Confirmed">{{ __('Confirmed') }}</option>
-                            <option value="InProduction">{{ __('In Production') }}</option>
-                            <option value="Ready">{{ __('Ready') }}</option>
-                            <option value="Delivered">{{ __('Delivered') }}</option>
-                            <option value="Cancelled">{{ __('Cancelled') }}</option>
-                        </select>
                         @if ($order->status === 'Draft')
                             <flux:button size="sm" type="button" variant="primary" wire:click="quickStatus({{ $order->id }},'Confirmed')" class="touch-target">{{ __('Confirm') }}</flux:button>
                         @elseif ($order->status === 'Confirmed')
-                            <flux:button size="sm" type="button" variant="ghost" wire:click="quickStatus({{ $order->id }},'InProduction')" class="touch-target">{{ __('Start Production') }}</flux:button>
+                            <flux:button size="sm" type="button" variant="primary" wire:click="quickStatus({{ $order->id }},'InProduction')" class="touch-target">{{ __('Start Production') }}</flux:button>
                         @elseif ($order->status === 'InProduction')
-                            <flux:button size="sm" type="button" variant="ghost" wire:click="quickStatus({{ $order->id }},'Ready')" class="touch-target">{{ __('Mark Ready') }}</flux:button>
+                            <flux:button size="sm" type="button" variant="primary" wire:click="quickStatus({{ $order->id }},'Ready')" class="touch-target">{{ __('Mark Ready') }}</flux:button>
                         @elseif ($order->status === 'Ready')
-                            <flux:button size="sm" type="button" variant="ghost" wire:click="quickStatus({{ $order->id }},'Delivered')" class="touch-target">{{ __('Mark Delivered') }}</flux:button>
+                            <flux:button size="sm" type="button" variant="primary" wire:click="quickStatus({{ $order->id }},'Delivered')" class="touch-target">{{ __('Mark Delivered') }}</flux:button>
                         @endif
+                        <flux:button size="sm" type="button" wire:click="openViewDrawer({{ $order->id }})" class="touch-target">{{ __('View') }}</flux:button>
                         <flux:button size="sm" type="button" wire:click="openEditDrawer({{ $order->id }})" class="touch-target">{{ __('Edit') }}</flux:button>
                         @if (! in_array($order->status, ['Cancelled','Delivered'], true))
                             <flux:button size="sm" type="button" variant="danger" wire:click="quickStatus({{ $order->id }},'Cancelled')" wire:confirm="{{ __('Cancel this order?') }}" class="touch-target">{{ __('Cancel') }}</flux:button>
@@ -614,7 +648,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             {{ __('Print') }}
                         </flux:button>
                     @else
-                        <flux:button size="sm" type="button" wire:click="openEditDrawer({{ $order->id }})" class="touch-target">{{ __('View') }}</flux:button>
+                        <flux:button size="sm" type="button" wire:click="openViewDrawer({{ $order->id }})" class="touch-target">{{ __('View') }}</flux:button>
                         <flux:button size="sm" :href="route('pastry-orders.print-single', ['order' => $order->id])" target="_blank" class="touch-target">
                             {{ __('Print') }}
                         </flux:button>
@@ -651,10 +685,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="px-3 py-2 align-middle">
                             @if ($firstImg)
                                 <img src="{{ app(\App\Services\PastryOrders\PastryOrderImageService::class)->presignedUrl($firstImg->image_path) }}"
-                                     alt="" class="h-10 w-10 rounded object-cover border border-neutral-200 dark:border-neutral-700" />
+                                     alt="" class="h-20 w-20 rounded-lg object-cover border border-neutral-200 dark:border-neutral-700" />
                             @else
-                                <div class="flex h-10 w-10 items-center justify-center rounded border border-dashed border-neutral-300 bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800">
-                                    <svg class="h-4 w-4 text-neutral-300 dark:text-neutral-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909"/></svg>
+                                @php
+                                    $dParts = preg_split('/\s+/', trim($order->customer_name_snapshot ?? '?'));
+                                    $dInitials = strtoupper(mb_substr($dParts[0], 0, 1) . (count($dParts) > 1 ? mb_substr(end($dParts), 0, 1) : ''));
+                                @endphp
+                                <div class="flex h-20 w-20 items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-neutral-100 dark:border-neutral-600 dark:bg-neutral-800">
+                                    <span class="text-base font-bold text-neutral-400 dark:text-neutral-500 select-none">{{ $dInitials }}</span>
                                 </div>
                             @endif
                         </td>
@@ -673,27 +711,23 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="px-3 py-3 text-sm text-right align-middle">
                             <div class="flex flex-wrap justify-end gap-2">
                                 @if (! $order->isInvoiced())
-                                    <select
-                                        class="rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
-                                        wire:change="quickStatus({{ $order->id }}, $event.target.value)">
-                                        <option value="">{{ __('Set Status') }}</option>
-                                        <option value="Draft">{{ __('Draft') }}</option>
-                                        <option value="Confirmed">{{ __('Confirmed') }}</option>
-                                        <option value="InProduction">{{ __('In Production') }}</option>
-                                        <option value="Ready">{{ __('Ready') }}</option>
-                                        <option value="Delivered">{{ __('Delivered') }}</option>
-                                        <option value="Cancelled">{{ __('Cancelled') }}</option>
-                                    </select>
                                     @if ($order->status === 'Draft')
                                         <flux:button size="sm" type="button" variant="primary" wire:click="quickStatus({{ $order->id }},'Confirmed')" class="min-h-[44px]">{{ __('Confirm') }}</flux:button>
+                                    @elseif ($order->status === 'Confirmed')
+                                        <flux:button size="sm" type="button" variant="primary" wire:click="quickStatus({{ $order->id }},'InProduction')" class="min-h-[44px]">{{ __('Start Production') }}</flux:button>
+                                    @elseif ($order->status === 'InProduction')
+                                        <flux:button size="sm" type="button" variant="primary" wire:click="quickStatus({{ $order->id }},'Ready')" class="min-h-[44px]">{{ __('Mark Ready') }}</flux:button>
+                                    @elseif ($order->status === 'Ready')
+                                        <flux:button size="sm" type="button" variant="primary" wire:click="quickStatus({{ $order->id }},'Delivered')" class="min-h-[44px]">{{ __('Mark Delivered') }}</flux:button>
                                     @endif
+                                    <flux:button size="sm" type="button" wire:click="openViewDrawer({{ $order->id }})" class="min-h-[44px]">{{ __('View') }}</flux:button>
                                     <flux:button size="sm" type="button" wire:click="openEditDrawer({{ $order->id }})" class="min-h-[44px]">{{ __('Edit') }}</flux:button>
                                     <flux:button size="sm" :href="route('pastry-orders.print-single', ['order' => $order->id])" target="_blank" class="min-h-[44px]">{{ __('Print') }}</flux:button>
                                     @if (! in_array($order->status, ['Cancelled','Delivered'], true))
                                         <flux:button size="sm" type="button" variant="danger" wire:click="quickStatus({{ $order->id }},'Cancelled')" wire:confirm="{{ __('Cancel this order?') }}" class="min-h-[44px]">{{ __('Cancel') }}</flux:button>
                                     @endif
                                 @else
-                                    <flux:button size="sm" type="button" wire:click="openEditDrawer({{ $order->id }})" class="min-h-[44px]">{{ __('View') }}</flux:button>
+                                    <flux:button size="sm" type="button" wire:click="openViewDrawer({{ $order->id }})" class="min-h-[44px]">{{ __('View') }}</flux:button>
                                     <flux:button size="sm" :href="route('pastry-orders.print-single', ['order' => $order->id])" target="_blank" class="min-h-[44px]">{{ __('Print') }}</flux:button>
                                 @endif
                             </div>
@@ -1136,6 +1170,96 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                 @endif
             </form>
+            @endif
+        </div>
+    </div>
+
+    {{-- ===== VIEW DRAWER ===== --}}
+    <div class="po-drawer" data-open="{{ $showViewDrawer ? '1' : '0' }}" role="dialog" aria-modal="true" @if(! $showViewDrawer) inert @endif>
+        <div class="po-drawer__backdrop" wire:click="closeViewDrawer"></div>
+        <div class="po-drawer__panel po-drawer__panel--wide">
+            <div class="sticky top-0 z-10 border-b border-neutral-200 bg-white/95 px-5 py-3 backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/95 flex items-center justify-between gap-3">
+                <div>
+                    <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Order Details') }}</h2>
+                    @if ($v_order_number)
+                        <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ $v_order_number }}</p>
+                    @endif
+                </div>
+                <flux:button size="sm" type="button" variant="ghost" wire:click="closeViewDrawer" class="touch-target">{{ __('Close') }}</flux:button>
+            </div>
+            @if ($showViewDrawer)
+            <div class="p-5">
+
+                {{-- Two-column layout: image left, details right --}}
+                <div class="flex gap-5 items-start">
+
+                    {{-- Left: image --}}
+                    <div class="w-64 flex-shrink-0">
+                        @if (! empty($v_images))
+                            <img src="{{ $v_images[0]['url'] }}" alt="{{ __('Order image') }}"
+                                 class="w-full rounded-xl object-contain border border-neutral-200 dark:border-neutral-700" />
+                        @else
+                            @php
+                                $vParts = preg_split('/\s+/', trim($v_customer_name ?? '?'));
+                                $vInitials = strtoupper(mb_substr($vParts[0], 0, 1) . (count($vParts) > 1 ? mb_substr(end($vParts), 0, 1) : ''));
+                            @endphp
+                            <div class="w-full h-48 flex items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-neutral-100 dark:border-neutral-600 dark:bg-neutral-800">
+                                <span class="text-5xl font-bold text-neutral-300 dark:text-neutral-600 select-none">{{ $vInitials }}</span>
+                            </div>
+                        @endif
+                    </div>
+
+                    {{-- Right: all details --}}
+                    <div class="flex-1 min-w-0 space-y-4">
+
+                        {{-- Items --}}
+                        @if (! empty($v_items))
+                            <div class="space-y-1.5">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">{{ __('Items') }}</p>
+                                @foreach ($v_items as $vItem)
+                                    <div class="flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/60">
+                                        <span class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $vItem['description'] }}</span>
+                                        <span class="ml-3 text-sm font-medium text-neutral-500 dark:text-neutral-400 whitespace-nowrap">× {{ number_format($vItem['quantity'], 3) }}</span>
+                                    </div>
+                                @endforeach
+                            </div>
+                        @endif
+
+                        {{-- Notes --}}
+                        @if ($v_notes)
+                            <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 dark:border-amber-900 dark:bg-amber-950/50">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-1">{{ __('Notes') }}</p>
+                                <p class="text-sm text-amber-900 dark:text-amber-100 whitespace-pre-wrap">{{ $v_notes }}</p>
+                            </div>
+                        @endif
+
+                        {{-- Meta grid --}}
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="rounded-lg border border-neutral-200 bg-white px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/60">
+                                <p class="text-xs text-neutral-500 dark:text-neutral-400 mb-0.5">{{ __('Status') }}</p>
+                                <p class="text-sm font-medium text-neutral-900 dark:text-neutral-100">{{ $v_status }}</p>
+                            </div>
+                            <div class="rounded-lg border border-neutral-200 bg-white px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/60">
+                                <p class="text-xs text-neutral-500 dark:text-neutral-400 mb-0.5">{{ __('Scheduled') }}</p>
+                                <p class="text-sm font-medium text-neutral-900 dark:text-neutral-100">{{ $v_scheduled_date ?? '—' }}</p>
+                            </div>
+                            <div class="rounded-lg border border-neutral-200 bg-white px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/60">
+                                <p class="text-xs text-neutral-500 dark:text-neutral-400 mb-0.5">{{ __('Customer') }}</p>
+                                <p class="text-sm font-medium text-neutral-900 dark:text-neutral-100">{{ $v_customer_name ?: '—' }}</p>
+                                @if ($v_customer_phone)
+                                    <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ $v_customer_phone }}</p>
+                                @endif
+                            </div>
+                            <div class="rounded-lg border border-neutral-200 bg-white px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/60">
+                                <p class="text-xs text-neutral-500 dark:text-neutral-400 mb-0.5">{{ __('Type') }}</p>
+                                <p class="text-sm font-medium text-neutral-900 dark:text-neutral-100">{{ $v_type ?: '—' }}</p>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+            </div>
             @endif
         </div>
     </div>

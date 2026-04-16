@@ -176,7 +176,32 @@ class SubscriptionPaymentLinkService
             $planBCount = max(0, (int) round($planBCount));
         }
 
-        $total = $primaryCount + $fallbackCount + $planBCount;
+        // Path C: delivery invoice items (meta.is_subscription=true) in invoices allocated to
+        // source_payment_id that are NOT already counted by Path A-primary or A-fallback.
+        // This covers meals invoiced before the subscription record existed: they have no
+        // meta.subscription_id and no meal_subscription_orders row, but the invoice IS allocated
+        // to the subscription's linked payment.
+        $pathCCount = 0;
+        if ($subscription->source_payment_id) {
+            $sourcePaymentId = $subscription->source_payment_id;
+
+            $pathCCount = \App\Models\ArInvoiceItem::query()
+                ->whereJsonContains('meta->is_subscription', true)
+                // Not already counted by Path A-primary
+                ->whereRaw("(JSON_EXTRACT(meta, '$.subscription_id') IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(meta, '$.subscription_id')) != ?)", [(string) $subscription->id])
+                ->whereHas('invoice', function ($q) use ($subscription, $sourcePaymentId, $orderIds) {
+                    $q->where('customer_id', $subscription->customer_id)
+                      ->whereNull('voided_at')
+                      ->whereHas('paymentAllocations', fn ($q2) => $q2->where('payment_id', $sourcePaymentId));
+                    // Not already counted by Path A-fallback (not from the order chain)
+                    if ($orderIds->isNotEmpty()) {
+                        $q->whereNotIn('source_order_id', $orderIds);
+                    }
+                })
+                ->count();
+        }
+
+        $total = $primaryCount + $fallbackCount + $planBCount + $pathCCount;
 
         DB::transaction(function () use ($subscription, $total) {
             $sub = MealSubscription::lockForUpdate()->findOrFail($subscription->id);
