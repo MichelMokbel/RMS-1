@@ -229,7 +229,7 @@ it('creates and applies a credit note to reduce invoice balance', function () {
     expect($credit->balance_cents)->toBe(0);
 });
 
-it('applies a bulk discount to multiple draft invoices and records an audit trail', function () {
+it('applies a bulk discount fix to draft and issued invoices and records an audit trail', function () {
     $user = User::factory()->create();
     $user->assignRole('manager');
 
@@ -255,8 +255,9 @@ it('applies a bulk discount to multiple draft invoices and records an audit trai
         ],
         actorId: $user->id,
     );
+    $second = $invoices->issue($second, $user->id);
 
-    $count = $invoices->applyBulkDraftDiscount([$second->id, $first->id], 'percent', 1000, $user->id);
+    $count = $invoices->applyBulkDiscountFix([$second->id, $first->id], 'percent', 1000, $user->id);
 
     expect($count)->toBe(2);
 
@@ -275,14 +276,15 @@ it('applies a bulk discount to multiple draft invoices and records an audit trai
     expect($second->invoice_discount_cents)->toBe(800);
     expect($second->discount_total_cents)->toBe(800);
     expect($second->total_cents)->toBe(7200);
+    expect($second->status)->toBe('issued');
 
     expect(AccountingAuditLog::query()
-        ->where('action', 'ar_invoice.bulk_discount_updated')
+        ->where('action', 'ar_invoice.bulk_discount_fix_applied')
         ->where('actor_id', $user->id)
         ->count())->toBe(2);
 });
 
-it('rejects bulk discount updates for non-draft invoices', function () {
+it('preserves paid invoice status while recalculating balance in a bulk discount fix', function () {
     $user = User::factory()->create();
     $user->assignRole('manager');
 
@@ -291,30 +293,68 @@ it('rejects bulk discount updates for non-draft invoices', function () {
     /** @var ArInvoiceService $invoices */
     $invoices = app(ArInvoiceService::class);
 
-    $draft = $invoices->createDraft(
+    $invoice = $invoices->createDraft(
         branchId: 1,
         customerId: $customer->id,
         items: [
-            ['description' => 'Draft Invoice', 'qty' => '1.000', 'unit_price_cents' => 5000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 5000],
+            ['description' => 'Paid Invoice', 'qty' => '1.000', 'unit_price_cents' => 5000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 5000],
         ],
         actorId: $user->id,
     );
+    $invoice = $invoices->issue($invoice, $user->id);
 
-    $issued = $invoices->createDraft(
-        branchId: 1,
-        customerId: $customer->id,
-        items: [
-            ['description' => 'Issued Invoice', 'qty' => '1.000', 'unit_price_cents' => 7000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 7000],
-        ],
-        actorId: $user->id,
-    );
-    $issued = $invoices->issue($issued, $user->id);
+    Payment::query()->create([
+        'branch_id' => 1,
+        'customer_id' => $customer->id,
+        'company_id' => null,
+        'bank_account_id' => null,
+        'period_id' => null,
+        'source' => 'ar',
+        'method' => 'cash',
+        'amount_cents' => 5000,
+        'currency' => (string) config('pos.currency'),
+        'received_at' => now(),
+        'created_by' => $user->id,
+    ]);
+    $payment = Payment::query()->latest('id')->firstOrFail();
+    PaymentAllocation::query()->create([
+        'payment_id' => $payment->id,
+        'allocatable_type' => ArInvoice::class,
+        'allocatable_id' => $invoice->id,
+        'amount_cents' => 5000,
+    ]);
+    ArInvoice::query()->whereKey($invoice->id)->update([
+        'paid_total_cents' => 5000,
+        'balance_cents' => 0,
+        'status' => 'paid',
+    ]);
 
-    expect(fn () => $invoices->applyBulkDraftDiscount([$draft->id, $issued->id], 'fixed', 1000, $user->id))
-        ->toThrow(ValidationException::class, 'Only draft invoices can receive a bulk discount.');
+    $count = $invoices->applyBulkDiscountFix([$invoice->id], 'fixed', 1000, $user->id);
 
-    expect($draft->fresh()->invoice_discount_value)->toBe(0);
-    expect($issued->fresh()->invoice_discount_value)->toBe(0);
+    expect($count)->toBe(1);
+    expect($invoice->fresh()->status)->toBe('paid');
+    expect($invoice->fresh()->invoice_discount_value)->toBe(1000);
+    expect($invoice->fresh()->total_cents)->toBe(4000);
+    expect($invoice->fresh()->balance_cents)->toBe(-1000);
+});
+
+it('rejects bulk discount fixes for unsupported invoice statuses', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $customer = Customer::factory()->corporate()->create();
+
+    $invoice = ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'status' => 'voided',
+        'type' => 'invoice',
+    ]);
+
+    /** @var ArInvoiceService $invoices */
+    $invoices = app(ArInvoiceService::class);
+
+    expect(fn () => $invoices->applyBulkDiscountFix([$invoice->id], 'fixed', 1000, $user->id))
+        ->toThrow(ValidationException::class, 'Only draft, issued, partially paid, or paid invoices can receive this bulk discount fix.');
 });
 
 it('does not reuse pos reference when creating a credit note for a pos-traceable invoice', function () {

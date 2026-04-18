@@ -627,7 +627,7 @@ class ArInvoiceService
     /**
      * @param  array<int, int|string>  $invoiceIds
      */
-    public function applyBulkDraftDiscount(array $invoiceIds, string $discountType, int $discountValue, int $actorId): int
+    public function applyBulkDiscountFix(array $invoiceIds, string $discountType, int $discountValue, int $actorId): int
     {
         $ids = collect($invoiceIds)
             ->map(fn ($id) => (int) $id)
@@ -659,13 +659,13 @@ class ArInvoiceService
                 ]);
             }
 
-            $nonDraft = $ids
-                ->map(fn (int $id) => $invoices->get($id))
-                ->filter(fn (?ArInvoice $invoice) => $invoice && $invoice->status !== 'draft');
+                $invalidStatus = $ids
+                    ->map(fn (int $id) => $invoices->get($id))
+                    ->filter(fn (?ArInvoice $invoice) => $invoice && ! in_array((string) $invoice->status, ['draft', 'issued', 'partially_paid', 'paid'], true));
 
-            if ($nonDraft->isNotEmpty()) {
+            if ($invalidStatus->isNotEmpty()) {
                 throw ValidationException::withMessages([
-                    'invoice_ids' => __('Only draft invoices can receive a bulk discount.'),
+                    'invoice_ids' => __('Only draft, issued, partially paid, or paid invoices can receive this bulk discount fix.'),
                 ]);
             }
 
@@ -692,16 +692,26 @@ class ArInvoiceService
                     'balance_cents' => (int) ($invoice->balance_cents ?? 0),
                 ];
 
-                $invoice->fill([
-                    'invoice_discount_type' => $normalizedType,
-                    'invoice_discount_value' => $normalizedValue,
-                    'updated_by' => $actorId,
-                ]);
-                $invoice->save();
+                $totals = $this->calculateInvoiceTotals($invoice, $normalizedType, $normalizedValue);
 
-                $recalculated = $this->recalc($invoice);
+                DB::table('ar_invoices')
+                    ->where('id', $invoice->id)
+                    ->update([
+                        'invoice_discount_type' => $normalizedType,
+                        'invoice_discount_value' => $normalizedValue,
+                        'discount_total_cents' => $totals['discount_total_cents'],
+                        'invoice_discount_cents' => $totals['invoice_discount_cents'],
+                        'tax_total_cents' => $totals['tax_total_cents'],
+                        'total_cents' => $totals['total_cents'],
+                        'paid_total_cents' => $totals['paid_total_cents'],
+                        'balance_cents' => $totals['balance_cents'],
+                        'updated_by' => $actorId,
+                        'updated_at' => now(),
+                    ]);
 
-                $this->auditLog->log('ar_invoice.bulk_discount_updated', $actorId, $recalculated, [
+                $recalculated = $invoice->fresh();
+
+                $this->auditLog->log('ar_invoice.bulk_discount_fix_applied', $actorId, $recalculated, [
                     'before' => $before,
                     'after' => [
                         'invoice_discount_type' => (string) ($recalculated->invoice_discount_type ?: 'fixed'),
@@ -711,7 +721,8 @@ class ArInvoiceService
                         'total_cents' => (int) ($recalculated->total_cents ?? 0),
                         'balance_cents' => (int) ($recalculated->balance_cents ?? 0),
                     ],
-                    'mode' => 'bulk',
+                    'mode' => 'bulk_fix',
+                    'status_preserved' => (string) ($recalculated->status ?? ''),
                 ], (int) ($recalculated->company_id ?? 0) ?: null);
             }
 
@@ -997,52 +1008,69 @@ class ArInvoiceService
     {
         return DB::transaction(function () use ($invoice) {
             $invoice = $invoice->fresh(['items', 'paymentAllocations']);
-
-            $subtotal = 0;
-            $discount = 0;
-            $tax = 0;
-            $total = 0;
-
-            foreach ($invoice->items as $item) {
-                $qtyMilli = MinorUnits::parseQtyMilli((string) $item->qty);
-                $lineSubtotal = MinorUnits::mulQty((int) $item->unit_price_cents, $qtyMilli);
-                $subtotal += $lineSubtotal;
-                $discount += (int) $item->discount_cents;
-                $tax += (int) $item->tax_cents;
-                $total += (int) $item->line_total_cents;
-            }
-
-            $invoiceDiscount = 0;
-            $discountType = $invoice->invoice_discount_type ?? 'fixed';
-            $discountValue = (int) ($invoice->invoice_discount_value ?? 0);
-            if ($discountType === 'percent') {
-                $invoiceDiscount = MinorUnits::percentBps(max(0, $subtotal - $discount), $discountValue);
-            } else {
-                $invoiceDiscount = $discountValue;
-            }
-            $invoiceDiscount = max(0, min($invoiceDiscount, $total));
-            $total = $total - $invoiceDiscount;
-            if ($invoice->isCreditNote()) {
-                $total = min(0, $total);
-            } else {
-                $total = max(0, $total);
-            }
-
-            $paid = (int) $invoice->paymentAllocations()->sum('amount_cents');
-            $balance = $total - $paid;
+            $totals = $this->calculateInvoiceTotals($invoice);
 
             $invoice->update([
-                'subtotal_cents' => $subtotal,
-                'discount_total_cents' => $discount + $invoiceDiscount,
-                'invoice_discount_cents' => $invoiceDiscount,
-                'tax_total_cents' => $tax,
-                'total_cents' => $total,
-                'paid_total_cents' => $paid,
-                'balance_cents' => $balance,
+                'subtotal_cents' => $totals['subtotal_cents'],
+                'discount_total_cents' => $totals['discount_total_cents'],
+                'invoice_discount_cents' => $totals['invoice_discount_cents'],
+                'tax_total_cents' => $totals['tax_total_cents'],
+                'total_cents' => $totals['total_cents'],
+                'paid_total_cents' => $totals['paid_total_cents'],
+                'balance_cents' => $totals['balance_cents'],
             ]);
 
             return $invoice->fresh();
         });
+    }
+
+    /**
+     * @return array{subtotal_cents:int,discount_total_cents:int,invoice_discount_cents:int,tax_total_cents:int,total_cents:int,paid_total_cents:int,balance_cents:int}
+     */
+    protected function calculateInvoiceTotals(ArInvoice $invoice, ?string $discountType = null, ?int $discountValue = null): array
+    {
+        $subtotal = 0;
+        $discount = 0;
+        $tax = 0;
+        $total = 0;
+
+        foreach ($invoice->items as $item) {
+            $qtyMilli = MinorUnits::parseQtyMilli((string) $item->qty);
+            $lineSubtotal = MinorUnits::mulQty((int) $item->unit_price_cents, $qtyMilli);
+            $subtotal += $lineSubtotal;
+            $discount += (int) $item->discount_cents;
+            $tax += (int) $item->tax_cents;
+            $total += (int) $item->line_total_cents;
+        }
+
+        $resolvedDiscountType = $discountType ?? (string) ($invoice->invoice_discount_type ?? 'fixed');
+        $resolvedDiscountValue = max(0, $discountValue ?? (int) ($invoice->invoice_discount_value ?? 0));
+
+        $invoiceDiscount = $resolvedDiscountType === 'percent'
+            ? MinorUnits::percentBps(max(0, $subtotal - $discount), $resolvedDiscountValue)
+            : $resolvedDiscountValue;
+
+        $invoiceDiscount = max(0, min($invoiceDiscount, $total));
+        $total = $total - $invoiceDiscount;
+
+        if ($invoice->isCreditNote()) {
+            $total = min(0, $total);
+        } else {
+            $total = max(0, $total);
+        }
+
+        $paid = (int) $invoice->paymentAllocations()->sum('amount_cents');
+        $balance = $total - $paid;
+
+        return [
+            'subtotal_cents' => $subtotal,
+            'discount_total_cents' => $discount + $invoiceDiscount,
+            'invoice_discount_cents' => $invoiceDiscount,
+            'tax_total_cents' => $tax,
+            'total_cents' => $total,
+            'paid_total_cents' => $paid,
+            'balance_cents' => $balance,
+        ];
     }
 
     private function decrementSubscriptionMealsForVoidedInvoice(ArInvoice $invoice): void

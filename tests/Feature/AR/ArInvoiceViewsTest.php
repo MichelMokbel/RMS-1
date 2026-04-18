@@ -191,7 +191,7 @@ it('shows the job field on create and the assigned job on the invoice show page'
         ->assertSee('Catering Launch');
 });
 
-it('applies a bulk discount from the invoices index to selected draft invoices only', function () {
+it('applies a bulk discount fix from the invoices index modal to draft and issued invoices', function () {
     $user = User::factory()->create();
     $user->assignRole('manager');
 
@@ -244,16 +244,19 @@ it('applies a bulk discount from the invoices index to selected draft invoices o
     Volt::actingAs($user);
 
     Volt::test('receivables.invoices.index')
-        ->set('selected_invoice_ids', [$first->id, $second->id])
+        ->set('selected_invoice_ids', [$first->id, $issued->id])
         ->set('bulk_discount_type', 'fixed')
         ->set('bulk_discount_value', '5.00')
+        ->set('bulk_discount_acknowledged', true)
         ->call('applyBulkDiscount')
         ->assertHasNoErrors()
-        ->assertSet('selected_invoice_ids', []);
+        ->assertSet('selected_invoice_ids', [])
+        ->assertSet('bulk_discount_acknowledged', false);
 
     expect($first->fresh()->invoice_discount_value)->toBe(500);
     expect($first->fresh()->total_cents)->toBe(9500);
-    expect($second->fresh()->invoice_discount_value)->toBe(500);
-    expect($second->fresh()->total_cents)->toBe(7500);
-    expect($issued->fresh()->invoice_discount_value)->toBe(0);
+    expect($issued->fresh()->invoice_discount_value)->toBe(500);
+    expect($issued->fresh()->total_cents)->toBe(11500);
+    expect($issued->fresh()->status)->toBe('issued');
+    expect($second->fresh()->invoice_discount_value)->toBe(0);
 });

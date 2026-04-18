@@ -25,6 +25,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $select_page = false;
     public string $bulk_discount_type = 'fixed';
     public string $bulk_discount_value = '0.00';
+    public bool $bulk_discount_acknowledged = false;
 
     public function mount(): void
     {
@@ -156,6 +157,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetErrorBag([
             'selected_invoice_ids',
             'bulk_discount_value',
+            'bulk_discount_acknowledged',
         ]);
 
         $selected = collect($this->selected_invoice_ids)
@@ -167,6 +169,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         if ($selected === []) {
             $this->addError('selected_invoice_ids', __('Select at least one draft invoice.'));
+
+            return;
+        }
+
+        if (! $this->bulk_discount_acknowledged) {
+            $this->addError('bulk_discount_acknowledged', __('Confirm that this one-time fix should update issued and paid invoices directly.'));
 
             return;
         }
@@ -188,7 +196,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            $count = $service->applyBulkDraftDiscount(
+            $count = $service->applyBulkDiscountFix(
                 invoiceIds: $selected,
                 discountType: $this->bulk_discount_type,
                 discountValue: $discountValue,
@@ -208,7 +216,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->bulk_discount_type = 'fixed';
         $this->bulk_discount_value = $this->moneyZero();
+        $this->bulk_discount_acknowledged = false;
         $this->clearBulkSelection();
+        $this->dispatch('modal-close', name: 'bulk-discount-modal');
 
         session()->flash('status', trans_choice(
             'Bulk discount applied to :count invoice.|Bulk discount applied to :count invoices.',
@@ -229,8 +239,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     protected function selectableInvoiceIds(): array
     {
         return $this->invoiceQuery()
-            ->where('status', 'draft')
             ->where('type', 'invoice')
+            ->whereIn('status', ['draft', 'issued', 'partially_paid', 'paid'])
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->values()
@@ -416,50 +426,24 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div wire:loading.remove wire:target="applyFilters,resetFilters" class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
-        <div class="flex flex-col gap-3 lg:flex-row lg:items-end">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <label class="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
                 <input type="checkbox" wire:model.live="select_page" class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500">
-                <span>{{ __('Select all visible draft invoices') }}</span>
+                <span>{{ __('Select all visible invoices eligible for the bulk fix') }}</span>
             </label>
-            <div class="grid grow gap-3 sm:grid-cols-3">
-                <div>
-                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Discount Type') }}</label>
-                    <select wire:model.live="bulk_discount_type" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                        <option value="fixed">{{ __('Fixed Amount') }}</option>
-                        <option value="percent">{{ __('Percent') }}</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Discount Value') }}</label>
-                    <input
-                        type="number"
-                        wire:model.defer="bulk_discount_value"
-                        step="{{ $this->moneyStep() }}"
-                        min="0"
-                        class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
-                    />
-                </div>
-                <div class="flex items-end">
-                    <button
-                        type="button"
-                        wire:click="applyBulkDiscount"
-                        wire:loading.attr="disabled"
-                        wire:target="applyBulkDiscount"
-                        class="w-full touch-target inline-flex items-center justify-center rounded-md border border-neutral-900 bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-neutral-800 dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                        <span wire:loading.remove wire:target="applyBulkDiscount">{{ __('Apply Bulk Discount') }}</span>
-                        <span wire:loading.inline wire:target="applyBulkDiscount">{{ __('Applying...') }}</span>
-                    </button>
-                </div>
-            </div>
+            <flux:modal.trigger name="bulk-discount-modal">
+                <button
+                    type="button"
+                    class="touch-target inline-flex items-center justify-center rounded-md border border-neutral-900 bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-neutral-800 dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
+                >
+                    {{ __('Apply Bulk Discount') }}
+                </button>
+            </flux:modal.trigger>
         </div>
         <p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
-            {{ __('This action updates only draft sales invoices and recalculates invoice totals without changing line items or status.') }}
+            {{ __('This one-time fix updates the invoice-level discount directly on selected draft, issued, partially paid, or paid sales invoices without changing line items or status.') }}
         </p>
         @error('selected_invoice_ids')
-            <p class="mt-2 text-sm text-rose-600 dark:text-rose-400">{{ $message }}</p>
-        @enderror
-        @error('bulk_discount_value')
             <p class="mt-2 text-sm text-rose-600 dark:text-rose-400">{{ $message }}</p>
         @enderror
     </div>
@@ -474,7 +458,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 type="checkbox"
                                 wire:model.live="selected_invoice_ids"
                                 value="{{ $inv->id }}"
-                                @disabled($inv->status !== 'draft' || $inv->type !== 'invoice')
+                                @disabled(! in_array($inv->status, ['draft', 'issued', 'partially_paid', 'paid'], true) || $inv->type !== 'invoice')
                                 class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
                             />
                             <span>{{ __('Select') }}</span>
@@ -543,7 +527,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 type="checkbox"
                                 wire:model.live="selected_invoice_ids"
                                 value="{{ $inv->id }}"
-                                @disabled($inv->status !== 'draft' || $inv->type !== 'invoice')
+                                @disabled(! in_array($inv->status, ['draft', 'issued', 'partially_paid', 'paid'], true) || $inv->type !== 'invoice')
                                 class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
                             />
                         </td>
@@ -594,4 +578,64 @@ new #[Layout('components.layouts.app')] class extends Component {
             </tbody>
         </table>
     </div>
+
+    <flux:modal name="bulk-discount-modal" :show="$errors->has('bulk_discount_value') || $errors->has('bulk_discount_acknowledged')" focusable class="max-w-xl">
+        <div class="space-y-4">
+            <div>
+                <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Bulk Discount Fix') }}</h2>
+                <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
+                    {{ __('Apply one invoice-level discount to all selected sales invoices. This corrective action updates issued and paid invoices in place and preserves their current status.') }}
+                </p>
+            </div>
+
+            <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Discount Type') }}</label>
+                    <select wire:model.live="bulk_discount_type" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                        <option value="fixed">{{ __('Fixed Amount') }}</option>
+                        <option value="percent">{{ __('Percent') }}</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Discount Value') }}</label>
+                    <input
+                        type="number"
+                        wire:model.defer="bulk_discount_value"
+                        step="{{ $this->moneyStep() }}"
+                        min="0"
+                        class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
+                    />
+                </div>
+            </div>
+
+            <div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+                {{ __('This bypasses the normal posted-invoice immutability rules for a one-time cleanup. Totals and balances will be recalculated, but statuses, line items, and allocations will remain unchanged.') }}
+            </div>
+
+            <label class="flex items-start gap-3 text-sm text-neutral-700 dark:text-neutral-200">
+                <input type="checkbox" wire:model.live="bulk_discount_acknowledged" class="mt-0.5 rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500" />
+                <span>{{ __('I confirm this one-time fix should update the selected issued and paid invoices directly.') }}</span>
+            </label>
+
+            @error('bulk_discount_value')
+                <p class="text-sm text-rose-600 dark:text-rose-400">{{ $message }}</p>
+            @enderror
+            @error('bulk_discount_acknowledged')
+                <p class="text-sm text-rose-600 dark:text-rose-400">{{ $message }}</p>
+            @enderror
+            @error('selected_invoice_ids')
+                <p class="text-sm text-rose-600 dark:text-rose-400">{{ $message }}</p>
+            @enderror
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button variant="ghost">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+                <flux:button wire:click="applyBulkDiscount" wire:loading.attr="disabled" wire:target="applyBulkDiscount" variant="primary">
+                    <span wire:loading.remove wire:target="applyBulkDiscount">{{ __('Apply Discount') }}</span>
+                    <span wire:loading.inline wire:target="applyBulkDiscount">{{ __('Applying...') }}</span>
+                </flux:button>
+            </div>
+        </div>
+    </flux:modal>
 </div>
