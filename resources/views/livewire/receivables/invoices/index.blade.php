@@ -26,6 +26,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $bulk_discount_type = 'fixed';
     public string $bulk_discount_value = '0.00';
     public bool $bulk_discount_acknowledged = false;
+    public string $bulk_discount_customer_search = '';
 
     public function mount(): void
     {
@@ -217,6 +218,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bulk_discount_type = 'fixed';
         $this->bulk_discount_value = $this->moneyZero();
         $this->bulk_discount_acknowledged = false;
+        $this->bulk_discount_customer_search = '';
         $this->clearBulkSelection();
         $this->dispatch('modal-close', name: 'bulk-discount-modal');
 
@@ -557,6 +559,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
 
             <div class="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800/50">
+                <div>
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Search Customer') }}</label>
+                    <input
+                        type="text"
+                        wire:model.live.debounce.300ms="bulk_discount_customer_search"
+                        placeholder="{{ __('Filter by customer name') }}"
+                        class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-50"
+                    />
+                </div>
+
                 <div class="flex items-center justify-between gap-3">
                     <label class="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
                         <input type="checkbox" wire:model.live="select_page" class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500">
@@ -569,7 +581,21 @@ new #[Layout('components.layouts.app')] class extends Component {
 
                 <div class="max-h-64 space-y-2 overflow-y-auto rounded-md border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
                     @php
-                        $eligibleInvoices = $invoices->filter(fn ($inv) => $inv->type === 'invoice' && in_array($inv->status, ['draft', 'issued', 'partially_paid', 'paid'], true));
+                        $customerSearch = \Illuminate\Support\Str::lower(trim($bulk_discount_customer_search));
+                        $eligibleInvoices = $invoices->filter(function ($inv) use ($customerSearch) {
+                            if ($inv->type !== 'invoice' || ! in_array($inv->status, ['draft', 'issued', 'partially_paid', 'paid'], true)) {
+                                return false;
+                            }
+
+                            if ($customerSearch === '') {
+                                return true;
+                            }
+
+                            return str_contains(
+                                \Illuminate\Support\Str::lower((string) ($inv->customer?->name ?? '')),
+                                $customerSearch
+                            );
+                        });
                     @endphp
 
                     @forelse ($eligibleInvoices as $inv)
