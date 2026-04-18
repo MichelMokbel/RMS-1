@@ -170,16 +170,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->show_bulk_discount_modal = true;
     }
 
-    public function openBulkDiscountModal(): void
-    {
-        $this->show_bulk_discount_modal = true;
-    }
-
-    public function closeBulkDiscountModal(): void
-    {
-        $this->show_bulk_discount_modal = false;
-    }
-
     public function applyBulkDiscount(\App\Services\AR\ArInvoiceService $service): void
     {
         $this->resetErrorBag([
@@ -476,13 +466,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div wire:loading.remove wire:target="applyFilters,resetFilters" class="flex justify-end">
-        <button
-            type="button"
-            wire:click="openBulkDiscountModal"
-            class="touch-target inline-flex items-center justify-center rounded-md border border-neutral-900 bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-neutral-800 dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
-        >
+        <flux:button type="button" wire:click="$set('show_bulk_discount_modal', true)" variant="primary" class="touch-target">
             {{ __('Bulk Discount Fix') }}
-        </button>
+        </flux:button>
     </div>
 
     <div wire:loading.remove wire:target="applyFilters,resetFilters" class="ar-invoices-mobile-cards">
@@ -596,7 +582,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         </table>
     </div>
 
-    <flux:modal name="bulk-discount-modal" :show="$show_bulk_discount_modal || $errors->has('bulk_discount_value') || $errors->has('bulk_discount_acknowledged') || $errors->has('selected_invoice_ids')" focusable class="max-w-xl">
+    <flux:modal
+        name="bulk-discount-modal"
+        wire:model="show_bulk_discount_modal"
+        :show="$errors->has('bulk_discount_value') || $errors->has('bulk_discount_acknowledged') || $errors->has('selected_invoice_ids')"
+        focusable
+        class="max-w-xl"
+    >
         <div class="space-y-4">
             <div>
                 <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Bulk Discount Fix') }}</h2>
@@ -606,20 +598,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
 
             <div class="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800/50">
-                <div>
+                <form wire:submit.prevent="applyBulkDiscountCustomerSearch" class="space-y-2">
                     <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Search Customer') }}</label>
                     <div class="mt-1 flex gap-2">
                         <input
                             type="text"
-                            wire:model.defer="bulk_discount_customer_search"
-                            wire:keydown.enter.prevent="applyBulkDiscountCustomerSearch"
+                            wire:model="bulk_discount_customer_search"
                             placeholder="{{ __('Filter by customer name') }}"
                             class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-50"
                         />
-                        <flux:button type="button" wire:click="applyBulkDiscountCustomerSearch" variant="ghost">{{ __('Search') }}</flux:button>
+                        <flux:button type="submit" variant="ghost">{{ __('Search') }}</flux:button>
                         <flux:button type="button" wire:click="resetBulkDiscountCustomerSearch" variant="ghost">{{ __('Reset') }}</flux:button>
                     </div>
-                </div>
+                </form>
 
                 <div class="flex items-center justify-between gap-3">
                     <label class="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
@@ -696,7 +687,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             @enderror
 
             <div class="flex justify-end gap-2">
-                <flux:button type="button" wire:click="closeBulkDiscountModal" variant="ghost">{{ __('Cancel') }}</flux:button>
+                <flux:modal.close>
+                    <flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
                 <flux:button type="button" wire:click="applyBulkDiscount" wire:loading.attr="disabled" wire:target="applyBulkDiscount" variant="primary">
                     <span wire:loading.remove wire:target="applyBulkDiscount">{{ __('Apply Discount') }}</span>
                     <span wire:loading.inline wire:target="applyBulkDiscount">{{ __('Applying...') }}</span>
