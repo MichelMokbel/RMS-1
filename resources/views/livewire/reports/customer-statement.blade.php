@@ -128,9 +128,17 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // ── Map invoice rows ──────────────────────────────────────────────────
         $invoiceRows = $invoices->map(function (ArInvoice $invoice) use ($asOf, $branchNames): array {
-            $dueDate = $invoice->due_date ?: $invoice->issue_date;
-            $days    = $dueDate ? max(0, (int) floor((float) $dueDate->diffInDays($asOf, false))) : 0;
+            $dueDate     = $invoice->due_date ?: $invoice->issue_date;
+            $days        = $dueDate ? (int) floor((float) $dueDate->diffInDays($asOf, false)) : 0;
+            $agingLabel  = $days <= 0 ? __('Not Due') : $days . ' ' . __('Days');
             $paymentType = strtolower((string) ($invoice->payment_type ?? 'credit'));
+
+            // balance_cents is the authoritative remaining balance — updated by every
+            // payment path (AR, POS, etc.).  Derive "paid" from it so the row is
+            // self-consistent even for old invoices with no payments table records.
+            $totalCents   = (int) ($invoice->total_cents ?? 0);
+            $balanceCents = max(0, (int) ($invoice->balance_cents ?? 0));
+            $paidCents    = max(0, $totalCents - $balanceCents);
 
             return [
                 'row_type'      => 'invoice',
@@ -142,10 +150,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'date'          => $invoice->issue_date?->format('d-M-Y') ?? '-',
                 'due_date'      => $dueDate?->format('d-M-Y') ?? '-',
                 'reference_no'  => $invoice->lpo_reference ?: ($invoice->pos_reference ?: '-'),
-                'amount_cents'  => (int) ($invoice->total_cents ?? 0),
-                'paid_cents'    => (int) ($invoice->paid_total_cents ?? 0),
-                'balance_cents' => (int) ($invoice->balance_cents ?? 0),
-                'aging_label'   => $days.' Days',
+                'amount_cents'  => $totalCents,
+                'paid_cents'    => $paidCents,
+                'balance_cents' => $balanceCents,
+                'aging_label'   => $agingLabel,
                 'payment_no'    => '-',
             ];
         });
@@ -191,10 +199,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $dateFrom = $this->date_from ? now()->parse($this->date_from)->startOfDay() : now()->startOfMonth()->startOfDay();
 
-        // Period invoiced & payments received (includes advances not yet allocated to invoices)
+        // Use balance_cents as the authoritative outstanding per invoice.
+        // Derive "received" as total − balance so it captures all payment channels
+        // (POS, cash, AR) — not just records in the payments table.
         $periodAmount   = (int) $rows->where('row_type', 'invoice')->sum('amount_cents');
-        $periodReceived = (int) $rows->where('row_type', 'payment')->sum('paid_cents');
-        $periodBalance  = $periodAmount - $periodReceived;
+        $periodBalance  = (int) $rows->where('row_type', 'invoice')->sum('balance_cents');
+        $periodReceived = $periodAmount - $periodBalance;
 
         // Previous period: unpaid invoice balance before the date range
         $previousInvoiceBalance = 0;
@@ -292,7 +302,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
 
             $dueDate = $invoice->due_date ?: $invoice->issue_date;
-            $days = $dueDate ? $dueDate->diffInDays($asOf, false) : 0;
+            $days = $dueDate ? (int) floor((float) $dueDate->diffInDays($asOf, false)) : 0;
 
             if ($days <= 0) {
                 $aging['not_due'] += $balance;

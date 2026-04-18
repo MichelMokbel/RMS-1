@@ -174,8 +174,16 @@ class CustomerStatementReportController extends Controller
 
         // ── Map invoice rows ──────────────────────────────────────────────────
         $invoiceRows = $invoices->map(function (ArInvoice $invoice) use ($branchNames, $asOf): array {
-            $dueDate = $invoice->due_date ?: $invoice->issue_date;
-            $days    = $dueDate ? max(0, (int) floor((float) $dueDate->diffInDays($asOf, false))) : 0;
+            $dueDate      = $invoice->due_date ?: $invoice->issue_date;
+            $days         = $dueDate ? (int) floor((float) $dueDate->diffInDays($asOf, false)) : 0;
+            $agingLabel   = $days <= 0 ? __('Not Due') : $days . ' ' . __('Days');
+
+            // balance_cents is authoritative — updated by every payment path.
+            // Derive "paid" from it so the row is consistent for old invoices
+            // that have no records in the payments table.
+            $totalCents   = (int) ($invoice->total_cents ?? 0);
+            $balanceCents = max(0, (int) ($invoice->balance_cents ?? 0));
+            $paidCents    = max(0, $totalCents - $balanceCents);
 
             return [
                 'row_type'      => 'invoice',
@@ -190,10 +198,10 @@ class CustomerStatementReportController extends Controller
                 'date'          => $invoice->issue_date?->format('d-M-Y') ?? '-',
                 'due_date'      => $dueDate?->format('d-M-Y') ?? '-',
                 'reference_no'  => $invoice->lpo_reference ?: ($invoice->pos_reference ?: '-'),
-                'amount_cents'  => (int) ($invoice->total_cents ?? 0),
-                'paid_cents'    => (int) ($invoice->paid_total_cents ?? 0),
-                'balance_cents' => (int) ($invoice->balance_cents ?? 0),
-                'aging_label'   => $days.' Days',
+                'amount_cents'  => $totalCents,
+                'paid_cents'    => $paidCents,
+                'balance_cents' => $balanceCents,
+                'aging_label'   => $agingLabel,
                 'payment_no'    => '-',
             ];
         });
@@ -276,7 +284,7 @@ class CustomerStatementReportController extends Controller
             }
 
             $dueDate = $invoice->due_date ?: $invoice->issue_date;
-            $days = $dueDate ? $dueDate->diffInDays($asOf, false) : 0;
+            $days = $dueDate ? (int) floor((float) $dueDate->diffInDays($asOf, false)) : 0;
 
             if ($days <= 0) {
                 $aging['not_due'] += $balance;
@@ -305,9 +313,11 @@ class CustomerStatementReportController extends Controller
         $branchId   = $request->integer('branch_id') ?? 0;
         [$dateFrom] = $this->resolvedRange($request);
 
+        // Use balance_cents as the authoritative outstanding per invoice.
+        // Derive "received" as total − balance so it captures all payment channels.
         $periodAmount   = (int) $rows->where('row_type', 'invoice')->sum('amount_cents');
-        $periodReceived = (int) $rows->where('row_type', 'payment')->sum('paid_cents');
-        $periodBalance  = $periodAmount - $periodReceived;
+        $periodBalance  = (int) $rows->where('row_type', 'invoice')->sum('balance_cents');
+        $periodReceived = $periodAmount - $periodBalance;
 
         $previousInvoiceBalance = 0;
         $previousAdvance        = 0;
