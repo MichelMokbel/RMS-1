@@ -78,6 +78,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             abort(403);
         }
 
+        // Enable invoice tracking if not already active, so future invoices are counted in real time.
+        if (! $this->subscription->uses_invoice_tracking) {
+            $this->subscription->uses_invoice_tracking = true;
+            $this->subscription->save();
+        }
+
         $count = $service->resyncMealsUsed($this->subscription);
         $this->subscription = $this->subscription->fresh(['days', 'pauses', 'customer', 'sourcePayment']);
         session()->flash('status', __('Resynced. Meals used: :n', ['n' => $count]));
@@ -271,7 +277,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             @endif
         @endif
 
-        @if(auth()->user()?->hasRole('admin') && $subscription->uses_invoice_tracking)
+        @if(auth()->user()?->hasRole('admin') && $subscription->plan_meals_total !== null)
             <flux:button wire:click="resyncMeals" size="sm" variant="ghost">{{ __('Resync Meals from Invoices') }}</flux:button>
         @endif
     </div>
