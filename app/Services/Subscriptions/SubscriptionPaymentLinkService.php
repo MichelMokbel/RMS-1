@@ -141,12 +141,35 @@ class SubscriptionPaymentLinkService
     public function resyncMealsUsed(MealSubscription $subscription): int
     {
         if ($subscription->source_payment_id) {
-            // Payment-anchored: each invoice allocated to the subscription's payment = 1 meal.
-            $total = \App\Models\ArInvoice::query()
+            // Payment-anchored: union three identification paths so unallocated invoices are also counted.
+
+            // (A) Invoices allocated to the subscription's source payment
+            $byPayment = \App\Models\ArInvoice::query()
                 ->whereNull('voided_at')
                 ->where('type', '!=', 'credit_note')
                 ->whereHas('paymentAllocations', fn ($q) => $q->where('payment_id', $subscription->source_payment_id))
-                ->count();
+                ->pluck('id');
+
+            // (B) Invoices with items tagged meta.subscription_id = this subscription (Path A / auto-generated)
+            $byMeta = \App\Models\ArInvoiceItem::query()
+                ->whereJsonContains('meta->is_subscription', true)
+                ->where(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(meta, '$.subscription_id'))"), (string) $subscription->id)
+                ->whereHas('invoice', fn ($q) => $q->whereNull('voided_at')->where('type', '!=', 'credit_note'))
+                ->pluck('invoice_id');
+
+            // (C) Invoices linked via subscription order chain (allocated or unallocated)
+            $orderIds = $subscription->subscriptionOrders()->pluck('order_id');
+            $byOrderChain = collect();
+            if ($orderIds->isNotEmpty()) {
+                $byOrderChain = \App\Models\ArInvoice::query()
+                    ->whereNull('voided_at')
+                    ->where('type', '!=', 'credit_note')
+                    ->whereIn('source_order_id', $orderIds)
+                    ->pluck('id');
+            }
+
+            // Merge and deduplicate — an invoice found via multiple paths is counted once
+            $total = $byPayment->merge($byMeta)->merge($byOrderChain)->unique()->count();
         } else {
             // Metadata-anchored: no payment link, derive from subscription item metadata.
 

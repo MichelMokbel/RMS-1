@@ -46,11 +46,33 @@ class SyncSubscriptionMealsOnInvoiceIssued
                     ->values();
 
                 $sub = null;
+
+                // Step 1: find via payment allocation (most precise)
                 if ($allocatedPaymentIds->isNotEmpty()) {
                     $sub = MealSubscription::where('customer_id', $invoice->customer_id)
                         ->where('uses_invoice_tracking', true)
                         ->whereIn('status', ['active', 'paused'])
                         ->whereIn('source_payment_id', $allocatedPaymentIds)
+                        ->orderByDesc('start_date')
+                        ->first();
+                }
+
+                // Step 2: no payment allocation yet — try via subscription order chain
+                if (! $sub && $invoice->source_order_id) {
+                    $sub = MealSubscription::where('customer_id', $invoice->customer_id)
+                        ->where('uses_invoice_tracking', true)
+                        ->whereIn('status', ['active', 'paused'])
+                        ->whereHas('subscriptionOrders', fn ($q) => $q->where('order_id', $invoice->source_order_id))
+                        ->orderByDesc('start_date')
+                        ->first();
+                }
+
+                // Step 3: pure manual invoice with no order link — match latest active subscription for customer
+                if (! $sub) {
+                    $sub = MealSubscription::where('customer_id', $invoice->customer_id)
+                        ->where('uses_invoice_tracking', true)
+                        ->whereIn('status', ['active', 'paused'])
+                        ->whereNotNull('plan_meals_total')
                         ->orderByDesc('start_date')
                         ->first();
                 }
