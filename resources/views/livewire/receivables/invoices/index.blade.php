@@ -425,27 +425,15 @@ new #[Layout('components.layouts.app')] class extends Component {
         <span>{{ __('Loading invoices...') }}</span>
     </div>
 
-    <div wire:loading.remove wire:target="applyFilters,resetFilters" class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
-        <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <label class="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
-                <input type="checkbox" wire:model.live="select_page" class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500">
-                <span>{{ __('Select all visible invoices eligible for the bulk fix') }}</span>
-            </label>
-            <flux:modal.trigger name="bulk-discount-modal">
-                <button
-                    type="button"
-                    class="touch-target inline-flex items-center justify-center rounded-md border border-neutral-900 bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-neutral-800 dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
-                >
-                    {{ __('Apply Bulk Discount') }}
-                </button>
-            </flux:modal.trigger>
-        </div>
-        <p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
-            {{ __('This one-time fix updates the invoice-level discount directly on selected draft, issued, partially paid, or paid sales invoices without changing line items or status.') }}
-        </p>
-        @error('selected_invoice_ids')
-            <p class="mt-2 text-sm text-rose-600 dark:text-rose-400">{{ $message }}</p>
-        @enderror
+    <div wire:loading.remove wire:target="applyFilters,resetFilters" class="flex justify-end">
+        <flux:modal.trigger name="bulk-discount-modal">
+            <button
+                type="button"
+                class="touch-target inline-flex items-center justify-center rounded-md border border-neutral-900 bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-neutral-800 dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
+            >
+                {{ __('Bulk Discount Fix') }}
+            </button>
+        </flux:modal.trigger>
     </div>
 
     <div wire:loading.remove wire:target="applyFilters,resetFilters" class="ar-invoices-mobile-cards">
@@ -453,16 +441,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             <article class="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
                 <div class="flex items-start justify-between gap-2">
                     <div>
-                        <label class="mb-2 inline-flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
-                            <input
-                                type="checkbox"
-                                wire:model.live="selected_invoice_ids"
-                                value="{{ $inv->id }}"
-                                @disabled(! in_array($inv->status, ['draft', 'issued', 'partially_paid', 'paid'], true) || $inv->type !== 'invoice')
-                                class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
-                            />
-                            <span>{{ __('Select') }}</span>
-                        </label>
                         <p class="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">{{ __('Invoice') }}</p>
                         <p class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $inv->invoice_number ?: ('#'.$inv->id) }}</p>
                     </div>
@@ -507,7 +485,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
-                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Select') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Date') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Invoice') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('POS Ref') }}</th>
@@ -522,15 +499,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                 @forelse ($invoices as $inv)
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
-                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
-                            <input
-                                type="checkbox"
-                                wire:model.live="selected_invoice_ids"
-                                value="{{ $inv->id }}"
-                                @disabled(! in_array($inv->status, ['draft', 'issued', 'partially_paid', 'paid'], true) || $inv->type !== 'invoice')
-                                class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
-                            />
-                        </td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
                             {{ $inv->issue_date?->toDateString() ?: '—' }}
                         </td>
@@ -570,7 +538,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="10" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">
+                        <td colspan="9" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">
                             {{ __('No invoices found.') }}
                         </td>
                     </tr>
@@ -586,6 +554,45 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
                     {{ __('Apply one invoice-level discount to all selected sales invoices. This corrective action updates issued and paid invoices in place and preserves their current status.') }}
                 </p>
+            </div>
+
+            <div class="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800/50">
+                <div class="flex items-center justify-between gap-3">
+                    <label class="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+                        <input type="checkbox" wire:model.live="select_page" class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500">
+                        <span>{{ __('Select all visible eligible invoices') }}</span>
+                    </label>
+                    <span class="text-xs text-neutral-500 dark:text-neutral-400">
+                        {{ trans_choice(':count invoice selected|:count invoices selected', count($selected_invoice_ids), ['count' => count($selected_invoice_ids)]) }}
+                    </span>
+                </div>
+
+                <div class="max-h-64 space-y-2 overflow-y-auto rounded-md border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
+                    @php
+                        $eligibleInvoices = $invoices->filter(fn ($inv) => $inv->type === 'invoice' && in_array($inv->status, ['draft', 'issued', 'partially_paid', 'paid'], true));
+                    @endphp
+
+                    @forelse ($eligibleInvoices as $inv)
+                        <label class="flex items-start gap-3 rounded-md border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700">
+                            <input
+                                type="checkbox"
+                                wire:model.live="selected_invoice_ids"
+                                value="{{ $inv->id }}"
+                                class="mt-0.5 rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500"
+                            />
+                            <span class="min-w-0">
+                                <span class="block font-medium text-neutral-900 dark:text-neutral-100">
+                                    {{ $inv->invoice_number ?: ('#'.$inv->id) }} - {{ $inv->customer?->name ?: '—' }}
+                                </span>
+                                <span class="block text-xs text-neutral-500 dark:text-neutral-400">
+                                    {{ __('Status') }}: {{ $inv->status }} | {{ __('Total') }}: {{ $this->formatMoney($inv->total_cents) }} | {{ __('Balance') }}: {{ $this->formatMoney($inv->balance_cents) }}
+                                </span>
+                            </span>
+                        </label>
+                    @empty
+                        <p class="text-sm text-neutral-500 dark:text-neutral-400">{{ __('No visible invoices are eligible for this bulk fix.') }}</p>
+                    @endforelse
+                </div>
             </div>
 
             <div class="grid gap-4 sm:grid-cols-2">
