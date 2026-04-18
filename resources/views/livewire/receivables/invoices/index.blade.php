@@ -3,9 +3,11 @@
 use App\Models\ArInvoice;
 use App\Support\Money\MinorUnits;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -18,6 +20,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $filter_status = 'all';
     public string $filter_payment_type = 'all';
     public string $filter_search = '';
+    /** @var array<int, int> */
+    public array $selected_invoice_ids = [];
+    public bool $select_page = false;
+    public string $bulk_discount_type = 'fixed';
+    public string $bulk_discount_value = '0.00';
 
     public function mount(): void
     {
@@ -30,9 +37,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->filter_status = $this->status;
         $this->filter_payment_type = $this->payment_type;
         $this->filter_search = $this->search;
+        $this->bulk_discount_value = $this->moneyZero();
     }
 
-    public function with(): array
+    protected function invoiceQuery(): Builder
     {
         $search = trim($this->search);
         $searchLower = Str::lower($search);
@@ -43,7 +51,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->all();
         $searchCompact = str_replace(' ', '', $searchLower);
 
-        $invoices = ArInvoice::query()
+        return ArInvoice::query()
             ->with(['customer', 'creator'])
             ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id))
             ->when($this->status !== 'all', fn ($q) => $q->where('status', $this->status))
@@ -79,8 +87,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 });
             })
             ->orderByDesc('id')
-            ->limit(200)
-            ->get();
+            ->limit(200);
+    }
+
+    public function with(): array
+    {
+        $invoices = $this->invoiceQuery()->get();
 
         return [
             'invoices' => $invoices,
@@ -101,6 +113,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->status = $this->filter_status;
         $this->payment_type = $this->filter_payment_type;
         $this->search = trim($this->filter_search);
+        $this->clearBulkSelection();
     }
 
     public function resetFilters(): void
@@ -113,9 +126,166 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->applyFilters();
     }
 
+    public function updatedSelectPage(bool $checked): void
+    {
+        if ($checked) {
+            $this->selected_invoice_ids = $this->selectableInvoiceIds();
+
+            return;
+        }
+
+        $this->selected_invoice_ids = [];
+    }
+
+    public function updatedSelectedInvoiceIds(): void
+    {
+        $selectable = $this->selectableInvoiceIds();
+        $selected = collect($this->selected_invoice_ids)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => in_array($id, $selectable, true))
+            ->unique()
+            ->values()
+            ->all();
+
+        $this->selected_invoice_ids = $selected;
+        $this->select_page = $selectable !== [] && count($selected) === count($selectable);
+    }
+
+    public function applyBulkDiscount(\App\Services\AR\ArInvoiceService $service): void
+    {
+        $this->resetErrorBag([
+            'selected_invoice_ids',
+            'bulk_discount_value',
+        ]);
+
+        $selected = collect($this->selected_invoice_ids)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($selected === []) {
+            $this->addError('selected_invoice_ids', __('Select at least one draft invoice.'));
+
+            return;
+        }
+
+        try {
+            $discountValue = $this->bulk_discount_type === 'percent'
+                ? $this->parsePercentToBps($this->bulk_discount_value)
+                : MinorUnits::parsePos($this->bulk_discount_value);
+        } catch (\InvalidArgumentException $e) {
+            $this->addError('bulk_discount_value', __('Enter a valid discount value.'));
+
+            return;
+        }
+
+        if ($discountValue < 0) {
+            $this->addError('bulk_discount_value', __('Discount must be zero or greater.'));
+
+            return;
+        }
+
+        try {
+            $count = $service->applyBulkDraftDiscount(
+                invoiceIds: $selected,
+                discountType: $this->bulk_discount_type,
+                discountValue: $discountValue,
+                actorId: (int) Auth::id(),
+            );
+        } catch (ValidationException $e) {
+            foreach ($e->errors() as $field => $messages) {
+                $target = $field === 'invoice_ids' ? 'selected_invoice_ids' : $field;
+
+                foreach ($messages as $message) {
+                    $this->addError($target, $message);
+                }
+            }
+
+            return;
+        }
+
+        $this->bulk_discount_type = 'fixed';
+        $this->bulk_discount_value = $this->moneyZero();
+        $this->clearBulkSelection();
+
+        session()->flash('status', trans_choice(
+            'Bulk discount applied to :count invoice.|Bulk discount applied to :count invoices.',
+            $count,
+            ['count' => $count]
+        ));
+    }
+
+    protected function clearBulkSelection(): void
+    {
+        $this->selected_invoice_ids = [];
+        $this->select_page = false;
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    protected function selectableInvoiceIds(): array
+    {
+        return $this->invoiceQuery()
+            ->where('status', 'draft')
+            ->where('type', 'invoice')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+    }
+
     public function formatMoney(?int $cents): string
     {
         return MinorUnits::format((int) ($cents ?? 0));
+    }
+
+    public function moneyScaleDigits(): int
+    {
+        return MinorUnits::scaleDigits(MinorUnits::posScale());
+    }
+
+    public function moneyStep(): string
+    {
+        $digits = $this->moneyScaleDigits();
+        if ($digits <= 0) {
+            return '1';
+        }
+
+        return '0.'.str_pad('1', $digits, '0', STR_PAD_LEFT);
+    }
+
+    public function moneyZero(): string
+    {
+        $digits = $this->moneyScaleDigits();
+        if ($digits <= 0) {
+            return '0';
+        }
+
+        return '0.'.str_repeat('0', $digits);
+    }
+
+    private function parsePercentToBps(string $percent): int
+    {
+        $percent = trim($percent);
+        if ($percent === '') {
+            return 0;
+        }
+        $negative = str_starts_with($percent, '-');
+        if ($negative) {
+            $percent = ltrim($percent, '-');
+        }
+        $percent = str_replace(',', '', $percent);
+        if (! preg_match('/^\\d+(\\.\\d+)?$/', $percent)) {
+            return 0;
+        }
+        [$whole, $frac] = array_pad(explode('.', $percent, 2), 2, '');
+        $whole = $whole === '' ? '0' : $whole;
+        $frac = substr(str_pad($frac, 2, '0', STR_PAD_RIGHT), 0, 2);
+        $bps = ((int) $whole) * 100 + (int) $frac;
+        return $negative ? -$bps : $bps;
     }
 }; ?>
 
@@ -245,11 +415,70 @@ new #[Layout('components.layouts.app')] class extends Component {
         <span>{{ __('Loading invoices...') }}</span>
     </div>
 
+    <div wire:loading.remove wire:target="applyFilters,resetFilters" class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-end">
+            <label class="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+                <input type="checkbox" wire:model.live="select_page" class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500">
+                <span>{{ __('Select all visible draft invoices') }}</span>
+            </label>
+            <div class="grid grow gap-3 sm:grid-cols-3">
+                <div>
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Discount Type') }}</label>
+                    <select wire:model.live="bulk_discount_type" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                        <option value="fixed">{{ __('Fixed Amount') }}</option>
+                        <option value="percent">{{ __('Percent') }}</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Discount Value') }}</label>
+                    <input
+                        type="number"
+                        wire:model.defer="bulk_discount_value"
+                        step="{{ $this->moneyStep() }}"
+                        min="0"
+                        class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
+                    />
+                </div>
+                <div class="flex items-end">
+                    <button
+                        type="button"
+                        wire:click="applyBulkDiscount"
+                        wire:loading.attr="disabled"
+                        wire:target="applyBulkDiscount"
+                        class="w-full touch-target inline-flex items-center justify-center rounded-md border border-neutral-900 bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-neutral-800 dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                        <span wire:loading.remove wire:target="applyBulkDiscount">{{ __('Apply Bulk Discount') }}</span>
+                        <span wire:loading.inline wire:target="applyBulkDiscount">{{ __('Applying...') }}</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+            {{ __('This action updates only draft sales invoices and recalculates invoice totals without changing line items or status.') }}
+        </p>
+        @error('selected_invoice_ids')
+            <p class="mt-2 text-sm text-rose-600 dark:text-rose-400">{{ $message }}</p>
+        @enderror
+        @error('bulk_discount_value')
+            <p class="mt-2 text-sm text-rose-600 dark:text-rose-400">{{ $message }}</p>
+        @enderror
+    </div>
+
     <div wire:loading.remove wire:target="applyFilters,resetFilters" class="ar-invoices-mobile-cards">
         @forelse ($invoices as $inv)
             <article class="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
                 <div class="flex items-start justify-between gap-2">
                     <div>
+                        <label class="mb-2 inline-flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+                            <input
+                                type="checkbox"
+                                wire:model.live="selected_invoice_ids"
+                                value="{{ $inv->id }}"
+                                @disabled($inv->status !== 'draft' || $inv->type !== 'invoice')
+                                class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            />
+                            <span>{{ __('Select') }}</span>
+                        </label>
                         <p class="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">{{ __('Invoice') }}</p>
                         <p class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $inv->invoice_number ?: ('#'.$inv->id) }}</p>
                     </div>
@@ -294,6 +523,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Select') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Date') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Invoice') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('POS Ref') }}</th>
@@ -308,6 +538,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                 @forelse ($invoices as $inv)
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
+                            <input
+                                type="checkbox"
+                                wire:model.live="selected_invoice_ids"
+                                value="{{ $inv->id }}"
+                                @disabled($inv->status !== 'draft' || $inv->type !== 'invoice')
+                                class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            />
+                        </td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
                             {{ $inv->issue_date?->toDateString() ?: '—' }}
                         </td>
@@ -347,7 +586,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="9" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">
+                        <td colspan="10" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">
                             {{ __('No invoices found.') }}
                         </td>
                     </tr>

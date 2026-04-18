@@ -14,6 +14,7 @@ use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Models\PaymentTerm;
 use App\Models\Sale;
+use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\Accounting\AccountingContextService;
 use App\Services\Accounting\JobCostingService;
 use App\Services\Sequences\DocumentSequenceService;
@@ -28,6 +29,7 @@ class ArInvoiceService
         protected DocumentSequenceService $sequences,
         protected SubledgerService $subledgerService,
         protected AccountingContextService $accountingContext,
+        protected AccountingAuditLogService $auditLog,
         protected JobCostingService $jobCostingService,
         protected ArAllocationIntegrityService $allocationIntegrity,
     )
@@ -619,6 +621,101 @@ class ArInvoiceService
             $this->recalc($locked->fresh(['items']));
 
             return $locked->fresh(['items', 'customer', 'paymentAllocations.payment']);
+        });
+    }
+
+    /**
+     * @param  array<int, int|string>  $invoiceIds
+     */
+    public function applyBulkDraftDiscount(array $invoiceIds, string $discountType, int $discountValue, int $actorId): int
+    {
+        $ids = collect($invoiceIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->sort()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            throw ValidationException::withMessages([
+                'invoice_ids' => __('Select at least one invoice.'),
+            ]);
+        }
+
+        $normalizedType = $discountType === 'percent' ? 'percent' : 'fixed';
+        $normalizedValue = max(0, $discountValue);
+
+        return DB::transaction(function () use ($ids, $normalizedType, $normalizedValue, $actorId): int {
+            $invoices = ArInvoice::query()
+                ->with('items')
+                ->whereIn('id', $ids->all())
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+
+            if ($invoices->count() !== $ids->count()) {
+                throw ValidationException::withMessages([
+                    'invoice_ids' => __('One or more selected invoices were not found.'),
+                ]);
+            }
+
+            $nonDraft = $ids
+                ->map(fn (int $id) => $invoices->get($id))
+                ->filter(fn (?ArInvoice $invoice) => $invoice && $invoice->status !== 'draft');
+
+            if ($nonDraft->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'invoice_ids' => __('Only draft invoices can receive a bulk discount.'),
+                ]);
+            }
+
+            $nonSalesInvoices = $ids
+                ->map(fn (int $id) => $invoices->get($id))
+                ->filter(fn (?ArInvoice $invoice) => $invoice && $invoice->type !== 'invoice');
+
+            if ($nonSalesInvoices->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'invoice_ids' => __('Bulk discount is only available for sales invoices.'),
+                ]);
+            }
+
+            foreach ($ids as $id) {
+                /** @var ArInvoice $invoice */
+                $invoice = $invoices->get($id);
+
+                $before = [
+                    'invoice_discount_type' => (string) ($invoice->invoice_discount_type ?: 'fixed'),
+                    'invoice_discount_value' => (int) ($invoice->invoice_discount_value ?? 0),
+                    'invoice_discount_cents' => (int) ($invoice->invoice_discount_cents ?? 0),
+                    'discount_total_cents' => (int) ($invoice->discount_total_cents ?? 0),
+                    'total_cents' => (int) ($invoice->total_cents ?? 0),
+                    'balance_cents' => (int) ($invoice->balance_cents ?? 0),
+                ];
+
+                $invoice->fill([
+                    'invoice_discount_type' => $normalizedType,
+                    'invoice_discount_value' => $normalizedValue,
+                    'updated_by' => $actorId,
+                ]);
+                $invoice->save();
+
+                $recalculated = $this->recalc($invoice);
+
+                $this->auditLog->log('ar_invoice.bulk_discount_updated', $actorId, $recalculated, [
+                    'before' => $before,
+                    'after' => [
+                        'invoice_discount_type' => (string) ($recalculated->invoice_discount_type ?: 'fixed'),
+                        'invoice_discount_value' => (int) ($recalculated->invoice_discount_value ?? 0),
+                        'invoice_discount_cents' => (int) ($recalculated->invoice_discount_cents ?? 0),
+                        'discount_total_cents' => (int) ($recalculated->discount_total_cents ?? 0),
+                        'total_cents' => (int) ($recalculated->total_cents ?? 0),
+                        'balance_cents' => (int) ($recalculated->balance_cents ?? 0),
+                    ],
+                    'mode' => 'bulk',
+                ], (int) ($recalculated->company_id ?? 0) ?: null);
+            }
+
+            return $ids->count();
         });
     }
 
