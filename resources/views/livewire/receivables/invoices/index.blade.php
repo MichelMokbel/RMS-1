@@ -28,6 +28,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $bulk_discount_acknowledged = false;
     public string $bulk_discount_customer_search = '';
     public string $bulk_discount_customer_filter = '';
+    public bool $show_bulk_discount_modal = false;
 
     public function mount(): void
     {
@@ -158,6 +159,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->bulk_discount_customer_filter = trim($this->bulk_discount_customer_search);
         $this->updatedSelectedInvoiceIds();
+        $this->show_bulk_discount_modal = true;
     }
 
     public function resetBulkDiscountCustomerSearch(): void
@@ -165,6 +167,17 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bulk_discount_customer_search = '';
         $this->bulk_discount_customer_filter = '';
         $this->updatedSelectedInvoiceIds();
+        $this->show_bulk_discount_modal = true;
+    }
+
+    public function openBulkDiscountModal(): void
+    {
+        $this->show_bulk_discount_modal = true;
+    }
+
+    public function closeBulkDiscountModal(): void
+    {
+        $this->show_bulk_discount_modal = false;
     }
 
     public function applyBulkDiscount(\App\Services\AR\ArInvoiceService $service): void
@@ -235,7 +248,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bulk_discount_customer_search = '';
         $this->bulk_discount_customer_filter = '';
         $this->clearBulkSelection();
-        $this->dispatch('modal-close', name: 'bulk-discount-modal');
+        $this->show_bulk_discount_modal = false;
 
         session()->flash('status', trans_choice(
             'Bulk discount applied to :count invoice.|Bulk discount applied to :count invoices.',
@@ -463,14 +476,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div wire:loading.remove wire:target="applyFilters,resetFilters" class="flex justify-end">
-        <flux:modal.trigger name="bulk-discount-modal">
-            <button
-                type="button"
-                class="touch-target inline-flex items-center justify-center rounded-md border border-neutral-900 bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-neutral-800 dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
-            >
-                {{ __('Bulk Discount Fix') }}
-            </button>
-        </flux:modal.trigger>
+        <button
+            type="button"
+            wire:click="openBulkDiscountModal"
+            class="touch-target inline-flex items-center justify-center rounded-md border border-neutral-900 bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-neutral-800 dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
+        >
+            {{ __('Bulk Discount Fix') }}
+        </button>
     </div>
 
     <div wire:loading.remove wire:target="applyFilters,resetFilters" class="ar-invoices-mobile-cards">
@@ -584,7 +596,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </table>
     </div>
 
-    <flux:modal name="bulk-discount-modal" :show="$errors->has('bulk_discount_value') || $errors->has('bulk_discount_acknowledged')" focusable class="max-w-xl">
+    <flux:modal name="bulk-discount-modal" :show="$show_bulk_discount_modal || $errors->has('bulk_discount_value') || $errors->has('bulk_discount_acknowledged') || $errors->has('selected_invoice_ids')" focusable class="max-w-xl">
         <div class="space-y-4">
             <div>
                 <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Bulk Discount Fix') }}</h2>
@@ -604,8 +616,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                             placeholder="{{ __('Filter by customer name') }}"
                             class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-50"
                         />
-                        <flux:button wire:click="applyBulkDiscountCustomerSearch" variant="ghost">{{ __('Search') }}</flux:button>
-                        <flux:button wire:click="resetBulkDiscountCustomerSearch" variant="ghost">{{ __('Reset') }}</flux:button>
+                        <flux:button type="button" wire:click="applyBulkDiscountCustomerSearch" variant="ghost">{{ __('Search') }}</flux:button>
+                        <flux:button type="button" wire:click="resetBulkDiscountCustomerSearch" variant="ghost">{{ __('Reset') }}</flux:button>
                     </div>
                 </div>
 
@@ -684,10 +696,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             @enderror
 
             <div class="flex justify-end gap-2">
-                <flux:modal.close>
-                    <flux:button variant="ghost">{{ __('Cancel') }}</flux:button>
-                </flux:modal.close>
-                <flux:button wire:click="applyBulkDiscount" wire:loading.attr="disabled" wire:target="applyBulkDiscount" variant="primary">
+                <flux:button type="button" wire:click="closeBulkDiscountModal" variant="ghost">{{ __('Cancel') }}</flux:button>
+                <flux:button type="button" wire:click="applyBulkDiscount" wire:loading.attr="disabled" wire:target="applyBulkDiscount" variant="primary">
                     <span wire:loading.remove wire:target="applyBulkDiscount">{{ __('Apply Discount') }}</span>
                     <span wire:loading.inline wire:target="applyBulkDiscount">{{ __('Applying...') }}</span>
                 </flux:button>
