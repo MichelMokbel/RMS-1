@@ -65,6 +65,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
             'customers' => $customers,
             'exportParams' => $this->exportParams(),
+            'bankDetails' => (array) config('reports.customer_statement.bank_details', []),
         ];
     }
 
@@ -126,8 +127,28 @@ new #[Layout('components.layouts.app')] class extends Component {
             ? DB::table('branches')->whereIn('id', $allBranchIds)->pluck('name', 'id')
             : collect();
 
+        // ── Payment references per invoice (single batch join, no N+1) ────────
+        $invoiceIds = $invoices->pluck('id');
+        $paymentRefsByInvoice = collect();
+        if ($invoiceIds->isNotEmpty() && Schema::hasTable('payment_allocations')) {
+            $paymentRefsByInvoice = DB::table('payment_allocations as pa')
+                ->join('payments as p', 'p.id', '=', 'pa.payment_id')
+                ->whereIn('pa.allocatable_id', $invoiceIds)
+                ->where('pa.allocatable_type', ArInvoice::class)
+                ->whereNull('pa.voided_at')
+                ->whereNull('p.voided_at')
+                ->select('pa.allocatable_id', 'p.reference', 'p.id as payment_id')
+                ->get()
+                ->groupBy('allocatable_id')
+                ->map(fn ($rows) => $rows
+                    ->map(fn ($r) => $r->reference ?: ('PMT-' . $r->payment_id))
+                    ->unique()
+                    ->implode(', ')
+                );
+        }
+
         // ── Map invoice rows ──────────────────────────────────────────────────
-        $invoiceRows = $invoices->map(function (ArInvoice $invoice) use ($asOf, $branchNames): array {
+        $invoiceRows = $invoices->map(function (ArInvoice $invoice) use ($asOf, $branchNames, $paymentRefsByInvoice): array {
             $dueDate     = $invoice->due_date ?: $invoice->issue_date;
             $days        = $dueDate ? (int) floor((float) $dueDate->diffInDays($asOf, false)) : 0;
             $agingLabel  = $days <= 0 ? __('Not Due') : $days . ' ' . __('Days');
@@ -154,7 +175,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'paid_cents'    => $paidCents,
                 'balance_cents' => $balanceCents,
                 'aging_label'   => $agingLabel,
-                'payment_no'    => '-',
+                'payment_no'    => $paymentRefsByInvoice->get($invoice->id, '-'),
             ];
         });
 
@@ -486,4 +507,32 @@ new #[Layout('components.layouts.app')] class extends Component {
             </tbody>
         </table>
     </div>
+
+    {{-- Bank Account Details --}}
+    @if (! empty($bankDetails))
+    <div class="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+        <p class="mb-3 text-sm font-bold text-neutral-800 dark:text-neutral-100 underline underline-offset-2">{{ __('Bank Account Details') }}</p>
+        <table class="text-sm">
+            <tbody>
+                @foreach ([
+                    ['Account Name',   $bankDetails['account_name'] ?? null],
+                    ['Account Number', $bankDetails['account_no']   ?? null],
+                    ['IBAN',           $bankDetails['iban']         ?? null],
+                    ['SWIFT Code',     $bankDetails['swift_code']   ?? null],
+                    ['Bank',           $bankDetails['bank_name']    ?? null],
+                    ['Address',        $bankDetails['bank_address'] ?? null],
+                ] as [$label, $value])
+                    @if ($value)
+                    <tr class="align-top">
+                        <td class="w-40 py-0.5 font-bold text-neutral-700 dark:text-neutral-200">{{ $label }}</td>
+                        <td class="w-4 py-0.5 font-bold text-neutral-700 dark:text-neutral-200">:</td>
+                        <td class="py-0.5 text-neutral-800 dark:text-neutral-100">{{ $value }}</td>
+                    </tr>
+                    @endif
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+    @endif
+
 </div>

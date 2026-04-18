@@ -373,12 +373,12 @@ return [
 
     'customer_statement' => [
         'bank_details' => [
-            'account_name' => 'LAYLA KITCHEN W.L.L',
-            'bank_name' => 'Qatar Islamic Bank',
-            'bank_address' => '',
-            'account_no' => '',
-            'iban' => '',
-            'swift_code' => '',
+            'account_name' => 'LAYLA KITCHEN',
+            'account_no'   => '152459880011',
+            'iban'         => 'QA79QISB000000000152459880011',
+            'swift_code'   => 'QISBQAQAXXX',
+            'bank_name'    => 'QATAR ISLAMIC BANK',
+            'bank_address' => 'GRAND HAMAD STREET– Doha, Qatar',
         ],
     ],
 ];

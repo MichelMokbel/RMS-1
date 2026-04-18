@@ -172,8 +172,28 @@ class CustomerStatementReportController extends Controller
             ->whereIn('id', $allBranchIds)
             ->pluck('name', 'id');
 
+        // ── Payment references per invoice (single batch join, no N+1) ────────
+        $invoiceIds = $invoices->pluck('id');
+        $paymentRefsByInvoice = collect();
+        if ($invoiceIds->isNotEmpty()) {
+            $paymentRefsByInvoice = \Illuminate\Support\Facades\DB::table('payment_allocations as pa')
+                ->join('payments as p', 'p.id', '=', 'pa.payment_id')
+                ->whereIn('pa.allocatable_id', $invoiceIds)
+                ->where('pa.allocatable_type', ArInvoice::class)
+                ->whereNull('pa.voided_at')
+                ->whereNull('p.voided_at')
+                ->select('pa.allocatable_id', 'p.reference', 'p.id as payment_id')
+                ->get()
+                ->groupBy('allocatable_id')
+                ->map(fn ($rows) => $rows
+                    ->map(fn ($r) => $r->reference ?: ('PMT-' . $r->payment_id))
+                    ->unique()
+                    ->implode(', ')
+                );
+        }
+
         // ── Map invoice rows ──────────────────────────────────────────────────
-        $invoiceRows = $invoices->map(function (ArInvoice $invoice) use ($branchNames, $asOf): array {
+        $invoiceRows = $invoices->map(function (ArInvoice $invoice) use ($branchNames, $asOf, $paymentRefsByInvoice): array {
             $dueDate      = $invoice->due_date ?: $invoice->issue_date;
             $days         = $dueDate ? (int) floor((float) $dueDate->diffInDays($asOf, false)) : 0;
             $agingLabel   = $days <= 0 ? __('Not Due') : $days . ' ' . __('Days');
@@ -202,7 +222,7 @@ class CustomerStatementReportController extends Controller
                 'paid_cents'    => $paidCents,
                 'balance_cents' => $balanceCents,
                 'aging_label'   => $agingLabel,
-                'payment_no'    => '-',
+                'payment_no'    => $paymentRefsByInvoice->get($invoice->id, '-'),
             ];
         });
 

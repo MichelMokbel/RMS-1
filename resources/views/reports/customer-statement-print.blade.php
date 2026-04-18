@@ -244,11 +244,11 @@
                 <div class="bank-title">Bank Account Details</div>
                 <table class="bank-table">
                     <tr><td class="bank-label">Account Name</td><td class="bank-colon">:</td><td class="bank-value">{{ $bankDetails['account_name'] ?? '-' }}</td></tr>
-                    <tr><td class="bank-label">Bank Name</td><td class="bank-colon">:</td><td class="bank-value">{{ $bankDetails['bank_name'] ?? '-' }}</td></tr>
-                    <tr><td class="bank-label">Bank Address</td><td class="bank-colon">:</td><td class="bank-value">{{ $bankDetails['bank_address'] ?? '-' }}</td></tr>
-                    <tr><td class="bank-label">Account No.</td><td class="bank-colon">:</td><td class="bank-value">{{ $bankDetails['account_no'] ?? '-' }}</td></tr>
+                    <tr><td class="bank-label">Account Number</td><td class="bank-colon">:</td><td class="bank-value">{{ $bankDetails['account_no'] ?? '-' }}</td></tr>
                     <tr><td class="bank-label">IBAN</td><td class="bank-colon">:</td><td class="bank-value">{{ $bankDetails['iban'] ?? '-' }}</td></tr>
                     <tr><td class="bank-label">SWIFT Code</td><td class="bank-colon">:</td><td class="bank-value">{{ $bankDetails['swift_code'] ?? '-' }}</td></tr>
+                    <tr><td class="bank-label">Bank</td><td class="bank-colon">:</td><td class="bank-value">{{ $bankDetails['bank_name'] ?? '-' }}</td></tr>
+                    <tr><td class="bank-label">Address</td><td class="bank-colon">:</td><td class="bank-value">{{ $bankDetails['bank_address'] ?? '-' }}</td></tr>
                 </table>
             </div>
         </div>
