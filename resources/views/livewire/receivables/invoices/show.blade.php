@@ -2,8 +2,10 @@
 
 use App\Models\ArInvoice;
 use App\Models\Payment;
+use App\Models\PaymentAllocation;
 use App\Services\AR\ArAllocationService;
 use App\Services\AR\ArInvoiceService;
+use App\Services\AR\ArPaymentDeleteService;
 use App\Services\AR\ArPaymentService;
 use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\Auth;
@@ -214,6 +216,29 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->credit_amount = $this->moneyZero();
         $this->loadAdvances();
         session()->flash('status', __('Credit note applied.'));
+    }
+
+    public function removeAllocation(int $allocationId, ArPaymentDeleteService $service): void
+    {
+        if (! Auth::user()?->hasRole('admin')) {
+            abort(403);
+        }
+
+        $allocation = PaymentAllocation::findOrFail($allocationId);
+
+        try {
+            $service->removeAllocation($allocation, Auth::id());
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            foreach ($e->errors() as $messages) {
+                foreach ($messages as $message) {
+                    $this->addError('allocation', $message);
+                }
+            }
+            return;
+        }
+
+        $this->invoice = ArInvoice::with(['items', 'customer', 'job', 'paymentAllocations.payment'])->findOrFail($this->invoice->id);
+        session()->flash('status', __('Allocation removed.'));
     }
 
     public function applyAdvance(ArPaymentService $payments): void
@@ -580,6 +605,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             @if ($active_tab === 'allocations')
                 <div class="space-y-3">
                     <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Allocations') }}</h2>
+                    @error('allocation') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
                     <div class="space-y-2">
                         @forelse ($invoice->paymentAllocations as $allocRow)
                             <div class="flex items-center justify-between rounded-md border border-neutral-200 p-3 text-sm dark:border-neutral-700">
@@ -587,7 +613,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     {{ strtoupper($allocRow->payment?->method ?? '—') }}
                                     <span class="text-xs text-neutral-500 dark:text-neutral-400">• {{ $allocRow->payment?->received_at?->format('Y-m-d H:i') }}</span>
                                 </div>
-                                <div class="font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($allocRow->amount_cents) }}</div>
+                                <div class="flex items-center gap-3">
+                                    <span class="font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($allocRow->amount_cents) }}</span>
+                                    @if(auth()->user()?->hasRole('admin'))
+                                        <flux:button
+                                            wire:click="removeAllocation({{ $allocRow->id }})"
+                                            wire:confirm="{{ __('Remove this allocation? The invoice balance will be restored.') }}"
+                                            size="xs" variant="ghost" class="text-rose-600 hover:text-rose-700">
+                                            {{ __('Remove') }}
+                                        </flux:button>
+                                    @endif
+                                </div>
                             </div>
                         @empty
                             <p class="text-sm text-neutral-500 dark:text-neutral-400">{{ __('No allocations.') }}</p>

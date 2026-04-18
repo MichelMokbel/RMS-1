@@ -3,6 +3,8 @@
 use App\Models\ArInvoice;
 use App\Models\MealSubscription;
 use App\Models\Payment;
+use App\Models\PaymentAllocation;
+use App\Services\AR\ArPaymentDeleteService;
 use App\Services\AR\ArPaymentService;
 use App\Services\Subscriptions\SubscriptionPaymentLinkService;
 use App\Support\Money\MinorUnits;
@@ -259,6 +261,30 @@ new #[Layout('components.layouts.app')] class extends Component {
         session()->flash('status', __('Payment allocated.'));
     }
 
+    public function removeAllocation(int $allocationId, ArPaymentDeleteService $service): void
+    {
+        if (! Auth::user()?->hasRole('admin')) {
+            abort(403);
+        }
+
+        $allocation = PaymentAllocation::findOrFail($allocationId);
+
+        try {
+            $service->removeAllocation($allocation, Auth::id());
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            foreach ($e->errors() as $messages) {
+                foreach ($messages as $message) {
+                    $this->addError('allocation', $message);
+                }
+            }
+            return;
+        }
+
+        $this->refreshPayment();
+        $this->loadInvoices();
+        session()->flash('status', __('Allocation removed.'));
+    }
+
     private function refreshPayment(?Payment $payment = null): void
     {
         $model = $payment ?? $this->payment;
@@ -450,12 +476,16 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
         <h3 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200 mb-2">{{ __('Allocations') }}</h3>
+        @error('allocation') <p class="text-xs text-rose-600 mb-2">{{ $message }}</p> @enderror
         <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Invoice') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Invoice Date') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Amount') }}</th>
+                    @if(auth()->user()?->hasRole('admin'))
+                        <th class="px-3 py-2"></th>
+                    @endif
                 </tr>
             </thead>
             <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -471,9 +501,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                             {{ $invoice?->issue_date?->format('Y-m-d') ?? '—' }}
                         </td>
                         <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney($alloc->amount_cents) }}</td>
+                        @if(auth()->user()?->hasRole('admin'))
+                            <td class="px-3 py-2 text-right">
+                                <flux:button
+                                    wire:click="removeAllocation({{ $alloc->id }})"
+                                    wire:confirm="{{ __('Remove this allocation? The invoice balance will be restored.') }}"
+                                    size="xs" variant="ghost" class="text-rose-600 hover:text-rose-700">
+                                    {{ __('Remove') }}
+                                </flux:button>
+                            </td>
+                        @endif
                     </tr>
                 @empty
-                    <tr><td colspan="3" class="px-3 py-3 text-sm text-neutral-600 dark:text-neutral-300 text-center">{{ __('No allocations') }}</td></tr>
+                    <tr><td colspan="{{ auth()->user()?->hasRole('admin') ? 4 : 3 }}" class="px-3 py-3 text-sm text-neutral-600 dark:text-neutral-300 text-center">{{ __('No allocations') }}</td></tr>
                 @endforelse
             </tbody>
         </table>

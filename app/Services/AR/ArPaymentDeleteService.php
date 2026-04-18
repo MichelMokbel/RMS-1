@@ -18,6 +18,70 @@ class ArPaymentDeleteService
     ) {
     }
 
+    public function removeAllocation(PaymentAllocation $allocation, int $userId): void
+    {
+        DB::transaction(function () use ($allocation, $userId): void {
+            $allocation = PaymentAllocation::query()
+                ->whereKey($allocation->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($allocation->voided_at !== null) {
+                throw ValidationException::withMessages([
+                    'allocation' => __('This allocation has already been removed.'),
+                ]);
+            }
+
+            if ($allocation->allocatable_type !== ArInvoice::class) {
+                throw ValidationException::withMessages([
+                    'allocation' => __('Only AR invoice allocations can be removed here.'),
+                ]);
+            }
+
+            // Reverse the subledger entry for this allocation
+            $entry = SubledgerEntry::query()
+                ->where('source_type', 'ar_payment_allocation')
+                ->where('source_id', $allocation->id)
+                ->where('event', 'apply')
+                ->first();
+
+            if ($entry) {
+                $this->subledgerService->recordReversalForEntry(
+                    $entry,
+                    'delete',
+                    'AR payment allocation remove '.$allocation->id,
+                    now()->toDateString(),
+                    $userId
+                );
+            }
+
+            // Void the allocation record
+            $allocation->voided_at = now();
+            $allocation->voided_by = $userId;
+            $allocation->void_reason = 'Manually removed';
+            $allocation->save();
+
+            // Recalculate the invoice balance and status
+            $invoiceId = (int) $allocation->allocatable_id;
+            $invoice = ArInvoice::query()->whereKey($invoiceId)->lockForUpdate()->first();
+
+            if ($invoice) {
+                $paid = (int) PaymentAllocation::query()
+                    ->where('allocatable_type', ArInvoice::class)
+                    ->where('allocatable_id', $invoice->id)
+                    ->whereNull('voided_at')
+                    ->sum('amount_cents');
+
+                $invoice->update([
+                    'paid_total_cents' => $paid,
+                    'balance_cents'    => (int) $invoice->total_cents - $paid,
+                ]);
+
+                $this->allocationService->recalcStatus($invoice->fresh());
+            }
+        });
+    }
+
     public function delete(Payment $payment, int $userId): void
     {
         DB::transaction(function () use ($payment, $userId): void {
