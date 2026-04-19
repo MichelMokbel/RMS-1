@@ -6,10 +6,34 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Validation\ValidationException;
 
 class JournalEntry extends Model
 {
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        static::updating(function (JournalEntry $journal) {
+            if ($journal->getOriginal('status') === 'draft') {
+                return;
+            }
+
+            throw ValidationException::withMessages([
+                'journal' => __('Posted journal entries are immutable.'),
+            ]);
+        });
+
+        static::deleting(function (JournalEntry $journal) {
+            if ($journal->status === 'draft') {
+                return;
+            }
+
+            throw ValidationException::withMessages([
+                'journal' => __('Posted journal entries are immutable.'),
+            ]);
+        });
+    }
 
     protected $fillable = [
         'company_id',

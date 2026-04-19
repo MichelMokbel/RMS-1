@@ -4,18 +4,25 @@ namespace App\Services\AP;
 
 use App\Models\ApInvoice;
 use App\Models\ApPayment;
+use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 
 class ApReportsService
 {
-    public function agingSummary(?int $supplierId = null): array
+    public function agingSummary(?int $supplierId = null, Carbon|string|null $asOf = null): array
     {
+        $asOfDate = $asOf instanceof Carbon
+            ? $asOf->copy()->startOfDay()
+            : ($asOf ? Carbon::parse($asOf)->startOfDay() : now()->startOfDay());
+
         $query = ApInvoice::query()
+            ->whereNull('voided_at')
             ->whereNotIn('status', ['void', 'paid'])
             ->where(function ($q) {
                 $q->where('status', '!=', 'draft');
             })
+            ->whereDate('invoice_date', '<=', $asOfDate->toDateString())
             ->withSum('allocations as paid_sum', 'allocated_amount');
 
         if ($supplierId) {
@@ -30,11 +37,10 @@ class ApReportsService
             '90_plus' => 0,
         ];
 
-        $today = now()->startOfDay();
         foreach ($query->get() as $inv) {
             $paid = (float) $inv->paid_sum;
             $outstanding = max((float) $inv->total_amount - $paid, 0);
-            $days = $today->diffInDays($inv->due_date, false) * -1;
+            $days = $asOfDate->diffInDays($inv->due_date, false) * -1;
 
             if ($days <= 0) {
                 $buckets['current'] += $outstanding;
@@ -56,6 +62,7 @@ class ApReportsService
     {
         $query = ApInvoice::query()
             ->with(['supplier'])
+            ->whereNull('voided_at')
             ->withSum('allocations as paid_sum', 'allocated_amount');
 
         if (! empty($filters['supplier_id'])) {
@@ -84,7 +91,10 @@ class ApReportsService
 
     public function paymentRegister(array $filters): LengthAwarePaginator
     {
-        $query = ApPayment::query()->with(['supplier'])->withSum('allocations as allocated_sum', 'allocated_amount');
+        $query = ApPayment::query()
+            ->with(['supplier'])
+            ->whereNull('voided_at')
+            ->withSum('allocations as allocated_sum', 'allocated_amount');
 
         if (! empty($filters['supplier_id'])) {
             $query->where('supplier_id', $filters['supplier_id']);

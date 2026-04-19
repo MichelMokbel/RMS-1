@@ -68,6 +68,7 @@ class CustomerStatementReportController extends Controller
 
         $invoiceBase = ArInvoice::query()
             ->where('customer_id', $customerId)
+            ->whereNull('voided_at')
             ->whereIn('status', ['issued', 'partially_paid', 'paid'])
             ->whereIn('type', ['invoice', 'credit_note'])
             ->when($branchId > 0, fn ($q) => $q->where('branch_id', $branchId));
@@ -75,6 +76,7 @@ class CustomerStatementReportController extends Controller
         $paymentBase = Payment::query()
             ->where('source', 'ar')
             ->where('customer_id', $customerId)
+            ->whereNull('voided_at')
             ->when($branchId > 0, fn ($q) => $q->where('branch_id', $branchId));
 
         $openingInvoices = (int) $invoiceBase->clone()->whereDate('issue_date', '<', $dateFrom)->sum('total_cents');
@@ -141,6 +143,7 @@ class CustomerStatementReportController extends Controller
         // ── Invoices ──────────────────────────────────────────────────────────
         $invoices = ArInvoice::query()
             ->where('customer_id', $customerId)
+            ->whereNull('voided_at')
             ->where('type', 'invoice')
             ->whereIn('status', ['issued', 'partially_paid', 'paid'])
             ->when($onlyUnpaid, fn ($q) => $q->where('balance_cents', '>', 0))

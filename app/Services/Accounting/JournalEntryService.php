@@ -139,10 +139,22 @@ class JournalEntryService
     public function reverse(JournalEntry $journal, int $actorId, ?string $reversalDate = null, ?string $memo = null): JournalEntry
     {
         return DB::transaction(function () use ($journal, $actorId, $reversalDate, $memo) {
-            $journal = JournalEntry::query()->with('lines')->findOrFail($journal->id);
+            $journal = JournalEntry::query()->with('lines')->lockForUpdate()->findOrFail($journal->id);
             if ($journal->status !== 'posted') {
                 throw ValidationException::withMessages([
                     'journal' => __('Only posted journal entries can be reversed.'),
+                ]);
+            }
+
+            $existingReversal = JournalEntry::query()
+                ->where('source_type', JournalEntry::class)
+                ->where('source_id', $journal->id)
+                ->where('entry_type', 'reversal')
+                ->exists();
+
+            if ($existingReversal) {
+                throw ValidationException::withMessages([
+                    'journal' => __('This journal entry has already been reversed.'),
                 ]);
             }
 
@@ -243,7 +255,7 @@ class JournalEntryService
             ]);
         }
 
-        if (abs($debits - $credits) > 0.009) {
+        if (abs($debits - $credits) > 0.0001) {
             throw ValidationException::withMessages([
                 'lines' => __('Journal entry is not balanced. Debits must equal credits.'),
             ]);

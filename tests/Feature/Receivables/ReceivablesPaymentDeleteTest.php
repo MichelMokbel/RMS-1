@@ -135,8 +135,16 @@ it('allows admins to delete customer payments and restore invoice balances', fun
         ->delete(route('receivables.payments.destroy', $payment))
         ->assertRedirect(route('receivables.payments.index'));
 
-    $this->assertDatabaseMissing('payments', ['id' => $payment->id]);
-    $this->assertDatabaseMissing('payment_allocations', ['id' => $allocation->id]);
+    $this->assertDatabaseHas('payments', [
+        'id' => $payment->id,
+        'voided_by' => $admin->id,
+        'void_reason' => 'Payment voided',
+    ]);
+    $this->assertDatabaseHas('payment_allocations', [
+        'id' => $allocation->id,
+        'voided_by' => $admin->id,
+        'void_reason' => 'Payment voided',
+    ]);
 
     $invoice->refresh();
     expect($invoice->status)->toBe('issued');
@@ -146,6 +154,11 @@ it('allows admins to delete customer payments and restore invoice balances', fun
     $this->assertDatabaseHas('subledger_entries', [
         'source_type' => 'ar_payment',
         'source_id' => $payment->id,
+        'event' => 'delete',
+    ]);
+    $this->assertDatabaseHas('subledger_entries', [
+        'source_type' => 'ar_payment_allocation',
+        'source_id' => $allocation->id,
         'event' => 'delete',
     ]);
 });

@@ -5,10 +5,34 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Validation\ValidationException;
 
 class JournalEntryLine extends Model
 {
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        static::updating(function (JournalEntryLine $line) {
+            if ($line->journalEntry?->status === 'draft') {
+                return;
+            }
+
+            throw ValidationException::withMessages([
+                'journal' => __('Posted journal entries are immutable.'),
+            ]);
+        });
+
+        static::deleting(function (JournalEntryLine $line) {
+            if ($line->journalEntry?->status === 'draft') {
+                return;
+            }
+
+            throw ValidationException::withMessages([
+                'journal' => __('Posted journal entries are immutable.'),
+            ]);
+        });
+    }
 
     protected $fillable = [
         'journal_entry_id',

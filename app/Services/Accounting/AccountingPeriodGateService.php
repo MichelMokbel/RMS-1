@@ -45,7 +45,9 @@ class AccountingPeriodGateService
                 ->first();
 
         if (! $period) {
-            return;
+            throw ValidationException::withMessages([
+                $errorKey => __('No accounting period exists for :date.', ['date' => $normalizedDate]),
+            ]);
         }
 
         if ($this->isLocked($period, $module) || $period->status === 'closed') {

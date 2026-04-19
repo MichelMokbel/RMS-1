@@ -132,6 +132,16 @@ class SubledgerService
         $debitKey = $this->apInvoiceDebitKey($invoice);
         $expenseAccountId = $this->apInvoiceExpenseAccountId($invoice);
         $apAccount = 'ap_invoice_ap';
+        $companyId = $this->accountingContext->resolveCompanyId((int) ($invoice->branch_id ?? 0), (int) ($invoice->company_id ?? 0));
+
+        $requiredMappings = ['ap_control'];
+        if ($subtotal > 0 && ! $expenseAccountId) {
+            $requiredMappings[] = $debitKey;
+        }
+        if ($tax > 0) {
+            $requiredMappings[] = 'tax_input';
+        }
+        $this->mappingService->assertRequiredMappings($companyId, $requiredMappings);
 
         $lines = [];
         if ($subtotal > 0 && $invoice->document_type === 'landed_cost_adjustment') {
@@ -208,7 +218,7 @@ class SubledgerService
             lines: $lines,
             userId: $userId,
             branchId: $invoice->branch_id,
-            companyId: $invoice->company_id,
+            companyId: $companyId,
             departmentId: $invoice->department_id,
             jobId: $invoice->job_id
         );
@@ -421,6 +431,13 @@ class SubledgerService
         $total = $this->moneyFromCents(abs($totalCents));
         $tax = $this->moneyFromCents(abs($taxCents));
         $net = $this->moneyFromCents(abs($netCents));
+        $companyId = $this->accountingContext->resolveCompanyId((int) ($invoice->branch_id ?? 0), (int) ($invoice->company_id ?? 0));
+
+        $requiredMappings = ['ar_control', 'sales_revenue'];
+        if ($tax > 0) {
+            $requiredMappings[] = 'tax_output';
+        }
+        $this->mappingService->assertRequiredMappings($companyId, $requiredMappings);
 
         $lines = [];
         if ($totalCents > 0) {
@@ -482,7 +499,7 @@ class SubledgerService
             lines: $lines,
             userId: $userId,
             branchId: $invoice->branch_id,
-            companyId: $invoice->company_id ?? null,
+            companyId: $companyId,
             jobId: $invoice->job_id
         );
     }
@@ -587,6 +604,91 @@ class SubledgerService
             userId: $userId,
             branchId: $allocation->payment?->branch_id,
             companyId: $allocation->payment?->company_id
+        );
+    }
+
+    public function recordArAllocationReleased(PaymentAllocation $allocation, int $userId, string $reason = 'void', ?string $entryDate = null): ?SubledgerEntry
+    {
+        if (! $this->canPost()) {
+            return null;
+        }
+
+        $allocation->loadMissing('payment');
+        $effectiveDate = $entryDate
+            ?: optional($allocation->payment?->voided_at)->toDateString()
+            ?: now()->toDateString();
+
+        $applyEntry = SubledgerEntry::query()
+            ->where('source_type', 'ar_payment_allocation')
+            ->where('source_id', $allocation->id)
+            ->where('event', 'apply')
+            ->first();
+
+        if ($applyEntry) {
+            return $this->recordReversalForEntry(
+                $applyEntry,
+                $reason,
+                'Reverse customer advance application '.$allocation->id,
+                $effectiveDate,
+                $userId
+            );
+        }
+
+        $amountCents = (int) ($allocation->amount_cents ?? 0);
+        if ($amountCents <= 0) {
+            return null;
+        }
+
+        $amount = $this->moneyFromCents($amountCents);
+
+        return $this->recordEntry(
+            sourceType: 'ar_payment_allocation',
+            sourceId: $allocation->id,
+            event: $reason,
+            entryDate: $effectiveDate,
+            description: 'Release AR payment allocation '.$allocation->id,
+            lines: [
+                [
+                    'account' => 'ar_invoice_ar',
+                    'debit' => $amount,
+                    'credit' => 0,
+                    'memo' => 'Restore customer advance from invoice allocation',
+                ],
+                [
+                    'account' => 'ar_payment_advance',
+                    'debit' => 0,
+                    'credit' => $amount,
+                    'memo' => 'Reclassify removed allocation to customer advance',
+                ],
+            ],
+            userId: $userId,
+            branchId: $allocation->payment?->branch_id,
+            companyId: $allocation->payment?->company_id
+        );
+    }
+
+    public function recordArPaymentVoided(Payment $payment, int $userId, ?string $entryDate = null): ?SubledgerEntry
+    {
+        if (! $this->canPost()) {
+            return null;
+        }
+
+        $paymentEntry = SubledgerEntry::query()
+            ->where('source_type', 'ar_payment')
+            ->where('source_id', $payment->id)
+            ->where('event', 'payment')
+            ->first();
+
+        if (! $paymentEntry) {
+            return null;
+        }
+
+        return $this->recordReversalForEntry(
+            $paymentEntry,
+            'delete',
+            'AR payment delete '.$payment->id,
+            $entryDate ?: optional($payment->voided_at)->toDateString() ?: now()->toDateString(),
+            $userId
         );
     }
 

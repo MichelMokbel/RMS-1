@@ -2,10 +2,13 @@
 
 use App\Models\AccountingCompany;
 use App\Models\JournalEntry;
+use App\Models\JournalEntryLine;
 use App\Models\LedgerAccount;
 use App\Models\SubledgerEntry;
+use App\Services\Accounting\JournalEntryService;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 
@@ -83,4 +86,47 @@ it('creates drafts, posts journals, and creates posted reversals', function () {
             ->where('source_id', $reversal->id)
             ->where('event', 'post')
             ->exists())->toBeTrue();
+
+    expect(fn () => app(JournalEntryService::class)->reverse($journal->fresh(), $this->user->id))
+        ->toThrow(ValidationException::class);
+});
+
+it('prevents mutation of posted journals and lines', function () {
+    $company = AccountingCompany::query()->where('is_default', true)->firstOrFail();
+    $cash = LedgerAccount::query()->where('code', '1000')->firstOrFail();
+    $expense = LedgerAccount::query()->where('code', '6000')->firstOrFail();
+
+    /** @var JournalEntryService $service */
+    $service = app(JournalEntryService::class);
+    $journal = $service->saveDraft([
+        'company_id' => $company->id,
+        'entry_date' => '2026-03-20',
+        'memo' => 'Immutable journal',
+        'lines' => [
+            [
+                'account_id' => $expense->id,
+                'debit' => 125,
+                'credit' => 0,
+                'memo' => 'Expense',
+            ],
+            [
+                'account_id' => $cash->id,
+                'debit' => 0,
+                'credit' => 125,
+                'memo' => 'Cash',
+            ],
+        ],
+    ], $this->user->id);
+    $journal = $service->post($journal, $this->user->id);
+    $line = JournalEntryLine::query()->where('journal_entry_id', $journal->id)->firstOrFail();
+
+    expect(function () use ($journal) {
+        $journal->memo = 'Changed';
+        $journal->save();
+    })->toThrow(ValidationException::class);
+
+    expect(function () use ($line) {
+        $line->memo = 'Changed';
+        $line->save();
+    })->toThrow(ValidationException::class);
 });

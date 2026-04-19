@@ -11,6 +11,7 @@ use App\Services\Accounting\LedgerAccountMappingService;
 use App\Services\Accounting\AccountingPeriodGateService;
 use App\Services\Banking\BankTransactionService;
 use App\Services\Ledger\SubledgerService;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -32,20 +33,35 @@ class ApAllocationService
 
     public function createPaymentWithAllocations(array $payload, int $userId): ApPayment
     {
-        return DB::transaction(function () use ($payload, $userId) {
+        $clientUuid = trim((string) ($payload['client_uuid'] ?? ''));
+        if ($clientUuid !== '') {
+            $existing = ApPayment::query()
+                ->with(['allocations.invoice'])
+                ->where('client_uuid', $clientUuid)
+                ->first();
+
+            if ($existing) {
+                $this->assertReplayMatches($existing, $payload);
+                return $existing;
+            }
+        }
+
+        try {
+            return DB::transaction(function () use ($payload, $userId, $clientUuid) {
             $this->validateAllocations($payload['allocations'] ?? [], $payload['supplier_id']);
             $this->supplierPolicy->assertCanPay(
                 \App\Models\Supplier::query()->find((int) $payload['supplier_id']),
                 'supplier_id'
             );
             $companyId = $this->accountingContext->resolveCompanyId($payload['branch_id'] ?? null, $payload['company_id'] ?? null);
-            $periodId = $this->accountingContext->resolvePeriodId($payload['payment_date'] ?? null, $payload['company_id'] ?? null);
+            $periodId = $this->accountingContext->resolvePeriodId($payload['payment_date'] ?? null, $companyId);
             $paymentMethod = $this->mappingService->normalizePaymentMethod((string) ($payload['payment_method'] ?? 'bank_transfer'));
             $bankAccountId = $this->resolveBankAccountId($paymentMethod, $companyId, $payload['bank_account_id'] ?? null);
             $this->periodGate->assertDateOpen((string) $payload['payment_date'], $companyId, $periodId, 'ap', 'payment_date');
 
             $payment = ApPayment::create([
                 'supplier_id' => $payload['supplier_id'],
+                'client_uuid' => $clientUuid !== '' ? $clientUuid : null,
                 'company_id' => $companyId,
                 'bank_account_id' => $bankAccountId,
                 'branch_id' => $payload['branch_id'] ?? null,
@@ -77,7 +93,22 @@ class ApAllocationService
             ], (int) ($payment->company_id ?? 0) ?: null);
 
             return $payment->fresh(['allocations.invoice']);
-        });
+            });
+        } catch (QueryException $e) {
+            if ($clientUuid !== '') {
+                $existing = ApPayment::query()
+                    ->with(['allocations.invoice'])
+                    ->where('client_uuid', $clientUuid)
+                    ->first();
+
+                if ($existing) {
+                    $this->assertReplayMatches($existing, $payload);
+                    return $existing;
+                }
+            }
+
+            throw $e;
+        }
     }
 
     public function allocateExistingPayment(ApPayment $payment, array $allocations, int $userId): ApPayment
@@ -178,5 +209,45 @@ class ApAllocationService
         }
 
         return (int) $bankAccount->id;
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     */
+    private function assertReplayMatches(ApPayment $payment, array $payload): void
+    {
+        $requestedAllocations = collect((array) ($payload['allocations'] ?? []))
+            ->map(fn (array $row) => [
+                'invoice_id' => (int) ($row['invoice_id'] ?? 0),
+                'allocated_amount' => round((float) ($row['allocated_amount'] ?? 0), 2),
+            ])
+            ->filter(fn (array $row) => $row['invoice_id'] > 0 && $row['allocated_amount'] > 0)
+            ->sortBy(['invoice_id', 'allocated_amount'])
+            ->values()
+            ->all();
+
+        $existingAllocations = $payment->allAllocations()
+            ->whereNull('voided_at')
+            ->get()
+            ->map(fn (ApPaymentAllocation $allocation) => [
+                'invoice_id' => (int) $allocation->invoice_id,
+                'allocated_amount' => round((float) $allocation->allocated_amount, 2),
+            ])
+            ->sortBy(['invoice_id', 'allocated_amount'])
+            ->values()
+            ->all();
+
+        $matches = (int) $payment->supplier_id === (int) ($payload['supplier_id'] ?? 0)
+            && round((float) $payment->amount, 2) === round((float) ($payload['amount'] ?? 0), 2)
+            && strtolower((string) $payment->payment_method) === $this->mappingService->normalizePaymentMethod((string) ($payload['payment_method'] ?? 'bank_transfer'))
+            && optional($payment->payment_date)->toDateString() === (string) ($payload['payment_date'] ?? '')
+            && (string) ($payment->currency_code ?? config('pos.currency', 'QAR')) === (string) ($payload['currency_code'] ?? ($payment->currency_code ?? config('pos.currency', 'QAR')))
+            && json_encode($existingAllocations, JSON_THROW_ON_ERROR) === json_encode($requestedAllocations, JSON_THROW_ON_ERROR);
+
+        if (! $matches) {
+            throw ValidationException::withMessages([
+                'client_uuid' => __('The supplied payment idempotency key belongs to a different AP payment request.'),
+            ]);
+        }
     }
 }

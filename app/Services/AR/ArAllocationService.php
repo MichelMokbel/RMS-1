@@ -5,6 +5,7 @@ namespace App\Services\AR;
 use App\Models\ArInvoice;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
+use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\Accounting\AccountingContextService;
 use App\Services\Accounting\LedgerAccountMappingService;
 use App\Services\Banking\BankTransactionService;
@@ -20,6 +21,7 @@ class ArAllocationService
         protected AccountingContextService $accountingContext,
         protected LedgerAccountMappingService $mappingService,
         protected BankTransactionService $bankTransactionService,
+        protected AccountingAuditLogService $auditLog,
         protected ArAllocationIntegrityService $allocationIntegrity,
     )
     {
@@ -107,6 +109,12 @@ class ArAllocationService
                 $actorId
             );
             $this->bankTransactionService->recordArPayment($payment->fresh(), $actorId);
+            $this->auditLog->log('ar_payment.created', $actorId, $payment, [
+                'applied_cents' => (int) $allocated,
+                'unapplied_cents' => (int) ($amount - $allocated),
+                'invoice_id' => (int) $invoice->id,
+                'reference' => $payload['reference'] ?? null,
+            ]);
 
             return [
                 'payment' => $payment->fresh(['allocations']),
@@ -187,6 +195,11 @@ class ArAllocationService
             $this->invoices->recalc($credit);
             $this->recalcStatus($target->fresh());
             $this->recalcStatus($credit->fresh());
+            $this->auditLog->log('ar_credit_note.applied', $actorId, $payment, [
+                'credit_invoice_id' => (int) $credit->id,
+                'target_invoice_id' => (int) $target->id,
+                'amount_cents' => (int) $apply,
+            ]);
 
             return $payment->fresh(['allocations']);
         });

@@ -15,6 +15,7 @@ use App\Models\PaymentAllocation;
 use App\Models\PaymentTerm;
 use App\Models\Sale;
 use App\Services\Accounting\AccountingContextService;
+use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\Accounting\JobCostingService;
 use App\Services\Sequences\DocumentSequenceService;
 use App\Services\Ledger\SubledgerService;
@@ -28,6 +29,7 @@ class ArInvoiceService
         protected DocumentSequenceService $sequences,
         protected SubledgerService $subledgerService,
         protected AccountingContextService $accountingContext,
+        protected AccountingAuditLogService $auditLog,
         protected JobCostingService $jobCostingService,
         protected ArAllocationIntegrityService $allocationIntegrity,
     )
@@ -531,6 +533,11 @@ class ArInvoiceService
             $issued = $locked->fresh(['items']);
             $this->autoAllocateAvailableAdvancePayments($issued, $actorId);
 
+            $this->auditLog->log('ar_invoice.issued', $actorId, $locked, [
+                'invoice_number' => (string) $locked->invoice_number,
+                'total_cents' => (int) $locked->total_cents,
+            ]);
+
             InvoiceIssued::dispatch($issued->fresh(['items', 'paymentAllocations.payment']));
 
             return $issued->fresh(['items']);
@@ -637,15 +644,21 @@ class ArInvoiceService
                 ]);
             }
 
-            $this->voidInvoiceAllocations($locked, $actorId, $reason);
+            $voidedAt = $locked->voided_at ?? now();
+            $this->voidInvoiceAllocations($locked, $actorId, $reason, $voidedAt->toDateString());
 
             $locked->status = 'voided';
-            $locked->voided_at = $locked->voided_at ?? now();
+            $locked->voided_at = $voidedAt;
             $locked->voided_by = $locked->voided_by ?? $actorId;
             $locked->void_reason = $reason ? trim($reason) : ($locked->void_reason ?: null);
             $locked->save();
+            $this->reverseIssuedInvoicePosting($locked, $actorId, $locked->voided_at?->toDateString());
             $this->decrementSubscriptionMealsForVoidedInvoice($locked->fresh(['items']));
             $this->recalc($locked->fresh(['items']));
+
+            $this->auditLog->log('ar_invoice.voided', $actorId, $locked, [
+                'reason' => $locked->void_reason,
+            ]);
 
             return $locked->fresh(['items', 'customer', 'paymentAllocations.payment']);
         });
@@ -677,13 +690,15 @@ class ArInvoiceService
                 ->where('meta->duplicate_root_invoice_id', $rootId)
                 ->count() + 1;
 
-            $this->voidInvoiceAllocations($locked, $actorId, $reason);
+            $voidedAt = $locked->voided_at ?? now();
+            $this->voidInvoiceAllocations($locked, $actorId, $reason, $voidedAt->toDateString());
 
             $locked->status = 'voided';
-            $locked->voided_at = $locked->voided_at ?? now();
+            $locked->voided_at = $voidedAt;
             $locked->voided_by = $locked->voided_by ?? $actorId;
             $locked->void_reason = $reason ? trim($reason) : ($locked->void_reason ?: null);
             $locked->save();
+            $this->reverseIssuedInvoicePosting($locked, $actorId, $locked->voided_at?->toDateString());
             $this->decrementSubscriptionMealsForVoidedInvoice($locked->fresh(['items']));
             $this->recalc($locked->fresh(['items']));
 
@@ -735,6 +750,11 @@ class ArInvoiceService
                 'updated_by' => $actorId,
             ]);
 
+            $this->auditLog->log('ar_invoice.voided_and_duplicated', $actorId, $locked, [
+                'reason' => $locked->void_reason,
+                'duplicate_invoice_id' => (int) $duplicate->id,
+            ]);
+
             return $duplicate->fresh(['items', 'customer']);
         });
     }
@@ -773,7 +793,7 @@ class ArInvoiceService
         return $number;
     }
 
-    private function voidInvoiceAllocations(ArInvoice $invoice, int $actorId, ?string $reason = null): void
+    private function voidInvoiceAllocations(ArInvoice $invoice, int $actorId, ?string $reason = null, ?string $entryDate = null): void
     {
         PaymentAllocation::query()
             ->where('allocatable_type', ArInvoice::class)
@@ -781,12 +801,41 @@ class ArInvoiceService
             ->whereNull('voided_at')
             ->lockForUpdate()
             ->get()
-            ->each(function (PaymentAllocation $allocation) use ($actorId, $reason): void {
+            ->each(function (PaymentAllocation $allocation) use ($actorId, $reason, $invoice, $entryDate): void {
+                $voidDate = $entryDate ?: $invoice->voided_at?->toDateString() ?: now()->toDateString();
+                $this->subledgerService->recordArAllocationReleased($allocation, $actorId, 'void', $voidDate);
                 $allocation->voided_at = now();
                 $allocation->voided_by = $actorId;
                 $allocation->void_reason = $reason ? trim($reason) : ($allocation->void_reason ?: __('Invoice voided'));
                 $allocation->save();
+                $this->auditLog->log('ar_invoice.allocation_voided', $actorId, $allocation, [
+                    'invoice_id' => (int) $invoice->id,
+                    'payment_id' => (int) $allocation->payment_id,
+                    'amount_cents' => (int) $allocation->amount_cents,
+                    'reason' => $allocation->void_reason,
+                ], (int) ($invoice->company_id ?? 0) ?: null);
             });
+    }
+
+    private function reverseIssuedInvoicePosting(ArInvoice $invoice, int $actorId, ?string $entryDate = null): void
+    {
+        $entry = \App\Models\SubledgerEntry::query()
+            ->where('source_type', 'ar_invoice')
+            ->where('source_id', $invoice->id)
+            ->where('event', 'issue')
+            ->first();
+
+        if (! $entry) {
+            return;
+        }
+
+        $this->subledgerService->recordReversalForEntry(
+            $entry,
+            'void',
+            'AR invoice void '.$invoice->invoice_number,
+            $entryDate ?: optional($invoice->voided_at)->toDateString() ?: now()->toDateString(),
+            $actorId
+        );
     }
 
     protected function autoAllocateAvailableAdvancePayments(ArInvoice $invoice, int $actorId): void

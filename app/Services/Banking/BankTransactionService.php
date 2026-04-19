@@ -8,6 +8,7 @@ use App\Models\BankTransaction;
 use App\Services\Accounting\LedgerAccountMappingService;
 use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\Accounting\AccountingContextService;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -48,18 +49,12 @@ class BankTransactionService
         }
         $payment->save();
 
-        $existing = BankTransaction::query()
-            ->where('source_type', ApPayment::class)
-            ->where('source_id', $payment->id)
-            ->where('transaction_type', 'ap_payment')
-            ->first();
-
-        if ($existing) {
-            return $existing;
-        }
-
-        $transaction = DB::transaction(function () use ($payment, $bankAccountId) {
-            return BankTransaction::query()->create([
+        $transaction = $this->firstOrCreateBySource([
+            'source_type' => ApPayment::class,
+            'source_id' => $payment->id,
+            'transaction_type' => 'ap_payment',
+        ], function () use ($payment, $bankAccountId) {
+            return [
                 'company_id' => $payment->company_id,
                 'bank_account_id' => $bankAccountId,
                 'period_id' => $payment->period_id,
@@ -76,7 +71,7 @@ class BankTransactionService
                 'source_type' => ApPayment::class,
                 'source_id' => $payment->id,
                 'statement_import_id' => null,
-            ]);
+            ];
         });
 
         $this->auditLog->log('bank_transaction.recorded', $actorId, $transaction, [
@@ -115,18 +110,12 @@ class BankTransactionService
         $payment->bank_account_id = $bankAccountId;
         $payment->save();
 
-        $existing = BankTransaction::query()
-            ->where('source_type', Payment::class)
-            ->where('source_id', $payment->id)
-            ->where('transaction_type', 'ar_payment')
-            ->first();
-
-        if ($existing) {
-            return $existing;
-        }
-
-        $transaction = DB::transaction(function () use ($payment, $bankAccountId) {
-            return BankTransaction::query()->create([
+        $transaction = $this->firstOrCreateBySource([
+            'source_type' => Payment::class,
+            'source_id' => $payment->id,
+            'transaction_type' => 'ar_payment',
+        ], function () use ($payment, $bankAccountId) {
+            return [
                 'company_id' => $payment->company_id,
                 'bank_account_id' => $bankAccountId,
                 'period_id' => $payment->period_id,
@@ -143,7 +132,7 @@ class BankTransactionService
                 'source_type' => Payment::class,
                 'source_id' => $payment->id,
                 'statement_import_id' => null,
-            ]);
+            ];
         });
 
         $this->auditLog->log('bank_transaction.recorded', $actorId, $transaction, [
@@ -172,5 +161,60 @@ class BankTransactionService
         $this->auditLog->log('bank_transaction.voided', $actorId, $payment, [
             'payment_id' => (int) $payment->id,
         ], (int) ($payment->company_id ?? 0) ?: null);
+    }
+
+    public function voidArPayment(Payment $payment, int $actorId): void
+    {
+        if (! Schema::hasTable('bank_transactions')) {
+            return;
+        }
+
+        BankTransaction::query()
+            ->where('source_type', Payment::class)
+            ->where('source_id', $payment->id)
+            ->update([
+                'status' => 'void',
+                'updated_at' => now(),
+            ]);
+
+        $this->auditLog->log('bank_transaction.voided', $actorId, $payment, [
+            'payment_id' => (int) $payment->id,
+            'source' => 'ar',
+        ], (int) ($payment->company_id ?? 0) ?: null);
+    }
+
+    /**
+     * @param  array{source_type:string,source_id:int|string,transaction_type:string}  $identity
+     * @param  \Closure():array<string,mixed>  $payload
+     */
+    protected function firstOrCreateBySource(array $identity, \Closure $payload): BankTransaction
+    {
+        $existing = BankTransaction::query()
+            ->where('source_type', $identity['source_type'])
+            ->where('source_id', $identity['source_id'])
+            ->where('transaction_type', $identity['transaction_type'])
+            ->first();
+
+        if ($existing) {
+            return $existing;
+        }
+
+        try {
+            return DB::transaction(function () use ($payload) {
+                return BankTransaction::query()->create($payload());
+            });
+        } catch (QueryException $e) {
+            $existing = BankTransaction::query()
+                ->where('source_type', $identity['source_type'])
+                ->where('source_id', $identity['source_id'])
+                ->where('transaction_type', $identity['transaction_type'])
+                ->first();
+
+            if ($existing) {
+                return $existing;
+            }
+
+            throw $e;
+        }
     }
 }
