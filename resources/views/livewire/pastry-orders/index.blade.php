@@ -205,6 +205,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function saveCreate(PastryOrderCreateService $service): void
     {
+        $this->authorize('pastry-orders.manage');
+
         $items = collect($this->c_items)
             ->filter(fn ($r) => ! empty($r['menu_item_id']))
             ->values()
@@ -378,6 +380,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function saveEdit(PastryOrderUpdateService $service): void
     {
+        $this->authorize('pastry-orders.manage');
+
         if (! $this->e_id) return;
         $order = PastryOrder::find($this->e_id);
         if (! $order) {
@@ -533,9 +537,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Pastry Orders') }}</h1>
         <div class="flex flex-wrap gap-2">
+            @can('pastry-orders.manage')
             <flux:button type="button" wire:click="openCreateDrawer" variant="primary" class="min-h-[44px] touch-manipulation">
                 {{ __('New Pastry Order') }}
             </flux:button>
+            @endcan
             <flux:button :href="route('pastry-orders.print-all', ['status' => $status, 'type' => $type, 'branch_id' => $branch_id, 'scheduled_date' => $scheduled_date, 'search' => $search])" target="_blank" variant="ghost">
                 {{ __('Print All') }}
             </flux:button>
@@ -653,10 +659,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <flux:button size="sm" type="button" variant="primary" wire:click="quickStatus({{ $order->id }},'Delivered')" class="touch-target">{{ __('Mark Delivered') }}</flux:button>
                         @endif
                         <flux:button size="sm" type="button" wire:click="openViewDrawer({{ $order->id }})" class="touch-target">{{ __('View') }}</flux:button>
+                        @can('pastry-orders.manage')
                         <flux:button size="sm" type="button" wire:click="openEditDrawer({{ $order->id }})" class="touch-target">{{ __('Edit') }}</flux:button>
+                        @endcan
+                        @can('pastry-orders.manage')
                         @if (! in_array($order->status, ['Cancelled','Delivered'], true))
                             <flux:button size="sm" type="button" variant="danger" wire:click="quickStatus({{ $order->id }},'Cancelled')" wire:confirm="{{ __('Cancel this order?') }}" class="touch-target">{{ __('Cancel') }}</flux:button>
                         @endif
+                        @endcan
                         <flux:button size="sm" :href="route('pastry-orders.print-single', ['order' => $order->id])" target="_blank" class="touch-target">
                             {{ __('Print') }}
                         </flux:button>
@@ -736,11 +746,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         <flux:button size="sm" type="button" variant="primary" wire:click="quickStatus({{ $order->id }},'Delivered')" class="min-h-[44px]">{{ __('Mark Delivered') }}</flux:button>
                                     @endif
                                     <flux:button size="sm" type="button" wire:click="openViewDrawer({{ $order->id }})" class="min-h-[44px]">{{ __('View') }}</flux:button>
+                                    @can('pastry-orders.manage')
                                     <flux:button size="sm" type="button" wire:click="openEditDrawer({{ $order->id }})" class="min-h-[44px]">{{ __('Edit') }}</flux:button>
+                                    @endcan
                                     <flux:button size="sm" :href="route('pastry-orders.print-single', ['order' => $order->id])" target="_blank" class="min-h-[44px]">{{ __('Print') }}</flux:button>
+                                    @can('pastry-orders.manage')
                                     @if (! in_array($order->status, ['Cancelled','Delivered'], true))
                                         <flux:button size="sm" type="button" variant="danger" wire:click="quickStatus({{ $order->id }},'Cancelled')" wire:confirm="{{ __('Cancel this order?') }}" class="min-h-[44px]">{{ __('Cancel') }}</flux:button>
                                     @endif
+                                    @endcan
                                 @else
                                     <flux:button size="sm" type="button" wire:click="openViewDrawer({{ $order->id }})" class="min-h-[44px]">{{ __('View') }}</flux:button>
                                     <flux:button size="sm" :href="route('pastry-orders.print-single', ['order' => $order->id])" target="_blank" class="min-h-[44px]">{{ __('Print') }}</flux:button>

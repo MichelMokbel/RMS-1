@@ -136,3 +136,31 @@ An accounting task is not done unless:
 - auditability is preserved
 - report correctness has been checked
 - tests cover nominal cases, invalid cases, reversals, and edge cases
+
+## Migration Guardrail (Critical)
+
+Historical migration files are considered executed production history.
+
+Do NOT modify old migration files unless explicitly instructed.
+
+Treat all previously run migrations as immutable.
+
+When schema changes are required:
+
+1. Create a NEW forward-only migration.
+2. Preserve existing migration history.
+3. Preserve production upgrade path.
+4. Avoid rewriting timestamps or historical migration order.
+5. Do not rename old migration files.
+6. Do not alter already-applied constraints in historical files.
+
+Only edit an old migration if ALL are true:
+- the user explicitly requests it
+- the environment is confirmed disposable / pre-production
+- no shared database has run it
+
+Default assumption:
+This is a real environment with already-run migrations.
+
+Preferred behavior:
+Generate a new additive migration instead of editing history.

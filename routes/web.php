@@ -940,6 +940,35 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|c
     Volt::route('orders/create', 'orders.create')->name('orders.create');
     Volt::route('orders/{order}/edit', 'orders.edit')->name('orders.edit');
 
+    // Deprecated operational routes - redirect to new hubs
+    Route::get('orders/daily-dish', function () {
+        $branch = (int) request()->integer('branch', 1);
+        $date = (string) request()->input('date', now()->toDateString());
+        return redirect()->route('daily-dish.ops.day', [$branch, $date]);
+    })->name('orders.daily-dish');
+
+    Route::get('orders/kitchen', function () {
+        $branch = (int) request()->integer('branch', 1);
+        $date = (string) request()->input('date', now()->toDateString());
+        return redirect()->route('kitchen.ops', [$branch, $date]);
+    })->name('orders.kitchen');
+
+    Route::get('orders/kitchen/cards', function () {
+        $branch = (int) request()->integer('branch', 1);
+        $date = (string) request()->input('date', now()->toDateString());
+        return redirect()->route('kitchen.ops', [$branch, $date]);
+    })->name('orders.kitchen.cards');
+
+
+    Route::get('orders/items', function () {
+        $branch = (int) request()->integer('branch', 1);
+        $date = (string) request()->input('date', now()->toDateString());
+        return redirect()->route('kitchen.ops', [$branch, $date]);
+    })->name('orders.items');
+});
+
+// ── Pastry Orders (accessible by pastry-user role in addition to the standard roles) ──
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|cashier|pastry-user|orders.access|operations.access'])->group(function () {
     Volt::route('pastry-orders', 'pastry-orders.index')->name('pastry-orders.index');
     Route::get('pastry-orders/print/all', [\App\Http\Controllers\Reports\PastryOrdersReportController::class, 'printAll'])
         ->name('pastry-orders.print-all');
@@ -988,32 +1017,6 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|c
 
         return response()->json($items);
     })->name('pastry-orders.menu-items.search');
-
-    // Deprecated operational routes - redirect to new hubs
-    Route::get('orders/daily-dish', function () {
-        $branch = (int) request()->integer('branch', 1);
-        $date = (string) request()->input('date', now()->toDateString());
-        return redirect()->route('daily-dish.ops.day', [$branch, $date]);
-    })->name('orders.daily-dish');
-
-    Route::get('orders/kitchen', function () {
-        $branch = (int) request()->integer('branch', 1);
-        $date = (string) request()->input('date', now()->toDateString());
-        return redirect()->route('kitchen.ops', [$branch, $date]);
-    })->name('orders.kitchen');
-
-    Route::get('orders/kitchen/cards', function () {
-        $branch = (int) request()->integer('branch', 1);
-        $date = (string) request()->input('date', now()->toDateString());
-        return redirect()->route('kitchen.ops', [$branch, $date]);
-    })->name('orders.kitchen.cards');
-
-
-    Route::get('orders/items', function () {
-        $branch = (int) request()->integer('branch', 1);
-        $date = (string) request()->input('date', now()->toDateString());
-        return redirect()->route('kitchen.ops', [$branch, $date]);
-    })->name('orders.items');
 });
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|operations.access'])->group(function () {

@@ -15,6 +15,7 @@
                 $isManager = $user?->hasAnyRole(['admin','manager']) ?? false;
                 $isCashier = $user?->hasAnyRole(['admin','manager','cashier']) ?? false;
                 $isStaff = $user?->hasAnyRole(['admin','manager','staff']) ?? false;
+                $isPastryUser = $user?->hasRole('pastry-user') ?? false;
 
                 $inSales = request()->routeIs('orders.*')
                     || request()->routeIs('pastry-orders.*')
@@ -70,6 +71,14 @@
                         </flux:navlist.item>
                         <flux:navlist.item icon="folder" :href="route('categories.index')" :current="request()->routeIs('categories.*')" wire:navigate>
                             {{ __('Categories') }}
+                        </flux:navlist.item>
+                    </flux:navlist.group>
+                @endif
+
+                @if ($isPastryUser && ! $isCashier)
+                    <flux:navlist.group expandable :expanded="$inSales" :heading="__('Sales')">
+                        <flux:navlist.item icon="cake" :href="route('pastry-orders.index')" :current="request()->routeIs('pastry-orders.*')" wire:navigate>
+                            {{ __('Pastry Orders') }}
                         </flux:navlist.item>
                     </flux:navlist.group>
                 @endif
