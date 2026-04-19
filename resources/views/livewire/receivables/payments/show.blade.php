@@ -316,7 +316,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </flux:button>
                 </form>
             @endif
-            <flux:button :href="route('receivables.payments.create', ['customer_id' => $payment->customer_id, 'branch_id' => $payment->branch_id])" wire:navigate variant="ghost">{{ __('Create New Payment') }}</flux:button>
+            <flux:button :href="route('receivables.payments.create', ['branch_id' => $payment->branch_id])" wire:navigate variant="ghost">{{ __('Create New Payment') }}</flux:button>
             <flux:button :href="route('receivables.payments.print', $payment)" target="_blank" variant="ghost">{{ __('Print Receipt') }}</flux:button>
             <flux:button :href="route('receivables.payments.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
         </div>
