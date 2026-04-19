@@ -81,6 +81,62 @@ it('replays ap payment creation idempotently by client uuid', function () {
         ->count())->toBe(1);
 });
 
+it('prevents ap over-allocation when a second payment tries to exceed invoice outstanding', function () {
+    $supplier = Supplier::factory()->create();
+    $invoice = ApInvoice::factory()->create(['supplier_id' => $supplier->id, 'total_amount' => 100, 'status' => 'posted']);
+    ApInvoiceItem::factory()->create(['invoice_id' => $invoice->id, 'line_total' => 100, 'unit_price' => 100, 'quantity' => 1]);
+
+    // First payment allocates 60 — succeeds.
+    $this->actingAs($this->user)->postJson('/api/ap/payments', [
+        'supplier_id' => $supplier->id,
+        'payment_date' => now()->toDateString(),
+        'amount' => 60,
+        'allocations' => [
+            ['invoice_id' => $invoice->id, 'allocated_amount' => 60],
+        ],
+    ])->assertCreated();
+
+    // Second payment tries to allocate 60 but only 40 remains — must fail.
+    $resp = $this->actingAs($this->user)->postJson('/api/ap/payments', [
+        'supplier_id' => $supplier->id,
+        'payment_date' => now()->toDateString(),
+        'amount' => 60,
+        'allocations' => [
+            ['invoice_id' => $invoice->id, 'allocated_amount' => 60],
+        ],
+    ]);
+    $resp->assertStatus(422);
+
+    // Only one payment's allocation should exist.
+    $invoice->refresh();
+    expect((float) $invoice->allocations()->sum('allocated_amount'))->toBe(60.0);
+});
+
+it('allows ap allocation up to exact remaining outstanding after prior partial allocation', function () {
+    $supplier = Supplier::factory()->create();
+    $invoice = ApInvoice::factory()->create(['supplier_id' => $supplier->id, 'total_amount' => 100, 'status' => 'posted']);
+    ApInvoiceItem::factory()->create(['invoice_id' => $invoice->id, 'line_total' => 100, 'unit_price' => 100, 'quantity' => 1]);
+
+    $this->actingAs($this->user)->postJson('/api/ap/payments', [
+        'supplier_id' => $supplier->id,
+        'payment_date' => now()->toDateString(),
+        'amount' => 60,
+        'allocations' => [['invoice_id' => $invoice->id, 'allocated_amount' => 60]],
+    ])->assertCreated();
+
+    // Remaining outstanding is exactly 40 — this must succeed.
+    $this->actingAs($this->user)->postJson('/api/ap/payments', [
+        'supplier_id' => $supplier->id,
+        'payment_date' => now()->toDateString(),
+        'amount' => 40,
+        'allocations' => [['invoice_id' => $invoice->id, 'allocated_amount' => 40]],
+    ])->assertCreated();
+
+    $invoice->refresh();
+    expect($invoice->status)->toBe('paid');
+    expect((float) $invoice->allocations()->sum('allocated_amount'))->toBe(100.0);
+});
+
 it('rejects conflicting ap payment replays for the same client uuid', function () {
     $supplier = Supplier::factory()->create();
     $invoice = ApInvoice::factory()->create(['supplier_id' => $supplier->id, 'total_amount' => 100, 'status' => 'posted']);

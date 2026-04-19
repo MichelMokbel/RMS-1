@@ -151,16 +151,86 @@ it('allows admins to delete customer payments and restore invoice balances', fun
     expect((int) $invoice->paid_total_cents)->toBe(0);
     expect((int) $invoice->balance_cents)->toBe(20000);
 
+    // Payment void reversal entry must exist.
     $this->assertDatabaseHas('subledger_entries', [
         'source_type' => 'ar_payment',
         'source_id' => $payment->id,
         'event' => 'delete',
     ]);
-    $this->assertDatabaseHas('subledger_entries', [
+    // For a directly-allocated payment (no advance-apply step), the void reversal
+    // covers the full entry. The per-allocation fallback entry must NOT be created
+    // or ar_invoice_ar would be double-restored.
+    $this->assertDatabaseMissing('subledger_entries', [
         'source_type' => 'ar_payment_allocation',
         'source_id' => $allocation->id,
         'event' => 'delete',
     ]);
+});
+
+it('voiding a directly-allocated payment does not double-post ar_invoice_ar in subledger', function () {
+    $admin = makeReceivablesAdmin();
+    $customer = Customer::factory()->create();
+
+    $invoice = ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'branch_id' => 1,
+        'type' => 'invoice',
+        'status' => 'issued',
+        'invoice_number' => 'INV-C4-001',
+        'issue_date' => now()->toDateString(),
+        'due_date' => now()->addDays(7)->toDateString(),
+        'total_cents' => 10000,
+        'paid_total_cents' => 10000,
+        'balance_cents' => 0,
+    ]);
+
+    $payment = Payment::factory()->create([
+        'branch_id' => 1,
+        'customer_id' => $customer->id,
+        'source' => 'ar',
+        'amount_cents' => 10000,
+        'received_at' => now(),
+        'created_by' => $admin->id,
+    ]);
+
+    PaymentAllocation::factory()->create([
+        'payment_id' => $payment->id,
+        'allocatable_type' => ArInvoice::class,
+        'allocatable_id' => $invoice->id,
+        'amount_cents' => 10000,
+    ]);
+
+    // Record the subledger entry for the payment (applied=10000, unapplied=0).
+    app(SubledgerService::class)->recordArPaymentReceived($payment, 10000, 0, $admin->id);
+
+    // Void the payment — this triggers both recordArAllocationReleased (should skip
+    // fallback for direct allocations) and recordArPaymentVoided (full reversal).
+    $this->actingAs($admin)
+        ->delete(route('receivables.payments.destroy', $payment))
+        ->assertRedirect(route('receivables.payments.index'));
+
+    // The per-allocation fallback entry must be absent (C4 fix).
+    $allocation = PaymentAllocation::query()->where('payment_id', $payment->id)->first();
+    $this->assertDatabaseMissing('subledger_entries', [
+        'source_type' => 'ar_payment_allocation',
+        'source_id' => $allocation->id,
+        'event' => 'delete',
+    ]);
+
+    // The payment void reversal entry must exist.
+    $this->assertDatabaseHas('subledger_entries', [
+        'source_type' => 'ar_payment',
+        'source_id' => $payment->id,
+        'event' => 'delete',
+    ]);
+
+    // Net subledger_entries count for ar_payment source must be exactly 2:
+    // one 'payment' event + one 'delete' event.
+    $count = \Illuminate\Support\Facades\DB::table('subledger_entries')
+        ->where('source_type', 'ar_payment')
+        ->where('source_id', $payment->id)
+        ->count();
+    expect($count)->toBe(2);
 });
 
 it('prevents non admins from deleting customer payments', function () {

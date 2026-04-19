@@ -6,19 +6,20 @@ use App\Events\InvoiceIssued;
 use App\Models\ArInvoice;
 use App\Models\ArInvoiceItem;
 use App\Models\Customer;
-use App\Models\MenuItem;
 use App\Models\MealSubscriptionOrder;
+use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\PastryOrder;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Models\PaymentTerm;
 use App\Models\Sale;
-use App\Services\Accounting\AccountingContextService;
 use App\Services\Accounting\AccountingAuditLogService;
+use App\Services\Accounting\AccountingContextService;
+use App\Services\Accounting\AccountingPeriodGateService;
 use App\Services\Accounting\JobCostingService;
-use App\Services\Sequences\DocumentSequenceService;
 use App\Services\Ledger\SubledgerService;
+use App\Services\Sequences\DocumentSequenceService;
 use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -32,9 +33,8 @@ class ArInvoiceService
         protected AccountingAuditLogService $auditLog,
         protected JobCostingService $jobCostingService,
         protected ArAllocationIntegrityService $allocationIntegrity,
-    )
-    {
-    }
+        protected AccountingPeriodGateService $periodGate,
+    ) {}
 
     public function createDraft(
         int $branchId,
@@ -55,8 +55,7 @@ class ArInvoiceService
         ?string $lpoReference = null,
         string $invoiceDiscountType = 'fixed',
         int $invoiceDiscountValue = 0,
-    ): ArInvoice
-    {
+    ): ArInvoice {
         if ($branchId <= 0) {
             $branchId = 1;
         }
@@ -371,13 +370,14 @@ class ArInvoiceService
         $itemNames = $order->items->map(function ($item) {
             $name = $item->menuItem?->name ?? trim(preg_replace('/^\S+\s+/', '', $item->description_snapshot ?? '')) ?: 'Item';
             $qty = (float) $item->quantity;
+
             return $qty > 1 ? "{$name} x{$qty}" : $name;
         })->filter()->take(5)->implode(', ');
 
         if ($itemNames) {
-            $description .= ' (' . $itemNames . ')';
+            $description .= ' ('.$itemNames.')';
             if ($order->items->count() > 5) {
-                $description .= ' +' . ($order->items->count() - 5) . ' more';
+                $description .= ' +'.($order->items->count() - 5).' more';
             }
         }
 
@@ -438,6 +438,7 @@ class ArInvoiceService
         if ($planMealsTotal && isset($planPricing[(string) $planMealsTotal])) {
             // Plan price is per-meal already
             $perMealPrice = (float) $planPricing[(string) $planMealsTotal];
+
             return MinorUnits::parse((string) $perMealPrice, $scale);
         }
 
@@ -517,9 +518,12 @@ class ArInvoiceService
             }
             $dueDate = $termsDays > 0 ? now()->parse($issueDate)->addDays($termsDays)->toDateString() : $issueDate;
 
+            $companyId = (int) ($locked->company_id ?: $this->accountingContext->resolveCompanyId((int) $locked->branch_id));
+            $this->periodGate->assertDateOpen($issueDate, $companyId, null, 'ar', 'issue_date');
+
             $locked->issue_date = $issueDate;
             $locked->due_date = $locked->due_date ?: $dueDate;
-            $locked->company_id = $locked->company_id ?: $this->accountingContext->resolveCompanyId((int) $locked->branch_id, (int) ($locked->company_id ?? 0));
+            $locked->company_id = $locked->company_id ?: $companyId;
             $locked->payment_type = filled($locked->payment_type) ? (string) $locked->payment_type : 'credit';
             $locked->status = 'issued';
             $locked->updated_by = $actorId;
@@ -1066,7 +1070,7 @@ class ArInvoiceService
         $sub->meals_used = max(0, (int) ($sub->meals_used ?? 0) - $count);
 
         if ($sub->status === 'expired' && $sub->meals_used < $sub->plan_meals_total) {
-            $sub->status   = 'active';
+            $sub->status = 'active';
             $sub->end_date = null;
         }
 

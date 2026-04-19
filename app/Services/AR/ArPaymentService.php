@@ -12,8 +12,8 @@ use App\Services\Accounting\LedgerAccountMappingService;
 use App\Services\Banking\BankTransactionService;
 use App\Services\Ledger\SubledgerService;
 use Illuminate\Database\QueryException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class ArPaymentService
@@ -27,8 +27,7 @@ class ArPaymentService
         protected BankTransactionService $bankTransactionService,
         protected AccountingAuditLogService $auditLog,
         protected ArAllocationIntegrityService $allocationIntegrity,
-    ) {
-    }
+    ) {}
 
     public function createAdvancePayment(
         int $customerId,
@@ -197,77 +196,77 @@ class ArPaymentService
                     'created_by' => $actorId,
                 ]);
 
-            $remaining = $amount;
-            foreach ($rows as $row) {
-                if ($remaining <= 0) {
-                    break;
+                $remaining = $amount;
+                foreach ($rows as $row) {
+                    if ($remaining <= 0) {
+                        break;
+                    }
+
+                    $invoiceId = (int) ($row['invoice_id'] ?? 0);
+                    if ($invoiceId <= 0) {
+                        throw ValidationException::withMessages(['allocations' => __('Invoice not found.')]);
+                    }
+
+                    $requested = (int) ($row['amount_cents'] ?? 0);
+                    if ($requested <= 0) {
+                        throw ValidationException::withMessages(['allocations' => __('Allocation amount must be positive.')]);
+                    }
+
+                    $invoice = ArInvoice::whereKey($invoiceId)->lockForUpdate()->first();
+                    if (! $invoice) {
+                        throw ValidationException::withMessages(['allocations' => __('Invoice not found.')]);
+                    }
+                    $this->allocationIntegrity->assertSameCompanyForPaymentAndInvoice($payment, $invoice);
+                    if ($invoice->customer_id !== $customer->id) {
+                        throw ValidationException::withMessages(['allocations' => __('Invoice customer must match payment customer.')]);
+                    }
+                    if (! in_array($invoice->status, ['issued', 'partially_paid', 'paid'], true)) {
+                        throw ValidationException::withMessages(['allocations' => __('Invoice must be issued to accept payments.')]);
+                    }
+
+                    $this->invoices->recalc($invoice);
+                    $invoice = $invoice->fresh();
+                    $outstanding = (int) $invoice->balance_cents;
+                    if ($outstanding <= 0) {
+                        continue;
+                    }
+
+                    if ($invoice->currency && $invoice->currency !== $currency) {
+                        throw ValidationException::withMessages(['allocations' => __('Payment currency must match invoice currency.')]);
+                    }
+                    if ((int) $invoice->branch_id !== (int) $payment->branch_id) {
+                        throw ValidationException::withMessages(['allocations' => __('Payment branch must match invoice branch.')]);
+                    }
+
+                    $apply = min($requested, $outstanding, $remaining);
+                    if ($apply <= 0) {
+                        continue;
+                    }
+
+                    PaymentAllocation::create([
+                        'payment_id' => $payment->id,
+                        'allocatable_type' => ArInvoice::class,
+                        'allocatable_id' => $invoice->id,
+                        'amount_cents' => $apply,
+                    ]);
+
+                    $this->invoices->recalc($invoice);
+                    $this->allocations->recalcStatus($invoice->fresh());
+
+                    $remaining -= $apply;
                 }
 
-                $invoiceId = (int) ($row['invoice_id'] ?? 0);
-                if ($invoiceId <= 0) {
-                    throw ValidationException::withMessages(['allocations' => __('Invoice not found.')]);
-                }
+                $applied = (int) PaymentAllocation::query()
+                    ->where('payment_id', $payment->id)
+                    ->whereNull('voided_at')
+                    ->sum('amount_cents');
 
-                $requested = (int) ($row['amount_cents'] ?? 0);
-                if ($requested <= 0) {
-                    throw ValidationException::withMessages(['allocations' => __('Allocation amount must be positive.')]);
-                }
-
-                $invoice = ArInvoice::whereKey($invoiceId)->lockForUpdate()->first();
-                if (! $invoice) {
-                    throw ValidationException::withMessages(['allocations' => __('Invoice not found.')]);
-                }
-                $this->allocationIntegrity->assertSameCompanyForPaymentAndInvoice($payment, $invoice);
-                if ($invoice->customer_id !== $customer->id) {
-                    throw ValidationException::withMessages(['allocations' => __('Invoice customer must match payment customer.')]);
-                }
-                if (! in_array($invoice->status, ['issued', 'partially_paid', 'paid'], true)) {
-                    throw ValidationException::withMessages(['allocations' => __('Invoice must be issued to accept payments.')]);
-                }
-
-                $this->invoices->recalc($invoice);
-                $invoice = $invoice->fresh();
-                $outstanding = (int) $invoice->balance_cents;
-                if ($outstanding <= 0) {
-                    continue;
-                }
-
-                if ($invoice->currency && $invoice->currency !== $currency) {
-                    throw ValidationException::withMessages(['allocations' => __('Payment currency must match invoice currency.')]);
-                }
-                if ((int) $invoice->branch_id !== (int) $payment->branch_id) {
-                    throw ValidationException::withMessages(['allocations' => __('Payment branch must match invoice branch.')]);
-                }
-
-                $apply = min($requested, $outstanding, $remaining);
-                if ($apply <= 0) {
-                    continue;
-                }
-
-                PaymentAllocation::create([
-                    'payment_id' => $payment->id,
-                    'allocatable_type' => ArInvoice::class,
-                    'allocatable_id' => $invoice->id,
-                    'amount_cents' => $apply,
-                ]);
-
-                $this->invoices->recalc($invoice);
-                $this->allocations->recalcStatus($invoice->fresh());
-
-                $remaining -= $apply;
-            }
-
-            $applied = (int) PaymentAllocation::query()
-                ->where('payment_id', $payment->id)
-                ->whereNull('voided_at')
-                ->sum('amount_cents');
-
-            $this->subledgerService->recordArPaymentReceived(
-                $payment->fresh(),
-                $applied,
-                $amount - $applied,
-                $actorId
-            );
+                $this->subledgerService->recordArPaymentReceived(
+                    $payment->fresh(),
+                    $applied,
+                    $amount - $applied,
+                    $actorId
+                );
 
                 $this->bankTransactionService->recordArPayment($payment->fresh(), $actorId);
                 $this->auditLog->log('ar_payment.created', $actorId, $payment, [
@@ -305,8 +304,7 @@ class ArPaymentService
         int $amountCents,
         int $actorId,
         ?string $paymentClientUuid = null
-    ): PaymentAllocation
-    {
+    ): PaymentAllocation {
         if ($amountCents <= 0) {
             throw ValidationException::withMessages(['amount_cents' => __('Allocation amount must be positive.')]);
         }
@@ -359,6 +357,18 @@ class ArPaymentService
             $remaining = (int) $payment->amount_cents - $allocated;
             if ($amountCents > $remaining) {
                 throw ValidationException::withMessages(['amount_cents' => __('Allocation exceeds remaining payment amount.')]);
+            }
+
+            $existing = PaymentAllocation::query()
+                ->where('payment_id', $payment->id)
+                ->where('allocatable_type', ArInvoice::class)
+                ->where('allocatable_id', $invoice->id)
+                ->whereNull('voided_at')
+                ->lockForUpdate()
+                ->first();
+
+            if ($existing && (int) $existing->amount_cents === $amountCents) {
+                return $existing->fresh(['payment']);
             }
 
             $allocation = PaymentAllocation::create([
@@ -447,6 +457,18 @@ class ArPaymentService
 
                 if ($amountCents > $outstanding) {
                     throw ValidationException::withMessages(['allocations' => __('Allocation exceeds invoice balance.')]);
+                }
+
+                $existingAlloc = PaymentAllocation::query()
+                    ->where('payment_id', $payment->id)
+                    ->where('allocatable_type', ArInvoice::class)
+                    ->where('allocatable_id', $invoice->id)
+                    ->whereNull('voided_at')
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($existingAlloc && (int) $existingAlloc->amount_cents === $amountCents) {
+                    continue;
                 }
 
                 $allocation = PaymentAllocation::create([

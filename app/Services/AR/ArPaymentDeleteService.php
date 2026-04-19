@@ -79,6 +79,17 @@ class ArPaymentDeleteService
     public function delete(Payment $payment, int $userId): void
     {
         DB::transaction(function () use ($payment, $userId): void {
+            // Guard: fail fast before acquiring the payment lock to reduce contention.
+            $settledItem = \App\Models\ArClearingSettlementItem::where('payment_id', $payment->id)
+                ->whereHas('settlement', fn ($q) => $q->whereNull('voided_at'))
+                ->lockForUpdate()
+                ->exists();
+            if ($settledItem) {
+                throw ValidationException::withMessages([
+                    'payment' => __('Cannot void a payment that has been settled. Void the clearing settlement first.'),
+                ]);
+            }
+
             $payment = Payment::query()
                 ->whereKey($payment->id)
                 ->lockForUpdate()
@@ -111,7 +122,7 @@ class ArPaymentDeleteService
             $voidDate = $voidedAt->toDateString();
 
             foreach ($allocations as $allocation) {
-                $this->subledgerService->recordArAllocationReleased($allocation, $userId, 'delete', $voidDate);
+                $this->subledgerService->recordArAllocationReleased($allocation, $userId, 'delete', $voidDate, skipFallbackWhenNoApplyEntry: true);
             }
 
             $this->subledgerService->recordArPaymentVoided($payment, $userId, $voidDate);

@@ -10,6 +10,7 @@ use App\Services\Accounting\AccountingContextService;
 use App\Services\Accounting\LedgerAccountMappingService;
 use App\Services\Banking\BankTransactionService;
 use App\Services\Ledger\SubledgerService;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -23,9 +24,7 @@ class ArAllocationService
         protected BankTransactionService $bankTransactionService,
         protected AccountingAuditLogService $auditLog,
         protected ArAllocationIntegrityService $allocationIntegrity,
-    )
-    {
-    }
+    ) {}
 
     /**
      * Create an AR payment and allocate it to one invoice (partial/full).
@@ -91,12 +90,12 @@ class ArAllocationService
             ]);
 
             if ($allocated > 0) {
-                PaymentAllocation::create([
-                    'payment_id' => $payment->id,
-                    'allocatable_type' => ArInvoice::class,
-                    'allocatable_id' => $invoice->id,
-                    'amount_cents' => $allocated,
-                ]);
+                $this->createPaymentAllocation(
+                    $payment->id,
+                    ArInvoice::class,
+                    $invoice->id,
+                    $allocated
+                );
             }
 
             $this->invoices->recalc($invoice);
@@ -147,7 +146,7 @@ class ArAllocationService
             throw ValidationException::withMessages(['credit_note' => __('No credit available.')]);
         }
 
-        return DB::transaction(function () use ($creditNote, $targetInvoice, $creditAvailable, $actorId) {
+        return DB::transaction(function () use ($creditNote, $targetInvoice, $actorId) {
             $target = ArInvoice::whereKey($targetInvoice->id)->lockForUpdate()->firstOrFail();
             $credit = ArInvoice::whereKey($creditNote->id)->lockForUpdate()->firstOrFail();
 
@@ -176,25 +175,32 @@ class ArAllocationService
                 'created_by' => $actorId,
             ]);
 
-            PaymentAllocation::create([
-                'payment_id' => $payment->id,
-                'allocatable_type' => ArInvoice::class,
-                'allocatable_id' => $target->id,
-                'amount_cents' => $apply,
-            ]);
+            $this->createPaymentAllocation(
+                $payment->id,
+                ArInvoice::class,
+                $target->id,
+                $apply
+            );
 
             // Reduce credit note balance by decreasing its "paid" (negative allocation).
-            PaymentAllocation::create([
-                'payment_id' => $payment->id,
-                'allocatable_type' => ArInvoice::class,
-                'allocatable_id' => $credit->id,
-                'amount_cents' => -$apply,
-            ]);
+            $this->createPaymentAllocation(
+                $payment->id,
+                ArInvoice::class,
+                $credit->id,
+                -$apply
+            );
 
             $this->invoices->recalc($target);
             $this->invoices->recalc($credit);
             $this->recalcStatus($target->fresh());
             $this->recalcStatus($credit->fresh());
+            $this->subledgerService->recordArCreditNoteApplied(
+                $payment->fresh(),
+                $credit->fresh(),
+                $target->fresh(),
+                $apply,
+                $actorId
+            );
             $this->auditLog->log('ar_credit_note.applied', $actorId, $payment, [
                 'credit_invoice_id' => (int) $credit->id,
                 'target_invoice_id' => (int) $target->id,
@@ -217,15 +223,71 @@ class ArAllocationService
 
         if ($invoice->balance_cents === 0) {
             $invoice->update(['status' => 'paid']);
+
             return;
         }
 
         if ($invoice->paid_total_cents !== 0) {
             $invoice->update(['status' => 'partially_paid']);
+
             return;
         }
 
         $invoice->update(['status' => 'issued']);
+    }
+
+    /**
+     * Create a PaymentAllocation with full race-safety:
+     *   1. Pre-create check: skip if an active (non-voided) allocation already exists.
+     *   2. DB unique constraint (alloc_active_sentinel) catches concurrent inserts.
+     *   3. Catch-block: on MySQL error 1062 (duplicate key), return the existing row.
+     */
+    private function createPaymentAllocation(
+        int $paymentId,
+        string $allocatableType,
+        int $allocatableId,
+        int $amountCents
+    ): PaymentAllocation {
+        // (1) Pre-create existence check.
+        $existing = PaymentAllocation::query()
+            ->where('payment_id', $paymentId)
+            ->where('allocatable_type', $allocatableType)
+            ->where('allocatable_id', $allocatableId)
+            ->whereNull('voided_at')
+            ->first();
+
+        if ($existing) {
+            return $existing;
+        }
+
+        try {
+            // (2) Insert — the generated sentinel column + unique index prevents
+            //     concurrent duplicates at the DB level.
+            return PaymentAllocation::create([
+                'payment_id' => $paymentId,
+                'allocatable_type' => $allocatableType,
+                'allocatable_id' => $allocatableId,
+                'amount_cents' => $amountCents,
+            ]);
+        } catch (QueryException $e) {
+            // (3) Catch-block: handle duplicate key violation (MySQL 1062).
+            if ($e->errorInfo[1] !== 1062) {
+                throw $e;
+            }
+
+            $found = PaymentAllocation::query()
+                ->where('payment_id', $paymentId)
+                ->where('allocatable_type', $allocatableType)
+                ->where('allocatable_id', $allocatableId)
+                ->whereNull('voided_at')
+                ->first();
+
+            if ($found) {
+                return $found;
+            }
+
+            throw $e;
+        }
     }
 
     private function resolveBankAccountId(string $paymentMethod, ?int $companyId): ?int

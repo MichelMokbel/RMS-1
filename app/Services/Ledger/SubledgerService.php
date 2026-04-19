@@ -607,7 +607,7 @@ class SubledgerService
         );
     }
 
-    public function recordArAllocationReleased(PaymentAllocation $allocation, int $userId, string $reason = 'void', ?string $entryDate = null): ?SubledgerEntry
+    public function recordArAllocationReleased(PaymentAllocation $allocation, int $userId, string $reason = 'void', ?string $entryDate = null, bool $skipFallbackWhenNoApplyEntry = false): ?SubledgerEntry
     {
         if (! $this->canPost()) {
             return null;
@@ -632,6 +632,14 @@ class SubledgerService
                 $effectiveDate,
                 $userId
             );
+        }
+
+        // No advance-apply entry exists — this was a directly-allocated payment.
+        // When voiding the full payment, recordArPaymentVoided reverses the entire
+        // original payment entry (including the applied portion). Creating entries
+        // here would double-post ar_invoice_ar. Skip when the caller handles it.
+        if ($skipFallbackWhenNoApplyEntry) {
+            return null;
         }
 
         $amountCents = (int) ($allocation->amount_cents ?? 0);
@@ -858,15 +866,6 @@ class SubledgerService
         $companyId = $this->accountingContext->resolveCompanyId($branchId, $companyId);
         $this->assertOpenPeriod($entryDate, $companyId, null, 'ledger');
 
-        $exists = SubledgerEntry::where('source_type', $sourceType)
-            ->where('source_id', $sourceId)
-            ->where('event', $event)
-            ->exists();
-
-        if ($exists) {
-            return null;
-        }
-
         $normalized = [];
         $debits = 0;
         $credits = 0;
@@ -902,31 +901,50 @@ class SubledgerService
             throw ValidationException::withMessages(['ledger' => __('Ledger entry is unbalanced.')]);
         }
 
-        $entry = SubledgerEntry::create([
-            'source_type' => $sourceType,
-            'source_id' => $sourceId,
-            'company_id' => $companyId,
-            'event' => $event,
-            'entry_date' => $entryDate,
-            'description' => $description,
-            'source_document_type' => $sourceType,
-            'source_document_id' => $sourceId,
-            'branch_id' => $branchId,
-            'department_id' => $departmentId,
-            'job_id' => $jobId,
-            'period_id' => $this->accountingContext->resolvePeriodId($entryDate, $companyId),
-            'currency_code' => config('pos.currency', 'QAR'),
-            'status' => 'posted',
-            'posted_at' => now(),
-            'posted_by' => $userId,
-        ]);
+        try {
+            $entry = SubledgerEntry::create([
+                'source_type' => $sourceType,
+                'source_id' => $sourceId,
+                'company_id' => $companyId,
+                'event' => $event,
+                'entry_date' => $entryDate,
+                'description' => $description,
+                'source_document_type' => $sourceType,
+                'source_document_id' => $sourceId,
+                'branch_id' => $branchId,
+                'department_id' => $departmentId,
+                'job_id' => $jobId,
+                'period_id' => $this->accountingContext->resolvePeriodId($entryDate, $companyId),
+                'currency_code' => config('pos.currency', 'QAR'),
+                'status' => 'posted',
+                'posted_at' => now(),
+                'posted_by' => $userId,
+            ]);
 
-        foreach ($normalized as $row) {
-            $row['entry_id'] = $entry->id;
-            SubledgerLine::create($row);
+            foreach ($normalized as $row) {
+                $row['entry_id'] = $entry->id;
+                SubledgerLine::create($row);
+            }
+
+            return $entry->load('lines');
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Only handle duplicate-key violations (MySQL 1062 / SQLSTATE 23000).
+            // All other DB errors (FK violations, column errors, connection issues) must propagate.
+            if ($e->errorInfo[1] !== 1062) {
+                throw $e;
+            }
+
+            $existing = SubledgerEntry::where('source_type', $sourceType)
+                ->where('source_id', $sourceId)
+                ->where('event', $event)
+                ->first();
+
+            if ($existing) {
+                return $existing->load('lines');
+            }
+
+            throw $e;
         }
-
-        return $entry->load('lines');
     }
 
     public function recordReversalForEntry(
@@ -942,15 +960,6 @@ class SubledgerService
 
         $entryDate = $entryDate ?? now()->toDateString();
         $this->assertOpenPeriod($entryDate, (int) ($entry->company_id ?? 0), null, 'ledger');
-
-        $exists = SubledgerEntry::where('source_type', $entry->source_type)
-            ->where('source_id', $entry->source_id)
-            ->where('event', $event)
-            ->exists();
-
-        if ($exists) {
-            return null;
-        }
 
         $lines = $entry->lines()->get();
         if ($lines->isEmpty()) {
@@ -982,31 +991,168 @@ class SubledgerService
             throw ValidationException::withMessages(['ledger' => __('Ledger entry is unbalanced.')]);
         }
 
-        $reversal = SubledgerEntry::create([
-            'source_type' => $entry->source_type,
-            'source_id' => $entry->source_id,
-            'company_id' => $entry->company_id,
-            'event' => $event,
-            'entry_date' => $entryDate,
-            'description' => $description,
-            'source_document_type' => $entry->source_document_type,
-            'source_document_id' => $entry->source_document_id,
-            'branch_id' => $entry->branch_id,
-            'department_id' => $entry->department_id,
-            'job_id' => $entry->job_id,
-            'period_id' => $this->accountingContext->resolvePeriodId($entryDate, (int) ($entry->company_id ?? 0)),
-            'currency_code' => $entry->currency_code ?: config('pos.currency', 'QAR'),
-            'status' => 'posted',
-            'posted_at' => now(),
-            'posted_by' => $userId,
-        ]);
+        try {
+            $reversal = SubledgerEntry::create([
+                'source_type' => $entry->source_type,
+                'source_id' => $entry->source_id,
+                'company_id' => $entry->company_id,
+                'event' => $event,
+                'entry_date' => $entryDate,
+                'description' => $description,
+                'source_document_type' => $entry->source_document_type,
+                'source_document_id' => $entry->source_document_id,
+                'branch_id' => $entry->branch_id,
+                'department_id' => $entry->department_id,
+                'job_id' => $entry->job_id,
+                'period_id' => $this->accountingContext->resolvePeriodId($entryDate, (int) ($entry->company_id ?? 0)),
+                'currency_code' => $entry->currency_code ?: config('pos.currency', 'QAR'),
+                'status' => 'posted',
+                'posted_at' => now(),
+                'posted_by' => $userId,
+            ]);
 
-        foreach ($reversed as $row) {
-            $row['entry_id'] = $reversal->id;
-            SubledgerLine::create($row);
+            foreach ($reversed as $row) {
+                $row['entry_id'] = $reversal->id;
+                SubledgerLine::create($row);
+            }
+
+            return $reversal->load('lines');
+        } catch (\Illuminate\Database\QueryException $e) {
+            if ($e->errorInfo[1] !== 1062) {
+                throw $e;
+            }
+
+            $existing = SubledgerEntry::where('source_type', $entry->source_type)
+                ->where('source_id', $entry->source_id)
+                ->where('event', $event)
+                ->first();
+
+            if ($existing) {
+                return $existing->load('lines');
+            }
+
+            throw $e;
+        }
+    }
+
+    public function recordArCreditNoteApplied(Payment $voucherPayment, ArInvoice $creditNote, ArInvoice $targetInvoice, int $applyAmountCents, int $userId): ?SubledgerEntry
+    {
+        if (! $this->canPost()) {
+            return null;
         }
 
-        return $reversal->load('lines');
+        if ($applyAmountCents <= 0) {
+            return null;
+        }
+
+        $amount = $this->moneyFromCents($applyAmountCents);
+        $companyId = $this->accountingContext->resolveCompanyId(
+            (int) ($voucherPayment->branch_id ?? 0),
+            (int) ($voucherPayment->company_id ?? 0)
+        );
+
+        // Net-zero reclassification within ar_invoice_ar.
+        // Both the credit note and the invoice are already in ar_invoice_ar from their
+        // original posting. This entry documents the offset event for subledger audit.
+        $lines = [
+            [
+                'account' => 'ar_invoice_ar',
+                'debit' => $amount,
+                'credit' => 0,
+                'memo' => 'Credit note applied to invoice #'.$targetInvoice->id,
+            ],
+            [
+                'account' => 'ar_invoice_ar',
+                'debit' => 0,
+                'credit' => $amount,
+                'memo' => 'Credit note AR reduced #'.$creditNote->id,
+            ],
+        ];
+
+        return $this->recordEntry(
+            sourceType: 'ar_credit_note_application',
+            sourceId: (int) $voucherPayment->id,
+            event: 'apply',
+            entryDate: now()->toDateString(),
+            description: 'Credit note #'.$creditNote->id.' applied to invoice #'.$targetInvoice->id,
+            lines: $lines,
+            userId: $userId,
+            branchId: (int) ($voucherPayment->branch_id ?? 0) ?: null,
+            companyId: $companyId,
+        );
+    }
+
+    public function recordArClearingSettlement(\App\Models\ArClearingSettlement $settlement, int $actorId): ?SubledgerEntry
+    {
+        if (! $this->canPost()) {
+            return null;
+        }
+
+        $companyId = (int) $settlement->company_id;
+        $bankAccount = \App\Models\BankAccount::find($settlement->bank_account_id);
+        if (! $bankAccount?->ledger_account_id) {
+            return null;
+        }
+
+        $bankLedgerAccountId = (int) $bankAccount->ledger_account_id;
+        $clearingKey = $settlement->settlement_method === 'card' ? 'card_clearing' : 'ar_cheque_clearing';
+        $clearingAccountId = $this->resolveAccountId($clearingKey, $companyId);
+
+        if (! $clearingAccountId) {
+            return null;
+        }
+
+        $amount = $this->moneyFromCents((int) $settlement->amount_cents);
+
+        return $this->recordEntry(
+            sourceType: 'ar_clearing_settlement',
+            sourceId: (int) $settlement->id,
+            event: 'settle',
+            entryDate: optional($settlement->settlement_date)->toDateString() ?? now()->toDateString(),
+            description: 'AR clearing settlement #'.$settlement->id,
+            lines: [
+                ['account_id' => $bankLedgerAccountId, 'debit' => $amount, 'credit' => 0, 'memo' => 'Settlement to bank'],
+                ['account_id' => $clearingAccountId, 'debit' => 0, 'credit' => $amount, 'memo' => ucfirst($settlement->settlement_method).' clearing settled'],
+            ],
+            userId: $actorId,
+            companyId: $companyId,
+        );
+    }
+
+    public function recordApChequeClearance(\App\Models\ApChequeClearance $clearance, int $actorId): ?SubledgerEntry
+    {
+        if (! $this->canPost()) {
+            return null;
+        }
+
+        $companyId = (int) $clearance->company_id;
+        $bankAccount = \App\Models\BankAccount::find($clearance->bank_account_id);
+        if (! $bankAccount?->ledger_account_id) {
+            return null;
+        }
+
+        $bankLedgerAccountId = (int) $bankAccount->ledger_account_id;
+        $clearingAccountId = $this->resolveAccountId('issued_cheques_clearing', $companyId);
+
+        if (! $clearingAccountId) {
+            return null;
+        }
+
+        $amount = round((float) $clearance->amount, 2);
+
+        return $this->recordEntry(
+            sourceType: 'ap_cheque_clearance',
+            sourceId: (int) $clearance->id,
+            event: 'clear',
+            entryDate: optional($clearance->clearance_date)->toDateString() ?? now()->toDateString(),
+            description: 'AP cheque clearance #'.$clearance->id,
+            lines: [
+                ['account_id' => $clearingAccountId, 'debit' => $amount, 'credit' => 0, 'memo' => 'Cheque presented to bank'],
+                ['account_id' => $bankLedgerAccountId, 'debit' => 0, 'credit' => $amount, 'memo' => 'Bank deduction on cheque clearance'],
+            ],
+            userId: $actorId,
+            companyId: $companyId,
+        );
     }
 
     private function resolveAccountId(mixed $key, ?int $companyId = null): ?int

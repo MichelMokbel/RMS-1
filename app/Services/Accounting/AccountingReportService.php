@@ -19,6 +19,7 @@ use App\Services\AR\ArAllocationIntegrityService;
 use App\Services\Spend\SpendReportService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class AccountingReportService
 {
@@ -29,6 +30,7 @@ class AccountingReportService
         protected PurchaseOrderInvoiceMatchingService $matchingService,
         protected SpendReportService $spendReportService,
         protected ArAllocationIntegrityService $allocationIntegrity,
+        protected LedgerAccountMappingService $mappingService,
     ) {
     }
 
@@ -185,17 +187,29 @@ class AccountingReportService
 
     public function cashFlow(int $companyId, string $dateTo): array
     {
-        $rows = DB::table('bank_transactions')
-            ->where('company_id', $companyId)
-            ->whereNull('statement_import_id')
-            ->where('status', '!=', 'void')
-            ->whereDate('transaction_date', '<=', $dateTo)
-            ->selectRaw('bank_account_id, direction, SUM(amount) as amount_total')
-            ->groupBy('bank_account_id', 'direction')
-            ->get();
+        $cashAccountIds = $this->resolveCashAccountIds($companyId);
 
-        $inflows = round((float) $rows->where('direction', 'inflow')->sum('amount_total'), 2);
-        $outflows = round((float) $rows->where('direction', 'outflow')->sum('amount_total'), 2);
+        if (empty($cashAccountIds)) {
+            return [
+                'as_of' => $dateTo,
+                'inflow_total' => 0.0,
+                'outflow_total' => 0.0,
+                'net_cash_flow' => 0.0,
+            ];
+        }
+
+        $row = DB::table('subledger_lines as sl')
+            ->join('subledger_entries as se', 'se.id', '=', 'sl.entry_id')
+            ->where('se.company_id', $companyId)
+            ->where('se.status', 'posted')
+            ->whereNull('se.voided_at')
+            ->whereDate('se.entry_date', '<=', $dateTo)
+            ->whereIn('sl.account_id', $cashAccountIds)
+            ->selectRaw('SUM(sl.debit) as total_debit, SUM(sl.credit) as total_credit')
+            ->first();
+
+        $inflows = round((float) ($row->total_debit ?? 0), 2);
+        $outflows = round((float) ($row->total_credit ?? 0), 2);
 
         return [
             'as_of' => $dateTo,
@@ -203,6 +217,30 @@ class AccountingReportService
             'outflow_total' => $outflows,
             'net_cash_flow' => round($inflows - $outflows, 2),
         ];
+    }
+
+    private function resolveCashAccountIds(int $companyId): array
+    {
+        $ids = [];
+
+        foreach (['cash', 'petty_cash_asset'] as $key) {
+            $id = $this->mappingService->resolveAccountId($key, $companyId);
+            if ($id) {
+                $ids[] = $id;
+            }
+        }
+
+        if (Schema::hasTable('bank_accounts')) {
+            $bankIds = DB::table('bank_accounts')
+                ->where('company_id', $companyId)
+                ->whereNotNull('ledger_account_id')
+                ->pluck('ledger_account_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+            $ids = array_merge($ids, $bankIds);
+        }
+
+        return array_values(array_unique(array_filter($ids)));
     }
 
     public function bankReconciliationSummary(int $companyId): array
