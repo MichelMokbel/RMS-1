@@ -49,6 +49,7 @@ class PastryOrderCreateService
 
             $order = PastryOrder::create([
                 'order_number'              => $orderNumber,
+                'sales_order_number'        => $data['sales_order_number'] ?? null,
                 'branch_id'                 => $data['branch_id'] ?? null,
                 'status'                    => $data['status'] ?? 'Draft',
                 'type'                      => $data['type'] ?? 'Pickup',

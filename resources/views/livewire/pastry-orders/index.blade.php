@@ -28,40 +28,42 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string  $search         = '';
 
     // ── Create drawer ──────────────────────────────────────────────────────────
-    public bool    $showCreateDrawer   = false;
-    public int     $c_branch_id        = 1;
-    public string  $c_status           = 'Draft';
-    public string  $c_type             = 'Pickup';
-    public ?int    $c_customer_id      = null;
-    public string  $c_customer_search  = '';
-    public ?string $c_customer_name    = null;
-    public ?string $c_customer_phone   = null;
-    public ?string $c_delivery_address = null;
-    public ?string $c_scheduled_date   = null;
-    public ?string $c_scheduled_time   = null;
-    public ?string $c_notes            = null;
-    public float   $c_order_discount   = 0.0;
-    public array   $c_items            = [];
-    public array   $c_item_search      = [];
+    public bool    $showCreateDrawer       = false;
+    public int     $c_branch_id            = 1;
+    public string  $c_status               = 'Draft';
+    public string  $c_type                 = 'Pickup';
+    public ?int    $c_customer_id          = null;
+    public string  $c_customer_search      = '';
+    public ?string $c_customer_name        = null;
+    public ?string $c_customer_phone       = null;
+    public ?string $c_delivery_address     = null;
+    public ?string $c_scheduled_date       = null;
+    public ?string $c_scheduled_time       = null;
+    public ?string $c_notes                = null;
+    public ?string $c_sales_order_number   = null;
+    public float   $c_order_discount       = 0.0;
+    public array   $c_items                = [];
+    public array   $c_item_search          = [];
     /** @var \Livewire\Features\SupportFileUploads\TemporaryUploadedFile[] */
     public $c_images = [];
 
     // ── Edit drawer ────────────────────────────────────────────────────────────
-    public bool    $showEditDrawer      = false;
-    public ?int    $e_id                = null;
-    public string  $e_order_number      = '';
-    public int     $e_branch_id         = 1;
-    public string  $e_status            = 'Draft';
-    public string  $e_type              = 'Pickup';
-    public ?int    $e_customer_id       = null;
-    public string  $e_customer_search   = '';
-    public ?string $e_customer_name     = null;
-    public ?string $e_customer_phone    = null;
-    public ?string $e_delivery_address  = null;
-    public ?string $e_scheduled_date    = null;
-    public ?string $e_scheduled_time    = null;
-    public ?string $e_notes             = null;
-    public float   $e_order_discount    = 0.0;
+    public bool    $showEditDrawer          = false;
+    public ?int    $e_id                    = null;
+    public string  $e_order_number          = '';
+    public int     $e_branch_id             = 1;
+    public string  $e_status                = 'Draft';
+    public string  $e_type                  = 'Pickup';
+    public ?int    $e_customer_id           = null;
+    public string  $e_customer_search       = '';
+    public ?string $e_customer_name         = null;
+    public ?string $e_customer_phone        = null;
+    public ?string $e_delivery_address      = null;
+    public ?string $e_scheduled_date        = null;
+    public ?string $e_scheduled_time        = null;
+    public ?string $e_notes                 = null;
+    public ?string $e_sales_order_number    = null;
+    public float   $e_order_discount        = 0.0;
     public array   $e_items             = [];
     public array   $e_item_search       = [];
     /** @var \Livewire\Features\SupportFileUploads\TemporaryUploadedFile[] */
@@ -71,13 +73,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool  $e_is_invoiced      = false;
 
     // ── View drawer ────────────────────────────────────────────────────────────
-    public bool    $showViewDrawer   = false;
-    public ?int    $v_order_id       = null;
-    public string  $v_order_number   = '';
-    public string  $v_customer_name  = '';
-    public ?string $v_customer_phone = null;
-    public string  $v_status         = '';
-    public ?string $v_scheduled_date = null;
+    public bool    $showViewDrawer          = false;
+    public ?int    $v_order_id              = null;
+    public string  $v_order_number          = '';
+    public ?string $v_sales_order_number    = null;
+    public string  $v_customer_name         = '';
+    public ?string $v_customer_phone        = null;
+    public string  $v_status                = '';
+    public ?string $v_scheduled_date        = null;
     public string  $v_type           = '';
     public ?string $v_notes          = null;
     public array   $v_items          = [];
@@ -122,21 +125,22 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function openCreateDrawer(): void
     {
-        $this->c_branch_id        = 1;
-        $this->c_status           = 'Draft';
-        $this->c_type             = 'Pickup';
-        $this->c_customer_id      = null;
-        $this->c_customer_search  = '';
-        $this->c_customer_name    = null;
-        $this->c_customer_phone   = null;
-        $this->c_delivery_address = null;
-        $this->c_scheduled_date   = now()->toDateString();
-        $this->c_scheduled_time   = null;
-        $this->c_notes            = null;
-        $this->c_order_discount   = 0.0;
-        $this->c_items            = [];
-        $this->c_item_search      = [];
-        $this->c_images           = [];
+        $this->c_branch_id            = 1;
+        $this->c_status               = 'Draft';
+        $this->c_type                 = 'Pickup';
+        $this->c_customer_id          = null;
+        $this->c_customer_search      = '';
+        $this->c_customer_name        = null;
+        $this->c_customer_phone       = null;
+        $this->c_delivery_address     = null;
+        $this->c_scheduled_date       = now()->toDateString();
+        $this->c_scheduled_time       = null;
+        $this->c_notes                = null;
+        $this->c_sales_order_number   = null;
+        $this->c_order_discount       = 0.0;
+        $this->c_items                = [];
+        $this->c_item_search          = [];
+        $this->c_images               = [];
         $this->addCreateItem();
         $this->resetValidation();
         $this->showCreateDrawer = true;
@@ -218,6 +222,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'scheduled_date'            => $this->c_scheduled_date,
                 'scheduled_time'            => $this->c_scheduled_time,
                 'notes'                     => $this->c_notes,
+                'sales_order_number'        => $this->c_sales_order_number,
                 'order_discount_amount'     => $this->c_order_discount,
                 'items'                     => $items,
             ], [
@@ -231,6 +236,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'scheduled_date'            => ['nullable', 'date'],
                 'scheduled_time'            => ['nullable'],
                 'notes'                     => ['nullable', 'string'],
+                'sales_order_number'        => ['nullable', 'string', 'max:100'],
                 'order_discount_amount'     => ['nullable', 'numeric', 'min:0'],
                 'items'                     => ['required', 'array', 'min:1'],
                 'items.*.menu_item_id'      => ['required', 'integer'],
@@ -264,19 +270,20 @@ new #[Layout('components.layouts.app')] class extends Component {
         $order = PastryOrder::with(['items', 'images'])->find($orderId);
         if (! $order) return;
 
-        $this->e_id               = $order->id;
-        $this->e_order_number     = $order->order_number;
-        $this->e_branch_id        = (int) ($order->branch_id ?? 1);
-        $this->e_status           = $order->status;
-        $this->e_type             = $order->type;
-        $this->e_customer_id      = $order->customer_id;
-        $this->e_customer_name    = $order->customer_name_snapshot;
-        $this->e_customer_phone   = $order->customer_phone_snapshot;
-        $this->e_delivery_address = $order->delivery_address_snapshot;
-        $this->e_scheduled_date   = $order->scheduled_date?->format('Y-m-d');
-        $this->e_scheduled_time   = $order->scheduled_time ?? null;
-        $this->e_notes            = $order->notes;
-        $this->e_order_discount   = (float) $order->order_discount_amount;
+        $this->e_id                   = $order->id;
+        $this->e_order_number         = $order->order_number;
+        $this->e_branch_id            = (int) ($order->branch_id ?? 1);
+        $this->e_status               = $order->status;
+        $this->e_type                 = $order->type;
+        $this->e_customer_id          = $order->customer_id;
+        $this->e_customer_name        = $order->customer_name_snapshot;
+        $this->e_customer_phone       = $order->customer_phone_snapshot;
+        $this->e_delivery_address     = $order->delivery_address_snapshot;
+        $this->e_scheduled_date       = $order->scheduled_date?->format('Y-m-d');
+        $this->e_scheduled_time       = $order->scheduled_time ?? null;
+        $this->e_notes                = $order->notes;
+        $this->e_sales_order_number   = $order->sales_order_number;
+        $this->e_order_discount       = (float) $order->order_discount_amount;
         $this->e_is_invoiced      = $order->isInvoiced();
         $this->e_new_images       = [];
         $this->e_remove_image_ids = [];
@@ -396,6 +403,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'scheduled_date'            => $this->e_scheduled_date,
                 'scheduled_time'            => $this->e_scheduled_time,
                 'notes'                     => $this->e_notes,
+                'sales_order_number'        => $this->e_sales_order_number,
                 'order_discount_amount'     => $this->e_order_discount,
                 'items'                     => $items,
             ], [
@@ -409,6 +417,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'scheduled_date'            => ['nullable', 'date'],
                 'scheduled_time'            => ['nullable'],
                 'notes'                     => ['nullable', 'string'],
+                'sales_order_number'        => ['nullable', 'string', 'max:100'],
                 'order_discount_amount'     => ['nullable', 'numeric', 'min:0'],
                 'items'                     => ['required', 'array', 'min:1'],
                 'items.*.menu_item_id'      => ['required', 'integer'],
@@ -452,10 +461,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         $order = PastryOrder::with(['items', 'images'])->find($orderId);
         if (! $order) return;
 
-        $this->v_order_id       = $order->id;
-        $this->v_order_number   = $order->order_number;
-        $this->v_customer_name  = $order->customer_name_snapshot ?? '';
-        $this->v_customer_phone = $order->customer_phone_snapshot;
+        $this->v_order_id             = $order->id;
+        $this->v_order_number         = $order->order_number;
+        $this->v_sales_order_number   = $order->sales_order_number;
+        $this->v_customer_name        = $order->customer_name_snapshot ?? '';
+        $this->v_customer_phone       = $order->customer_phone_snapshot;
         $this->v_status         = $order->status;
         $this->v_scheduled_date = $order->scheduled_date?->format('Y-m-d');
         $this->v_type           = $order->type;
@@ -616,6 +626,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <div><p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Branch') }}</p><p class="text-neutral-800 dark:text-neutral-100">{{ $order->branch_id ?? '—' }}</p></div>
                     <div><p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Items') }}</p><p class="text-neutral-800 dark:text-neutral-100">{{ $order->items_count }}</p></div>
                     <div><p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Total') }}</p><p class="font-semibold text-neutral-900 dark:text-neutral-100">{{ number_format((float)$order->total_amount, 3) }}</p></div>
+                    @if ($order->sales_order_number)
+                        <div class="col-span-2"><p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Sales Order #') }}</p><p class="text-neutral-800 dark:text-neutral-100">{{ $order->sales_order_number }}</p></div>
+                    @endif
                 </div>
                 <p class="text-xs text-neutral-500 dark:text-neutral-400">
                     {{ __('Scheduled') }}: {{ $order->scheduled_date?->format('Y-m-d') ?? '—' }}{{ $order->scheduled_time ? ' · '.$order->scheduled_time : '' }}
@@ -669,6 +682,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <tr>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100 w-12"></th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Order #') }}</th>
+                    <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Sales Order #') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Status') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Type') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Customer / Notes') }}</th>
@@ -697,6 +711,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @endif
                         </td>
                         <td class="px-3 py-3 text-sm text-neutral-900 dark:text-neutral-100 align-middle font-medium">{{ $order->order_number }}</td>
+                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">{{ $order->sales_order_number ?? '—' }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">{{ $order->status }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">{{ $order->type }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">
@@ -734,7 +749,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="9" class="px-4 py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">{{ __('No pastry orders found.') }}</td></tr>
+                    <tr><td colspan="10" class="px-4 py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">{{ __('No pastry orders found.') }}</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -818,6 +833,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <flux:input wire:model="c_scheduled_date" type="date" :label="__('Scheduled Date')" />
                     <flux:input wire:model="c_scheduled_time" type="time" :label="__('Scheduled Time')" />
+                </div>
+
+                {{-- Sales Order Number --}}
+                <div>
+                    <flux:input wire:model="c_sales_order_number" :label="__('Sales Order #')" placeholder="{{ __('Optional') }}" />
                 </div>
 
                 {{-- Notes --}}
@@ -1027,6 +1047,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <flux:input wire:model="e_scheduled_date" type="date" :label="__('Scheduled Date')" />
                         <flux:input wire:model="e_scheduled_time" type="time" :label="__('Scheduled Time')" />
+                    </div>
+
+                    <div>
+                        <flux:input wire:model="e_sales_order_number" :label="__('Sales Order #')" placeholder="{{ __('Optional') }}" />
                     </div>
 
                     <div>
@@ -1254,6 +1278,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <p class="text-xs text-neutral-500 dark:text-neutral-400 mb-0.5">{{ __('Type') }}</p>
                                 <p class="text-sm font-medium text-neutral-900 dark:text-neutral-100">{{ $v_type ?: '—' }}</p>
                             </div>
+                            @if ($v_sales_order_number)
+                                <div class="col-span-2 rounded-lg border border-neutral-200 bg-white px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/60">
+                                    <p class="text-xs text-neutral-500 dark:text-neutral-400 mb-0.5">{{ __('Sales Order #') }}</p>
+                                    <p class="text-sm font-medium text-neutral-900 dark:text-neutral-100">{{ $v_sales_order_number }}</p>
+                                </div>
+                            @endif
                         </div>
 
                     </div>
@@ -1284,7 +1314,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             loading: false,
             open: false,
             hasSearched: false,
-            panelStyle: 'display: none;',
+            panelStyle: '',
             controller: null,
             repositionHandler: null,
 
@@ -1343,7 +1373,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 this.$wire[this.selectMethod](this.index, item.id, label);
             },
 
-            close() { this.open = false; this.panelStyle = 'display: none;'; },
+            close() { this.open = false; },
 
             positionDropdown() {
                 if (!this.$refs.input) return;
@@ -1353,7 +1383,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     `top: ${rect.bottom + 4}px`,
                     `left: ${rect.left}px`,
                     `width: ${rect.width}px`,
-                    'display: block',
+                    'z-index: 999999',
                 ].join('; ');
             },
         }));

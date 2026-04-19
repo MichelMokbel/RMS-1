@@ -115,6 +115,9 @@
             {{-- Header --}}
             <div>
                 <p class="order-number">{{ $order->order_number }}</p>
+                @if ($order->sales_order_number)
+                    <p style="font-size:13px;color:#6b7280;margin:0 0 1mm;">{{ __('Sales Order #') }}: {{ $order->sales_order_number }}</p>
+                @endif
                 <p class="scheduled">{{ $order->scheduled_date?->format('D, d M Y') ?? '—' }}{{ $order->scheduled_time ? ' · ' . $order->scheduled_time : '' }}</p>
                 <span class="status-badge">{{ $order->status ?? '—' }}</span>
             </div>

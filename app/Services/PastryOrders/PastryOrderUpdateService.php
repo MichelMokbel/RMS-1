@@ -70,6 +70,7 @@ class PastryOrderUpdateService
             }
 
             $order->update([
+                'sales_order_number'        => $data['sales_order_number'] ?? null,
                 'branch_id'                 => $data['branch_id'] ?? $order->branch_id,
                 'status'                    => $data['status'],
                 'type'                      => $data['type'],

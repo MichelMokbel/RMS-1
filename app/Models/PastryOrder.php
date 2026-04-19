@@ -16,6 +16,7 @@ class PastryOrder extends Model
 
     protected $fillable = [
         'order_number',
+        'sales_order_number',
         'branch_id',
         'status',
         'type',
