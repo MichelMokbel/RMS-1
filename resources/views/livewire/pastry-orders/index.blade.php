@@ -301,7 +301,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->e_items       = [];
         $this->e_item_search = [];
         foreach ($order->items->sortBy('sort_order') as $item) {
-            $this->e_items[]       = ['menu_item_id' => $item->menu_item_id, 'quantity' => (float) $item->quantity, 'discount_amount' => (float) $item->discount_amount, 'sort_order' => $item->sort_order];
+            $this->e_items[]       = ['menu_item_id' => $item->menu_item_id, 'quantity' => (float) $item->quantity, 'unit_price' => (float) $item->unit_price, 'discount_amount' => (float) $item->discount_amount, 'sort_order' => $item->sort_order];
             $this->e_item_search[] = $item->description_snapshot;
         }
         $this->addEditItem();
@@ -318,7 +318,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function addEditItem(): void
     {
-        $this->e_items[]       = ['menu_item_id' => null, 'quantity' => 1, 'discount_amount' => 0, 'sort_order' => count($this->e_items)];
+        $this->e_items[]       = ['menu_item_id' => null, 'quantity' => 1, 'unit_price' => null, 'discount_amount' => 0, 'sort_order' => count($this->e_items)];
         $this->e_item_search[] = '';
     }
 
@@ -334,6 +334,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! array_key_exists($i, $this->e_items)) return;
         $this->e_items[$i]['menu_item_id']    = $menuItemId;
         $this->e_items[$i]['quantity']        ??= 1;
+        $this->e_items[$i]['unit_price']      = $price;
         $this->e_items[$i]['discount_amount'] ??= 0;
         $this->e_items[$i]['sort_order']      ??= $i;
         $this->e_item_search[$i]              = $label;
@@ -345,6 +346,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         if (! array_key_exists($i, $this->e_items)) return;
         $this->e_items[$i]['menu_item_id'] = null;
+        $this->e_items[$i]['unit_price']   = null;
         $this->e_item_search[$i]           = '';
     }
 
@@ -429,6 +431,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'items'                     => ['required', 'array', 'min:1'],
                 'items.*.menu_item_id'      => ['required', 'integer'],
                 'items.*.quantity'          => ['required', 'numeric', 'min:0.001'],
+                'items.*.unit_price'        => ['nullable', 'numeric', 'min:0'],
                 'items.*.discount_amount'   => ['nullable', 'numeric', 'min:0'],
             ])->validate();
         } catch (ValidationException $e) {
@@ -1125,14 +1128,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <label class="{{ $labelClass }}">{{ __('Items') }}</label>
                         <div class="space-y-1">
                             {{-- Column headers --}}
-                            <div class="grid gap-x-2 px-1" style="grid-template-columns: minmax(0,1fr) 72px 80px 28px;">
+                            <div class="grid gap-x-2 px-1" style="grid-template-columns: minmax(0,1fr) 72px 80px 80px 28px;">
                                 <span class="text-xs font-medium text-neutral-500 dark:text-neutral-400">{{ __('Item') }}</span>
                                 <span class="text-xs font-medium text-neutral-500 dark:text-neutral-400">{{ __('Qty') }}</span>
+                                <span class="text-xs font-medium text-neutral-500 dark:text-neutral-400">{{ __('Price') }}</span>
                                 <span class="text-xs font-medium text-neutral-500 dark:text-neutral-400">{{ __('Disc.') }}</span>
                                 <span></span>
                             </div>
                             @foreach ($e_items as $idx => $row)
-                                <div class="grid gap-x-2 items-center" style="grid-template-columns: minmax(0,1fr) 72px 80px 28px;" wire:key="e-item-{{ $idx }}">
+                                <div class="grid gap-x-2 items-center" style="grid-template-columns: minmax(0,1fr) 72px 80px 80px 28px;" wire:key="e-item-{{ $idx }}">
                                     {{-- Alpine search — wire:ignore only on this div --}}
                                     <div wire:ignore
                                          x-data="pastryItemLookup({
@@ -1179,6 +1183,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                                            type="number" step="0.001" min="0.001"
                                            class="w-full rounded-md border border-neutral-200 bg-white px-2 py-2 text-sm text-center text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
                                            placeholder="1" />
+                                    {{-- Price --}}
+                                    <input wire:model="e_items.{{ $idx }}.unit_price"
+                                           type="number" step="0.001" min="0"
+                                           class="w-full rounded-md border border-neutral-200 bg-white px-2 py-2 text-sm text-center text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
+                                           placeholder="{{ __('Auto') }}" />
                                     {{-- Disc --}}
                                     <input wire:model="e_items.{{ $idx }}.discount_amount"
                                            type="number" step="0.001" min="0"
