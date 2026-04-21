@@ -174,27 +174,58 @@ class SubscriptionPaymentLinkService
             // Metadata-anchored: no payment link, derive from subscription item metadata.
 
             // Primary: items tagged with subscription_id in meta (auto-generated, Step 5+)
-            $primaryCount = \App\Models\ArInvoiceItem::query()
+            $metaInvoiceIds = \App\Models\ArInvoiceItem::query()
                 ->whereJsonContains('meta->is_subscription', true)
                 ->where(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(meta, '$.subscription_id'))"), (string) $subscription->id)
                 ->whereHas('invoice', fn ($q) => $q->whereNull('voided_at'))
-                ->count();
+                ->pluck('invoice_id')
+                ->unique();
+
+            $primaryCount = $metaInvoiceIds->count();
 
             // Fallback: items linked via order chain (pre-Step-5 invoices without subscription_id in meta)
             $orderIds = $subscription->subscriptionOrders()->pluck('order_id');
+            $orderChainInvoiceIds = collect();
             $fallbackCount = 0;
             if ($orderIds->isNotEmpty()) {
-                $fallbackCount = \App\Models\ArInvoiceItem::query()
+                $orderChainInvoiceIds = \App\Models\ArInvoiceItem::query()
                     ->whereJsonContains('meta->is_subscription', true)
                     ->whereHas('invoice', function ($q) use ($orderIds) {
                         $q->whereNull('voided_at')
                           ->whereIn('source_order_id', $orderIds);
                     })
                     ->whereRaw("(JSON_EXTRACT(meta, '$.subscription_id') IS NULL OR JSON_EXTRACT(meta, '$.subscription_id') != ?)", [$subscription->id])
-                    ->count();
+                    ->pluck('invoice_id')
+                    ->unique();
+
+                $fallbackCount = $orderChainInvoiceIds->count();
             }
 
-            $total = $primaryCount + $fallbackCount;
+            // Path C: manually created plan-purchase invoices that have no subscription metadata.
+            // These are invoices containing the plan menu item (e.g. MI-000084 / MI-000094) for
+            // this customer, which were not captured by the metadata or order-chain paths above.
+            $planPathCount = 0;
+            if ($subscription->plan_meals_total !== null) {
+                $planItemIds = config('subscriptions.plan_menu_item_ids', []);
+                $matchingMenuItemId = $planItemIds[(int) $subscription->plan_meals_total] ?? null;
+
+                if ($matchingMenuItemId) {
+                    $alreadyCounted = $metaInvoiceIds->merge($orderChainInvoiceIds)->unique();
+
+                    $planPathCount = \App\Models\ArInvoice::query()
+                        ->whereNull('voided_at')
+                        ->where('type', '!=', 'credit_note')
+                        ->where('customer_id', $subscription->customer_id)
+                        ->whereHas('items', fn ($q) => $q
+                            ->where('sellable_type', \App\Models\MenuItem::class)
+                            ->where('sellable_id', $matchingMenuItemId)
+                        )
+                        ->when($alreadyCounted->isNotEmpty(), fn ($q) => $q->whereNotIn('id', $alreadyCounted->all()))
+                        ->count();
+                }
+            }
+
+            $total = $primaryCount + $fallbackCount + $planPathCount;
         }
 
         DB::transaction(function () use ($subscription, $total) {

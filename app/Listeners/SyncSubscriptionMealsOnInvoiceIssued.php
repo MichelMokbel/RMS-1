@@ -96,6 +96,11 @@ class SyncSubscriptionMealsOnInvoiceIssued
                 return;
             }
 
+            // Do not count meals for subscriptions whose end_date has already passed.
+            if ($sub->end_date && now()->toDateString() > $sub->end_date->toDateString()) {
+                return;
+            }
+
             $sub->meals_used = (int) ($sub->meals_used ?? 0) + $count;
 
             if ($sub->meals_used >= $sub->plan_meals_total) {

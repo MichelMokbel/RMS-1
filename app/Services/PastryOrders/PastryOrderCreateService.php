@@ -76,7 +76,9 @@ class PastryOrderCreateService
             foreach ($items as $idx => $row) {
                 $menuItem  = $menuItems->get((int) $row['menu_item_id']);
                 $qty       = (float) ($row['quantity'] ?? 1);
-                $price     = (float) ($menuItem?->selling_price_per_unit ?? 0);
+                $price     = isset($row['unit_price']) && $row['unit_price'] !== null && $row['unit_price'] !== ''
+                    ? (float) $row['unit_price']
+                    : (float) ($menuItem?->selling_price_per_unit ?? 0);
                 $discount  = (float) ($row['discount_amount'] ?? 0);
                 $lineTotal = max(0, round(($qty * $price) - $discount, 3));
 
@@ -122,7 +124,9 @@ class PastryOrderCreateService
         return (float) $items->reduce(function (float $carry, array $row) use ($menuItems): float {
             $qty      = (float) ($row['quantity'] ?? 1);
             $menuItem = $menuItems->get((int) ($row['menu_item_id'] ?? 0));
-            $price    = (float) ($menuItem?->selling_price_per_unit ?? 0);
+            $price    = isset($row['unit_price']) && $row['unit_price'] !== null && $row['unit_price'] !== ''
+                ? (float) $row['unit_price']
+                : (float) ($menuItem?->selling_price_per_unit ?? 0);
             $discount = (float) ($row['discount_amount'] ?? 0);
 
             return $carry + max(0, ($qty * $price) - $discount);

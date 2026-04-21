@@ -159,12 +159,24 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
         }
 
+        $lowMealSubscriptions = collect();
+
         if ($canViewPrograms) {
             $subscriptionsQuery = MealSubscription::query();
             $applyBranchScope($subscriptionsQuery);
 
             $activeSubscriptions = (clone $subscriptionsQuery)->where('status', 'active')->count();
             $pausedSubscriptions = (clone $subscriptionsQuery)->where('status', 'paused')->count();
+
+            $lowMealQuery = MealSubscription::query()
+                ->with('customer:id,name')
+                ->where('status', 'active')
+                ->whereNotNull('plan_meals_total')
+                ->whereRaw('(plan_meals_total - COALESCE(meals_used, 0)) <= 2')
+                ->whereRaw('(plan_meals_total - COALESCE(meals_used, 0)) >= 0')
+                ->orderByRaw('(plan_meals_total - COALESCE(meals_used, 0)) ASC');
+            $applyBranchScope($lowMealQuery);
+            $lowMealSubscriptions = $lowMealQuery->get();
 
             if (Schema::hasTable('meal_plan_requests')) {
                 $pendingMealPlanRequests = MealPlanRequest::query()
@@ -524,6 +536,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'showFilters' => $branches->isNotEmpty() && ($canViewSales || $canViewPrograms || $canViewSupplyChain || $showCharts),
             'showCharts' => $showCharts,
             'chartPayload' => $chartPayload,
+            'lowMealSubscriptions' => $lowMealSubscriptions,
         ];
     }
 
@@ -771,6 +784,41 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                 </article>
             @endforeach
+        </section>
+    @endif
+
+    @if ($lowMealSubscriptions->isNotEmpty())
+        <section class="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-800/60 dark:bg-amber-950/30">
+            <div class="flex items-center gap-2 mb-4">
+                <svg class="h-5 w-5 flex-shrink-0 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                </svg>
+                <h2 class="text-sm font-semibold text-amber-800 dark:text-amber-300">{{ __('Subscriptions Running Low on Meals') }}</h2>
+            </div>
+            <div class="divide-y divide-amber-200 dark:divide-amber-800/50">
+                @foreach ($lowMealSubscriptions as $sub)
+                    @php $remaining = (int) $sub->plan_meals_total - (int) ($sub->meals_used ?? 0); @endphp
+                    <div class="flex items-center justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
+                        <span class="text-sm font-medium text-amber-900 dark:text-amber-100">
+                            {{ $sub->customer?->name ?? __('Unknown Customer') }}
+                        </span>
+                        <div class="flex items-center gap-3 text-sm text-amber-700 dark:text-amber-300">
+                            <span>{{ $sub->meals_used ?? 0 }} / {{ $sub->plan_meals_total }}</span>
+                            <span @class([
+                                'rounded-full px-2.5 py-0.5 text-xs font-semibold',
+                                'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' => $remaining === 0,
+                                'bg-amber-200 text-amber-800 dark:bg-amber-800/50 dark:text-amber-200' => $remaining > 0,
+                            ])>
+                                {{ $remaining === 0 ? __('0 left') : __(':n left', ['n' => $remaining]) }}
+                            </span>
+                            <a href="{{ route('subscriptions.show', $sub->id) }}" wire:navigate
+                               class="text-xs text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200 underline">
+                                {{ __('View') }}
+                            </a>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
         </section>
     @endif
 
