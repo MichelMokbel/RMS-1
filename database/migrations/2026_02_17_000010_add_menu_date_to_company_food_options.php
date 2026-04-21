@@ -9,9 +9,11 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('company_food_options', function (Blueprint $table): void {
-            $table->date('menu_date')->nullable()->after('project_id');
-        });
+        if (! Schema::hasColumn('company_food_options', 'menu_date')) {
+            Schema::table('company_food_options', function (Blueprint $table): void {
+                $table->date('menu_date')->nullable()->after('project_id');
+            });
+        }
 
         // Backfill: set menu_date to project start_date for existing options
         $options = DB::table('company_food_options')->get();
@@ -24,8 +26,14 @@ return new class extends Migration
 
         Schema::table('company_food_options', function (Blueprint $table): void {
             $table->date('menu_date')->nullable(false)->change();
-            $table->index(['project_id', 'menu_date', 'category']);
         });
+
+        $indexExists = DB::select("SHOW KEYS FROM company_food_options WHERE Key_name = 'company_food_options_project_id_menu_date_category_index'");
+        if (empty($indexExists)) {
+            Schema::table('company_food_options', function (Blueprint $table): void {
+                $table->index(['project_id', 'menu_date', 'category']);
+            });
+        }
     }
 
     public function down(): void

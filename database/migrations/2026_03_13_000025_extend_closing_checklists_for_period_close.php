@@ -32,9 +32,12 @@ return new class extends Migration
         $this->backfillExistingRows();
         $this->seedMissingRows();
 
-        Schema::table('closing_checklists', function (Blueprint $table) {
-            $table->unique(['company_id', 'period_id', 'task_key'], 'closing_checklists_period_task_key_uq');
-        });
+        $indexExists = DB::select("SHOW KEYS FROM closing_checklists WHERE Key_name = 'closing_checklists_period_task_key_uq'");
+        if (empty($indexExists)) {
+            Schema::table('closing_checklists', function (Blueprint $table) {
+                $table->unique(['company_id', 'period_id', 'task_key'], 'closing_checklists_period_task_key_uq');
+            });
+        }
     }
 
     public function down(): void
