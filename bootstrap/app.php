@@ -1,35 +1,35 @@
 <?php
 
+use App\Console\Commands\BackfillMenuItemBranches;
+use App\Console\Commands\ExportMenuItemsMissingArabic;
+use App\Console\Commands\FinanceLockDate;
+use App\Console\Commands\GenerateRecurringBills;
+use App\Console\Commands\GenerateSubscriptionOrders;
+use App\Console\Commands\HelpCaptureScreenshotsCommand;
+use App\Console\Commands\HelpSeedDemoCommand;
+use App\Console\Commands\ImportDailyDishMenuFromForm;
+use App\Console\Commands\ImportMenuItemArabicNames;
+use App\Console\Commands\IntegrityAudit;
+use App\Console\Commands\PrunePosPrintStreamEvents;
+use App\Console\Commands\ReapplySafeForeignKeys;
+use App\Console\Commands\RepairArCrossCompanyAllocations;
+use App\Console\Commands\RestoreDatabaseFromDump;
+use App\Console\Commands\UsersHashPasswords;
+use App\Http\Middleware\ApplyReportDateDefaults;
+use App\Http\Middleware\CheckActiveUser;
+use App\Http\Middleware\EnsureActiveBranch;
+use App\Http\Middleware\EnsureAdmin;
+use App\Http\Middleware\EnsureBranchAccess;
+use App\Http\Middleware\EnsureCustomerPortalUser;
+use App\Http\Middleware\EnsureVerifiedCustomerPhone;
+use App\Http\Middleware\RejectCustomerBackofficeAccess;
+use App\Http\Middleware\ResolveAllowedBranches;
+use App\Services\Orders\SubscriptionOrderGenerationService;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
-use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\DB;
-use App\Http\Middleware\CheckActiveUser;
-use App\Http\Middleware\EnsureBranchAccess;
-use App\Http\Middleware\EnsureAdmin;
-use App\Http\Middleware\EnsureActiveBranch;
-use App\Http\Middleware\EnsureCustomerPortalUser;
-use App\Http\Middleware\EnsureVerifiedCustomerPhone;
-use App\Http\Middleware\ApplyReportDateDefaults;
-use App\Http\Middleware\RejectCustomerBackofficeAccess;
-use App\Http\Middleware\ResolveAllowedBranches;
-use App\Console\Commands\UsersHashPasswords;
-use App\Console\Commands\GenerateSubscriptionOrders;
-use App\Console\Commands\RestoreDatabaseFromDump;
-use App\Console\Commands\ImportDailyDishMenuFromForm;
-use App\Console\Commands\IntegrityAudit;
-use App\Console\Commands\ReapplySafeForeignKeys;
-use App\Console\Commands\FinanceLockDate;
-use App\Console\Commands\BackfillMenuItemBranches;
-use App\Console\Commands\ExportMenuItemsMissingArabic;
-use App\Console\Commands\ImportMenuItemArabicNames;
-use App\Console\Commands\PrunePosPrintStreamEvents;
-use App\Console\Commands\HelpSeedDemoCommand;
-use App\Console\Commands\HelpCaptureScreenshotsCommand;
-use App\Console\Commands\GenerateRecurringBills;
-use App\Console\Commands\RepairArCrossCompanyAllocations;
-use App\Services\Orders\SubscriptionOrderGenerationService;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
 
@@ -67,6 +67,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 $actorId = (int) config('app.system_user_id');
                 if (! $actorId) {
                     logger()->warning('SYSTEM_USER_ID missing; subscription order generation skipped.');
+
                     return;
                 }
                 $branches = DB::table('meal_subscriptions')->distinct()->pluck('branch_id');
@@ -85,6 +86,52 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('accounting:generate-recurring-bills')
             ->dailyAt('01:00')
             ->withoutOverlapping();
+
+        // Marketing: sync campaign structure daily
+        $schedule->call(function () {
+            try {
+                if (! \Illuminate\Support\Facades\Schema::hasTable('marketing_platform_accounts')) {
+                    return;
+                }
+                $settings = app(\App\Services\Marketing\MarketingSettingsService::class);
+                $accounts = \App\Models\MarketingPlatformAccount::query()->active()->get();
+                foreach ($accounts as $account) {
+                    if (! $settings->isSyncEnabledFor($account->platform)) {
+                        continue;
+                    }
+
+                    \App\Jobs\Marketing\SyncMarketingCampaignsJob::dispatch($account->id);
+                }
+            } catch (\Throwable $e) {
+                logger()->error('Marketing campaign sync dispatch failed', ['error' => $e->getMessage()]);
+            }
+        })->dailyAt(config('marketing.sync.campaign_schedule', '06:00'));
+
+        // Marketing: sync spend snapshots daily (covers last N days for late-arriving data)
+        $schedule->call(function () {
+            try {
+                if (! \Illuminate\Support\Facades\Schema::hasTable('marketing_platform_accounts')) {
+                    return;
+                }
+                $settings = app(\App\Services\Marketing\MarketingSettingsService::class);
+                $accounts = \App\Models\MarketingPlatformAccount::query()->active()->get();
+                $lookbackDays = (int) config('marketing.sync.spend_lookback_days', 3);
+                foreach ($accounts as $account) {
+                    if (! $settings->isSyncEnabledFor($account->platform)) {
+                        continue;
+                    }
+
+                    for ($i = 1; $i <= $lookbackDays; $i++) {
+                        \App\Jobs\Marketing\SyncMarketingSpendJob::dispatch(
+                            $account->id,
+                            now()->subDays($i)->toDateString(),
+                        );
+                    }
+                }
+            } catch (\Throwable $e) {
+                logger()->error('Marketing spend sync dispatch failed', ['error' => $e->getMessage()]);
+            }
+        })->dailyAt(config('marketing.sync.spend_schedule', '07:00'));
     })
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [

@@ -58,4 +58,14 @@ return [
         'base_url' => env('GEMINI_API_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta'),
     ],
 
+    'meta' => [
+        'api_version' => env('META_API_VERSION', 'v21.0'),
+        'base_url' => env('META_API_BASE_URL', 'https://graph.facebook.com'),
+    ],
+
+    'google_ads' => [
+        'api_version' => env('GOOGLE_ADS_API_VERSION', 'v23'),
+        'transport' => env('GOOGLE_ADS_TRANSPORT', 'rest'),
+    ],
+
 ];

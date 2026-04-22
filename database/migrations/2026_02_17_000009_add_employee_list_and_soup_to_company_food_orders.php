@@ -10,8 +10,13 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('company_food_orders', function (Blueprint $table): void {
-            $table->foreignId('employee_list_id')->nullable()->after('project_id')->constrained('company_food_employee_lists')->cascadeOnDelete();
-            $table->foreignId('soup_option_id')->nullable()->after('location_option_id')->constrained('company_food_options')->nullOnDelete();
+            if (! Schema::hasColumn('company_food_orders', 'employee_list_id')) {
+                $table->foreignId('employee_list_id')->nullable()->after('project_id')->constrained('company_food_employee_lists')->cascadeOnDelete();
+            }
+
+            if (! Schema::hasColumn('company_food_orders', 'soup_option_id')) {
+                $table->foreignId('soup_option_id')->nullable()->after('location_option_id')->constrained('company_food_options')->nullOnDelete();
+            }
         });
 
         // Backfill employee_list_id: use the project's first (default) list
@@ -28,9 +33,11 @@ return new class extends Migration
             }
         }
 
-        Schema::table('company_food_orders', function (Blueprint $table): void {
-            $table->foreignId('employee_list_id')->nullable(false)->change();
-        });
+        if (Schema::hasColumn('company_food_orders', 'employee_list_id')) {
+            Schema::table('company_food_orders', function (Blueprint $table): void {
+                $table->foreignId('employee_list_id')->nullable(false)->change();
+            });
+        }
     }
 
     public function down(): void

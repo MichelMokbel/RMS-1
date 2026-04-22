@@ -16,6 +16,7 @@
                 $isCashier = $user?->hasAnyRole(['admin','manager','cashier']) ?? false;
                 $isStaff = $user?->hasAnyRole(['admin','manager','staff']) ?? false;
                 $isPastryUser = $user?->hasRole('pastry-user') ?? false;
+                $canAccessMarketing = $user?->can('marketing.access') ?? false;
 
                 $inSales = request()->routeIs('orders.*')
                     || request()->routeIs('pastry-orders.*')
@@ -42,6 +43,7 @@
                     || request()->routeIs('iam.*')
                     || request()->routeIs('users.*');
                 $inSupport = request()->routeIs('help.*');
+                $inMarketing = request()->routeIs('marketing.*');
             @endphp
 
             <a href="{{ $isAdmin ? route('dashboard') : route('home') }}" class="me-5 flex items-center space-x-2 rtl:space-x-reverse" wire:navigate>
@@ -174,6 +176,26 @@
                     <flux:navlist.group expandable :expanded="$inReports" :heading="__('Reports')">
                         <flux:navlist.item icon="chart-bar" :href="route('reports.index')" :current="request()->routeIs('reports.index')" wire:navigate>
                             {{ __('All Reports') }}
+                        </flux:navlist.item>
+                    </flux:navlist.group>
+                @endif
+
+                @if($canAccessMarketing)
+                    <flux:navlist.group expandable :expanded="$inMarketing" :heading="__('Marketing')">
+                        <flux:navlist.item icon="chart-bar-square" :href="route('marketing.dashboard')" :current="request()->routeIs('marketing.dashboard')" wire:navigate>
+                            {{ __('Dashboard') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="megaphone" :href="route('marketing.campaigns.index')" :current="request()->routeIs('marketing.campaigns.*')" wire:navigate>
+                            {{ __('Campaigns') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="clock" :href="route('marketing.sync-logs.index')" :current="request()->routeIs('marketing.sync-logs.*')" wire:navigate>
+                            {{ __('Sync Logs') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="photo" :href="route('marketing.assets.index')" :current="request()->routeIs('marketing.assets.*')" wire:navigate>
+                            {{ __('Asset Library') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="document-text" :href="route('marketing.briefs.index')" :current="request()->routeIs('marketing.briefs.*')" wire:navigate>
+                            {{ __('Briefs') }}
                         </flux:navlist.item>
                     </flux:navlist.group>
                 @endif

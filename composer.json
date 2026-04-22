@@ -12,6 +12,7 @@
         "php": "^8.2",
         "aws/aws-sdk-php": "^3.349",
         "barryvdh/laravel-dompdf": "*",
+        "googleads/google-ads-php": "^32.3",
         "laravel/fortify": "^1.30",
         "laravel/framework": "^12.0",
         "laravel/nightwatch": "^1.21",
