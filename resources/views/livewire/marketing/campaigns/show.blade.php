@@ -17,6 +17,12 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public bool $editingNotes = false;
 
+    public string $date_from = '';
+
+    public string $date_to = '';
+
+    public ?int $selected_ad_set_id = null;
+
     public ?int $asset_id = null;
 
     public string $asset_note = '';
@@ -35,11 +41,30 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public string $utm_notes = '';
 
+    protected $queryString = [
+        'date_from' => ['except' => ''],
+        'date_to' => ['except' => ''],
+        'selected_ad_set_id' => ['except' => null],
+    ];
+
     public function mount(MarketingCampaign $campaign): void
     {
-        $this->campaign = $campaign->load(['platformAccount', 'adSets', 'utms', 'briefs', 'assetUsages.asset']);
+        $this->campaign = $campaign->load(['platformAccount', 'adSets.ads', 'utms', 'briefs', 'assetUsages.asset']);
         $this->internal_notes = $campaign->internal_notes ?? '';
         $this->fillUtmForm();
+    }
+
+    public function setRange(int $days): void
+    {
+        $days = max(1, min($days, 365));
+
+        $this->date_from = now()->subDays($days - 1)->toDateString();
+        $this->date_to = now()->toDateString();
+    }
+
+    public function clearAdSetFilter(): void
+    {
+        $this->selected_ad_set_id = null;
     }
 
     public function saveNotes(MarketingActivityLogService $activityLog): void
@@ -134,12 +159,73 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function with(MarketingCampaignQueryService $query): array
     {
+        $this->campaign->loadMissing(['platformAccount', 'adSets.ads', 'utms', 'briefs', 'assetUsages.asset']);
+
         $linkedAssetIds = $this->campaign->assetUsages->pluck('asset_id')->all();
-        $performance = $query->getMtdCampaignPerformanceAggregates([$this->campaign->id])->first();
+        $summary = $query->getCampaignPerformanceSummary(
+            campaignId: $this->campaign->id,
+            startDate: $this->date_from ?: null,
+            endDate: $this->date_to ?: null,
+        );
+        $adSetRows = $query->getAdSetPerformanceRows(
+            campaignId: $this->campaign->id,
+            startDate: $this->date_from ?: null,
+            endDate: $this->date_to ?: null,
+        );
+
+        if ($this->selected_ad_set_id && ! $adSetRows->contains('id', $this->selected_ad_set_id)) {
+            $this->selected_ad_set_id = null;
+        }
+
+        $dailySeries = $query->getCampaignDailySeriesForRange(
+            campaignId: $this->campaign->id,
+            startDate: $this->date_from ?: null,
+            endDate: $this->date_to ?: null,
+            adSetId: $this->selected_ad_set_id,
+        );
+        $adRows = $query->getAdPerformanceRows(
+            campaignId: $this->campaign->id,
+            startDate: $this->date_from ?: null,
+            endDate: $this->date_to ?: null,
+            adSetId: $this->selected_ad_set_id,
+        );
+        $selectedAdSet = $adSetRows->firstWhere('id', $this->selected_ad_set_id);
 
         return [
             'campaign' => $this->campaign,
-            'performance' => $performance,
+            'performance' => $summary,
+            'adSetRows' => $adSetRows,
+            'adRows' => $adRows,
+            'selectedAdSet' => $selectedAdSet,
+            'dailySeries' => $dailySeries,
+            'chartPayload' => [
+                'currency' => config('marketing.reporting.currency', 'USD'),
+                'digits' => 2,
+                'spend' => [
+                    'categories' => $dailySeries->map(fn ($row) => \Carbon\Carbon::parse($row->date)->format('M d'))->values(),
+                    'series' => [[
+                        'name' => __('Spend'),
+                        'data' => $dailySeries->map(fn ($row) => round((float) $row->spend, 2))->values(),
+                    ]],
+                ],
+                'metrics' => [
+                    'categories' => $dailySeries->map(fn ($row) => \Carbon\Carbon::parse($row->date)->format('M d'))->values(),
+                    'series' => [
+                        [
+                            'name' => __('Impressions'),
+                            'data' => $dailySeries->map(fn ($row) => (int) $row->impressions)->values(),
+                        ],
+                        [
+                            'name' => __('Reach'),
+                            'data' => $dailySeries->map(fn ($row) => (int) $row->reach)->values(),
+                        ],
+                        [
+                            'name' => __('Clicks'),
+                            'data' => $dailySeries->map(fn ($row) => (int) $row->clicks)->values(),
+                        ],
+                    ],
+                ],
+            ],
             'availableAssets' => MarketingAsset::query()
                 ->active()
                 ->whereNotIn('id', $linkedAssetIds)
@@ -189,81 +275,7 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
     @endif
 
-    {{-- KPI row --}}
-    <div class="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-        <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
-            <p class="text-xs font-medium uppercase tracking-wider text-zinc-500">{{ __('Daily Budget') }}</p>
-            <p class="mt-1 text-lg font-semibold text-zinc-900 dark:text-white">
-                {{ $campaign->daily_budget ? number_format($campaign->daily_budget, 2) : '—' }}
-            </p>
-        </div>
-        <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
-            <p class="text-xs font-medium uppercase tracking-wider text-zinc-500">{{ __('MTD Spend') }}</p>
-            <p class="mt-1 text-lg font-semibold text-zinc-900 dark:text-white">
-                {{ number_format(((int) ($performance->mtd_spend_micro ?? 0)) / 1_000_000, 2) }}
-            </p>
-        </div>
-        <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
-            <p class="text-xs font-medium uppercase tracking-wider text-zinc-500">{{ __('Impressions') }}</p>
-            <p class="mt-1 text-lg font-semibold text-zinc-900 dark:text-white">
-                {{ number_format((int) ($performance->mtd_impressions ?? 0)) }}
-            </p>
-        </div>
-        <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
-            <p class="text-xs font-medium uppercase tracking-wider text-zinc-500">{{ __('Clicks') }}</p>
-            <p class="mt-1 text-lg font-semibold text-zinc-900 dark:text-white">
-                {{ number_format((int) ($performance->mtd_clicks ?? 0)) }}
-            </p>
-        </div>
-        <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
-            <p class="text-xs font-medium uppercase tracking-wider text-zinc-500">{{ __('Start Date') }}</p>
-            <p class="mt-1 text-lg font-semibold text-zinc-900 dark:text-white">
-                {{ $campaign->start_date?->format('M d, Y') ?? '—' }}
-            </p>
-        </div>
-        <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
-            <p class="text-xs font-medium uppercase tracking-wider text-zinc-500">{{ __('Ad Sets') }}</p>
-            <p class="mt-1 text-lg font-semibold text-zinc-900 dark:text-white">{{ $campaign->adSets->count() }}</p>
-        </div>
-    </div>
-
-    {{-- Ad Sets --}}
-    @if($campaign->adSets->isNotEmpty())
-        <div class="rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
-            <div class="border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
-                <h2 class="text-sm font-semibold text-zinc-900 dark:text-white">{{ __('Ad Sets') }}</h2>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead>
-                        <tr class="border-b border-zinc-200 dark:border-zinc-700">
-                            <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">{{ __('Name') }}</th>
-                            <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">{{ __('Status') }}</th>
-                            <th class="px-4 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-500">{{ __('Daily Budget') }}</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-zinc-100 dark:divide-zinc-700">
-                        @foreach($campaign->adSets as $adSet)
-                            <tr>
-                                <td class="px-4 py-2 text-zinc-700 dark:text-zinc-300">{{ $adSet->name }}</td>
-                                <td class="px-4 py-2">
-                                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
-                                        @if($adSet->status === 'ACTIVE') bg-emerald-100 text-emerald-700
-                                        @elseif($adSet->status === 'PAUSED') bg-amber-100 text-amber-700
-                                        @else bg-zinc-100 text-zinc-600 @endif">
-                                        {{ ucfirst(strtolower($adSet->status)) }}
-                                    </span>
-                                </td>
-                                <td class="px-4 py-2 text-right text-zinc-700 dark:text-zinc-300">
-                                    {{ $adSet->daily_budget ? number_format($adSet->daily_budget, 2) : '—' }}
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    @endif
+    @include('livewire.marketing.campaigns.partials.performance-drilldown')
 
     {{-- UTM Tracking --}}
     <div class="rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">

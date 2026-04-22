@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MarketingAd extends Model
 {
@@ -28,6 +29,11 @@ class MarketingAd extends Model
     public function adSet(): BelongsTo
     {
         return $this->belongsTo(MarketingAdSet::class, 'ad_set_id');
+    }
+
+    public function spendSnapshots(): HasMany
+    {
+        return $this->hasMany(MarketingSpendSnapshot::class, 'ad_id');
     }
 
     public function scopeActive(Builder $query): Builder

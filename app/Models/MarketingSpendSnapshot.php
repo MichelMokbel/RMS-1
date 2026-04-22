@@ -12,8 +12,10 @@ class MarketingSpendSnapshot extends Model
         'platform_account_id',
         'campaign_id',
         'ad_set_id',
+        'ad_id',
         'snapshot_date',
         'impressions',
+        'reach',
         'clicks',
         'spend_micro',
         'conversions',
@@ -40,6 +42,11 @@ class MarketingSpendSnapshot extends Model
     public function adSet(): BelongsTo
     {
         return $this->belongsTo(MarketingAdSet::class, 'ad_set_id');
+    }
+
+    public function ad(): BelongsTo
+    {
+        return $this->belongsTo(MarketingAd::class, 'ad_id');
     }
 
     public function scopeForDate(Builder $query, string $date): Builder

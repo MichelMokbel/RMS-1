@@ -2,6 +2,7 @@
 
 use App\Jobs\Marketing\SyncMarketingCampaignsJob;
 use App\Jobs\Marketing\SyncMarketingSpendJob;
+use App\Models\MarketingAd;
 use App\Models\MarketingAdSet;
 use App\Models\MarketingCampaign;
 use App\Models\MarketingPlatformAccount;
@@ -100,6 +101,7 @@ it('aggregates dashboard spend from ad set level snapshots', function (): void {
         'ad_set_id' => $adSet->id,
         'snapshot_date' => now()->toDateString(),
         'impressions' => 1000,
+        'reach' => 750,
         'clicks' => 75,
         'spend_micro' => 12_500_000,
     ]);
@@ -112,6 +114,7 @@ it('aggregates dashboard spend from ad set level snapshots', function (): void {
 
     expect((float) $dailyRow->spend)->toBe(12.5)
         ->and((int) $dailyRow->impressions)->toBe(1000)
+        ->and((int) $dailyRow->reach)->toBe(750)
         ->and((int) $dailyRow->clicks)->toBe(75);
 });
 
@@ -619,6 +622,69 @@ it('filters daily spend series by an explicit date range', function (): void {
         ->and((float) $rows->first()->spend)->toBe(3.5)
         ->and((int) $rows->first()->impressions)->toBe(300)
         ->and((int) $rows->first()->clicks)->toBe(30);
+});
+
+it('builds campaign drilldown aggregates for campaign ad sets and ads', function (): void {
+    $account = MarketingPlatformAccount::query()->create([
+        'platform' => 'meta',
+        'external_account_id' => 'act_drilldown',
+        'account_name' => 'Meta Drilldown Account',
+        'status' => 'active',
+    ]);
+
+    $campaign = MarketingCampaign::query()->create([
+        'platform_account_id' => $account->id,
+        'external_campaign_id' => 'camp-drilldown',
+        'name' => 'Drilldown Campaign',
+        'status' => 'ACTIVE',
+    ]);
+
+    $adSet = MarketingAdSet::query()->create([
+        'campaign_id' => $campaign->id,
+        'external_adset_id' => 'adset-drilldown',
+        'name' => 'Prospecting',
+        'status' => 'ACTIVE',
+        'daily_budget_micro' => 5_000_000,
+    ]);
+
+    $ad = MarketingAd::query()->create([
+        'ad_set_id' => $adSet->id,
+        'external_ad_id' => 'ad-drilldown',
+        'name' => 'Carousel Ad',
+        'status' => 'ACTIVE',
+        'creative_type' => 'carousel',
+    ]);
+
+    MarketingSpendSnapshot::query()->create([
+        'platform_account_id' => $account->id,
+        'campaign_id' => $campaign->id,
+        'ad_set_id' => $adSet->id,
+        'ad_id' => $ad->id,
+        'snapshot_date' => '2026-04-20',
+        'impressions' => 1000,
+        'reach' => 800,
+        'clicks' => 50,
+        'spend_micro' => 2_500_000,
+        'conversions' => 4,
+    ]);
+
+    $query = app(MarketingCampaignQueryService::class);
+
+    $summary = $query->getCampaignPerformanceSummary($campaign->id, '2026-04-20', '2026-04-20');
+    $adSetRows = $query->getAdSetPerformanceRows($campaign->id, '2026-04-20', '2026-04-20');
+    $adRows = $query->getAdPerformanceRows($campaign->id, '2026-04-20', '2026-04-20', $adSet->id);
+    $dailySeries = $query->getCampaignDailySeriesForRange($campaign->id, '2026-04-20', '2026-04-20', $adSet->id);
+
+    expect((int) $summary->spend_micro)->toBe(2_500_000)
+        ->and((int) $summary->reach)->toBe(800)
+        ->and($adSetRows)->toHaveCount(1)
+        ->and($adSetRows->first()->name)->toBe('Prospecting')
+        ->and((int) $adSetRows->first()->spend_micro)->toBe(2_500_000)
+        ->and($adRows)->toHaveCount(1)
+        ->and($adRows->first()->name)->toBe('Carousel Ad')
+        ->and((int) $adRows->first()->reach)->toBe(800)
+        ->and($dailySeries)->toHaveCount(1)
+        ->and((int) $dailySeries->first()->clicks)->toBe(50);
 });
 
 it('exports marketing campaigns using the requested date range', function (): void {

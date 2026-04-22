@@ -115,6 +115,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 perPage: 25,
                 sort: $this->sort,
                 direction: $this->direction,
+                startDate: $this->date_from ?: null,
+                endDate: $this->date_to ?: null,
             ),
         ];
     }
@@ -190,15 +192,20 @@ new #[Layout('components.layouts.app')] class extends Component
                 <flux:input
                     type="date"
                     wire:model.live="date_from"
-                    aria-label="{{ __('Export from date') }}"
+                    aria-label="{{ __('Performance from date') }}"
                 />
                 <flux:input
                     type="date"
                     wire:model.live="date_to"
-                    aria-label="{{ __('Export to date') }}"
+                    aria-label="{{ __('Performance to date') }}"
                 />
             </div>
         </div>
+        @if($date_from || $date_to)
+            <p class="mt-3 text-xs text-zinc-500">
+                {{ __('Spend, impressions, clicks, and conversions are filtered by the selected date range.') }}
+            </p>
+        @endif
     </div>
 
     {{-- Table --}}

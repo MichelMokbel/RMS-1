@@ -171,6 +171,58 @@ function marketingSpendOptions(payload) {
     };
 }
 
+function marketingMetricOptions(payload) {
+    return {
+        chart: {
+            type: 'line',
+            height: 340,
+            parentHeightOffset: 0,
+            toolbar: { show: false },
+            animations: { speed: 350, easing: 'easeinout' },
+            redrawOnParentResize: true,
+            redrawOnWindowResize: true,
+        },
+        series: getPayloadField(payload, 'metrics.series', []) || [],
+        xaxis: {
+            categories: getPayloadField(payload, 'metrics.categories', []) || [],
+            labels: {
+                style: { colors: '#71717a', fontSize: '11px' },
+            },
+        },
+        yaxis: {
+            labels: {
+                formatter: (value) => Intl.NumberFormat().format(Number(value || 0)),
+                style: { colors: '#71717a', fontSize: '11px' },
+            },
+        },
+        stroke: {
+            curve: 'smooth',
+            width: 3,
+        },
+        grid: {
+            borderColor: '#e4e4e7',
+        },
+        colors: ['#2563eb', '#16a34a', '#f97316'],
+        dataLabels: { enabled: false },
+        legend: {
+            position: 'top',
+            horizontalAlign: 'left',
+            fontSize: '12px',
+        },
+        tooltip: {
+            y: {
+                formatter: (value) => Intl.NumberFormat().format(Number(value || 0)),
+            },
+        },
+        noData: {
+            text: 'No data in range',
+            align: 'center',
+            verticalAlign: 'middle',
+            style: { color: '#71717a', fontSize: '13px' },
+        },
+    };
+}
+
 function donutOptions(payload, donutKey, colors) {
     const currency = payload.currency || 'QAR';
     const digits = Number.isInteger(payload.digits) ? payload.digits : 2;
@@ -299,13 +351,16 @@ function renderMarketingRoot(root) {
     const activeKeys = new Set();
 
     const spendEl = root.querySelector('[data-chart-target="marketing-spend"]');
+    const metricsEl = root.querySelector('[data-chart-target="marketing-metrics"]');
     const platformsEl = root.querySelector('[data-chart-target="marketing-platforms"]');
 
     const spendKey = `${uid}:marketing-spend`;
+    const metricsKey = `${uid}:marketing-metrics`;
     const platformsKey = `${uid}:marketing-platforms`;
     const payloadSignature = root.dataset.marketingCharts || '';
 
     createChart(spendKey, spendEl, marketingSpendOptions(payload), `${payloadSignature}:marketing-spend`);
+    createChart(metricsKey, metricsEl, marketingMetricOptions(payload), `${payloadSignature}:marketing-metrics`);
     createChart(
         platformsKey,
         platformsEl,
@@ -324,6 +379,7 @@ function renderMarketingRoot(root) {
     );
 
     activeKeys.add(spendKey);
+    activeKeys.add(metricsKey);
     activeKeys.add(platformsKey);
 
     return activeKeys;

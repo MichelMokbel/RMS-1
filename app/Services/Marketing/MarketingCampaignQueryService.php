@@ -33,8 +33,10 @@ class MarketingCampaignQueryService
         int $perPage = 20,
         ?string $sort = null,
         string $direction = 'desc',
+        ?string $startDate = null,
+        ?string $endDate = null,
     ): LengthAwarePaginator {
-        $query = $this->campaignPerformanceQuery($search, $platform, $status);
+        $query = $this->campaignPerformanceQuery($search, $platform, $status, $startDate, $endDate);
 
         $this->applyPerformanceSort($query, $sort, $direction);
 
@@ -90,6 +92,7 @@ class MarketingCampaignQueryService
                 DB::raw('s.snapshot_date as date'),
                 DB::raw('SUM(s.spend_micro) as spend_micro'),
                 DB::raw('SUM(s.impressions) as impressions'),
+                DB::raw('SUM(s.reach) as reach'),
                 DB::raw('SUM(s.clicks) as clicks'),
                 DB::raw('SUM(s.conversions) as conversions'),
             )
@@ -139,6 +142,7 @@ class MarketingCampaignQueryService
                 's.snapshot_date as date',
                 DB::raw('SUM(s.spend_micro) / 1000000 as spend'),
                 DB::raw('SUM(s.impressions) as impressions'),
+                DB::raw('SUM(s.reach) as reach'),
                 DB::raw('SUM(s.clicks) as clicks'),
             )
             ->get();
@@ -151,7 +155,7 @@ class MarketingCampaignQueryService
     {
         $rows = DB::table('marketing_campaigns as c')
             ->join('marketing_platform_accounts as a', 'a.id', '=', 'c.platform_account_id')
-            ->where('c.status', 'ACTIVE')
+            ->whereIn('c.status', ['ACTIVE', 'ENABLED'])
             ->groupBy('a.platform')
             ->select('a.platform', DB::raw('COUNT(*) as total'))
             ->get()
@@ -161,6 +165,147 @@ class MarketingCampaignQueryService
             'meta' => (int) ($rows['meta'] ?? 0),
             'google' => (int) ($rows['google'] ?? 0),
         ];
+    }
+
+    public function getCampaignPerformanceSummary(
+        int $campaignId,
+        ?string $startDate = null,
+        ?string $endDate = null,
+    ): object {
+        [$fromDate, $toDate] = $this->resolveDateRange(30, $startDate, $endDate);
+
+        return DB::table('marketing_spend_snapshots as s')
+            ->where('s.campaign_id', $campaignId)
+            ->whereBetween('s.snapshot_date', [$fromDate, $toDate])
+            ->select(
+                DB::raw('COALESCE(SUM(s.spend_micro), 0) as spend_micro'),
+                DB::raw('COALESCE(SUM(s.impressions), 0) as impressions'),
+                DB::raw('COALESCE(SUM(s.reach), 0) as reach'),
+                DB::raw('COALESCE(SUM(s.clicks), 0) as clicks'),
+                DB::raw('COALESCE(SUM(s.conversions), 0) as conversions'),
+            )
+            ->first() ?? (object) [
+                'spend_micro' => 0,
+                'impressions' => 0,
+                'reach' => 0,
+                'clicks' => 0,
+                'conversions' => 0,
+            ];
+    }
+
+    public function getCampaignDailySeriesForRange(
+        int $campaignId,
+        ?string $startDate = null,
+        ?string $endDate = null,
+        ?int $adSetId = null,
+        ?int $adId = null,
+    ): Collection {
+        [$fromDate, $toDate] = $this->resolveDateRange(30, $startDate, $endDate);
+
+        return DB::table('marketing_spend_snapshots as s')
+            ->where('s.campaign_id', $campaignId)
+            ->when($adSetId, fn ($query) => $query->where('s.ad_set_id', $adSetId))
+            ->when($adId, fn ($query) => $query->where('s.ad_id', $adId))
+            ->whereBetween('s.snapshot_date', [$fromDate, $toDate])
+            ->groupBy('s.snapshot_date')
+            ->orderBy('s.snapshot_date')
+            ->select(
+                DB::raw('s.snapshot_date as date'),
+                DB::raw('SUM(s.spend_micro) / 1000000 as spend'),
+                DB::raw('SUM(s.impressions) as impressions'),
+                DB::raw('SUM(s.reach) as reach'),
+                DB::raw('SUM(s.clicks) as clicks'),
+                DB::raw('SUM(s.conversions) as conversions'),
+            )
+            ->get();
+    }
+
+    public function getAdSetPerformanceRows(
+        int $campaignId,
+        ?string $startDate = null,
+        ?string $endDate = null,
+    ): Collection {
+        [$fromDate, $toDate] = $this->resolveDateRange(30, $startDate, $endDate);
+
+        $performance = DB::table('marketing_spend_snapshots as s')
+            ->where('s.campaign_id', $campaignId)
+            ->whereNotNull('s.ad_set_id')
+            ->whereBetween('s.snapshot_date', [$fromDate, $toDate])
+            ->groupBy('s.ad_set_id')
+            ->select(
+                's.ad_set_id',
+                DB::raw('SUM(s.spend_micro) as spend_micro'),
+                DB::raw('SUM(s.impressions) as impressions'),
+                DB::raw('SUM(s.reach) as reach'),
+                DB::raw('SUM(s.clicks) as clicks'),
+                DB::raw('SUM(s.conversions) as conversions'),
+            );
+
+        return DB::table('marketing_ad_sets as ad_sets')
+            ->where('ad_sets.campaign_id', $campaignId)
+            ->leftJoinSub($performance, 'p', fn ($join) => $join->on('ad_sets.id', '=', 'p.ad_set_id'))
+            ->orderByDesc(DB::raw('COALESCE(p.spend_micro, 0)'))
+            ->orderBy('ad_sets.name')
+            ->select(
+                'ad_sets.id',
+                'ad_sets.name',
+                'ad_sets.status',
+                'ad_sets.daily_budget_micro',
+                'ad_sets.platform_data',
+                DB::raw('COALESCE(p.spend_micro, 0) as spend_micro'),
+                DB::raw('COALESCE(p.impressions, 0) as impressions'),
+                DB::raw('COALESCE(p.reach, 0) as reach'),
+                DB::raw('COALESCE(p.clicks, 0) as clicks'),
+                DB::raw('COALESCE(p.conversions, 0) as conversions'),
+            )
+            ->get();
+    }
+
+    public function getAdPerformanceRows(
+        int $campaignId,
+        ?string $startDate = null,
+        ?string $endDate = null,
+        ?int $adSetId = null,
+    ): Collection {
+        [$fromDate, $toDate] = $this->resolveDateRange(30, $startDate, $endDate);
+
+        $performance = DB::table('marketing_spend_snapshots as s')
+            ->where('s.campaign_id', $campaignId)
+            ->whereNotNull('s.ad_id')
+            ->when($adSetId, fn ($query) => $query->where('s.ad_set_id', $adSetId))
+            ->whereBetween('s.snapshot_date', [$fromDate, $toDate])
+            ->groupBy('s.ad_id')
+            ->select(
+                's.ad_id',
+                DB::raw('SUM(s.spend_micro) as spend_micro'),
+                DB::raw('SUM(s.impressions) as impressions'),
+                DB::raw('SUM(s.reach) as reach'),
+                DB::raw('SUM(s.clicks) as clicks'),
+                DB::raw('SUM(s.conversions) as conversions'),
+            );
+
+        return DB::table('marketing_ads as ads')
+            ->join('marketing_ad_sets as ad_sets', 'ad_sets.id', '=', 'ads.ad_set_id')
+            ->where('ad_sets.campaign_id', $campaignId)
+            ->when($adSetId, fn ($query) => $query->where('ad_sets.id', $adSetId))
+            ->leftJoinSub($performance, 'p', fn ($join) => $join->on('ads.id', '=', 'p.ad_id'))
+            ->orderByDesc(DB::raw('COALESCE(p.spend_micro, 0)'))
+            ->orderBy('ads.name')
+            ->select(
+                'ads.id',
+                'ads.ad_set_id',
+                'ads.name',
+                'ads.status',
+                'ads.creative_type',
+                'ads.platform_data',
+                'ad_sets.name as ad_set_name',
+                DB::raw('COALESCE(p.spend_micro, 0) as spend_micro'),
+                DB::raw('COALESCE(p.impressions, 0) as impressions'),
+                DB::raw('COALESCE(p.reach, 0) as reach'),
+                DB::raw('COALESCE(p.clicks, 0) as clicks'),
+                DB::raw('COALESCE(p.conversions, 0) as conversions'),
+            )
+            ->get();
     }
 
     public function getCampaignPerformanceRows(
@@ -203,6 +348,7 @@ class MarketingCampaignQueryService
                 's.campaign_id',
                 DB::raw('SUM(s.spend_micro) as mtd_spend_micro'),
                 DB::raw('SUM(s.impressions) as mtd_impressions'),
+                DB::raw('SUM(s.reach) as mtd_reach'),
                 DB::raw('SUM(s.clicks) as mtd_clicks'),
                 DB::raw('SUM(s.conversions) as mtd_conversions'),
             );
@@ -238,6 +384,7 @@ class MarketingCampaignQueryService
         return [
             DB::raw('COALESCE(campaign_performance.mtd_spend_micro, 0) as mtd_spend_micro'),
             DB::raw('COALESCE(campaign_performance.mtd_impressions, 0) as mtd_impressions'),
+            DB::raw('COALESCE(campaign_performance.mtd_reach, 0) as mtd_reach'),
             DB::raw('COALESCE(campaign_performance.mtd_clicks, 0) as mtd_clicks'),
             DB::raw('COALESCE(campaign_performance.mtd_conversions, 0) as mtd_conversions'),
         ];

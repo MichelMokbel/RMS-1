@@ -20,9 +20,9 @@ class MetaApiService
 
     private const FIELDS_ADSET = 'id,name,status,daily_budget,campaign_id';
 
-    private const FIELDS_AD = 'id,name,status,adset_id,creative{object_type,effective_object_story_id}';
+    private const FIELDS_AD = 'id,name,status,adset_id,creative{object_type,effective_object_story_id,thumbnail_url,image_url,title,body}';
 
-    private const FIELDS_INSIGHTS = 'campaign_id,adset_id,impressions,clicks,spend,actions';
+    private const FIELDS_INSIGHTS = 'campaign_id,adset_id,ad_id,impressions,reach,clicks,spend,actions';
 
     public function __construct(
         protected MarketingSettingsService $settings,
@@ -65,11 +65,11 @@ class MetaApiService
     }
 
     /**
-     * Fetch daily insights at ad-set level for a single date.
+     * Fetch daily insights at ad level for a single date.
      * $date format: YYYY-MM-DD.
      *
      * Returns array of rows, each containing:
-     *   campaign_id, adset_id, impressions, clicks, spend, date_start
+     *   campaign_id, adset_id, ad_id, impressions, reach, clicks, spend, date_start
      */
     public function fetchDailyInsights(string $adAccountId, string $date): array
     {
@@ -80,7 +80,7 @@ class MetaApiService
             params: [
                 'fields' => self::FIELDS_INSIGHTS,
                 'time_range' => $timeRange,
-                'level' => 'adset',
+                'level' => 'ad',
                 'time_increment' => 1,
                 'limit' => 500,
             ],

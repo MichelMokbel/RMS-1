@@ -2,6 +2,7 @@
 
 namespace App\Services\Marketing;
 
+use App\Models\MarketingAd;
 use App\Models\MarketingAdSet;
 use App\Models\MarketingCampaign;
 use App\Models\MarketingPlatformAccount;
@@ -16,7 +17,7 @@ class MarketingSpendSyncService
 
     /**
      * Sync daily spend snapshots for a Meta account on a specific date.
-     * Uses adset-level insights so each row has both campaign_id and adset_id.
+     * Uses ad-level insights so each row can roll up to campaign and ad set reports.
      * Returns the number of snapshot rows upserted.
      *
      * @throws \RuntimeException on API failure
@@ -32,6 +33,7 @@ class MarketingSpendSyncService
         // Build lookup maps from external IDs → local DB IDs to avoid N+1 queries.
         $externalCampaignIds = array_unique(array_filter(array_column($rows, 'campaign_id')));
         $externalAdSetIds = array_unique(array_filter(array_column($rows, 'adset_id')));
+        $externalAdIds = array_unique(array_filter(array_column($rows, 'ad_id')));
 
         $campaignIdMap = MarketingCampaign::query()
             ->where('platform_account_id', $account->id)
@@ -43,23 +45,45 @@ class MarketingSpendSyncService
             ->whereIn('external_adset_id', $externalAdSetIds)
             ->pluck('id', 'external_adset_id');
 
+        $adIdMap = MarketingAd::query()
+            ->whereHas('adSet.campaign', fn ($q) => $q->where('platform_account_id', $account->id))
+            ->whereIn('external_ad_id', $externalAdIds)
+            ->pluck('id', 'external_ad_id');
+
         $synced = 0;
 
         foreach ($rows as $row) {
             $localCampaignId = $campaignIdMap[$row['campaign_id'] ?? ''] ?? null;
             $localAdSetId = $adSetIdMap[$row['adset_id'] ?? ''] ?? null;
+            $localAdId = $adIdMap[$row['ad_id'] ?? ''] ?? null;
 
             if (! $localCampaignId || ! $localAdSetId) {
                 // Skip rows whose parent campaign/adset hasn't been synced yet.
                 continue;
             }
 
+            if (($row['ad_id'] ?? null) && ! $localAdId) {
+                continue;
+            }
+
+            $snapshotDate = $row['date_start'] ?? $date;
+            if ($localAdId) {
+                $this->deleteAggregateAdSetSnapshot(
+                    accountId: $account->id,
+                    campaignId: $localCampaignId,
+                    adSetId: $localAdSetId,
+                    date: $snapshotDate,
+                );
+            }
+
             $this->upsertSnapshot(
                 accountId: $account->id,
                 campaignId: $localCampaignId,
                 adSetId: $localAdSetId,
-                date: $row['date_start'] ?? $date,
+                adId: $localAdId,
+                date: $snapshotDate,
                 impressions: (int) ($row['impressions'] ?? 0),
+                reach: (int) ($row['reach'] ?? 0),
                 clicks: (int) ($row['clicks'] ?? 0),
                 spendMicro: $this->spendToMicros((string) ($row['spend'] ?? '0')),
                 conversions: $this->extractConversions($row['actions'] ?? []),
@@ -108,8 +132,10 @@ class MarketingSpendSyncService
                 accountId: $account->id,
                 campaignId: $localCampaignId,
                 adSetId: null,
+                adId: null,
                 date: $row['date'] ?? $date,
                 impressions: (int) ($row['impressions'] ?? 0),
+                reach: (int) ($row['reach'] ?? 0),
                 clicks: (int) ($row['clicks'] ?? 0),
                 spendMicro: (int) ($row['cost_micros'] ?? 0),
                 conversions: (int) round((float) ($row['conversions'] ?? $row['all_conversions'] ?? 0)),
@@ -126,8 +152,10 @@ class MarketingSpendSyncService
         int $accountId,
         int $campaignId,
         ?int $adSetId,
+        ?int $adId,
         string $date,
         int $impressions,
+        int $reach,
         int $clicks,
         int $spendMicro,
         int $conversions,
@@ -137,11 +165,13 @@ class MarketingSpendSyncService
             ->where('platform_account_id', $accountId)
             ->where('campaign_id', $campaignId)
             ->where('ad_set_id', $adSetId)
+            ->where('ad_id', $adId)
             ->where('snapshot_date', $date)
             ->first();
 
         $data = [
             'impressions' => $impressions,
+            'reach' => $reach,
             'clicks' => $clicks,
             'spend_micro' => $spendMicro,
             'conversions' => $conversions,
@@ -155,9 +185,21 @@ class MarketingSpendSyncService
                 'platform_account_id' => $accountId,
                 'campaign_id' => $campaignId,
                 'ad_set_id' => $adSetId,
+                'ad_id' => $adId,
                 'snapshot_date' => $date,
             ]));
         }
+    }
+
+    private function deleteAggregateAdSetSnapshot(int $accountId, int $campaignId, int $adSetId, string $date): void
+    {
+        MarketingSpendSnapshot::query()
+            ->where('platform_account_id', $accountId)
+            ->where('campaign_id', $campaignId)
+            ->where('ad_set_id', $adSetId)
+            ->whereNull('ad_id')
+            ->where('snapshot_date', $date)
+            ->delete();
     }
 
     /**
