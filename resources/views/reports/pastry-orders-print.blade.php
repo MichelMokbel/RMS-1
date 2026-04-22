@@ -40,13 +40,8 @@
             <tr>
                 <th style="width: 120px;">Order #</th>
                 <th style="width: 100px;">Status</th>
-                <th style="width: 80px;">Type</th>
                 <th>Customer</th>
-                <th style="width: 100px;">Phone</th>
-                <th style="width: 80px;">Branch</th>
-                <th style="width: 110px;">Scheduled</th>
-                <th style="width: 50px; text-align: right;">Items</th>
-                <th style="width: 110px; text-align: right;">Total</th>
+                <th style="width: 140px;">Scheduled</th>
             </tr>
         </thead>
         <tbody>
@@ -54,28 +49,15 @@
                 <tr>
                     <td>{{ $order->order_number }}</td>
                     <td>{{ $order->status ?? '—' }}</td>
-                    <td>{{ $order->type ?? '—' }}</td>
                     <td>{{ $order->customer_name_snapshot ?? '—' }}</td>
-                    <td>{{ $order->customer_phone_snapshot ?? '—' }}</td>
-                    <td>{{ $order->branch_id ?? '—' }}</td>
-                    <td>{{ $order->scheduled_date?->format('Y-m-d') ?? '—' }}</td>
-                    <td style="text-align: right;">{{ $order->items()->count() }}</td>
-                    <td style="text-align: right;">{{ number_format((float) $order->total_amount, 3) }}</td>
+                    <td>{{ $order->scheduled_date?->format('d M Y') ?? '—' }}{{ $order->scheduled_time ? ' ' . \Carbon\Carbon::parse($order->scheduled_time)->format('g:i A') : '' }}</td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="9" style="text-align: center; color: #6b7280;">No pastry orders found.</td>
+                    <td colspan="4" style="text-align: center; color: #6b7280;">No pastry orders found.</td>
                 </tr>
             @endforelse
         </tbody>
-        @if ($orders->count())
-            <tfoot>
-                <tr>
-                    <td colspan="8" style="text-align: right;">Total</td>
-                    <td style="text-align: right;">{{ number_format((float) $orders->sum('total_amount'), 3) }}</td>
-                </tr>
-            </tfoot>
-        @endif
     </table>
     <p class="meta" style="margin-top: 12px;">{{ $orders->count() }} order(s)</p>
 </body>
