@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
+use Livewire\Volt\Volt;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\Support\FakeGoogleAdsApiService;
@@ -432,6 +433,54 @@ it('rejects google oauth callbacks with an invalid state', function (): void {
 
     expect(MarketingSetting::query()->exists())->toBeFalse();
     Http::assertNothingSent();
+});
+
+it('adds google ads customer accounts from marketing settings', function (): void {
+    $user = User::factory()->create(['status' => 'active']);
+    Permission::findOrCreate('marketing.manage', 'web');
+    $user->givePermissionTo('marketing.manage');
+
+    $this->actingAs($user);
+
+    Volt::test('marketing.settings')
+        ->set('google_customer_id', '123-456-7890')
+        ->set('google_account_name', 'Layla Search Account')
+        ->call('addGoogleAccount')
+        ->assertHasNoErrors()
+        ->assertSet('google_customer_id', '')
+        ->assertSet('google_account_name', '');
+
+    $this->assertDatabaseHas('marketing_platform_accounts', [
+        'platform' => 'google',
+        'external_account_id' => '1234567890',
+        'account_name' => 'Layla Search Account',
+        'status' => 'active',
+        'created_by' => $user->id,
+    ]);
+});
+
+it('prevents duplicate google ads customer accounts after id normalization', function (): void {
+    $user = User::factory()->create(['status' => 'active']);
+    Permission::findOrCreate('marketing.manage', 'web');
+    $user->givePermissionTo('marketing.manage');
+
+    MarketingPlatformAccount::query()->create([
+        'platform' => 'google',
+        'external_account_id' => '1234567890',
+        'account_name' => 'Existing Google Account',
+        'status' => 'active',
+        'created_by' => $user->id,
+    ]);
+
+    $this->actingAs($user);
+
+    Volt::test('marketing.settings')
+        ->set('google_customer_id', '123-456-7890')
+        ->set('google_account_name', 'Duplicate Google Account')
+        ->call('addGoogleAccount')
+        ->assertHasErrors(['google_customer_id']);
+
+    expect(MarketingPlatformAccount::query()->where('platform', 'google')->count())->toBe(1);
 });
 
 it('sorts marketing campaigns by supported performance columns', function (): void {

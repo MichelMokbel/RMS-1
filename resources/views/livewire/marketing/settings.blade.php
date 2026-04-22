@@ -4,6 +4,7 @@ use App\Models\MarketingPlatformAccount;
 use App\Services\Marketing\MarketingActivityLogService;
 use App\Services\Marketing\MarketingSettingsService;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -51,6 +52,10 @@ new #[Layout('components.layouts.app')] class extends Component
     public string $meta_ad_account_id = '';
 
     public string $meta_ad_account_name = '';
+
+    public string $google_customer_id = '';
+
+    public string $google_account_name = '';
 
     public function mount(MarketingSettingsService $settingsService): void
     {
@@ -154,11 +159,61 @@ new #[Layout('components.layouts.app')] class extends Component
         session()->flash('status', __('Meta ad account added. Use Sync Now to pull campaigns.'));
     }
 
+    public function addGoogleAccount(MarketingActivityLogService $activityLog): void
+    {
+        abort_unless(auth()->user()->can('marketing.manage'), 403);
+
+        $validated = $this->validate([
+            'google_customer_id' => ['required', 'string', 'max:255'],
+            'google_account_name' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $customerId = str_replace('-', '', trim($validated['google_customer_id']));
+        if ($customerId === '' || ! ctype_digit($customerId) || strlen($customerId) !== 10) {
+            throw ValidationException::withMessages([
+                'google_customer_id' => __('Enter a valid 10-digit Google Ads customer ID.'),
+            ]);
+        }
+
+        $exists = MarketingPlatformAccount::query()
+            ->where('platform', 'google')
+            ->where('external_account_id', $customerId)
+            ->exists();
+
+        if ($exists) {
+            throw ValidationException::withMessages([
+                'google_customer_id' => __('This Google Ads customer account is already connected.'),
+            ]);
+        }
+
+        $account = MarketingPlatformAccount::query()->create([
+            'platform' => 'google',
+            'external_account_id' => $customerId,
+            'account_name' => $validated['google_account_name'] ?: 'Google Ads '.$customerId,
+            'status' => 'active',
+            'created_by' => auth()->id(),
+        ]);
+
+        $activityLog->log('platform_account.created', auth()->id(), $account, [
+            'platform' => 'google',
+            'external_account_id' => $customerId,
+        ]);
+
+        $this->google_customer_id = '';
+        $this->google_account_name = '';
+
+        session()->flash('status', __('Google Ads account added. Use Sync Now to pull campaigns.'));
+    }
+
     public function with(): array
     {
         return [
             'metaAccounts' => MarketingPlatformAccount::query()
                 ->where('platform', 'meta')
+                ->orderBy('account_name')
+                ->get(),
+            'googleAccounts' => MarketingPlatformAccount::query()
+                ->where('platform', 'google')
                 ->orderBy('account_name')
                 ->get(),
         ];
@@ -339,6 +394,62 @@ new #[Layout('components.layouts.app')] class extends Component
                         </flux:button>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        {{-- Google Ads Accounts --}}
+        <div class="rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
+            <div class="border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
+                <h2 class="text-sm font-semibold text-zinc-900 dark:text-white">{{ __('Google Ads Accounts') }}</h2>
+                <p class="text-xs text-zinc-500">{{ __('Add each client customer ID you want synced. The MCC login customer ID is configured above.') }}</p>
+            </div>
+            <div class="space-y-4 p-4">
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-[1fr_1fr_auto]">
+                    <div>
+                        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">{{ __('Client Customer ID') }}</label>
+                        <flux:input wire:model="google_customer_id" placeholder="123-456-7890 or 1234567890" />
+                        @error('google_customer_id') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">{{ __('Display Name') }}</label>
+                        <flux:input wire:model="google_account_name" placeholder="{{ __('Main Google Ads Account') }}" />
+                        @error('google_account_name') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                    </div>
+                    <div class="flex items-end">
+                        <flux:button type="button" wire:click="addGoogleAccount" variant="primary">
+                            {{ __('Add Account') }}
+                        </flux:button>
+                    </div>
+                </div>
+
+                @if($googleAccounts->isEmpty())
+                    <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                        {{ __('No Google Ads accounts are connected yet. Campaign sync will not run until at least one active customer account is added.') }}
+                    </div>
+                @else
+                    <div class="overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-700">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-zinc-200 dark:border-zinc-700">
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">{{ __('Name') }}</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">{{ __('Customer ID') }}</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">{{ __('Status') }}</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">{{ __('Last Synced') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-100 dark:divide-zinc-700">
+                                @foreach($googleAccounts as $account)
+                                    <tr>
+                                        <td class="px-3 py-2 text-zinc-900 dark:text-white">{{ $account->account_name }}</td>
+                                        <td class="px-3 py-2 text-zinc-600 dark:text-zinc-400">{{ $account->external_account_id }}</td>
+                                        <td class="px-3 py-2 text-zinc-600 dark:text-zinc-400">{{ ucfirst($account->status) }}</td>
+                                        <td class="px-3 py-2 text-zinc-600 dark:text-zinc-400">{{ $account->last_synced_at?->diffForHumans() ?? '—' }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
             </div>
         </div>
 
