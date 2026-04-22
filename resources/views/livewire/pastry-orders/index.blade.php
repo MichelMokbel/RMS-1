@@ -1249,11 +1249,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{-- Two-column layout: image left, details right --}}
                 <div class="flex gap-5 items-start">
 
-                    {{-- Left: image --}}
-                    <div class="w-64 flex-shrink-0">
+                    {{-- Left: images --}}
+                    <div class="w-64 flex-shrink-0 space-y-3">
                         @if (! empty($v_images))
-                            <img src="{{ $v_images[0]['url'] }}" alt="{{ __('Order image') }}"
-                                 class="w-full rounded-xl object-contain border border-neutral-200 dark:border-neutral-700" />
+                            @foreach ($v_images as $vImg)
+                                <img src="{{ $vImg['url'] }}" alt="{{ __('Order image') }}"
+                                     class="w-full h-auto rounded-xl border border-neutral-200 dark:border-neutral-700" />
+                            @endforeach
                         @else
                             @php
                                 $vParts = preg_split('/\s+/', trim($v_customer_name ?? '?'));
