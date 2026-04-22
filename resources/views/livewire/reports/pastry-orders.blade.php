@@ -154,7 +154,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="px-3 py-3 text-sm font-medium text-neutral-900 dark:text-neutral-100">{{ $order->order_number }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->status }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->customer_name_snapshot ?? '—' }}</td>
-                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->scheduled_date?->format('d M Y') ?? '—' }}{{ $order->scheduled_time ? ' ' . $order->scheduled_time : '' }}</td>
+                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->scheduled_date?->format('d M Y') ?? '—' }}{{ $order->scheduled_time ? ' ' . \Carbon\Carbon::parse($order->scheduled_time)->format('g:i A') : '' }}</td>
                     </tr>
                 @empty
                     <tr>
