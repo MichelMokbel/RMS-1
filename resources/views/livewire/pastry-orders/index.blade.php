@@ -21,7 +21,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     use WithFileUploads;
 
     // ── Filters ────────────────────────────────────────────────────────────────
-    public string  $status         = 'confirmed';
+    public string  $status         = 'all';
     public ?string $type           = null;
     public ?int    $branch_id      = null;
     public ?string $scheduled_date = null;
@@ -628,16 +628,22 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200 whitespace-nowrap">{{ $order->status }}</span>
                         </div>
                         <p class="mt-0.5 text-sm text-neutral-700 dark:text-neutral-300 truncate">{{ $order->customer_name_snapshot ?? '—' }}</p>
+                        @if ($order->customer_phone_snapshot)
+                            <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ $order->customer_phone_snapshot }}</p>
+                        @endif
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-2 text-sm">
+                    <div><p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Type') }}</p><p class="text-neutral-800 dark:text-neutral-100">{{ $order->type }}</p></div>
+                    <div><p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Branch') }}</p><p class="text-neutral-800 dark:text-neutral-100">{{ $order->branch_id ?? '—' }}</p></div>
                     <div><p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Items') }}</p><p class="text-neutral-800 dark:text-neutral-100">{{ $order->items_count }}</p></div>
+                    <div><p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Total') }}</p><p class="font-semibold text-neutral-900 dark:text-neutral-100">{{ number_format((float)$order->total_amount, 3) }}</p></div>
                     @if ($order->sales_order_number)
                         <div class="col-span-2"><p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Sales Order #') }}</p><p class="text-neutral-800 dark:text-neutral-100">{{ $order->sales_order_number }}</p></div>
                     @endif
                 </div>
                 <p class="text-xs text-neutral-500 dark:text-neutral-400">
-                    {{ __('Scheduled') }}: {{ $order->scheduled_date?->format('d M Y') ?? '—' }}{{ $order->scheduled_time ? ' ' . $order->scheduled_time : '' }}
+                    {{ __('Scheduled') }}: {{ $order->scheduled_date?->format('Y-m-d') ?? '—' }}{{ $order->scheduled_time ? ' · '.$order->scheduled_time : '' }}
                 </p>
                 @if ($order->notes)
                     <p class="rounded-md bg-neutral-50 px-2 py-1 text-xs text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
@@ -694,8 +700,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Order #') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Sales Order #') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Status') }}</th>
+                    <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Type') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Customer / Notes') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Scheduled') }}</th>
+                    <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Branch') }}</th>
+                    <th class="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Total') }}</th>
                     <th class="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Actions') }}</th>
                 </tr>
             </thead>
@@ -720,13 +729,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="px-3 py-3 text-sm text-neutral-900 dark:text-neutral-100 align-middle font-medium">{{ $order->order_number }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">{{ $order->sales_order_number ?? '—' }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">{{ $order->status }}</td>
+                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">{{ $order->type }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">
                             <div class="font-medium">{{ $order->customer_name_snapshot ?? '—' }}</div>
                             @if ($order->notes)
                                 <div class="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">{{ \Illuminate\Support\Str::limit($order->notes, 140) }}</div>
                             @endif
                         </td>
-                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">{{ $order->scheduled_date?->format('d M Y') ?? '—' }}{{ $order->scheduled_time ? ' ' . $order->scheduled_time : '' }}</td>
+                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">{{ $order->scheduled_date?->format('Y-m-d') ?? '—' }}</td>
+                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">{{ $order->branch_id ?? '—' }}</td>
+                        <td class="px-3 py-3 text-sm text-right text-neutral-900 dark:text-neutral-100 align-middle font-semibold">{{ number_format((float)$order->total_amount, 3) }}</td>
                         <td class="px-3 py-3 text-sm text-right align-middle">
                             <div class="flex flex-wrap justify-end gap-2">
                                 @if (! $order->isInvoiced())
@@ -757,7 +769,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="7" class="px-4 py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">{{ __('No pastry orders found.') }}</td></tr>
+                    <tr><td colspan="10" class="px-4 py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">{{ __('No pastry orders found.') }}</td></tr>
                 @endforelse
             </tbody>
         </table>

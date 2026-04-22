@@ -10,7 +10,7 @@ use Livewire\WithPagination;
 new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
 
-    public string $status = 'all';
+    public string $status = 'Confirmed';
     public ?string $type = null;
     public ?int $branch_id = null;
     public ?string $scheduled_date = null;
@@ -144,12 +144,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <tr>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Order #') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Status') }}</th>
-                    <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Type') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Customer') }}</th>
-                    <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Phone') }}</th>
-                    <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Branch') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Scheduled') }}</th>
-                    <th class="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Total') }}</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -157,27 +153,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
                         <td class="px-3 py-3 text-sm font-medium text-neutral-900 dark:text-neutral-100">{{ $order->order_number }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->status }}</td>
-                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->type }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->customer_name_snapshot ?? '—' }}</td>
-                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->customer_phone_snapshot ?? '—' }}</td>
-                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->branch_id ?? '—' }}</td>
-                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->scheduled_date?->format('Y-m-d') ?? '—' }}</td>
-                        <td class="px-3 py-3 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ number_format((float) $order->total_amount, 3) }}</td>
+                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->scheduled_date?->format('d M Y') ?? '—' }}{{ $order->scheduled_time ? ' ' . $order->scheduled_time : '' }}</td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="8" class="px-4 py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">{{ __('No orders found.') }}</td>
+                        <td colspan="4" class="px-4 py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">{{ __('No orders found.') }}</td>
                     </tr>
                 @endforelse
             </tbody>
-            @if ($orders->count())
-                <tfoot class="bg-neutral-50 dark:bg-neutral-800/90">
-                    <tr>
-                        <td colspan="7" class="px-3 py-3 text-sm font-semibold text-right text-neutral-700 dark:text-neutral-200">{{ __('Total') }}</td>
-                        <td class="px-3 py-3 text-sm text-right font-bold text-neutral-900 dark:text-neutral-100">{{ number_format((float) $totalAmount, 3) }}</td>
-                    </tr>
-                </tfoot>
-            @endif
         </table>
     </div>
 
