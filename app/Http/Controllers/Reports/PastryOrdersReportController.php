@@ -43,8 +43,8 @@ class PastryOrdersReportController extends Controller
                     ->orWhere('customer_phone_snapshot', 'like', $term)
                 );
             })
-            ->orderByDesc('scheduled_date')
-            ->orderByDesc('id')
+            ->orderBy('scheduled_date')
+            ->orderBy('id')
             ->limit($limit)
             ->get();
     }

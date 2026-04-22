@@ -60,8 +60,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     ->orWhere('customer_phone_snapshot', 'like', $term)
                 );
             })
-            ->orderByDesc('scheduled_date')
-            ->orderByDesc('id');
+            ->orderBy('scheduled_date')
+            ->orderBy('id');
     }
 
     public function exportParams(): array
