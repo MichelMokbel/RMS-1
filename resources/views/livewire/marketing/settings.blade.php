@@ -59,7 +59,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function mount(MarketingSettingsService $settingsService): void
     {
-        abort_unless(auth()->user()->can('marketing.manage'), 403);
+        abort_unless(auth()->user()->hasRole('admin'), 403);
 
         $settings = $settingsService->get();
         $this->meta_app_id = $settings->meta_app_id ?? '';
@@ -82,7 +82,7 @@ new #[Layout('components.layouts.app')] class extends Component
         MarketingSettingsService $settingsService,
         MarketingActivityLogService $activityLog,
     ): void {
-        abort_unless(auth()->user()->can('marketing.manage'), 403);
+        abort_unless(auth()->user()->hasRole('admin'), 403);
 
         $settingsService->save([
             'meta_app_id' => $this->meta_app_id,
@@ -123,7 +123,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function addMetaAccount(MarketingActivityLogService $activityLog): void
     {
-        abort_unless(auth()->user()->can('marketing.manage'), 403);
+        abort_unless(auth()->user()->hasRole('admin'), 403);
 
         $validated = $this->validate([
             'meta_ad_account_id' => [
@@ -161,7 +161,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function addGoogleAccount(MarketingActivityLogService $activityLog): void
     {
-        abort_unless(auth()->user()->can('marketing.manage'), 403);
+        abort_unless(auth()->user()->hasRole('admin'), 403);
 
         $validated = $this->validate([
             'google_customer_id' => ['required', 'string', 'max:255'],

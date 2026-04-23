@@ -1411,7 +1411,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|marketing
             ->name('assets.complete');
     });
 
-Route::middleware(['auth', 'active', 'role_or_permission:admin|marketing.manage'])
+Route::middleware(['auth', 'active', 'role:admin', 'ensure.admin'])
     ->prefix('marketing')
     ->name('marketing.')
     ->group(function () {
@@ -1420,7 +1420,12 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|marketing.manage'
             ->name('google.oauth.redirect');
         Route::get('google/oauth/callback', [\App\Http\Controllers\Marketing\GoogleAdsOAuthController::class, 'callback'])
             ->name('google.oauth.callback');
+    });
 
+Route::middleware(['auth', 'active', 'role_or_permission:admin|marketing.manage'])
+    ->prefix('marketing')
+    ->name('marketing.')
+    ->group(function () {
         // On-demand sync trigger
         Route::post('sync/trigger', [\App\Http\Controllers\Marketing\MarketingAssetController::class, 'triggerSync'])
             ->name('sync.trigger');

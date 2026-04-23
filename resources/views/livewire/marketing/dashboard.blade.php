@@ -70,7 +70,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 <option value="30">{{ __('Last 30 days') }}</option>
                 <option value="90">{{ __('Last 90 days') }}</option>
             </select>
-            @if(auth()->user()->can('marketing.manage'))
+            @if(auth()->user()->hasRole('admin'))
                 <flux:button :href="route('marketing.settings')" variant="ghost" icon="cog-6-tooth" wire:navigate>
                     {{ __('Settings') }}
                 </flux:button>
@@ -83,7 +83,7 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
             <p class="text-sm font-medium">{{ __('No platforms configured yet.') }}</p>
             <p class="mt-1 text-sm">
-                @if(auth()->user()->can('marketing.manage'))
+                @if(auth()->user()->hasRole('admin'))
                     {{ __('Configure Meta and Google Ads credentials in') }}
                     <a href="{{ route('marketing.settings') }}" class="underline" wire:navigate>{{ __('Settings') }}</a>
                     {{ __('to start syncing campaign data.') }}

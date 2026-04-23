@@ -348,8 +348,8 @@ it('dispatches marketing sync jobs for google accounts from the sync trigger', f
 
 it('redirects admins to google oauth with the ads scope', function (): void {
     $user = User::factory()->create(['status' => 'active']);
-    Permission::findOrCreate('marketing.manage', 'web');
-    $user->givePermissionTo('marketing.manage');
+    Role::findOrCreate('admin', 'web');
+    $user->assignRole('admin');
 
     app(MarketingSettingsService::class)->save([
         'google_client_id' => 'google-client-id.apps.googleusercontent.com',
@@ -374,8 +374,8 @@ it('redirects admins to google oauth with the ads scope', function (): void {
 
 it('exchanges google oauth callback code and stores the refresh token encrypted', function (): void {
     $user = User::factory()->create(['status' => 'active']);
-    Permission::findOrCreate('marketing.manage', 'web');
-    $user->givePermissionTo('marketing.manage');
+    Role::findOrCreate('admin', 'web');
+    $user->assignRole('admin');
 
     app(MarketingSettingsService::class)->save([
         'google_client_id' => 'google-client-id.apps.googleusercontent.com',
@@ -418,8 +418,8 @@ it('exchanges google oauth callback code and stores the refresh token encrypted'
 
 it('rejects google oauth callbacks with an invalid state', function (): void {
     $user = User::factory()->create(['status' => 'active']);
-    Permission::findOrCreate('marketing.manage', 'web');
-    $user->givePermissionTo('marketing.manage');
+    Role::findOrCreate('admin', 'web');
+    $user->assignRole('admin');
 
     Http::fake();
 
@@ -440,8 +440,8 @@ it('rejects google oauth callbacks with an invalid state', function (): void {
 
 it('adds google ads customer accounts from marketing settings', function (): void {
     $user = User::factory()->create(['status' => 'active']);
-    Permission::findOrCreate('marketing.manage', 'web');
-    $user->givePermissionTo('marketing.manage');
+    Role::findOrCreate('admin', 'web');
+    $user->assignRole('admin');
 
     $this->actingAs($user);
 
@@ -464,8 +464,8 @@ it('adds google ads customer accounts from marketing settings', function (): voi
 
 it('prevents duplicate google ads customer accounts after id normalization', function (): void {
     $user = User::factory()->create(['status' => 'active']);
-    Permission::findOrCreate('marketing.manage', 'web');
-    $user->givePermissionTo('marketing.manage');
+    Role::findOrCreate('admin', 'web');
+    $user->assignRole('admin');
 
     MarketingPlatformAccount::query()->create([
         'platform' => 'google',
@@ -484,6 +484,16 @@ it('prevents duplicate google ads customer accounts after id normalization', fun
         ->assertHasErrors(['google_customer_id']);
 
     expect(MarketingPlatformAccount::query()->where('platform', 'google')->count())->toBe(1);
+});
+
+it('blocks non-admin marketing managers from marketing settings', function (): void {
+    $user = User::factory()->create(['status' => 'active']);
+    Permission::findOrCreate('marketing.manage', 'web');
+    $user->givePermissionTo('marketing.manage');
+
+    $this->actingAs($user)
+        ->get(route('marketing.settings'))
+        ->assertForbidden();
 });
 
 it('sorts marketing campaigns by supported performance columns', function (): void {
