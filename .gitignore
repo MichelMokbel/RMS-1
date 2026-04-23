@@ -25,3 +25,6 @@ yarn-error.log
 composer.lock
 composer.json
 /.cursor
+.cursor/debug.log
+
+.cursor/debug.log
