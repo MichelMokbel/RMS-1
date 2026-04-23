@@ -169,14 +169,6 @@
                     </flux:navlist.group>
                 @endif
 
-                @if ($isManager || $isStaff)
-                    <flux:navlist.group expandable :expanded="$inReports" :heading="__('Reports')">
-                        <flux:navlist.item icon="chart-bar" :href="route('reports.index')" :current="request()->routeIs('reports.index')" wire:navigate>
-                            {{ __('All Reports') }}
-                        </flux:navlist.item>
-                    </flux:navlist.group>
-                @endif
-
                 @if($canAccessMarketing)
                     <flux:navlist.group expandable :expanded="$inMarketing" :heading="__('Marketing')">
                         <flux:navlist.item icon="chart-bar-square" :href="route('marketing.dashboard')" :current="request()->routeIs('marketing.dashboard')" wire:navigate>
@@ -193,6 +185,14 @@
                         </flux:navlist.item>
                         <flux:navlist.item icon="document-text" :href="route('marketing.briefs.index')" :current="request()->routeIs('marketing.briefs.*')" wire:navigate>
                             {{ __('Briefs') }}
+                        </flux:navlist.item>
+                    </flux:navlist.group>
+                @endif
+
+                @if ($isManager || $isStaff)
+                    <flux:navlist.group expandable :expanded="$inReports" :heading="__('Reports')">
+                        <flux:navlist.item icon="chart-bar" :href="route('reports.index')" :current="request()->routeIs('reports.index')" wire:navigate>
+                            {{ __('All Reports') }}
                         </flux:navlist.item>
                     </flux:navlist.group>
                 @endif
