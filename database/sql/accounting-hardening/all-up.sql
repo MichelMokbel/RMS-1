@@ -1,0 +1,17 @@
+-- Accounting hardening combined SQL
+-- Run preflight-checks.sql first.
+
+SOURCE database/sql/accounting-hardening/2026_04_19_000001_harden_accounting_payment_idempotency_and_bank_uniqueness.up.sql;
+SOURCE database/sql/accounting-hardening/2026_04_19_000002_add_subledger_entries_source_event_unique.up.sql;
+SOURCE database/sql/accounting-hardening/2026_04_19_000003_add_payment_allocations_active_unique.up.sql;
+SOURCE database/sql/accounting-hardening/2026_04_19_000004_add_ap_payment_allocations_active_unique.up.sql;
+SOURCE database/sql/accounting-hardening/2026_04_19_000005_add_journal_entries_immutability_trigger.up.sql;
+SOURCE database/sql/accounting-hardening/2026_04_19_000006_create_ar_clearing_settlements_table.up.sql;
+SOURCE database/sql/accounting-hardening/2026_04_19_000007_create_ar_clearing_settlement_items_table.up.sql;
+SOURCE database/sql/accounting-hardening/2026_04_19_000008_create_ap_cheque_clearances_table.up.sql;
+SOURCE database/sql/accounting-hardening/2026_04_19_000009_add_clearing_settled_at_to_payments.up.sql;
+SOURCE database/sql/accounting-hardening/2026_04_19_000010_add_cheque_cleared_at_to_ap_payments.up.sql;
+SOURCE database/sql/accounting-hardening/2026_04_23_000011_adjust_ap_cheque_clearance_client_uuid_uniqueness.up.sql;
+SOURCE database/sql/accounting-hardening/2026_04_23_000012_adjust_ar_clearing_settlement_client_uuid_uniqueness.up.sql;
+SOURCE database/sql/accounting-hardening/2026_04_23_000013_ensure_current_accounting_periods_exist.up.sql;
+SOURCE database/sql/accounting-hardening/2026_04_23_000014_drop_legacy_ap_payment_allocations_unique.up.sql;

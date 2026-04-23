@@ -24,6 +24,19 @@ class ApPaymentVoidService
     public function void(ApPayment $payment, int $userId): ApPayment
     {
         return DB::transaction(function () use ($payment, $userId) {
+            // Guard: check clearance before acquiring payment lock to fail fast.
+            if ($payment->payment_method === 'cheque') {
+                $activeClearance = \App\Models\ApChequeClearance::where('ap_payment_id', $payment->id)
+                    ->whereNull('voided_at')
+                    ->lockForUpdate()
+                    ->first();
+                if ($activeClearance) {
+                    throw ValidationException::withMessages([
+                        'payment' => __('Cannot void a cheque payment that has already been cleared. Void the cheque clearance first.'),
+                    ]);
+                }
+            }
+
             $payment = ApPayment::whereKey($payment->id)->lockForUpdate()->firstOrFail();
 
             if ($payment->voided_at) {

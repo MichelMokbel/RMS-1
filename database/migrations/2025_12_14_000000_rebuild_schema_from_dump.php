@@ -42,7 +42,7 @@ return new class extends Migration
         $sql = preg_replace('#/\*[\s\S]*?\*/#', '', $sql) ?? $sql; // block comments
         $sql = preg_replace('/^\s*LOCK TABLES\s+.*?;\s*$/mi', '', $sql) ?? $sql;
         $sql = preg_replace('/^\s*UNLOCK TABLES\s*;\s*$/mi', '', $sql) ?? $sql;
-        $sql = preg_replace('/^\s*INSERT\s+INTO\s+.*?;\s*$/mi', '', $sql) ?? $sql;
+        $sql = preg_replace('/^\s*INSERT\s+INTO\s+[\s\S]*?;\s*$/mi', '', $sql) ?? $sql;
         $sql = preg_replace('/^\s*\/\*.*?SET\s+character_set_client.*?\*\/\s*$/mi', '', $sql) ?? $sql;
 
         $statements = $this->splitSqlStatements($sql);
@@ -155,6 +155,10 @@ return new class extends Migration
 
             // Skip MySQL dump session SET statements (safe but noisy; some can break under strict modes)
             if (preg_match('/^(SET|USE)\s+/i', $t)) {
+                continue;
+            }
+
+            if (preg_match('/^INSERT\s+INTO\s+/i', $t)) {
                 continue;
             }
 

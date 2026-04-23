@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Models\ArClearingSettlementItem;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Validation\ValidationException;
 
@@ -34,6 +35,7 @@ class Payment extends Model
         'voided_at',
         'voided_by',
         'void_reason',
+        'clearing_settled_at',
     ];
 
     protected $casts = [
@@ -45,6 +47,7 @@ class Payment extends Model
         'amount_cents' => 'integer',
         'received_at' => 'datetime',
         'voided_at' => 'datetime',
+        'clearing_settled_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -56,7 +59,7 @@ class Payment extends Model
                 return;
             }
 
-            $allowed = ['voided_at', 'voided_by', 'void_reason', 'updated_at'];
+            $allowed = ['voided_at', 'voided_by', 'void_reason', 'updated_at', 'clearing_settled_at'];
             foreach (array_keys($payment->getDirty()) as $field) {
                 if (! in_array($field, $allowed, true)) {
                     throw ValidationException::withMessages([
@@ -86,6 +89,11 @@ class Payment extends Model
     {
         return $this->hasMany(PaymentAllocation::class, 'payment_id')
             ->whereNull('voided_at');
+    }
+
+    public function clearingSettlementItems(): HasMany
+    {
+        return $this->hasMany(ArClearingSettlementItem::class, 'payment_id');
     }
 
     public function mealSubscriptions(): HasMany

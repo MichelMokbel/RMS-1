@@ -4,9 +4,12 @@
   "cwd": "/Users/mohamadsafar/Desktop/Layla Kitchen/RMS-1",
   "context": {},
   "metrics": {
-    "edits": 0,
+    "edits": 8,
     "commands": 0,
     "tasks": 0,
     "errors": 0
-  }
+  },
+  "restoredAt": "2026-04-23T09:38:30.077Z",
+  "endedAt": "2026-04-23T09:54:32.935Z",
+  "duration": 82892413
 }

@@ -36,7 +36,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->with(['customer', 'allocations.allocatable'])
             ->findOrFail($this->payment->id);
 
+        $settlementItem = \App\Models\ArClearingSettlementItem::where('payment_id', $this->payment->id)
+            ->whereHas('settlement', fn($q) => $q->whereNull('voided_at'))
+            ->with('settlement')
+            ->first();
+
         return [
+            'settlementItem'        => $settlementItem,
             'linkedSubscriptions'   => $this->payment->mealSubscriptions()->with('customer')->get(),
             'linkableSubscriptions' => $this->payment->customer_id
                 ? MealSubscription::where('customer_id', $this->payment->customer_id)
@@ -339,6 +345,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Method') }}: {{ strtoupper($payment->method ?? '—') }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Reference') }}: {{ $payment->reference ?? '—' }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Notes') }}: {{ $payment->notes ?? '—' }}</p>
+            @if($payment->clearing_settled_at)
+                <p class="text-sm text-emerald-700 dark:text-emerald-300">
+                    {{ __('Cleared to bank') }}: {{ $payment->clearing_settled_at?->format('Y-m-d H:i') }}
+                    @if($settlementItem)
+                        · <a href="{{ route('accounting.ar-clearing-show', $settlementItem->settlement_id) }}" wire:navigate class="underline">{{ __('View Settlement') }}</a>
+                    @endif
+                </p>
+            @elseif(in_array($payment->method, ['card', 'cheque']) && ! $payment->voided_at)
+                <p class="text-sm text-amber-700 dark:text-amber-300">
+                    {{ __('Pending clearing') }} ·
+                    <a href="{{ route('accounting.ar-clearing') }}" wire:navigate class="underline">{{ __('Go to Clearing Workbench') }}</a>
+                </p>
+            @endif
         </div>
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-2">
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Amount') }}: {{ $this->formatMoney($payment->amount_cents) }}</p>

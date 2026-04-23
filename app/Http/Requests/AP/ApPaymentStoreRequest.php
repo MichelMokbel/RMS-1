@@ -15,6 +15,7 @@ class ApPaymentStoreRequest extends FormRequest
     {
         return [
             'supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
+            'client_uuid' => ['nullable', 'uuid'],
             'company_id' => ['nullable', 'integer', 'exists:accounting_companies,id'],
             'bank_account_id' => ['nullable', 'integer', 'exists:bank_accounts,id', 'required_if:payment_method,bank_transfer'],
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],

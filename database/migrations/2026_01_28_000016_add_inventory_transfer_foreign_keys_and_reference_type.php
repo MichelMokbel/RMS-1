@@ -47,7 +47,7 @@ return new class extends Migration
         if (! Schema::hasTable($refTable) || ! Schema::hasColumn($refTable, $refColumn)) {
             return;
         }
-        if ($this->foreignKeyExists($table, $constraint)) {
+        if ($this->foreignKeyExists($table, $constraint) || $this->foreignKeyForColumnExists($table, $column, $refTable, $refColumn) || $this->constraintNameExists($constraint)) {
             return;
         }
 
@@ -83,6 +83,43 @@ return new class extends Migration
         $row = DB::selectOne(
             'SELECT 1 FROM information_schema.table_constraints WHERE table_schema = ? AND table_name = ? AND constraint_name = ? AND constraint_type = "FOREIGN KEY" LIMIT 1',
             [$database, $table, $constraint]
+        );
+
+        return $row !== null;
+    }
+
+    private function foreignKeyForColumnExists(string $table, string $column, string $refTable, string $refColumn): bool
+    {
+        $database = DB::connection()->getDatabaseName();
+        if (! $database) {
+            return false;
+        }
+
+        $row = DB::selectOne(
+            'SELECT 1
+             FROM information_schema.key_column_usage
+             WHERE table_schema = ?
+               AND table_name = ?
+               AND column_name = ?
+               AND referenced_table_name = ?
+               AND referenced_column_name = ?
+             LIMIT 1',
+            [$database, $table, $column, $refTable, $refColumn]
+        );
+
+        return $row !== null;
+    }
+
+    private function constraintNameExists(string $constraint): bool
+    {
+        $database = DB::connection()->getDatabaseName();
+        if (! $database) {
+            return false;
+        }
+
+        $row = DB::selectOne(
+            'SELECT 1 FROM information_schema.table_constraints WHERE table_schema = ? AND constraint_name = ? LIMIT 1',
+            [$database, $constraint]
         );
 
         return $row !== null;

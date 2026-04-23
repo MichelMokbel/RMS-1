@@ -37,6 +37,18 @@ class LedgerAccountMappingService
             'card_clearing' => ['label' => 'Card clearing', 'description' => 'Tracks supplier/customer card settlements outside cash and bank.', 'required' => true, 'fallback' => 'card_clearing'],
             'cheque_clearing' => ['label' => 'Cheque clearing', 'description' => 'Tracks cheque settlements until fully cleared.', 'required' => true, 'fallback' => 'cheque_clearing'],
             'other_clearing' => ['label' => 'Other clearing', 'description' => 'Fallback settlement account for unsupported payment instruments.', 'required' => true, 'fallback' => 'other_clearing'],
+            'ar_cheque_clearing' => [
+                'label'       => 'AR cheque clearing',
+                'description' => 'AR customer cheques received, not yet deposited.',
+                'required'    => true,
+                'fallback'    => 'cheque_clearing',
+            ],
+            'issued_cheques_clearing' => [
+                'label'       => 'Issued cheques clearing',
+                'description' => 'Supplier cheques issued but not yet presented to bank.',
+                'required'    => true,
+                'fallback'    => 'cheque_clearing',
+            ],
         ];
     }
 
@@ -68,8 +80,8 @@ class LedgerAccountMappingService
             'petty_cash_over_short' => 'petty_cash_over_short',
             'ap_payment_card' => 'card_clearing',
             'ar_payment_card' => 'card_clearing',
-            'ap_payment_cheque' => 'cheque_clearing',
-            'ar_payment_cheque' => 'cheque_clearing',
+            'ap_payment_cheque' => 'issued_cheques_clearing',
+            'ar_payment_cheque' => 'ar_cheque_clearing',
             'ap_payment_other' => 'other_clearing',
             'ar_payment_other' => 'other_clearing',
         ];
@@ -139,7 +151,10 @@ class LedgerAccountMappingService
         return $this->defaultAccountForKey($companyId, $normalizedKey);
     }
 
-    public function resolveSettlementAccountId(string $method, ?int $companyId = null, ?int $bankAccountId = null): ?int
+    /**
+     * @param  string  $module  'ar', 'ap', or 'generic'
+     */
+    public function resolveSettlementAccountId(string $method, ?int $companyId = null, ?int $bankAccountId = null, string $module = 'generic'): ?int
     {
         $normalized = $this->normalizePaymentMethod($method);
 
@@ -154,10 +169,16 @@ class LedgerAccountMappingService
             return (int) $bankAccount->ledger_account_id;
         }
 
+        $chequeKey = match ($module) {
+            'ar' => 'ar_cheque_clearing',
+            'ap' => 'issued_cheques_clearing',
+            default => 'cheque_clearing',
+        };
+
         return match ($normalized) {
             'cash' => $this->resolveAccountId('cash', $companyId),
             'card' => $this->resolveAccountId('card_clearing', $companyId),
-            'cheque' => $this->resolveAccountId('cheque_clearing', $companyId),
+            'cheque' => $this->resolveAccountId($chequeKey, $companyId),
             'petty_cash' => $this->resolveAccountId('petty_cash_asset', $companyId),
             default => $this->resolveAccountId('other_clearing', $companyId),
         };

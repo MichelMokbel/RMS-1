@@ -19,6 +19,7 @@ class PayablesSummaryReportController extends Controller
     private function query(Request $request)
     {
         return ApInvoice::query()
+            ->whereNull('voided_at')
             ->whereIn('status', ['posted', 'partially_paid', 'paid'])
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('invoice_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('invoice_date', '<=', $request->date_to))
