@@ -10,6 +10,7 @@ use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\Accounting\AccountingContextService;
 use App\Services\Accounting\AccountingPeriodGateService;
 use App\Services\Accounting\LedgerAccountMappingService;
+use App\Services\Banking\BankTransactionService;
 use App\Services\Ledger\SubledgerService;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +24,7 @@ class ApChequeClearanceService
         protected LedgerAccountMappingService $mappingService,
         protected AccountingAuditLogService $auditLog,
         protected AccountingPeriodGateService $periodGate,
+        protected BankTransactionService $bankTransactionService,
     ) {}
 
     public function clear(
@@ -38,7 +40,7 @@ class ApChequeClearanceService
         $clientUuid = trim((string) ($clientUuid ?? ''));
 
         if ($clientUuid !== '') {
-            $existing = ApChequeClearance::where('client_uuid', $clientUuid)->first();
+            $existing = ApChequeClearance::where('client_uuid', $clientUuid)->whereNull('voided_at')->first();
             if ($existing) {
                 return $existing;
             }
@@ -92,6 +94,7 @@ class ApChequeClearanceService
                 $payment->save();
 
                 $this->subledgerService->recordApChequeClearance($clearance, $actorId);
+                $this->bankTransactionService->recordApChequeClearance($clearance, $actorId);
 
                 $this->auditLog->log('ap_cheque_clearance.created', $actorId, $clearance, [
                     'ap_payment_id' => $apPaymentId,
@@ -102,7 +105,7 @@ class ApChequeClearanceService
             });
         } catch (QueryException $e) {
             if ($clientUuid !== '') {
-                $existing = ApChequeClearance::where('client_uuid', $clientUuid)->first();
+                $existing = ApChequeClearance::where('client_uuid', $clientUuid)->whereNull('voided_at')->first();
                 if ($existing) {
                     return $existing;
                 }
@@ -123,6 +126,9 @@ class ApChequeClearanceService
                 throw ValidationException::withMessages(['clearance' => __('Clearance is already voided.')]);
             }
 
+            $voidDate = now()->toDateString();
+            $this->periodGate->assertDateOpen($voidDate, (int) $clearance->company_id, null, 'ap', 'void_date');
+
             $entry = SubledgerEntry::where('source_type', 'ap_cheque_clearance')
                 ->where('source_id', $clearance->id)
                 ->where('event', 'clear')
@@ -133,7 +139,7 @@ class ApChequeClearanceService
                     $entry,
                     'void',
                     'AP cheque clearance void #'.$clearance->id,
-                    now()->toDateString(),
+                    $voidDate,
                     $actorId
                 );
             }
@@ -148,6 +154,7 @@ class ApChequeClearanceService
             $clearance->voided_by   = $actorId;
             $clearance->void_reason = $voidReason;
             $clearance->save();
+            $this->bankTransactionService->voidApChequeClearance($clearance, $actorId);
 
             $this->auditLog->log('ap_cheque_clearance.voided', $actorId, $clearance, [
                 'void_reason' => $voidReason,

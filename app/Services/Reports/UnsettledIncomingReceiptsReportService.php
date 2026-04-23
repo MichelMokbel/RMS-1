@@ -19,7 +19,16 @@ class UnsettledIncomingReceiptsReportService
             ->when($method, fn ($q) => $q->where('method', $method))
             ->when(! $method, fn ($q) => $q->whereIn('method', ['card', 'cheque']))
             ->whereNull('voided_at')
-            ->whereNull('clearing_settled_at')
+            ->where(function ($q) use ($toDate) {
+                // Unsettled = never settled, OR settled only after the asOf date
+                $q->whereNull('clearing_settled_at');
+                if ($toDate) {
+                    $q->orWhereHas('clearingSettlementItems.settlement', function ($sq) use ($toDate) {
+                        $sq->whereNull('voided_at')
+                            ->whereDate('settlement_date', '>', $toDate);
+                    });
+                }
+            })
             ->when($companyId, fn ($q) => $q->where('company_id', $companyId))
             ->when($fromDate, fn ($q) => $q->whereDate('received_at', '>=', $fromDate))
             ->when($toDate, fn ($q) => $q->whereDate('received_at', '<=', $toDate))

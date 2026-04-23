@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class ArClearingSettlement extends Model
@@ -44,6 +45,13 @@ class ArClearingSettlement extends Model
                     ]);
                 }
             }
+        });
+
+        static::deleting(function (ArClearingSettlement $model) {
+            Log::error('[ArClearingSettlement] Hard-delete blocked on settlement #'.$model->id.'. Void instead.');
+            throw ValidationException::withMessages([
+                'settlement' => __('AR clearing settlements cannot be hard-deleted. Void them instead.'),
+            ]);
         });
     }
 

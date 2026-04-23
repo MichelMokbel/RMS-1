@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Sequences\DocumentSequenceService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,6 +15,20 @@ class JournalEntry extends Model
 
     protected static function booted(): void
     {
+        static::creating(function (JournalEntry $journal) {
+            if (filled($journal->entry_number)) {
+                return;
+            }
+
+            $entryDate = optional($journal->entry_date)?->toDateString()
+                ?? (is_string($journal->entry_date) ? $journal->entry_date : now()->toDateString());
+            $year = date('Y', strtotime($entryDate));
+            $companyId = max((int) ($journal->company_id ?? 0), 1);
+            $sequence = app(DocumentSequenceService::class)->next('journal_entry', $companyId, $year);
+
+            $journal->entry_number = sprintf('JRN-%s-%04d', $year, $sequence);
+        });
+
         static::updating(function (JournalEntry $journal) {
             if ($journal->getOriginal('status') === 'draft') {
                 return;

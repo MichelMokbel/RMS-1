@@ -114,6 +114,24 @@ class ApAllocationService
     public function allocateExistingPayment(ApPayment $payment, array $allocations, int $userId): ApPayment
     {
         return DB::transaction(function () use ($payment, $allocations, $userId) {
+            $requestedByInvoice = collect($allocations)
+                ->mapWithKeys(fn (array $row) => [(int) ($row['invoice_id'] ?? 0) => round((float) ($row['allocated_amount'] ?? 0), 2)]);
+
+            $existingActive = ApPaymentAllocation::query()
+                ->where('payment_id', $payment->id)
+                ->whereNull('voided_at')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy(fn (ApPaymentAllocation $allocation) => (int) $allocation->invoice_id);
+
+            $isExactReplay = count($allocations) > 0
+                && $existingActive->count() === count($allocations)
+                && $existingActive->every(fn (ApPaymentAllocation $allocation, int|string $invoiceId) => round((float) $allocation->allocated_amount, 2) === ($requestedByInvoice[(int) $invoiceId] ?? INF));
+
+            if ($isExactReplay) {
+                return $payment->fresh(['allocations.invoice']);
+            }
+
             $this->validateAllocations($allocations, $payment->supplier_id, $payment);
             $newAllocations = $this->applyAllocations($payment, $allocations);
             foreach ($newAllocations as $allocation) {

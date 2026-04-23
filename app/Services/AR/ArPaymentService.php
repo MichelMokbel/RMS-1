@@ -177,6 +177,42 @@ class ArPaymentService
         try {
             return DB::transaction(function () use ($customer, $branchId, $amount, $method, $currency, $receivedAt, $reference, $notes, $rows, $actorId, $clientUuid, $terminalId, $posShiftId, $bankAccountId) {
                 $companyId = $this->accountingContext->resolveCompanyId($branchId);
+
+                $lockedInvoices = [];
+                foreach ($rows as $row) {
+                    $invoiceId = (int) ($row['invoice_id'] ?? 0);
+                    if ($invoiceId <= 0) {
+                        throw ValidationException::withMessages(['allocations' => __('Invoice not found.')]);
+                    }
+
+                    $requested = (int) ($row['amount_cents'] ?? 0);
+                    if ($requested <= 0) {
+                        throw ValidationException::withMessages(['allocations' => __('Allocation amount must be positive.')]);
+                    }
+
+                    $invoice = ArInvoice::whereKey($invoiceId)->lockForUpdate()->first();
+                    if (! $invoice) {
+                        throw ValidationException::withMessages(['allocations' => __('Invoice not found.')]);
+                    }
+
+                    $invoiceCompanyId = $this->allocationIntegrity->resolveInvoiceCompanyId($invoice);
+                    if ($invoiceCompanyId !== (int) $companyId) {
+                        throw ValidationException::withMessages([
+                            'allocations' => __('Payment and allocated invoices must belong to the same accounting company.'),
+                        ]);
+                    }
+
+                    if ($invoice->customer_id !== $customer->id) {
+                        throw ValidationException::withMessages(['allocations' => __('Invoice customer must match payment customer.')]);
+                    }
+
+                    if (! in_array($invoice->status, ['issued', 'partially_paid', 'paid'], true)) {
+                        throw ValidationException::withMessages(['allocations' => __('Invoice must be issued to accept payments.')]);
+                    }
+
+                    $lockedInvoices[$invoiceId] = $invoice;
+                }
+
                 $payment = Payment::create([
                     'branch_id' => $branchId,
                     'customer_id' => $customer->id,
@@ -212,17 +248,11 @@ class ArPaymentService
                         throw ValidationException::withMessages(['allocations' => __('Allocation amount must be positive.')]);
                     }
 
-                    $invoice = ArInvoice::whereKey($invoiceId)->lockForUpdate()->first();
+                    $invoice = $lockedInvoices[$invoiceId] ?? ArInvoice::whereKey($invoiceId)->lockForUpdate()->first();
                     if (! $invoice) {
                         throw ValidationException::withMessages(['allocations' => __('Invoice not found.')]);
                     }
                     $this->allocationIntegrity->assertSameCompanyForPaymentAndInvoice($payment, $invoice);
-                    if ($invoice->customer_id !== $customer->id) {
-                        throw ValidationException::withMessages(['allocations' => __('Invoice customer must match payment customer.')]);
-                    }
-                    if (! in_array($invoice->status, ['issued', 'partially_paid', 'paid'], true)) {
-                        throw ValidationException::withMessages(['allocations' => __('Invoice must be issued to accept payments.')]);
-                    }
 
                     $this->invoices->recalc($invoice);
                     $invoice = $invoice->fresh();
@@ -325,6 +355,18 @@ class ArPaymentService
             $invoice = ArInvoice::whereKey($invoiceId)->lockForUpdate()->firstOrFail();
             $this->allocationIntegrity->assertSameCompanyForPaymentAndInvoice($payment, $invoice);
 
+            $existing = PaymentAllocation::query()
+                ->where('payment_id', $payment->id)
+                ->where('allocatable_type', ArInvoice::class)
+                ->where('allocatable_id', $invoice->id)
+                ->whereNull('voided_at')
+                ->lockForUpdate()
+                ->first();
+
+            if ($existing && (int) $existing->amount_cents === $amountCents) {
+                return $existing->fresh(['payment']);
+            }
+
             if ($payment->source !== 'ar') {
                 throw ValidationException::withMessages(['payment' => __('Payment must be an AR payment.')]);
             }
@@ -357,18 +399,6 @@ class ArPaymentService
             $remaining = (int) $payment->amount_cents - $allocated;
             if ($amountCents > $remaining) {
                 throw ValidationException::withMessages(['amount_cents' => __('Allocation exceeds remaining payment amount.')]);
-            }
-
-            $existing = PaymentAllocation::query()
-                ->where('payment_id', $payment->id)
-                ->where('allocatable_type', ArInvoice::class)
-                ->where('allocatable_id', $invoice->id)
-                ->whereNull('voided_at')
-                ->lockForUpdate()
-                ->first();
-
-            if ($existing && (int) $existing->amount_cents === $amountCents) {
-                return $existing->fresh(['payment']);
             }
 
             $allocation = PaymentAllocation::create([
@@ -417,6 +447,25 @@ class ArPaymentService
 
             if ($payment->source !== 'ar') {
                 throw ValidationException::withMessages(['payment' => __('Payment must be an AR payment.')]);
+            }
+
+            $requestedByInvoice = collect($rows)
+                ->mapWithKeys(fn (array $row) => [(int) ($row['invoice_id'] ?? 0) => (int) ($row['amount_cents'] ?? 0)]);
+
+            $existingActive = PaymentAllocation::query()
+                ->where('payment_id', $payment->id)
+                ->whereNull('voided_at')
+                ->where('allocatable_type', ArInvoice::class)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy(fn (PaymentAllocation $allocation) => (int) $allocation->allocatable_id);
+
+            $isExactReplay = count($rows) > 0
+                && $existingActive->count() === count($rows)
+                && $existingActive->every(fn (PaymentAllocation $allocation, int|string $invoiceId) => (int) $allocation->amount_cents === ($requestedByInvoice[(int) $invoiceId] ?? PHP_INT_MIN));
+
+            if ($isExactReplay) {
+                return $payment->fresh(['allocations']);
             }
 
             $allocated = (int) PaymentAllocation::query()

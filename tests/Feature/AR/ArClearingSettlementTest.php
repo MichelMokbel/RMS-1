@@ -2,6 +2,7 @@
 
 use App\Models\AccountingCompany;
 use App\Models\ArClearingSettlement;
+use App\Models\BankTransaction;
 use App\Models\BankAccount;
 use App\Models\Customer;
 use App\Models\LedgerAccount;
@@ -83,6 +84,17 @@ it('posts correct DR bank / CR card_clearing subledger entry on card settlement'
     // Credit line must be card_clearing, not the bank account.
     expect($creditLine->account_id)->not->toBe($this->bankLedgerAccount->id)
         ->and((float) $creditLine->credit)->toBe(100.0);
+
+    $bankTx = BankTransaction::query()
+        ->where('source_type', ArClearingSettlement::class)
+        ->where('source_id', $settlement->id)
+        ->where('transaction_type', 'ar_clearing_settlement')
+        ->first();
+
+    expect($bankTx)->not->toBeNull()
+        ->and($bankTx->direction)->toBe('inflow')
+        ->and((float) $bankTx->amount)->toBe(100.0)
+        ->and($bankTx->status)->toBe('open');
 });
 
 it('marks all settled payments clearing_settled_at non-null', function () {
@@ -164,7 +176,15 @@ it('voiding a settlement reverses the subledger entry', function () {
         ->where('event', 'void')
         ->first();
 
-    expect($reversal)->not->toBeNull();
+    $bankTx = BankTransaction::query()
+        ->where('source_type', ArClearingSettlement::class)
+        ->where('source_id', $settlement->id)
+        ->where('transaction_type', 'ar_clearing_settlement')
+        ->first();
+
+    expect($reversal)->not->toBeNull()
+        ->and($bankTx)->not->toBeNull()
+        ->and($bankTx->status)->toBe('void');
 });
 
 it('voiding a settlement clears clearing_settled_at on linked payments', function () {
@@ -245,4 +265,132 @@ it('idempotency: calling settle with same client_uuid returns existing settlemen
 
     expect($s1->id)->toBe($s2->id)
         ->and(ArClearingSettlement::count())->toBe(1);
+});
+
+it('voided_client_uuid_creates_new_settlement', function () {
+    $uuid = (string) \Illuminate\Support\Str::uuid();
+    $svc = app(ArClearingSettlementService::class);
+
+    // First settle with the given client_uuid.
+    $p1 = makeArPayment('card', 5000);
+    $s1 = $svc->settle(
+        paymentIds:     [$p1->id],
+        method:         'card',
+        bankAccountId:  $this->bankAccount->id,
+        settlementDate: now()->toDateString(),
+        actorId:        $this->user->id,
+        clientUuid:     $uuid,
+    );
+
+    // Void the first settlement so the client_uuid slot is freed.
+    $svc->void($s1, $this->user->id);
+
+    // Settle again with the same client_uuid — a brand-new payment must be used
+    // because the old one is still linked (cleared_at was reset but the payment
+    // itself is fine to re-settle).
+    $p2 = makeArPayment('card', 5000);
+    $s2 = $svc->settle(
+        paymentIds:     [$p2->id],
+        method:         'card',
+        bankAccountId:  $this->bankAccount->id,
+        settlementDate: now()->toDateString(),
+        actorId:        $this->user->id,
+        clientUuid:     $uuid,
+    );
+
+    // A second, distinct settlement record must have been created.
+    expect($s2->id)->not->toBe($s1->id)
+        ->and(ArClearingSettlement::count())->toBe(2);
+});
+
+it('settlement_item_sum_must_match_header', function () {
+    $p1 = makeArPayment('card', 3000);
+    $p2 = makeArPayment('card', 7000);
+
+    $svc = app(ArClearingSettlementService::class);
+    $settlement = $svc->settle(
+        paymentIds:     [$p1->id, $p2->id],
+        method:         'card',
+        bankAccountId:  $this->bankAccount->id,
+        settlementDate: now()->toDateString(),
+        actorId:        $this->user->id,
+    );
+
+    expect((int) $settlement->items()->sum('amount_cents'))
+        ->toBe((int) $settlement->amount_cents);
+});
+
+it('cannot_delete_settlement_header', function () {
+    $payment = makeArPayment('card', 5000);
+    $svc = app(ArClearingSettlementService::class);
+
+    $settlement = $svc->settle(
+        paymentIds:     [$payment->id],
+        method:         'card',
+        bankAccountId:  $this->bankAccount->id,
+        settlementDate: now()->toDateString(),
+        actorId:        $this->user->id,
+    );
+
+    expect(fn () => $settlement->delete())->toThrow(ValidationException::class);
+});
+
+it('cannot_update_settlement_item', function () {
+    $payment = makeArPayment('card', 5000);
+    $svc = app(ArClearingSettlementService::class);
+
+    $settlement = $svc->settle(
+        paymentIds:     [$payment->id],
+        method:         'card',
+        bankAccountId:  $this->bankAccount->id,
+        settlementDate: now()->toDateString(),
+        actorId:        $this->user->id,
+    );
+
+    $item = $settlement->items()->first();
+    $item->amount_cents = 0;
+
+    expect(fn () => $item->save())->toThrow(ValidationException::class);
+});
+
+it('cannot_delete_settlement_item', function () {
+    $payment = makeArPayment('card', 5000);
+    $svc = app(ArClearingSettlementService::class);
+
+    $settlement = $svc->settle(
+        paymentIds:     [$payment->id],
+        method:         'card',
+        bankAccountId:  $this->bankAccount->id,
+        settlementDate: now()->toDateString(),
+        actorId:        $this->user->id,
+    );
+
+    $item = $settlement->items()->first();
+
+    expect(fn () => $item->delete())->toThrow(ValidationException::class);
+});
+
+it('void_requires_open_period', function () {
+    $payment = makeArPayment('card', 5000);
+
+    // Settle using the real service so we have a valid settlement record.
+    $realSvc = app(ArClearingSettlementService::class);
+    $settlement = $realSvc->settle(
+        paymentIds:     [$payment->id],
+        method:         'card',
+        bankAccountId:  $this->bankAccount->id,
+        settlementDate: now()->toDateString(),
+        actorId:        $this->user->id,
+    );
+
+    // Swap the period gate with a mock that always rejects.
+    $mockGate = $this->mock(\App\Services\Accounting\AccountingPeriodGateService::class);
+    $mockGate->shouldReceive('assertDateOpen')
+        ->andThrow(ValidationException::withMessages(['void_date' => 'Period is closed.']));
+
+    // Re-resolve the service so it picks up the mocked gate.
+    $svc = app(ArClearingSettlementService::class);
+
+    expect(fn () => $svc->void($settlement, $this->user->id))
+        ->toThrow(ValidationException::class);
 });

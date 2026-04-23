@@ -7,10 +7,14 @@ use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
     public ApPayment $payment;
+    public ?object $activeClearance = null;
 
     public function mount(ApPayment $payment): void
     {
         $this->payment = $payment->load(['supplier', 'allocations.invoice', 'voidedBy']);
+        $this->activeClearance = \App\Models\ApChequeClearance::where('ap_payment_id', $this->payment->id)
+            ->whereNull('voided_at')
+            ->first();
     }
 
     public function voidPayment(ApPaymentVoidService $voidService): void
@@ -57,6 +61,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @if($payment->voidedBy)
                         • {{ $payment->voidedBy->username ?? $payment->voidedBy->email }}
                     @endif
+                </p>
+            @endif
+            @if($payment->cheque_cleared_at)
+                <p class="text-sm text-emerald-700 dark:text-emerald-300">
+                    {{ __('Cheque cleared') }}: {{ $payment->cheque_cleared_at?->format('Y-m-d H:i') }}
+                    @if($activeClearance ?? null)
+                        · <a href="{{ route('accounting.ap-cheque-clearance-show', $activeClearance) }}" wire:navigate class="underline">{{ __('View Clearance') }}</a>
+                    @endif
+                </p>
+            @elseif($payment->payment_method === 'cheque' && ! $payment->voided_at)
+                <p class="text-sm text-amber-700 dark:text-amber-300">
+                    {{ __('Cheque not yet cleared') }} ·
+                    <a href="{{ route('accounting.ap-cheque-clearance') }}" wire:navigate class="underline">{{ __('Go to Clearance Workbench') }}</a>
                 </p>
             @endif
         </div>

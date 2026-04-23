@@ -1166,6 +1166,10 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|fin
         return redirect()->route('reports.index', ['category' => 'accounting']);
     })->name('accounting.reports');
     Volt::route('accounting/period-close', 'accounting.period-close')->name('accounting.period-close');
+    Volt::route('accounting/ar-clearing', 'accounting.ar-clearing')->name('accounting.ar-clearing');
+    Volt::route('accounting/ar-clearing/{settlement}', 'accounting.ar-clearing-show')->name('accounting.ar-clearing-show');
+    Volt::route('accounting/ap-cheque-clearance', 'accounting.ap-cheque-clearance')->name('accounting.ap-cheque-clearance');
+    Volt::route('accounting/ap-cheque-clearances/{clearance}', 'accounting.ap-cheque-clearance-show')->name('accounting.ap-cheque-clearance-show');
 });
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|finance.access'])->group(function () {

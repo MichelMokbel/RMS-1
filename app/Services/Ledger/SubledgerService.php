@@ -1275,7 +1275,7 @@ class SubledgerService
 
     private function paymentSettlementAccount(?string $method, ?int $companyId, ?int $bankAccountId, string $module): int
     {
-        $accountId = $this->mappingService->resolveSettlementAccountId((string) $method, $companyId, $bankAccountId);
+        $accountId = $this->mappingService->resolveSettlementAccountId((string) $method, $companyId, $bankAccountId, $module);
         if (! $accountId) {
             throw ValidationException::withMessages([
                 'payment_method' => __('No settlement ledger account is configured for the selected payment method.'),
@@ -1288,12 +1288,16 @@ class SubledgerService
         $normalizedMethod = $this->mappingService->normalizePaymentMethod($method);
         if ($normalizedMethod !== 'bank_transfer') {
             $required[] = match ($normalizedMethod) {
-            'cash' => 'cash',
-            'card' => 'card_clearing',
-            'cheque' => 'cheque_clearing',
-            'petty_cash' => 'petty_cash_asset',
-            default => 'other_clearing',
-        };
+                'cash' => 'cash',
+                'card' => 'card_clearing',
+                'cheque' => match ($module) {
+                    'ar' => 'ar_cheque_clearing',
+                    'ap' => 'issued_cheques_clearing',
+                    default => 'cheque_clearing',
+                },
+                'petty_cash' => 'petty_cash_asset',
+                default => 'other_clearing',
+            };
         }
         $this->mappingService->assertRequiredMappings($companyId, $required);
 
@@ -1302,9 +1306,19 @@ class SubledgerService
 
     private function canPost(): bool
     {
-        return Schema::hasTable('subledger_entries')
+        $can = Schema::hasTable('subledger_entries')
             && Schema::hasTable('subledger_lines')
             && Schema::hasTable('ledger_accounts');
+
+        if (! $can) {
+            \Illuminate\Support\Facades\Log::warning('[SubledgerService] Accounting tables not available — subledger posting skipped.', [
+                'subledger_entries' => Schema::hasTable('subledger_entries'),
+                'subledger_lines'   => Schema::hasTable('subledger_lines'),
+                'ledger_accounts'   => Schema::hasTable('ledger_accounts'),
+            ]);
+        }
+
+        return $can;
     }
 
     private function normalizeBranchId(?int $branchId): ?int

@@ -2,7 +2,9 @@
 
 namespace App\Services\Banking;
 
+use App\Models\ApChequeClearance;
 use App\Models\ApPayment;
+use App\Models\ArClearingSettlement;
 use App\Models\Payment;
 use App\Models\BankTransaction;
 use App\Services\Accounting\LedgerAccountMappingService;
@@ -144,6 +146,96 @@ class BankTransactionService
         return $transaction;
     }
 
+    public function recordArClearingSettlement(ArClearingSettlement $settlement, int $actorId): ?BankTransaction
+    {
+        if (! Schema::hasTable('bank_transactions') || ! Schema::hasTable('bank_accounts')) {
+            return null;
+        }
+
+        $bankAccountId = (int) ($settlement->bank_account_id ?? 0);
+        if ($bankAccountId <= 0) {
+            return null;
+        }
+
+        $transaction = $this->firstOrCreateBySource([
+            'source_type' => ArClearingSettlement::class,
+            'source_id' => $settlement->id,
+            'transaction_type' => 'ar_clearing_settlement',
+        ], function () use ($settlement, $bankAccountId) {
+            return [
+                'company_id' => (int) $settlement->company_id,
+                'bank_account_id' => $bankAccountId,
+                'period_id' => $this->context->resolvePeriodId(optional($settlement->settlement_date)->toDateString(), (int) $settlement->company_id),
+                'reconciliation_run_id' => null,
+                'transaction_type' => 'ar_clearing_settlement',
+                'transaction_date' => optional($settlement->settlement_date)->toDateString() ?: now()->toDateString(),
+                'amount' => abs((float) $settlement->amount_cents / max((int) config('pos.money_scale', 100), 1)),
+                'direction' => 'inflow',
+                'status' => $settlement->voided_at ? 'void' : 'open',
+                'is_cleared' => false,
+                'cleared_date' => null,
+                'reference' => $settlement->reference,
+                'memo' => $settlement->notes ?: 'AR clearing settlement '.$settlement->id,
+                'source_type' => ArClearingSettlement::class,
+                'source_id' => $settlement->id,
+                'statement_import_id' => null,
+            ];
+        });
+
+        $this->auditLog->log('bank_transaction.recorded', $actorId, $transaction, [
+            'source' => 'ar_clearing_settlement',
+            'settlement_id' => (int) $settlement->id,
+            'bank_account_id' => $bankAccountId,
+        ], (int) $settlement->company_id);
+
+        return $transaction;
+    }
+
+    public function recordApChequeClearance(ApChequeClearance $clearance, int $actorId): ?BankTransaction
+    {
+        if (! Schema::hasTable('bank_transactions') || ! Schema::hasTable('bank_accounts')) {
+            return null;
+        }
+
+        $bankAccountId = (int) ($clearance->bank_account_id ?? 0);
+        if ($bankAccountId <= 0) {
+            return null;
+        }
+
+        $transaction = $this->firstOrCreateBySource([
+            'source_type' => ApChequeClearance::class,
+            'source_id' => $clearance->id,
+            'transaction_type' => 'ap_cheque_clearance',
+        ], function () use ($clearance, $bankAccountId) {
+            return [
+                'company_id' => (int) $clearance->company_id,
+                'bank_account_id' => $bankAccountId,
+                'period_id' => $this->context->resolvePeriodId(optional($clearance->clearance_date)->toDateString(), (int) $clearance->company_id),
+                'reconciliation_run_id' => null,
+                'transaction_type' => 'ap_cheque_clearance',
+                'transaction_date' => optional($clearance->clearance_date)->toDateString() ?: now()->toDateString(),
+                'amount' => abs((float) $clearance->amount),
+                'direction' => 'outflow',
+                'status' => $clearance->voided_at ? 'void' : 'open',
+                'is_cleared' => false,
+                'cleared_date' => null,
+                'reference' => $clearance->reference,
+                'memo' => $clearance->notes ?: 'AP cheque clearance '.$clearance->id,
+                'source_type' => ApChequeClearance::class,
+                'source_id' => $clearance->id,
+                'statement_import_id' => null,
+            ];
+        });
+
+        $this->auditLog->log('bank_transaction.recorded', $actorId, $transaction, [
+            'source' => 'ap_cheque_clearance',
+            'clearance_id' => (int) $clearance->id,
+            'bank_account_id' => $bankAccountId,
+        ], (int) $clearance->company_id);
+
+        return $transaction;
+    }
+
     public function voidApPayment(ApPayment $payment, int $actorId): void
     {
         if (! Schema::hasTable('bank_transactions')) {
@@ -181,6 +273,48 @@ class BankTransactionService
             'payment_id' => (int) $payment->id,
             'source' => 'ar',
         ], (int) ($payment->company_id ?? 0) ?: null);
+    }
+
+    public function voidArClearingSettlement(ArClearingSettlement $settlement, int $actorId): void
+    {
+        if (! Schema::hasTable('bank_transactions')) {
+            return;
+        }
+
+        BankTransaction::query()
+            ->where('source_type', ArClearingSettlement::class)
+            ->where('source_id', $settlement->id)
+            ->where('transaction_type', 'ar_clearing_settlement')
+            ->update([
+                'status' => 'void',
+                'updated_at' => now(),
+            ]);
+
+        $this->auditLog->log('bank_transaction.voided', $actorId, $settlement, [
+            'settlement_id' => (int) $settlement->id,
+            'source' => 'ar_clearing_settlement',
+        ], (int) ($settlement->company_id ?? 0) ?: null);
+    }
+
+    public function voidApChequeClearance(ApChequeClearance $clearance, int $actorId): void
+    {
+        if (! Schema::hasTable('bank_transactions')) {
+            return;
+        }
+
+        BankTransaction::query()
+            ->where('source_type', ApChequeClearance::class)
+            ->where('source_id', $clearance->id)
+            ->where('transaction_type', 'ap_cheque_clearance')
+            ->update([
+                'status' => 'void',
+                'updated_at' => now(),
+            ]);
+
+        $this->auditLog->log('bank_transaction.voided', $actorId, $clearance, [
+            'clearance_id' => (int) $clearance->id,
+            'source' => 'ap_cheque_clearance',
+        ], (int) ($clearance->company_id ?? 0) ?: null);
     }
 
     /**

@@ -11,6 +11,7 @@ use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\Accounting\AccountingContextService;
 use App\Services\Accounting\AccountingPeriodGateService;
 use App\Services\Accounting\LedgerAccountMappingService;
+use App\Services\Banking\BankTransactionService;
 use App\Services\Ledger\SubledgerService;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +25,7 @@ class ArClearingSettlementService
         protected LedgerAccountMappingService $mappingService,
         protected AccountingAuditLogService $auditLog,
         protected AccountingPeriodGateService $periodGate,
+        protected BankTransactionService $bankTransactionService,
     ) {}
 
     public function settle(
@@ -39,7 +41,7 @@ class ArClearingSettlementService
         $clientUuid = trim((string) ($clientUuid ?? ''));
 
         if ($clientUuid !== '') {
-            $existing = ArClearingSettlement::where('client_uuid', $clientUuid)->first();
+            $existing = ArClearingSettlement::where('client_uuid', $clientUuid)->whereNull('voided_at')->first();
             if ($existing) {
                 return $existing;
             }
@@ -104,7 +106,13 @@ class ArClearingSettlementService
                     $payment->save();
                 }
 
+                $itemTotal = (int) $settlement->items()->sum('amount_cents');
+                if ($itemTotal !== $totalCents) {
+                    throw new \RuntimeException("Settlement item total ({$itemTotal}) does not match header amount ({$totalCents}).");
+                }
+
                 $this->subledgerService->recordArClearingSettlement($settlement, $actorId);
+                $this->bankTransactionService->recordArClearingSettlement($settlement, $actorId);
 
                 $this->auditLog->log('ar_clearing_settlement.created', $actorId, $settlement, [
                     'payment_count' => count($paymentIds),
@@ -116,7 +124,7 @@ class ArClearingSettlementService
             });
         } catch (QueryException $e) {
             if ($clientUuid !== '') {
-                $existing = ArClearingSettlement::where('client_uuid', $clientUuid)->first();
+                $existing = ArClearingSettlement::where('client_uuid', $clientUuid)->whereNull('voided_at')->first();
                 if ($existing) {
                     return $existing;
                 }
@@ -137,6 +145,9 @@ class ArClearingSettlementService
                 throw ValidationException::withMessages(['settlement' => __('Settlement is already voided.')]);
             }
 
+            $voidDate = now()->toDateString();
+            $this->periodGate->assertDateOpen($voidDate, (int) $settlement->company_id, null, 'ar', 'void_date');
+
             $entry = SubledgerEntry::where('source_type', 'ar_clearing_settlement')
                 ->where('source_id', $settlement->id)
                 ->where('event', 'settle')
@@ -147,7 +158,7 @@ class ArClearingSettlementService
                     $entry,
                     'void',
                     'AR clearing settlement void #'.$settlement->id,
-                    now()->toDateString(),
+                    $voidDate,
                     $actorId
                 );
             }
@@ -160,6 +171,7 @@ class ArClearingSettlementService
             $settlement->voided_by   = $actorId;
             $settlement->void_reason = $voidReason;
             $settlement->save();
+            $this->bankTransactionService->voidArClearingSettlement($settlement, $actorId);
 
             $this->auditLog->log('ar_clearing_settlement.voided', $actorId, $settlement, [
                 'void_reason' => $voidReason,

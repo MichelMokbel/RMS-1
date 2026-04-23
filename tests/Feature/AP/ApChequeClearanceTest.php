@@ -4,6 +4,7 @@ use App\Models\AccountingCompany;
 use App\Models\ApChequeClearance;
 use App\Models\ApPayment;
 use App\Models\BankAccount;
+use App\Models\BankTransaction;
 use App\Models\LedgerAccount;
 use App\Models\SubledgerEntry;
 use App\Models\Supplier;
@@ -79,6 +80,17 @@ it('posts correct DR issued_cheques_clearing / CR bank subledger entry on cleara
         ->and((float) $debitLine->debit)->toBe(200.0)
         ->and($creditLine->account_id)->toBe($this->bankLedgerAccount->id)
         ->and((float) $creditLine->credit)->toBe(200.0);
+
+    $bankTx = BankTransaction::query()
+        ->where('source_type', ApChequeClearance::class)
+        ->where('source_id', $clearance->id)
+        ->where('transaction_type', 'ap_cheque_clearance')
+        ->first();
+
+    expect($bankTx)->not->toBeNull()
+        ->and($bankTx->direction)->toBe('outflow')
+        ->and((float) $bankTx->amount)->toBe(200.0)
+        ->and($bankTx->status)->toBe('open');
 });
 
 it('marks ap_payment cheque_cleared_at non-null after clearance', function () {
@@ -163,7 +175,15 @@ it('voiding a clearance reverses the subledger entry and resets cheque_cleared_a
         ->where('event', 'void')
         ->first();
 
+    $bankTx = BankTransaction::query()
+        ->where('source_type', ApChequeClearance::class)
+        ->where('source_id', $clearance->id)
+        ->where('transaction_type', 'ap_cheque_clearance')
+        ->first();
+
     expect($reversal)->not->toBeNull()
+        ->and($bankTx)->not->toBeNull()
+        ->and($bankTx->status)->toBe('void')
         ->and(ApPayment::find($payment->id)->cheque_cleared_at)->toBeNull();
 });
 
@@ -228,4 +248,78 @@ it('idempotency: calling clear with same client_uuid returns existing clearance'
 
     expect($c1->id)->toBe($c2->id)
         ->and(ApChequeClearance::count())->toBe(1);
+});
+
+it('voided_client_uuid_creates_new_clearance', function () {
+    $uuid = (string) \Illuminate\Support\Str::uuid();
+    $svc = app(ApChequeClearanceService::class);
+
+    // First clearance with the given client_uuid.
+    $p1 = makeApChequePayment(100.00);
+    $c1 = $svc->clear(
+        apPaymentId:   $p1->id,
+        bankAccountId: $this->bankAccount->id,
+        clearanceDate: now()->toDateString(),
+        amount:        100.00,
+        actorId:       $this->user->id,
+        clientUuid:    $uuid,
+    );
+
+    // Void the first clearance so the client_uuid slot is freed.
+    $svc->void($c1, $this->user->id);
+
+    // Clear a second, distinct payment with the same client_uuid.
+    $p2 = makeApChequePayment(100.00);
+    $c2 = $svc->clear(
+        apPaymentId:   $p2->id,
+        bankAccountId: $this->bankAccount->id,
+        clearanceDate: now()->toDateString(),
+        amount:        100.00,
+        actorId:       $this->user->id,
+        clientUuid:    $uuid,
+    );
+
+    // A second, distinct clearance record must have been created.
+    expect($c2->id)->not->toBe($c1->id)
+        ->and(ApChequeClearance::count())->toBe(2);
+});
+
+it('cannot_delete_clearance_header', function () {
+    $payment = makeApChequePayment(100.00);
+    $svc = app(ApChequeClearanceService::class);
+
+    $clearance = $svc->clear(
+        apPaymentId:   $payment->id,
+        bankAccountId: $this->bankAccount->id,
+        clearanceDate: now()->toDateString(),
+        amount:        100.00,
+        actorId:       $this->user->id,
+    );
+
+    expect(fn () => $clearance->delete())->toThrow(ValidationException::class);
+});
+
+it('void_requires_open_period', function () {
+    $payment = makeApChequePayment(100.00);
+
+    // Clear using the real service so we have a valid clearance record.
+    $realSvc = app(ApChequeClearanceService::class);
+    $clearance = $realSvc->clear(
+        apPaymentId:   $payment->id,
+        bankAccountId: $this->bankAccount->id,
+        clearanceDate: now()->toDateString(),
+        amount:        100.00,
+        actorId:       $this->user->id,
+    );
+
+    // Swap the period gate with a mock that always rejects.
+    $mockGate = $this->mock(\App\Services\Accounting\AccountingPeriodGateService::class);
+    $mockGate->shouldReceive('assertDateOpen')
+        ->andThrow(ValidationException::withMessages(['void_date' => 'Period is closed.']));
+
+    // Re-resolve the service so it picks up the mocked gate.
+    $svc = app(ApChequeClearanceService::class);
+
+    expect(fn () => $svc->void($clearance, $this->user->id))
+        ->toThrow(ValidationException::class);
 });

@@ -27,6 +27,10 @@ return new class extends Migration
             return;
         }
 
+        if ($this->indexExists('ap_payment_allocations', 'uniq_payment_invoice')) {
+            DB::statement('ALTER TABLE ap_payment_allocations DROP INDEX uniq_payment_invoice');
+        }
+
         // Add generated sentinel column if missing.
         if (! Schema::hasColumn('ap_payment_allocations', 'alloc_active_sentinel')) {
             DB::statement(

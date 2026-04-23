@@ -955,7 +955,9 @@ class ArInvoiceService
             $invoice = $invoice->fresh(['items', 'paymentAllocations']);
             $totals = $this->calculateInvoiceTotals($invoice);
 
-            $invoice->update([
+            // System recalculation must keep commercial data immutable while still
+            // allowing derived totals and balances to stay in sync after allocations.
+            $invoice->forceFill([
                 'subtotal_cents' => $totals['subtotal_cents'],
                 'discount_total_cents' => $totals['discount_total_cents'],
                 'invoice_discount_cents' => $totals['invoice_discount_cents'],
@@ -963,7 +965,7 @@ class ArInvoiceService
                 'total_cents' => $totals['total_cents'],
                 'paid_total_cents' => $totals['paid_total_cents'],
                 'balance_cents' => $totals['balance_cents'],
-            ]);
+            ])->saveQuietly();
 
             return $invoice->fresh();
         });
@@ -978,6 +980,7 @@ class ArInvoiceService
         $discount = 0;
         $tax = 0;
         $total = 0;
+        $hasItems = $invoice->items->isNotEmpty();
 
         foreach ($invoice->items as $item) {
             $qtyMilli = MinorUnits::parseQtyMilli((string) $item->qty);
@@ -988,15 +991,30 @@ class ArInvoiceService
             $total += (int) $item->line_total_cents;
         }
 
+        if (! $hasItems) {
+            $subtotal = (int) ($invoice->subtotal_cents ?? 0);
+            $discount = max(
+                0,
+                (int) ($invoice->discount_total_cents ?? 0) - (int) ($invoice->invoice_discount_cents ?? 0)
+            );
+            $tax = (int) ($invoice->tax_total_cents ?? 0);
+            $total = (int) ($invoice->total_cents ?? 0);
+        }
+
         $resolvedDiscountType = $discountType ?? (string) ($invoice->invoice_discount_type ?? 'fixed');
         $resolvedDiscountValue = max(0, $discountValue ?? (int) ($invoice->invoice_discount_value ?? 0));
 
-        $invoiceDiscount = $resolvedDiscountType === 'percent'
-            ? MinorUnits::percentBps(max(0, $subtotal - $discount), $resolvedDiscountValue)
-            : $resolvedDiscountValue;
+        $invoiceDiscount = $hasItems
+            ? ($resolvedDiscountType === 'percent'
+                ? MinorUnits::percentBps(max(0, $subtotal - $discount), $resolvedDiscountValue)
+                : $resolvedDiscountValue)
+            : (int) ($invoice->invoice_discount_cents ?? 0);
 
-        $invoiceDiscount = max(0, min($invoiceDiscount, $total));
-        $total = $total - $invoiceDiscount;
+        $invoiceDiscount = max(0, min($invoiceDiscount, abs($total)));
+
+        if ($hasItems) {
+            $total = $total - $invoiceDiscount;
+        }
 
         if ($invoice->isCreditNote()) {
             $total = min(0, $total);

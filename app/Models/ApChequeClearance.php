@@ -44,6 +44,13 @@ class ApChequeClearance extends Model
                 }
             }
         });
+
+        static::deleting(function (ApChequeClearance $model) {
+            \Illuminate\Support\Facades\Log::error('[ApChequeClearance] Hard-delete blocked on clearance #'.$model->id.'. Void instead.');
+            throw ValidationException::withMessages([
+                'clearance' => __('AP cheque clearances cannot be hard-deleted. Void them instead.'),
+            ]);
+        });
     }
 
     public function apPayment(): BelongsTo

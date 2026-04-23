@@ -41,13 +41,13 @@ class LedgerAccountMappingService
                 'label'       => 'AR cheque clearing',
                 'description' => 'AR customer cheques received, not yet deposited.',
                 'required'    => true,
-                'fallback'    => 'ar_cheque_clearing',
+                'fallback'    => 'cheque_clearing',
             ],
             'issued_cheques_clearing' => [
                 'label'       => 'Issued cheques clearing',
                 'description' => 'Supplier cheques issued but not yet presented to bank.',
                 'required'    => true,
-                'fallback'    => 'issued_cheques_clearing',
+                'fallback'    => 'cheque_clearing',
             ],
         ];
     }
@@ -151,7 +151,10 @@ class LedgerAccountMappingService
         return $this->defaultAccountForKey($companyId, $normalizedKey);
     }
 
-    public function resolveSettlementAccountId(string $method, ?int $companyId = null, ?int $bankAccountId = null): ?int
+    /**
+     * @param  string  $module  'ar', 'ap', or 'generic'
+     */
+    public function resolveSettlementAccountId(string $method, ?int $companyId = null, ?int $bankAccountId = null, string $module = 'generic'): ?int
     {
         $normalized = $this->normalizePaymentMethod($method);
 
@@ -166,10 +169,16 @@ class LedgerAccountMappingService
             return (int) $bankAccount->ledger_account_id;
         }
 
+        $chequeKey = match ($module) {
+            'ar' => 'ar_cheque_clearing',
+            'ap' => 'issued_cheques_clearing',
+            default => 'cheque_clearing',
+        };
+
         return match ($normalized) {
             'cash' => $this->resolveAccountId('cash', $companyId),
             'card' => $this->resolveAccountId('card_clearing', $companyId),
-            'cheque' => $this->resolveAccountId('cheque_clearing', $companyId),
+            'cheque' => $this->resolveAccountId($chequeKey, $companyId),
             'petty_cash' => $this->resolveAccountId('petty_cash_asset', $companyId),
             default => $this->resolveAccountId('other_clearing', $companyId),
         };

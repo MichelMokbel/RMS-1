@@ -37,6 +37,7 @@ class ApPayment extends Model
         'posted_by',
         'voided_at',
         'voided_by',
+        'cheque_cleared_at',
     ];
 
     protected $casts = [
@@ -52,6 +53,7 @@ class ApPayment extends Model
         'created_at' => 'datetime',
         'posted_at' => 'datetime',
         'voided_at' => 'datetime',
+        'cheque_cleared_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -61,7 +63,7 @@ class ApPayment extends Model
                 return;
             }
 
-            $allowed = ['voided_at', 'voided_by'];
+            $allowed = ['voided_at', 'voided_by', 'cheque_cleared_at'];
             foreach (array_keys($payment->getDirty()) as $field) {
                 if (! in_array($field, $allowed, true)) {
                     throw ValidationException::withMessages([
