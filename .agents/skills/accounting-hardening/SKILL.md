@@ -123,6 +123,11 @@ List exact invariants and tests to verify.
 - Never leave posting idempotency ambiguous if repeated execution is possible.
 - Never leave tax logic implied.
 - Never leave account mapping implied.
+- Never modify historical migrations by default.
+- Assume old migrations were already executed.
+- Use new forward-only migrations for schema corrections.
+- If migration history seems wrong, report it first instead of rewriting it.
+- Prefer additive migrations over destructive migration edits.
 
 ## Audit checklist for existing modules
 When reviewing an existing accounting module, inspect:

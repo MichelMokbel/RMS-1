@@ -1,20 +1,20 @@
 <?php
 
+use App\Http\Controllers\Help\HelpBotController;
 use App\Models\InventoryItem;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
 use App\Models\User;
-use App\Http\Controllers\Help\HelpBotController;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
-use Livewire\Volt\Volt;
 use Laravel\Fortify\Features;
+use Livewire\Volt\Volt;
 
 Route::get('/', function () {
     if (Auth::check()) {
@@ -94,12 +94,14 @@ Route::get('/tools/menu-items/import-arabic-names', function (Request $request) 
 
             if ($id <= 0 || $arabic === '') {
                 $skipped++;
+
                 continue;
             }
 
             $exists = DB::table('menu_items')->where('id', $id)->exists();
             if (! $exists) {
                 $notFound++;
+
                 continue;
             }
 
@@ -511,7 +513,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operation
         return \App\Support\Reports\PdfExport::download(
             'reports.company-food-employees-print',
             $reportData,
-            'company-food-employees-' . $project->slug . '.pdf',
+            'company-food-employees-'.$project->slug.'.pdf',
             'a4',
             'landscape'
         );
@@ -529,7 +531,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operation
         return \App\Support\Reports\PdfExport::download(
             'reports.company-food-kitchen-prep-print',
             $reportData,
-            'company-food-kitchen-prep-' . $project->slug . '.pdf',
+            'company-food-kitchen-prep-'.$project->slug.'.pdf',
             'a4',
             'portrait'
         );
@@ -563,7 +565,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operation
                 ]);
             }
             fclose($out);
-        }, 'company-food-orders-' . $project->slug . '.csv', [
+        }, 'company-food-orders-'.$project->slug.'.csv', [
             'Content-Type' => 'text/csv',
         ]);
     })->name('projects.export-csv');
@@ -785,7 +787,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|c
             ->with(['items' => function ($q) {
                 $q->orderBy('sort_order')
                     ->orderBy('id')
-                    ->select(['id','order_id','description_snapshot','quantity','unit_price','discount_amount','line_total','sort_order']);
+                    ->select(['id', 'order_id', 'description_snapshot', 'quantity', 'unit_price', 'discount_amount', 'line_total', 'sort_order']);
             }])
             ->when($status !== 'all', fn ($q) => $q->where('status', $status))
             ->when($source, fn ($q) => $q->where('source', $source))
@@ -884,14 +886,14 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|c
         }
         $statuses = array_values(array_unique($statuses));
         if (empty($statuses)) {
-            $statuses = ['Confirmed','InProduction','Ready'];
+            $statuses = ['Confirmed', 'InProduction', 'Ready'];
         }
 
         $orders = Order::query()
             ->select([
-                'id','order_number','branch_id','source','is_daily_dish','type','status',
-                'customer_name_snapshot','customer_phone_snapshot','delivery_address_snapshot',
-                'scheduled_date','scheduled_time','notes','total_amount',
+                'id', 'order_number', 'branch_id', 'source', 'is_daily_dish', 'type', 'status',
+                'customer_name_snapshot', 'customer_phone_snapshot', 'delivery_address_snapshot',
+                'scheduled_date', 'scheduled_time', 'notes', 'total_amount',
             ])
             ->whereDate('scheduled_date', $date)
             ->whereIn('status', $statuses)
@@ -910,7 +912,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|c
             ->with(['items' => function ($q) {
                 $q->orderBy('sort_order')
                     ->orderBy('id')
-                    ->select(['id','order_id','description_snapshot','quantity','status','sort_order']);
+                    ->select(['id', 'order_id', 'description_snapshot', 'quantity', 'status', 'sort_order']);
             }])
             ->orderBy('status')
             ->orderByRaw('CASE WHEN scheduled_time IS NULL THEN 1 ELSE 0 END')
@@ -940,6 +942,38 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|c
     Volt::route('orders/create', 'orders.create')->name('orders.create');
     Volt::route('orders/{order}/edit', 'orders.edit')->name('orders.edit');
 
+    // Deprecated operational routes - redirect to new hubs
+    Route::get('orders/daily-dish', function () {
+        $branch = (int) request()->integer('branch', 1);
+        $date = (string) request()->input('date', now()->toDateString());
+
+        return redirect()->route('daily-dish.ops.day', [$branch, $date]);
+    })->name('orders.daily-dish');
+
+    Route::get('orders/kitchen', function () {
+        $branch = (int) request()->integer('branch', 1);
+        $date = (string) request()->input('date', now()->toDateString());
+
+        return redirect()->route('kitchen.ops', [$branch, $date]);
+    })->name('orders.kitchen');
+
+    Route::get('orders/kitchen/cards', function () {
+        $branch = (int) request()->integer('branch', 1);
+        $date = (string) request()->input('date', now()->toDateString());
+
+        return redirect()->route('kitchen.ops', [$branch, $date]);
+    })->name('orders.kitchen.cards');
+
+    Route::get('orders/items', function () {
+        $branch = (int) request()->integer('branch', 1);
+        $date = (string) request()->input('date', now()->toDateString());
+
+        return redirect()->route('kitchen.ops', [$branch, $date]);
+    })->name('orders.items');
+});
+
+// ── Pastry Orders (accessible by pastry-user role in addition to the standard roles) ──
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|cashier|pastry-user|orders.access|operations.access'])->group(function () {
     Volt::route('pastry-orders', 'pastry-orders.index')->name('pastry-orders.index');
     Route::get('pastry-orders/print/all', [\App\Http\Controllers\Reports\PastryOrdersReportController::class, 'printAll'])
         ->name('pastry-orders.print-all');
@@ -966,7 +1000,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|c
             ->where('is_active', 1)
             ->where(function ($q) use ($term) {
                 $q->where('name', 'like', '%'.$term.'%')
-                  ->orWhere('code', 'like', '%'.$term.'%');
+                    ->orWhere('code', 'like', '%'.$term.'%');
             })
             ->orderBy('name')
             ->select(['id', 'name', 'code', 'selling_price_per_unit'])
@@ -975,12 +1009,13 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|c
             ->map(function (\App\Models\MenuItem $item) {
                 $price = $item->selling_price_per_unit !== null ? (float) $item->selling_price_per_unit : null;
                 $label = trim(($item->code ? $item->code.' · ' : '').$item->name);
+
                 return [
-                    'id'              => $item->id,
-                    'name'            => $item->name,
-                    'code'            => $item->code,
-                    'label'           => $label,
-                    'price'           => $price,
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'code' => $item->code,
+                    'label' => $label,
+                    'price' => $price,
                     'price_formatted' => $price !== null ? number_format($price, 3, '.', '') : null,
                 ];
             })
@@ -988,32 +1023,6 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|c
 
         return response()->json($items);
     })->name('pastry-orders.menu-items.search');
-
-    // Deprecated operational routes - redirect to new hubs
-    Route::get('orders/daily-dish', function () {
-        $branch = (int) request()->integer('branch', 1);
-        $date = (string) request()->input('date', now()->toDateString());
-        return redirect()->route('daily-dish.ops.day', [$branch, $date]);
-    })->name('orders.daily-dish');
-
-    Route::get('orders/kitchen', function () {
-        $branch = (int) request()->integer('branch', 1);
-        $date = (string) request()->input('date', now()->toDateString());
-        return redirect()->route('kitchen.ops', [$branch, $date]);
-    })->name('orders.kitchen');
-
-    Route::get('orders/kitchen/cards', function () {
-        $branch = (int) request()->integer('branch', 1);
-        $date = (string) request()->input('date', now()->toDateString());
-        return redirect()->route('kitchen.ops', [$branch, $date]);
-    })->name('orders.kitchen.cards');
-
-
-    Route::get('orders/items', function () {
-        $branch = (int) request()->integer('branch', 1);
-        $date = (string) request()->input('date', now()->toDateString());
-        return redirect()->route('kitchen.ops', [$branch, $date]);
-    })->name('orders.items');
 });
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|operations.access'])->group(function () {
@@ -1191,10 +1200,12 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|o
     Volt::route('sales/{sale}', 'sales.show')->name('sales.show');
     Route::get('sales/{sale}/receipt', function (\App\Models\Sale $sale) {
         $sale->load(['items', 'paymentAllocations.payment']);
+
         return view('sales.receipt', ['sale' => $sale]);
     })->name('sales.receipt');
     Route::get('sales/{sale}/kot', function (\App\Models\Sale $sale) {
         $sale->load(['items']);
+
         return view('sales.kot', ['sale' => $sale]);
     })->name('sales.kot');
 });
@@ -1206,6 +1217,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|receivabl
     Volt::route('receivables/payments/{payment}', 'receivables.payments.show')->name('receivables.payments.show');
     Route::get('receivables/payments/{payment}/print', function (\App\Models\Payment $payment) {
         $payment->load(['customer', 'allocations.allocatable']);
+
         return view('receivables.payment-receipt', ['payment' => $payment]);
     })->name('receivables.payments.print');
     Route::delete('receivables/payments/{payment}', \App\Http\Controllers\Receivables\PaymentDestroyController::class)
@@ -1221,6 +1233,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|receivabl
     Volt::route('invoices/{invoice}', 'receivables.invoices.show')->name('invoices.show');
     Route::get('invoices/{invoice}/print', function (\App\Models\ArInvoice $invoice) {
         $invoice->load(['items', 'customer', 'paymentAllocations.payment']);
+
         return view('receivables.invoice-print', ['invoice' => $invoice]);
     })->name('invoices.print');
 });
@@ -1372,3 +1385,48 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Route::get('subscription-details/print', [\App\Http\Controllers\Reports\SubscriptionDetailsReportController::class, 'print'])->name('subscription-details.print');
     Route::get('subscription-details/csv', [\App\Http\Controllers\Reports\SubscriptionDetailsReportController::class, 'csv'])->name('subscription-details.csv');
 });
+
+// ─── Marketing Module ────────────────────────────────────────────────────────
+
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|marketing.access'])
+    ->prefix('marketing')
+    ->name('marketing.')
+    ->group(function () {
+        Volt::route('dashboard', 'marketing.dashboard')->name('dashboard');
+        Route::get('campaigns/export.csv', [\App\Http\Controllers\Marketing\MarketingReportExportController::class, 'csv'])
+            ->name('campaigns.export');
+        Volt::route('campaigns', 'marketing.campaigns.index')->name('campaigns.index');
+        Volt::route('campaigns/{campaign}', 'marketing.campaigns.show')->name('campaigns.show');
+        Volt::route('sync-logs', 'marketing.sync-logs')->name('sync-logs.index');
+        Volt::route('assets', 'marketing.assets.index')->name('assets.index');
+        Volt::route('assets/{asset}', 'marketing.assets.show')->name('assets.show');
+        Volt::route('briefs', 'marketing.briefs.index')->name('briefs.index');
+        Volt::route('briefs/create', 'marketing.briefs.create')->name('briefs.create');
+        Volt::route('briefs/{brief}', 'marketing.briefs.show')->name('briefs.show');
+
+        // S3 presign — authenticated JSON endpoint
+        Route::post('assets/presign', [\App\Http\Controllers\Marketing\MarketingAssetController::class, 'presign'])
+            ->name('assets.presign');
+        Route::post('assets/complete', [\App\Http\Controllers\Marketing\MarketingAssetController::class, 'complete'])
+            ->name('assets.complete');
+    });
+
+Route::middleware(['auth', 'active', 'role:admin', 'ensure.admin'])
+    ->prefix('marketing')
+    ->name('marketing.')
+    ->group(function () {
+        Volt::route('settings', 'marketing.settings')->name('settings');
+        Route::get('google/oauth/redirect', [\App\Http\Controllers\Marketing\GoogleAdsOAuthController::class, 'redirect'])
+            ->name('google.oauth.redirect');
+        Route::get('google/oauth/callback', [\App\Http\Controllers\Marketing\GoogleAdsOAuthController::class, 'callback'])
+            ->name('google.oauth.callback');
+    });
+
+Route::middleware(['auth', 'active', 'role_or_permission:admin|marketing.manage'])
+    ->prefix('marketing')
+    ->name('marketing.')
+    ->group(function () {
+        // On-demand sync trigger
+        Route::post('sync/trigger', [\App\Http\Controllers\Marketing\MarketingAssetController::class, 'triggerSync'])
+            ->name('sync.trigger');
+    });

@@ -92,13 +92,18 @@ class SyncSubscriptionMealsOnInvoiceIssued
         DB::transaction(function () use ($subId, $count) {
             $sub = MealSubscription::lockForUpdate()->find($subId);
 
-            if (! $sub || ! $sub->uses_invoice_tracking || $sub->plan_meals_total === null) {
+            if (! $sub || ! $sub->uses_invoice_tracking) {
+                return;
+            }
+
+            // Do not count meals for subscriptions whose end_date has already passed.
+            if ($sub->end_date && now()->toDateString() > $sub->end_date->toDateString()) {
                 return;
             }
 
             $sub->meals_used = (int) ($sub->meals_used ?? 0) + $count;
 
-            if ($sub->meals_used >= $sub->plan_meals_total) {
+            if ($sub->plan_meals_total !== null && $sub->meals_used >= $sub->plan_meals_total) {
                 $sub->status   = 'expired';
                 $sub->end_date = $sub->end_date ?? now()->toDateString();
             }

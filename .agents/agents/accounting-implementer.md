@@ -29,6 +29,17 @@ Prefer:
 4. consistency with repo architecture
 5. minimal safe change set
 
+## Migration discipline
+
+When database changes are required:
+
+- inspect existing schema first
+- do not edit historical migrations
+- create a new migration for changes
+- preserve production upgrade path
+- avoid destructive changes unless explicitly approved
+- if backfill is needed, create migration + data patch plan
+
 ## Required output
 Return your implementation summary in this structure:
 

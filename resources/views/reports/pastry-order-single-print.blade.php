@@ -20,28 +20,23 @@
             align-items: start;
         }
 
-        /* ── Left column: image ── */
+        /* ── Left column: images ── */
         .col-image {
             display: flex;
             flex-direction: column;
             gap: 4mm;
-            height: 100%;
         }
         .image-wrap {
             border: 1px solid #d1d5db;
             border-radius: 10px;
-            overflow: hidden;
-            flex: 1;
+            background: #f9fafb;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #f9fafb;
-            max-height: 155mm;
         }
         .image-wrap img {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
+            max-width: 100%;
+            height: auto;
             display: block;
         }
         .no-image {
@@ -92,21 +87,32 @@
 
     <div class="sheet">
 
-        {{-- Left: image --}}
+        {{-- Left: images --}}
         <div class="col-image">
-            <div class="image-wrap">
-                @if (!empty($images) && !empty($images[0]['url']))
-                    <img src="{{ $images[0]['url'] }}" alt="Order image" />
-                @else
-                    @php
-                        $pParts    = preg_split('/\s+/', trim($order->customer_name_snapshot ?? '?'));
-                        $pInitials = strtoupper(mb_substr($pParts[0], 0, 1) . (count($pParts) > 1 ? mb_substr(end($pParts), 0, 1) : ''));
-                    @endphp
+            @php
+                $imgList   = array_values(array_filter($images ?? [], fn ($i) => !empty($i['url'])));
+                $imgCount  = count($imgList);
+                // A4 landscape minus margins = 186mm; distribute evenly with 4mm gaps
+                $maxImgMm  = $imgCount > 0 ? floor((186 - ($imgCount - 1) * 4) / $imgCount) : 155;
+            @endphp
+            @if ($imgCount > 0)
+                @foreach ($imgList as $img)
+                    <div class="image-wrap">
+                        <img src="{{ $img['url'] }}" alt="Order image"
+                             style="max-height: {{ $maxImgMm }}mm;" />
+                    </div>
+                @endforeach
+            @else
+                @php
+                    $pParts    = preg_split('/\s+/', trim($order->customer_name_snapshot ?? '?'));
+                    $pInitials = strtoupper(mb_substr($pParts[0], 0, 1) . (count($pParts) > 1 ? mb_substr(end($pParts), 0, 1) : ''));
+                @endphp
+                <div class="image-wrap" style="min-height: 80mm;">
                     <div class="no-image">
                         <span class="no-image-initials">{{ $pInitials }}</span>
                     </div>
-                @endif
-            </div>
+                </div>
+            @endif
         </div>
 
         {{-- Right: order info --}}
@@ -115,6 +121,9 @@
             {{-- Header --}}
             <div>
                 <p class="order-number">{{ $order->order_number }}</p>
+                @if ($order->sales_order_number)
+                    <p style="font-size:13px;color:#6b7280;margin:0 0 1mm;">{{ __('Sales Order #') }}: {{ $order->sales_order_number }}</p>
+                @endif
                 <p class="scheduled">{{ $order->scheduled_date?->format('D, d M Y') ?? '—' }}{{ $order->scheduled_time ? ' · ' . $order->scheduled_time : '' }}</p>
                 <span class="status-badge">{{ $order->status ?? '—' }}</span>
             </div>

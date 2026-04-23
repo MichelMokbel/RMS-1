@@ -28,40 +28,42 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string  $search         = '';
 
     // ── Create drawer ──────────────────────────────────────────────────────────
-    public bool    $showCreateDrawer   = false;
-    public int     $c_branch_id        = 1;
-    public string  $c_status           = 'Draft';
-    public string  $c_type             = 'Pickup';
-    public ?int    $c_customer_id      = null;
-    public string  $c_customer_search  = '';
-    public ?string $c_customer_name    = null;
-    public ?string $c_customer_phone   = null;
-    public ?string $c_delivery_address = null;
-    public ?string $c_scheduled_date   = null;
-    public ?string $c_scheduled_time   = null;
-    public ?string $c_notes            = null;
-    public float   $c_order_discount   = 0.0;
-    public array   $c_items            = [];
-    public array   $c_item_search      = [];
+    public bool    $showCreateDrawer       = false;
+    public int     $c_branch_id            = 1;
+    public string  $c_status               = 'Draft';
+    public string  $c_type                 = 'Pickup';
+    public ?int    $c_customer_id          = null;
+    public string  $c_customer_search      = '';
+    public ?string $c_customer_name        = null;
+    public ?string $c_customer_phone       = null;
+    public ?string $c_delivery_address     = null;
+    public ?string $c_scheduled_date       = null;
+    public ?string $c_scheduled_time       = null;
+    public ?string $c_notes                = null;
+    public ?string $c_sales_order_number   = null;
+    public float   $c_order_discount       = 0.0;
+    public array   $c_items                = [];
+    public array   $c_item_search          = [];
     /** @var \Livewire\Features\SupportFileUploads\TemporaryUploadedFile[] */
     public $c_images = [];
 
     // ── Edit drawer ────────────────────────────────────────────────────────────
-    public bool    $showEditDrawer      = false;
-    public ?int    $e_id                = null;
-    public string  $e_order_number      = '';
-    public int     $e_branch_id         = 1;
-    public string  $e_status            = 'Draft';
-    public string  $e_type              = 'Pickup';
-    public ?int    $e_customer_id       = null;
-    public string  $e_customer_search   = '';
-    public ?string $e_customer_name     = null;
-    public ?string $e_customer_phone    = null;
-    public ?string $e_delivery_address  = null;
-    public ?string $e_scheduled_date    = null;
-    public ?string $e_scheduled_time    = null;
-    public ?string $e_notes             = null;
-    public float   $e_order_discount    = 0.0;
+    public bool    $showEditDrawer          = false;
+    public ?int    $e_id                    = null;
+    public string  $e_order_number          = '';
+    public int     $e_branch_id             = 1;
+    public string  $e_status                = 'Draft';
+    public string  $e_type                  = 'Pickup';
+    public ?int    $e_customer_id           = null;
+    public string  $e_customer_search       = '';
+    public ?string $e_customer_name         = null;
+    public ?string $e_customer_phone        = null;
+    public ?string $e_delivery_address      = null;
+    public ?string $e_scheduled_date        = null;
+    public ?string $e_scheduled_time        = null;
+    public ?string $e_notes                 = null;
+    public ?string $e_sales_order_number    = null;
+    public float   $e_order_discount        = 0.0;
     public array   $e_items             = [];
     public array   $e_item_search       = [];
     /** @var \Livewire\Features\SupportFileUploads\TemporaryUploadedFile[] */
@@ -71,13 +73,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool  $e_is_invoiced      = false;
 
     // ── View drawer ────────────────────────────────────────────────────────────
-    public bool    $showViewDrawer   = false;
-    public ?int    $v_order_id       = null;
-    public string  $v_order_number   = '';
-    public string  $v_customer_name  = '';
-    public ?string $v_customer_phone = null;
-    public string  $v_status         = '';
-    public ?string $v_scheduled_date = null;
+    public bool    $showViewDrawer          = false;
+    public ?int    $v_order_id              = null;
+    public string  $v_order_number          = '';
+    public ?string $v_sales_order_number    = null;
+    public string  $v_customer_name         = '';
+    public ?string $v_customer_phone        = null;
+    public string  $v_status                = '';
+    public ?string $v_scheduled_date        = null;
     public string  $v_type           = '';
     public ?string $v_notes          = null;
     public array   $v_items          = [];
@@ -122,21 +125,22 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function openCreateDrawer(): void
     {
-        $this->c_branch_id        = 1;
-        $this->c_status           = 'Draft';
-        $this->c_type             = 'Pickup';
-        $this->c_customer_id      = null;
-        $this->c_customer_search  = '';
-        $this->c_customer_name    = null;
-        $this->c_customer_phone   = null;
-        $this->c_delivery_address = null;
-        $this->c_scheduled_date   = now()->toDateString();
-        $this->c_scheduled_time   = null;
-        $this->c_notes            = null;
-        $this->c_order_discount   = 0.0;
-        $this->c_items            = [];
-        $this->c_item_search      = [];
-        $this->c_images           = [];
+        $this->c_branch_id            = 1;
+        $this->c_status               = 'Draft';
+        $this->c_type                 = 'Pickup';
+        $this->c_customer_id          = null;
+        $this->c_customer_search      = '';
+        $this->c_customer_name        = null;
+        $this->c_customer_phone       = null;
+        $this->c_delivery_address     = null;
+        $this->c_scheduled_date       = now()->toDateString();
+        $this->c_scheduled_time       = null;
+        $this->c_notes                = null;
+        $this->c_sales_order_number   = null;
+        $this->c_order_discount       = 0.0;
+        $this->c_items                = [];
+        $this->c_item_search          = [];
+        $this->c_images               = [];
         $this->addCreateItem();
         $this->resetValidation();
         $this->showCreateDrawer = true;
@@ -150,7 +154,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function addCreateItem(): void
     {
-        $this->c_items[]       = ['menu_item_id' => null, 'quantity' => 1, 'discount_amount' => 0, 'sort_order' => count($this->c_items)];
+        $this->c_items[]       = ['menu_item_id' => null, 'quantity' => 1, 'unit_price' => null, 'discount_amount' => 0, 'sort_order' => count($this->c_items)];
         $this->c_item_search[] = '';
     }
 
@@ -161,11 +165,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->c_item_search = array_values($this->c_item_search);
     }
 
-    public function selectCreateMenuItem(int $i, int $menuItemId, string $label): void
+    public function selectCreateMenuItem(int $i, int $menuItemId, string $label, ?float $price = null): void
     {
         if (! array_key_exists($i, $this->c_items)) return;
         $this->c_items[$i]['menu_item_id']    = $menuItemId;
         $this->c_items[$i]['quantity']        ??= 1;
+        $this->c_items[$i]['unit_price']      = $price;
         $this->c_items[$i]['discount_amount'] ??= 0;
         $this->c_items[$i]['sort_order']      ??= $i;
         $this->c_item_search[$i]              = $label;
@@ -177,6 +182,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         if (! array_key_exists($i, $this->c_items)) return;
         $this->c_items[$i]['menu_item_id'] = null;
+        $this->c_items[$i]['unit_price']   = null;
         $this->c_item_search[$i]           = '';
     }
 
@@ -201,6 +207,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function saveCreate(PastryOrderCreateService $service): void
     {
+        $this->authorize('pastry-orders.manage');
+
         $items = collect($this->c_items)
             ->filter(fn ($r) => ! empty($r['menu_item_id']))
             ->values()
@@ -218,6 +226,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'scheduled_date'            => $this->c_scheduled_date,
                 'scheduled_time'            => $this->c_scheduled_time,
                 'notes'                     => $this->c_notes,
+                'sales_order_number'        => $this->c_sales_order_number,
                 'order_discount_amount'     => $this->c_order_discount,
                 'items'                     => $items,
             ], [
@@ -231,10 +240,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'scheduled_date'            => ['nullable', 'date'],
                 'scheduled_time'            => ['nullable'],
                 'notes'                     => ['nullable', 'string'],
+                'sales_order_number'        => ['nullable', 'string', 'max:100'],
                 'order_discount_amount'     => ['nullable', 'numeric', 'min:0'],
                 'items'                     => ['required', 'array', 'min:1'],
                 'items.*.menu_item_id'      => ['required', 'integer'],
                 'items.*.quantity'          => ['required', 'numeric', 'min:0.001'],
+                'items.*.unit_price'        => ['nullable', 'numeric', 'min:0'],
                 'items.*.discount_amount'   => ['nullable', 'numeric', 'min:0'],
             ])->validate();
         } catch (ValidationException $e) {
@@ -264,19 +275,20 @@ new #[Layout('components.layouts.app')] class extends Component {
         $order = PastryOrder::with(['items', 'images'])->find($orderId);
         if (! $order) return;
 
-        $this->e_id               = $order->id;
-        $this->e_order_number     = $order->order_number;
-        $this->e_branch_id        = (int) ($order->branch_id ?? 1);
-        $this->e_status           = $order->status;
-        $this->e_type             = $order->type;
-        $this->e_customer_id      = $order->customer_id;
-        $this->e_customer_name    = $order->customer_name_snapshot;
-        $this->e_customer_phone   = $order->customer_phone_snapshot;
-        $this->e_delivery_address = $order->delivery_address_snapshot;
-        $this->e_scheduled_date   = $order->scheduled_date?->format('Y-m-d');
-        $this->e_scheduled_time   = $order->scheduled_time ?? null;
-        $this->e_notes            = $order->notes;
-        $this->e_order_discount   = (float) $order->order_discount_amount;
+        $this->e_id                   = $order->id;
+        $this->e_order_number         = $order->order_number;
+        $this->e_branch_id            = (int) ($order->branch_id ?? 1);
+        $this->e_status               = $order->status;
+        $this->e_type                 = $order->type;
+        $this->e_customer_id          = $order->customer_id;
+        $this->e_customer_name        = $order->customer_name_snapshot;
+        $this->e_customer_phone       = $order->customer_phone_snapshot;
+        $this->e_delivery_address     = $order->delivery_address_snapshot;
+        $this->e_scheduled_date       = $order->scheduled_date?->format('Y-m-d');
+        $this->e_scheduled_time       = $order->scheduled_time ?? null;
+        $this->e_notes                = $order->notes;
+        $this->e_sales_order_number   = $order->sales_order_number;
+        $this->e_order_discount       = (float) $order->order_discount_amount;
         $this->e_is_invoiced      = $order->isInvoiced();
         $this->e_new_images       = [];
         $this->e_remove_image_ids = [];
@@ -289,7 +301,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->e_items       = [];
         $this->e_item_search = [];
         foreach ($order->items->sortBy('sort_order') as $item) {
-            $this->e_items[]       = ['menu_item_id' => $item->menu_item_id, 'quantity' => (float) $item->quantity, 'discount_amount' => (float) $item->discount_amount, 'sort_order' => $item->sort_order];
+            $this->e_items[]       = ['menu_item_id' => $item->menu_item_id, 'quantity' => (float) $item->quantity, 'unit_price' => (float) $item->unit_price, 'discount_amount' => (float) $item->discount_amount, 'sort_order' => $item->sort_order];
             $this->e_item_search[] = $item->description_snapshot;
         }
         $this->addEditItem();
@@ -306,7 +318,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function addEditItem(): void
     {
-        $this->e_items[]       = ['menu_item_id' => null, 'quantity' => 1, 'discount_amount' => 0, 'sort_order' => count($this->e_items)];
+        $this->e_items[]       = ['menu_item_id' => null, 'quantity' => 1, 'unit_price' => null, 'discount_amount' => 0, 'sort_order' => count($this->e_items)];
         $this->e_item_search[] = '';
     }
 
@@ -317,11 +329,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->e_item_search = array_values($this->e_item_search);
     }
 
-    public function selectEditMenuItem(int $i, int $menuItemId, string $label): void
+    public function selectEditMenuItem(int $i, int $menuItemId, string $label, ?float $price = null): void
     {
         if (! array_key_exists($i, $this->e_items)) return;
         $this->e_items[$i]['menu_item_id']    = $menuItemId;
         $this->e_items[$i]['quantity']        ??= 1;
+        $this->e_items[$i]['unit_price']      = $price;
         $this->e_items[$i]['discount_amount'] ??= 0;
         $this->e_items[$i]['sort_order']      ??= $i;
         $this->e_item_search[$i]              = $label;
@@ -333,6 +346,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         if (! array_key_exists($i, $this->e_items)) return;
         $this->e_items[$i]['menu_item_id'] = null;
+        $this->e_items[$i]['unit_price']   = null;
         $this->e_item_search[$i]           = '';
     }
 
@@ -371,6 +385,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function saveEdit(PastryOrderUpdateService $service): void
     {
+        $this->authorize('pastry-orders.manage');
+
         if (! $this->e_id) return;
         $order = PastryOrder::find($this->e_id);
         if (! $order) {
@@ -396,6 +412,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'scheduled_date'            => $this->e_scheduled_date,
                 'scheduled_time'            => $this->e_scheduled_time,
                 'notes'                     => $this->e_notes,
+                'sales_order_number'        => $this->e_sales_order_number,
                 'order_discount_amount'     => $this->e_order_discount,
                 'items'                     => $items,
             ], [
@@ -409,10 +426,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'scheduled_date'            => ['nullable', 'date'],
                 'scheduled_time'            => ['nullable'],
                 'notes'                     => ['nullable', 'string'],
+                'sales_order_number'        => ['nullable', 'string', 'max:100'],
                 'order_discount_amount'     => ['nullable', 'numeric', 'min:0'],
                 'items'                     => ['required', 'array', 'min:1'],
                 'items.*.menu_item_id'      => ['required', 'integer'],
                 'items.*.quantity'          => ['required', 'numeric', 'min:0.001'],
+                'items.*.unit_price'        => ['nullable', 'numeric', 'min:0'],
                 'items.*.discount_amount'   => ['nullable', 'numeric', 'min:0'],
             ])->validate();
         } catch (ValidationException $e) {
@@ -452,10 +471,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         $order = PastryOrder::with(['items', 'images'])->find($orderId);
         if (! $order) return;
 
-        $this->v_order_id       = $order->id;
-        $this->v_order_number   = $order->order_number;
-        $this->v_customer_name  = $order->customer_name_snapshot ?? '';
-        $this->v_customer_phone = $order->customer_phone_snapshot;
+        $this->v_order_id             = $order->id;
+        $this->v_order_number         = $order->order_number;
+        $this->v_sales_order_number   = $order->sales_order_number;
+        $this->v_customer_name        = $order->customer_name_snapshot ?? '';
+        $this->v_customer_phone       = $order->customer_phone_snapshot;
         $this->v_status         = $order->status;
         $this->v_scheduled_date = $order->scheduled_date?->format('Y-m-d');
         $this->v_type           = $order->type;
@@ -523,9 +543,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Pastry Orders') }}</h1>
         <div class="flex flex-wrap gap-2">
+            @can('pastry-orders.manage')
             <flux:button type="button" wire:click="openCreateDrawer" variant="primary" class="min-h-[44px] touch-manipulation">
                 {{ __('New Pastry Order') }}
             </flux:button>
+            @endcan
             <flux:button :href="route('pastry-orders.print-all', ['status' => $status, 'type' => $type, 'branch_id' => $branch_id, 'scheduled_date' => $scheduled_date, 'search' => $search])" target="_blank" variant="ghost">
                 {{ __('Print All') }}
             </flux:button>
@@ -616,6 +638,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <div><p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Branch') }}</p><p class="text-neutral-800 dark:text-neutral-100">{{ $order->branch_id ?? '—' }}</p></div>
                     <div><p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Items') }}</p><p class="text-neutral-800 dark:text-neutral-100">{{ $order->items_count }}</p></div>
                     <div><p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Total') }}</p><p class="font-semibold text-neutral-900 dark:text-neutral-100">{{ number_format((float)$order->total_amount, 3) }}</p></div>
+                    @if ($order->sales_order_number)
+                        <div class="col-span-2"><p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Sales Order #') }}</p><p class="text-neutral-800 dark:text-neutral-100">{{ $order->sales_order_number }}</p></div>
+                    @endif
                 </div>
                 <p class="text-xs text-neutral-500 dark:text-neutral-400">
                     {{ __('Scheduled') }}: {{ $order->scheduled_date?->format('Y-m-d') ?? '—' }}{{ $order->scheduled_time ? ' · '.$order->scheduled_time : '' }}
@@ -640,10 +665,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <flux:button size="sm" type="button" variant="primary" wire:click="quickStatus({{ $order->id }},'Delivered')" class="touch-target">{{ __('Mark Delivered') }}</flux:button>
                         @endif
                         <flux:button size="sm" type="button" wire:click="openViewDrawer({{ $order->id }})" class="touch-target">{{ __('View') }}</flux:button>
+                        @can('pastry-orders.manage')
                         <flux:button size="sm" type="button" wire:click="openEditDrawer({{ $order->id }})" class="touch-target">{{ __('Edit') }}</flux:button>
+                        @endcan
+                        @can('pastry-orders.manage')
                         @if (! in_array($order->status, ['Cancelled','Delivered'], true))
                             <flux:button size="sm" type="button" variant="danger" wire:click="quickStatus({{ $order->id }},'Cancelled')" wire:confirm="{{ __('Cancel this order?') }}" class="touch-target">{{ __('Cancel') }}</flux:button>
                         @endif
+                        @endcan
                         <flux:button size="sm" :href="route('pastry-orders.print-single', ['order' => $order->id])" target="_blank" class="touch-target">
                             {{ __('Print') }}
                         </flux:button>
@@ -669,6 +698,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <tr>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100 w-12"></th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Order #') }}</th>
+                    <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Sales Order #') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Status') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Type') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Customer / Notes') }}</th>
@@ -697,6 +727,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @endif
                         </td>
                         <td class="px-3 py-3 text-sm text-neutral-900 dark:text-neutral-100 align-middle font-medium">{{ $order->order_number }}</td>
+                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">{{ $order->sales_order_number ?? '—' }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">{{ $order->status }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">{{ $order->type }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 align-middle">
@@ -721,11 +752,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         <flux:button size="sm" type="button" variant="primary" wire:click="quickStatus({{ $order->id }},'Delivered')" class="min-h-[44px]">{{ __('Mark Delivered') }}</flux:button>
                                     @endif
                                     <flux:button size="sm" type="button" wire:click="openViewDrawer({{ $order->id }})" class="min-h-[44px]">{{ __('View') }}</flux:button>
+                                    @can('pastry-orders.manage')
                                     <flux:button size="sm" type="button" wire:click="openEditDrawer({{ $order->id }})" class="min-h-[44px]">{{ __('Edit') }}</flux:button>
+                                    @endcan
                                     <flux:button size="sm" :href="route('pastry-orders.print-single', ['order' => $order->id])" target="_blank" class="min-h-[44px]">{{ __('Print') }}</flux:button>
+                                    @can('pastry-orders.manage')
                                     @if (! in_array($order->status, ['Cancelled','Delivered'], true))
                                         <flux:button size="sm" type="button" variant="danger" wire:click="quickStatus({{ $order->id }},'Cancelled')" wire:confirm="{{ __('Cancel this order?') }}" class="min-h-[44px]">{{ __('Cancel') }}</flux:button>
                                     @endif
+                                    @endcan
                                 @else
                                     <flux:button size="sm" type="button" wire:click="openViewDrawer({{ $order->id }})" class="min-h-[44px]">{{ __('View') }}</flux:button>
                                     <flux:button size="sm" :href="route('pastry-orders.print-single', ['order' => $order->id])" target="_blank" class="min-h-[44px]">{{ __('Print') }}</flux:button>
@@ -734,7 +769,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="9" class="px-4 py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">{{ __('No pastry orders found.') }}</td></tr>
+                    <tr><td colspan="10" class="px-4 py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">{{ __('No pastry orders found.') }}</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -820,6 +855,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <flux:input wire:model="c_scheduled_time" type="time" :label="__('Scheduled Time')" />
                 </div>
 
+                {{-- Sales Order Number --}}
+                <div>
+                    <flux:input wire:model="c_sales_order_number" :label="__('Sales Order #')" placeholder="{{ __('Optional') }}" />
+                </div>
+
                 {{-- Notes --}}
                 <div>
                     <label class="{{ $labelClass }}">{{ __('Notes') }}</label>
@@ -849,14 +889,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <label class="{{ $labelClass }}">{{ __('Items') }}</label>
                     <div class="space-y-1">
                         {{-- Column headers --}}
-                        <div class="grid gap-x-2 px-1" style="grid-template-columns: minmax(0,1fr) 72px 80px 28px;">
+                        <div class="grid gap-x-2 px-1" style="grid-template-columns: minmax(0,1fr) 72px 80px 80px 28px;">
                             <span class="text-xs font-medium text-neutral-500 dark:text-neutral-400">{{ __('Item') }}</span>
                             <span class="text-xs font-medium text-neutral-500 dark:text-neutral-400">{{ __('Qty') }}</span>
+                            <span class="text-xs font-medium text-neutral-500 dark:text-neutral-400">{{ __('Price') }}</span>
                             <span class="text-xs font-medium text-neutral-500 dark:text-neutral-400">{{ __('Disc.') }}</span>
                             <span></span>
                         </div>
                         @foreach ($c_items as $idx => $row)
-                            <div class="grid gap-x-2 items-center" style="grid-template-columns: minmax(0,1fr) 72px 80px 28px;" wire:key="c-item-{{ $idx }}">
+                            <div class="grid gap-x-2 items-center" style="grid-template-columns: minmax(0,1fr) 72px 80px 80px 28px;" wire:key="c-item-{{ $idx }}">
                                 {{-- Alpine search — wire:ignore only on this div --}}
                                 <div wire:ignore
                                      x-data="pastryItemLookup({
@@ -903,6 +944,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                                        type="number" step="0.001" min="0.001"
                                        class="w-full rounded-md border border-neutral-200 bg-white px-2 py-2 text-sm text-center text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
                                        placeholder="1" />
+                                {{-- Price --}}
+                                <input wire:model="c_items.{{ $idx }}.unit_price"
+                                       type="number" step="0.001" min="0"
+                                       class="w-full rounded-md border border-neutral-200 bg-white px-2 py-2 text-sm text-center text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
+                                       placeholder="{{ __('Auto') }}" />
                                 {{-- Disc --}}
                                 <input wire:model="c_items.{{ $idx }}.discount_amount"
                                        type="number" step="0.001" min="0"
@@ -1030,6 +1076,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
 
                     <div>
+                        <flux:input wire:model="e_sales_order_number" :label="__('Sales Order #')" placeholder="{{ __('Optional') }}" />
+                    </div>
+
+                    <div>
                         <label class="{{ $labelClass }}">{{ __('Notes') }}</label>
                         <textarea wire:model="e_notes" rows="2"
                             class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"></textarea>
@@ -1078,14 +1128,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <label class="{{ $labelClass }}">{{ __('Items') }}</label>
                         <div class="space-y-1">
                             {{-- Column headers --}}
-                            <div class="grid gap-x-2 px-1" style="grid-template-columns: minmax(0,1fr) 72px 80px 28px;">
+                            <div class="grid gap-x-2 px-1" style="grid-template-columns: minmax(0,1fr) 72px 80px 80px 28px;">
                                 <span class="text-xs font-medium text-neutral-500 dark:text-neutral-400">{{ __('Item') }}</span>
                                 <span class="text-xs font-medium text-neutral-500 dark:text-neutral-400">{{ __('Qty') }}</span>
+                                <span class="text-xs font-medium text-neutral-500 dark:text-neutral-400">{{ __('Price') }}</span>
                                 <span class="text-xs font-medium text-neutral-500 dark:text-neutral-400">{{ __('Disc.') }}</span>
                                 <span></span>
                             </div>
                             @foreach ($e_items as $idx => $row)
-                                <div class="grid gap-x-2 items-center" style="grid-template-columns: minmax(0,1fr) 72px 80px 28px;" wire:key="e-item-{{ $idx }}">
+                                <div class="grid gap-x-2 items-center" style="grid-template-columns: minmax(0,1fr) 72px 80px 80px 28px;" wire:key="e-item-{{ $idx }}">
                                     {{-- Alpine search — wire:ignore only on this div --}}
                                     <div wire:ignore
                                          x-data="pastryItemLookup({
@@ -1132,6 +1183,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                                            type="number" step="0.001" min="0.001"
                                            class="w-full rounded-md border border-neutral-200 bg-white px-2 py-2 text-sm text-center text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
                                            placeholder="1" />
+                                    {{-- Price --}}
+                                    <input wire:model="e_items.{{ $idx }}.unit_price"
+                                           type="number" step="0.001" min="0"
+                                           class="w-full rounded-md border border-neutral-200 bg-white px-2 py-2 text-sm text-center text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
+                                           placeholder="{{ __('Auto') }}" />
                                     {{-- Disc --}}
                                     <input wire:model="e_items.{{ $idx }}.discount_amount"
                                            type="number" step="0.001" min="0"
@@ -1193,11 +1249,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{-- Two-column layout: image left, details right --}}
                 <div class="flex gap-5 items-start">
 
-                    {{-- Left: image --}}
-                    <div class="w-64 flex-shrink-0">
+                    {{-- Left: images --}}
+                    <div class="w-64 flex-shrink-0 space-y-3">
                         @if (! empty($v_images))
-                            <img src="{{ $v_images[0]['url'] }}" alt="{{ __('Order image') }}"
-                                 class="w-full rounded-xl object-contain border border-neutral-200 dark:border-neutral-700" />
+                            @foreach ($v_images as $vImg)
+                                <img src="{{ $vImg['url'] }}" alt="{{ __('Order image') }}"
+                                     class="w-full h-auto rounded-xl border border-neutral-200 dark:border-neutral-700" />
+                            @endforeach
                         @else
                             @php
                                 $vParts = preg_split('/\s+/', trim($v_customer_name ?? '?'));
@@ -1254,6 +1312,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <p class="text-xs text-neutral-500 dark:text-neutral-400 mb-0.5">{{ __('Type') }}</p>
                                 <p class="text-sm font-medium text-neutral-900 dark:text-neutral-100">{{ $v_type ?: '—' }}</p>
                             </div>
+                            @if ($v_sales_order_number)
+                                <div class="col-span-2 rounded-lg border border-neutral-200 bg-white px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/60">
+                                    <p class="text-xs text-neutral-500 dark:text-neutral-400 mb-0.5">{{ __('Sales Order #') }}</p>
+                                    <p class="text-sm font-medium text-neutral-900 dark:text-neutral-100">{{ $v_sales_order_number }}</p>
+                                </div>
+                            @endif
                         </div>
 
                     </div>
@@ -1284,7 +1348,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             loading: false,
             open: false,
             hasSearched: false,
-            panelStyle: 'display: none;',
+            panelStyle: '',
             controller: null,
             repositionHandler: null,
 
@@ -1340,10 +1404,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 this.open = false;
                 this.results = [];
                 this.loading = false;
-                this.$wire[this.selectMethod](this.index, item.id, label);
+                this.$wire[this.selectMethod](this.index, item.id, label, item.price ?? null);
             },
 
-            close() { this.open = false; this.panelStyle = 'display: none;'; },
+            close() { this.open = false; },
 
             positionDropdown() {
                 if (!this.$refs.input) return;
@@ -1353,7 +1417,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     `top: ${rect.bottom + 4}px`,
                     `left: ${rect.left}px`,
                     `width: ${rect.width}px`,
-                    'display: block',
+                    'z-index: 999999',
                 ].join('; ');
             },
         }));

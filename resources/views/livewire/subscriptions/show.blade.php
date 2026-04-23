@@ -226,6 +226,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Meals used') }}: {{ $subscription->meals_used ?? 0 }} / {{ $subscription->plan_meals_total }}</span>
             @else
                 <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Plan') }}: {{ __('Unlimited') }}</span>
+                <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Meals used') }}: {{ $subscription->meals_used ?? 0 }}</span>
             @endif
         </div>
         <div class="text-sm text-neutral-800 dark:text-neutral-200">
@@ -277,7 +278,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             @endif
         @endif
 
-        @if(auth()->user()?->hasRole('admin') && $subscription->plan_meals_total !== null)
+        @if(auth()->user()?->hasRole('admin'))
             <flux:button wire:click="resyncMeals" size="sm" variant="ghost">{{ __('Resync Meals from Invoices') }}</flux:button>
         @endif
     </div>
