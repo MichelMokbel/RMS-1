@@ -8,31 +8,109 @@ SET NAMES utf8mb4;
 -- ============================================================================
 -- 2026_04_19_000001_harden_accounting_payment_idempotency_and_bank_uniqueness
 
-ALTER TABLE ap_payments
-  ADD COLUMN IF NOT EXISTS client_uuid CHAR(36) NULL AFTER supplier_id;
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'ap_payments'
+        AND column_name = 'client_uuid'
+    ),
+    'SELECT 1',
+    "ALTER TABLE ap_payments ADD COLUMN client_uuid CHAR(36) NULL AFTER supplier_id"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE ap_payments
-  ADD UNIQUE INDEX ap_payments_client_uuid_unique (client_uuid);
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.statistics
+      WHERE table_schema = DATABASE()
+        AND table_name = 'ap_payments'
+        AND index_name = 'ap_payments_client_uuid_unique'
+    ),
+    'SELECT 1',
+    "ALTER TABLE ap_payments ADD UNIQUE INDEX ap_payments_client_uuid_unique (client_uuid)"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE bank_transactions
-  ADD UNIQUE INDEX bank_transactions_source_unique (source_type, source_id, transaction_type);
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.statistics
+      WHERE table_schema = DATABASE()
+        AND table_name = 'bank_transactions'
+        AND index_name = 'bank_transactions_source_unique'
+    ),
+    'SELECT 1',
+    "ALTER TABLE bank_transactions ADD UNIQUE INDEX bank_transactions_source_unique (source_type, source_id, transaction_type)"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 
 -- ============================================================================
 -- 2026_04_19_000002_add_subledger_entries_source_event_unique
 
-ALTER TABLE subledger_entries
-  ADD UNIQUE INDEX subledger_entries_source_event_unique (source_type, source_id, event);
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.statistics
+      WHERE table_schema = DATABASE()
+        AND table_name = 'subledger_entries'
+        AND index_name = 'subledger_entries_source_event_unique'
+    ),
+    'SELECT 1',
+    "ALTER TABLE subledger_entries ADD UNIQUE INDEX subledger_entries_source_event_unique (source_type, source_id, event)"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 
 -- ============================================================================
 -- 2026_04_19_000003_add_payment_allocations_active_unique
 
-ALTER TABLE payment_allocations
-  ADD COLUMN IF NOT EXISTS alloc_active_sentinel TINYINT AS (IF(voided_at IS NULL, 1, NULL)) STORED;
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'payment_allocations'
+        AND column_name = 'alloc_active_sentinel'
+    ),
+    'SELECT 1',
+    "ALTER TABLE payment_allocations ADD COLUMN alloc_active_sentinel TINYINT AS (IF(voided_at IS NULL, 1, NULL)) STORED"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE payment_allocations
-  ADD UNIQUE INDEX payment_allocations_active_unique (payment_id, allocatable_type, allocatable_id, alloc_active_sentinel);
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.statistics
+      WHERE table_schema = DATABASE()
+        AND table_name = 'payment_allocations'
+        AND index_name = 'payment_allocations_active_unique'
+    ),
+    'SELECT 1',
+    "ALTER TABLE payment_allocations ADD UNIQUE INDEX payment_allocations_active_unique (payment_id, allocatable_type, allocatable_id, alloc_active_sentinel)"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 
 -- ============================================================================
@@ -55,11 +133,37 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
-ALTER TABLE ap_payment_allocations
-  ADD COLUMN IF NOT EXISTS alloc_active_sentinel TINYINT AS (IF(voided_at IS NULL, 1, NULL)) STORED;
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'ap_payment_allocations'
+        AND column_name = 'alloc_active_sentinel'
+    ),
+    'SELECT 1',
+    "ALTER TABLE ap_payment_allocations ADD COLUMN alloc_active_sentinel TINYINT AS (IF(voided_at IS NULL, 1, NULL)) STORED"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE ap_payment_allocations
-  ADD UNIQUE INDEX ap_payment_allocations_active_unique (payment_id, invoice_id, alloc_active_sentinel);
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.statistics
+      WHERE table_schema = DATABASE()
+        AND table_name = 'ap_payment_allocations'
+        AND index_name = 'ap_payment_allocations_active_unique'
+    ),
+    'SELECT 1',
+    "ALTER TABLE ap_payment_allocations ADD UNIQUE INDEX ap_payment_allocations_active_unique (payment_id, invoice_id, alloc_active_sentinel)"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 
 -- ============================================================================
@@ -150,37 +254,141 @@ CREATE TABLE IF NOT EXISTS ap_cheque_clearances (
   CONSTRAINT ap_cheque_clearances_ap_payment_id_foreign FOREIGN KEY (ap_payment_id) REFERENCES ap_payments(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-ALTER TABLE ap_cheque_clearances
-  ADD COLUMN IF NOT EXISTS active_sentinel TINYINT AS (IF(voided_at IS NULL, 1, NULL)) STORED;
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'ap_cheque_clearances'
+        AND column_name = 'active_sentinel'
+    ),
+    'SELECT 1',
+    "ALTER TABLE ap_cheque_clearances ADD COLUMN active_sentinel TINYINT AS (IF(voided_at IS NULL, 1, NULL)) STORED"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE ap_cheque_clearances
-  ADD COLUMN IF NOT EXISTS active_client_uuid CHAR(36) AS (IF(voided_at IS NULL, client_uuid, NULL)) STORED;
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'ap_cheque_clearances'
+        AND column_name = 'active_client_uuid'
+    ),
+    'SELECT 1',
+    "ALTER TABLE ap_cheque_clearances ADD COLUMN active_client_uuid CHAR(36) AS (IF(voided_at IS NULL, client_uuid, NULL)) STORED"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE ap_cheque_clearances
-  ADD UNIQUE INDEX uq_apc_payment_active (ap_payment_id, active_sentinel);
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.statistics
+      WHERE table_schema = DATABASE()
+        AND table_name = 'ap_cheque_clearances'
+        AND index_name = 'uq_apc_payment_active'
+    ),
+    'SELECT 1',
+    "ALTER TABLE ap_cheque_clearances ADD UNIQUE INDEX uq_apc_payment_active (ap_payment_id, active_sentinel)"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE ap_cheque_clearances
-  ADD UNIQUE INDEX uq_apc_client_uuid_active (active_client_uuid);
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.statistics
+      WHERE table_schema = DATABASE()
+        AND table_name = 'ap_cheque_clearances'
+        AND index_name = 'uq_apc_client_uuid_active'
+    ),
+    'SELECT 1',
+    "ALTER TABLE ap_cheque_clearances ADD UNIQUE INDEX uq_apc_client_uuid_active (active_client_uuid)"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 
 -- ============================================================================
 -- 2026_04_19_000009_add_clearing_settled_at_to_payments
 
-ALTER TABLE payments
-  ADD COLUMN IF NOT EXISTS clearing_settled_at TIMESTAMP NULL AFTER voided_at;
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'payments'
+        AND column_name = 'clearing_settled_at'
+    ),
+    'SELECT 1',
+    "ALTER TABLE payments ADD COLUMN clearing_settled_at TIMESTAMP NULL AFTER voided_at"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE payments
-  ADD INDEX idx_payments_cleared (method, clearing_settled_at, voided_at);
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.statistics
+      WHERE table_schema = DATABASE()
+        AND table_name = 'payments'
+        AND index_name = 'idx_payments_cleared'
+    ),
+    'SELECT 1',
+    "ALTER TABLE payments ADD INDEX idx_payments_cleared (method, clearing_settled_at, voided_at)"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 
 -- ============================================================================
 -- 2026_04_19_000010_add_cheque_cleared_at_to_ap_payments
 
-ALTER TABLE ap_payments
-  ADD COLUMN IF NOT EXISTS cheque_cleared_at TIMESTAMP NULL AFTER voided_at;
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'ap_payments'
+        AND column_name = 'cheque_cleared_at'
+    ),
+    'SELECT 1',
+    "ALTER TABLE ap_payments ADD COLUMN cheque_cleared_at TIMESTAMP NULL AFTER voided_at"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE ap_payments
-  ADD INDEX idx_ap_payments_cleared (payment_method, cheque_cleared_at, voided_at);
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.statistics
+      WHERE table_schema = DATABASE()
+        AND table_name = 'ap_payments'
+        AND index_name = 'idx_ap_payments_cleared'
+    ),
+    'SELECT 1',
+    "ALTER TABLE ap_payments ADD INDEX idx_ap_payments_cleared (payment_method, cheque_cleared_at, voided_at)"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 
 -- ============================================================================
@@ -203,11 +411,37 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
-ALTER TABLE ap_cheque_clearances
-  ADD COLUMN IF NOT EXISTS active_client_uuid CHAR(36) AS (IF(voided_at IS NULL, client_uuid, NULL)) STORED;
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'ap_cheque_clearances'
+        AND column_name = 'active_client_uuid'
+    ),
+    'SELECT 1',
+    "ALTER TABLE ap_cheque_clearances ADD COLUMN active_client_uuid CHAR(36) AS (IF(voided_at IS NULL, client_uuid, NULL)) STORED"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE ap_cheque_clearances
-  ADD UNIQUE INDEX uq_apc_client_uuid_active (active_client_uuid);
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.statistics
+      WHERE table_schema = DATABASE()
+        AND table_name = 'ap_cheque_clearances'
+        AND index_name = 'uq_apc_client_uuid_active'
+    ),
+    'SELECT 1',
+    "ALTER TABLE ap_cheque_clearances ADD UNIQUE INDEX uq_apc_client_uuid_active (active_client_uuid)"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 
 -- ============================================================================
@@ -230,11 +464,37 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
-ALTER TABLE ar_clearing_settlements
-  ADD COLUMN IF NOT EXISTS active_client_uuid CHAR(36) AS (IF(voided_at IS NULL, client_uuid, NULL)) STORED;
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'ar_clearing_settlements'
+        AND column_name = 'active_client_uuid'
+    ),
+    'SELECT 1',
+    "ALTER TABLE ar_clearing_settlements ADD COLUMN active_client_uuid CHAR(36) AS (IF(voided_at IS NULL, client_uuid, NULL)) STORED"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE ar_clearing_settlements
-  ADD UNIQUE INDEX uq_ars_client_uuid_active (active_client_uuid);
+SET @sql := (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM information_schema.statistics
+      WHERE table_schema = DATABASE()
+        AND table_name = 'ar_clearing_settlements'
+        AND index_name = 'uq_ars_client_uuid_active'
+    ),
+    'SELECT 1',
+    "ALTER TABLE ar_clearing_settlements ADD UNIQUE INDEX uq_ars_client_uuid_active (active_client_uuid)"
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 
 -- ============================================================================
@@ -261,15 +521,6 @@ LEFT JOIN fiscal_years fy
 WHERE c.is_active = 1
   AND fy.id IS NULL;
 
-WITH RECURSIVE months AS (
-    SELECT 1 AS month_num
-    UNION ALL
-    SELECT month_num + 1 FROM months WHERE month_num < 12
-), years AS (
-    SELECT YEAR(CURDATE()) AS year_num
-    UNION ALL
-    SELECT YEAR(CURDATE()) + 1 AS year_num
-)
 INSERT INTO accounting_periods (company_id, fiscal_year_id, name, period_number, start_date, end_date, status, created_at, updated_at)
 SELECT c.id,
        fy.id,
@@ -281,11 +532,28 @@ SELECT c.id,
        NOW(),
        NOW()
 FROM accounting_companies c
-JOIN years y
+JOIN (
+    SELECT YEAR(CURDATE()) AS year_num
+    UNION ALL
+    SELECT YEAR(CURDATE()) + 1 AS year_num
+) y ON 1 = 1
 JOIN fiscal_years fy
   ON fy.company_id = c.id
  AND fy.start_date = STR_TO_DATE(CONCAT(y.year_num, '-01-01'), '%Y-%m-%d')
-JOIN months m
+JOIN (
+    SELECT 1 AS month_num
+    UNION ALL SELECT 2
+    UNION ALL SELECT 3
+    UNION ALL SELECT 4
+    UNION ALL SELECT 5
+    UNION ALL SELECT 6
+    UNION ALL SELECT 7
+    UNION ALL SELECT 8
+    UNION ALL SELECT 9
+    UNION ALL SELECT 10
+    UNION ALL SELECT 11
+    UNION ALL SELECT 12
+) m ON 1 = 1
 LEFT JOIN accounting_periods ap
   ON ap.company_id = c.id
  AND ap.fiscal_year_id = fy.id
