@@ -5,6 +5,9 @@ use App\Models\AccountingAuditLog;
 use App\Models\ArInvoice;
 use App\Models\Branch;
 use App\Models\Customer;
+use App\Models\Order;
+use App\Models\PastryOrder;
+use App\Models\PaymentTerm;
 use App\Models\Job;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
@@ -144,6 +147,80 @@ it('persists job assignments when creating and updating AR drafts', function () 
     ], $user->id);
 
     expect($updated->job_id)->toBe($jobB->id);
+});
+
+it('defaults order-generated invoices to credit 30 days', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $term = PaymentTerm::query()->create([
+        'name' => 'Credit - 30 days',
+        'days' => 30,
+        'is_credit' => true,
+        'is_active' => true,
+    ]);
+
+    $customer = Customer::factory()->corporate()->create(['credit_terms_days' => 0]);
+
+    $order = Order::factory()->dailyDish()->create([
+        'branch_id' => 1,
+        'customer_id' => $customer->id,
+        'status' => 'Confirmed',
+        'scheduled_date' => now()->toDateString(),
+        'total_amount' => 125.000,
+        'order_discount_amount' => 0,
+    ]);
+
+    /** @var ArInvoiceService $svc */
+    $svc = app(ArInvoiceService::class);
+    $invoice = $svc->createFromOrder($order, $user->id);
+
+    expect($invoice->payment_type)->toBe('credit');
+    expect($invoice->payment_term_id)->toBe($term->id);
+    expect($invoice->payment_term_days)->toBe(30);
+});
+
+it('uses pastry sales order number as lpo reference and defaults to credit 30 days', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $term = PaymentTerm::query()->create([
+        'name' => 'Credit - 30 days',
+        'days' => 30,
+        'is_credit' => true,
+        'is_active' => true,
+    ]);
+
+    $customer = Customer::factory()->corporate()->create(['credit_terms_days' => 0]);
+
+    $order = PastryOrder::query()->create([
+        'order_number' => 'PO-1001',
+        'sales_order_number' => 'SO-7788',
+        'branch_id' => 1,
+        'status' => 'Confirmed',
+        'type' => 'Delivery',
+        'customer_id' => $customer->id,
+        'customer_name_snapshot' => $customer->name,
+        'customer_phone_snapshot' => $customer->phone,
+        'delivery_address_snapshot' => 'Doha',
+        'scheduled_date' => now()->toDateString(),
+        'scheduled_time' => now()->format('H:i:s'),
+        'notes' => null,
+        'order_discount_amount' => 0,
+        'total_before_tax' => 0,
+        'tax_amount' => 0,
+        'total_amount' => 0,
+        'created_by' => $user->id,
+    ]);
+
+    /** @var ArInvoiceService $svc */
+    $svc = app(ArInvoiceService::class);
+    $invoice = $svc->createFromPastryOrder($order, $user->id);
+
+    expect($invoice->payment_type)->toBe('credit');
+    expect($invoice->payment_term_id)->toBe($term->id);
+    expect($invoice->payment_term_days)->toBe(30);
+    expect($invoice->lpo_reference)->toBe('SO-7788');
 });
 
 it('applies partial and full payments and updates invoice balance/status', function () {

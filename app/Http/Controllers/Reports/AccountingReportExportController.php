@@ -18,6 +18,7 @@ class AccountingReportExportController extends Controller
 
         return match ($report) {
             'ap-aging' => $this->apAging($service, (int) $companyId, $request),
+            'daily-general-ledger' => $this->dailyGeneralLedger($service, (int) $companyId, $request),
             'trial-balance' => $this->trialBalance($service, (int) $companyId, $dateTo),
             'inventory-valuation' => $this->inventoryValuation($service, (int) $companyId, $dateTo),
             'purchase-accruals' => $this->purchaseAccruals($service, (int) $companyId, $request),
@@ -53,6 +54,62 @@ class AccountingReportExportController extends Controller
                 number_format((float) $row['total'], 2, '.', ''),
             ]),
             'ap-aging.csv'
+        );
+    }
+
+    private function dailyGeneralLedger(AccountingReportService $service, int $companyId, Request $request): StreamedResponse
+    {
+        $report = $service->dailyGeneralLedger(
+            $companyId,
+            $request->input('date_from'),
+            $request->input('date_to'),
+            [
+                'branch_id' => $request->integer('branch_id') ?: null,
+                'department_id' => $request->integer('department_id') ?: null,
+                'job_id' => $request->integer('job_id') ?: null,
+            ]
+        );
+
+        $rows = collect($report['groups'] ?? [])
+            ->flatMap(function ($day) {
+                return collect($day['accounts'] ?? [])->flatMap(function ($account) use ($day) {
+                    return collect($account['sources'] ?? [])->map(function ($source) use ($day, $account) {
+                        return [
+                            'entry_date' => $day['entry_date'],
+                            'account_code' => $account['account_code'],
+                            'account_name' => $account['account_name'],
+                            'source_reference' => $source['source_reference'],
+                            'event' => $source['event'],
+                            'description' => $source['description'],
+                            'debit_total' => $source['debit_total'],
+                            'credit_total' => $source['credit_total'],
+                            'dimensions' => collect($source['lines'] ?? [])
+                                ->flatMap(fn ($line) => array_filter([
+                                    $line['branch_name'] ? 'Branch: '.$line['branch_name'] : null,
+                                    $line['department_name'] ? 'Department: '.$line['department_name'] : null,
+                                    $line['job_name'] ? 'Job: '.$line['job_name'] : null,
+                                ]))
+                                ->unique()
+                                ->implode(' | '),
+                        ];
+                    });
+                });
+            });
+
+        return CsvExport::stream(
+            ['Date', 'Account Code', 'Account Name', 'Source', 'Event', 'Description', 'Dimensions', 'Debit', 'Credit'],
+            $rows->map(fn ($row) => [
+                $row['entry_date'],
+                $row['account_code'],
+                $row['account_name'],
+                $row['source_reference'],
+                $row['event'],
+                $row['description'],
+                $row['dimensions'],
+                number_format((float) $row['debit_total'], 2, '.', ''),
+                number_format((float) $row['credit_total'], 2, '.', ''),
+            ]),
+            'daily-general-ledger.csv'
         );
     }
 

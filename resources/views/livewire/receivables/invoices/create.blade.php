@@ -155,16 +155,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->customer_id = $order->customer_id;
             $customer = $order->customer;
             $this->customer_search = $customer ? trim($customer->name . ' ' . ($customer->phone ?? '')) : '';
-
-            // Set payment term from customer if available
-            if ($customer && $customer->credit_terms_days) {
-                $term = PaymentTerm::query()
-                    ->where('is_credit', 1)
-                    ->where('days', (int) $customer->credit_terms_days)
-                    ->first();
-                $this->payment_term_id = $term?->id;
-            }
         }
+
+        $this->payment_type = 'credit';
+        $this->payment_term_id = $this->defaultThirtyDayCreditTermId();
 
         // Prefill items from order
         $scale = MinorUnits::posScale();
@@ -376,6 +370,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->where('is_active', 1)
             ->where('is_credit', 0)
             ->where('days', 0)
+            ->value('id');
+    }
+
+    private function defaultThirtyDayCreditTermId(): ?int
+    {
+        if (! Schema::hasTable('payment_terms')) {
+            return null;
+        }
+
+        return PaymentTerm::query()
+            ->where('is_active', 1)
+            ->where('is_credit', 1)
+            ->where('days', 30)
             ->value('id');
     }
 

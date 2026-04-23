@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\InventoryItem;
 use App\Models\Recipe;
 use App\Services\Recipes\RecipeFormQueryService;
 use App\Services\Recipes\RecipePersistService;
@@ -20,6 +21,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $status = 'published';
 
     public array $items = [];
+    public array $ingredient_item_search = [];
 
     public function mount(): void
     {
@@ -44,6 +46,35 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'cost_type' => $item->cost_type,
             ];
         })->values()->toArray();
+
+        $inventoryItemIds = collect($this->items)
+            ->pluck('inventory_item_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+
+        $inventoryLabels = InventoryItem::query()
+            ->whereIn('id', $inventoryItemIds)
+            ->get(['id', 'item_code', 'name'])
+            ->keyBy('id');
+
+        $this->ingredient_item_search = collect($this->items)
+            ->map(function (array $item) use ($inventoryLabels) {
+                $inventoryItemId = (int) ($item['inventory_item_id'] ?? 0);
+                if ($inventoryItemId <= 0) {
+                    return '';
+                }
+
+                $inventoryItem = $inventoryLabels->get($inventoryItemId);
+                if (! $inventoryItem) {
+                    return '';
+                }
+
+                return trim((string) ($inventoryItem->item_code ?? '').' '.(string) $inventoryItem->name);
+            })
+            ->values()
+            ->all();
     }
 
     public function addItem(): void
@@ -57,12 +88,51 @@ new #[Layout('components.layouts.app')] class extends Component {
             'quantity_type' => 'unit',
             'cost_type' => 'ingredient',
         ];
+        $this->ingredient_item_search[] = '';
     }
 
     public function removeItem(int $idx): void
     {
         unset($this->items[$idx]);
+        unset($this->ingredient_item_search[$idx]);
         $this->items = array_values($this->items);
+        $this->ingredient_item_search = array_values($this->ingredient_item_search);
+    }
+
+    public function selectIngredientItemPayload(int $index, int $inventoryItemId, string $label = ''): void
+    {
+        if (! array_key_exists($index, $this->items)) {
+            return;
+        }
+
+        $item = InventoryItem::query()
+            ->where('status', 'active')
+            ->find($inventoryItemId);
+
+        if (! $item) {
+            $this->clearIngredientItemSelection($index);
+
+            return;
+        }
+
+        $this->items[$index]['inventory_item_id'] = (int) $item->id;
+        if (trim((string) ($this->items[$index]['unit'] ?? '')) === '' && $item->unit_of_measure) {
+            $this->items[$index]['unit'] = (string) $item->unit_of_measure;
+        }
+
+        $this->ingredient_item_search[$index] = trim($label) !== ''
+            ? $label
+            : trim((string) ($item->item_code ?? '').' '.(string) $item->name);
+    }
+
+    public function clearIngredientItemSelection(int $index): void
+    {
+        if (! array_key_exists($index, $this->items)) {
+            return;
+        }
+
+        $this->items[$index]['inventory_item_id'] = null;
+        $this->ingredient_item_search[$index] = '';
     }
 
     public function with(RecipeFormQueryService $formQuery): array
@@ -177,12 +247,56 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     </select>
                                     @error("items.$index.sub_recipe_id") <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
                                 @else
-                                    <select wire:model="items.{{ $index }}.inventory_item_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                                        <option value="">{{ __('Select item') }}</option>
-                                        @foreach($inventoryItems as $inv)
-                                            <option value="{{ $inv->id }}">{{ $inv->item_code ?? '' }} {{ $inv->name }}</option>
-                                        @endforeach
-                                    </select>
+                                    <div
+                                        class="relative"
+                                        wire:ignore
+                                        x-data="recipeIngredientLookup({
+                                            index: {{ $index }},
+                                            initial: @js($ingredient_item_search[$index] ?? ''),
+                                            selectedId: @js($row['inventory_item_id'] ?? null),
+                                            searchUrl: '{{ route('recipes.inventory-items.search') }}'
+                                        })"
+                                        x-on:keydown.escape.stop="close()"
+                                        x-on:click.outside="close()"
+                                    >
+                                        <input
+                                            type="text"
+                                            class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
+                                            x-model="query"
+                                            x-on:input.debounce.200ms="onInput()"
+                                            x-on:focus="onInput(true)"
+                                            placeholder="{{ __('Search item') }}"
+                                        />
+                                        <template x-if="open">
+                                            <div
+                                                x-ref="panel"
+                                                x-bind:style="panelStyle"
+                                                class="mb-1 overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+                                            >
+                                                <div class="max-h-60 overflow-auto">
+                                                    <template x-for="item in results" :key="item.id">
+                                                        <button
+                                                            type="button"
+                                                            class="w-full px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-50 dark:text-neutral-100 dark:hover:bg-neutral-800/80"
+                                                            x-on:click="choose(item)"
+                                                        >
+                                                            <div class="flex items-center justify-between gap-2">
+                                                                <span class="font-medium" x-text="item.name"></span>
+                                                                <span class="text-xs text-neutral-500 dark:text-neutral-400" x-show="item.code" x-text="item.code"></span>
+                                                            </div>
+                                                            <div class="text-xs text-neutral-500 dark:text-neutral-400" x-show="item.unit" x-text="item.unit"></div>
+                                                        </button>
+                                                    </template>
+                                                    <div x-show="loading" class="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">
+                                                        {{ __('Searching...') }}
+                                                    </div>
+                                                    <div x-show="!loading && hasSearched && results.length === 0" class="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">
+                                                        {{ __('No items found.') }}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
                                     @error("items.$index.inventory_item_id") <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
                                 @endif
                             </td>
@@ -223,3 +337,112 @@ new #[Layout('components.layouts.app')] class extends Component {
         <flux:button type="button" wire:click="save" variant="primary">{{ __('Save & Publish') }}</flux:button>
     </div>
 </div>
+
+@once
+    <script>
+        const registerRecipeIngredientLookup = () => {
+            if (!window.Alpine || window.__recipeEditIngredientLookupRegistered) {
+                return;
+            }
+            window.__recipeEditIngredientLookupRegistered = true;
+
+            window.Alpine.data('recipeIngredientLookup', ({ index, initial, selectedId, searchUrl }) => ({
+                index,
+                query: initial || '',
+                selectedId: selectedId || null,
+                selectedLabel: initial || '',
+                searchUrl,
+                results: [],
+                loading: false,
+                open: false,
+                hasSearched: false,
+                panelStyle: '',
+                controller: null,
+                onInput(force = false) {
+                    if (this.selectedId !== null && this.query !== this.selectedLabel) {
+                        this.selectedId = null;
+                        this.selectedLabel = '';
+                        this.$wire.clearIngredientItemSelection(this.index);
+                    }
+
+                    const term = this.query.trim();
+                    if (!force && term.length < 2) {
+                        this.open = false;
+                        this.results = [];
+                        this.hasSearched = false;
+                        return;
+                    }
+                    if (term.length < 2) {
+                        this.open = false;
+                        this.results = [];
+                        this.hasSearched = false;
+                        return;
+                    }
+
+                    this.fetchResults(term);
+                },
+                fetchResults(term) {
+                    this.loading = true;
+                    this.hasSearched = true;
+                    this.open = true;
+                    if (this.controller) {
+                        this.controller.abort();
+                    }
+                    this.controller = new AbortController();
+                    const params = new URLSearchParams({ q: term });
+                    fetch(this.searchUrl + '?' + params.toString(), {
+                        headers: { 'Accept': 'application/json' },
+                        signal: this.controller.signal,
+                        credentials: 'same-origin',
+                    })
+                        .then((response) => response.ok ? response.json() : [])
+                        .then((data) => {
+                            this.results = Array.isArray(data) ? data : [];
+                            this.loading = false;
+                            this.$nextTick(() => this.positionDropdown());
+                        })
+                        .catch((error) => {
+                            if (error.name === 'AbortError') {
+                                return;
+                            }
+                            this.loading = false;
+                            this.results = [];
+                        });
+                },
+                choose(item) {
+                    const label = item.label || item.name || '';
+                    this.query = label;
+                    this.selectedLabel = label;
+                    this.selectedId = item.id;
+                    this.open = false;
+                    this.results = [];
+                    this.loading = false;
+                    this.$wire.selectIngredientItemPayload(this.index, item.id, label);
+                },
+                close() {
+                    this.open = false;
+                },
+                positionDropdown() {
+                    const input = this.$el.querySelector('input');
+                    if (!input) {
+                        return;
+                    }
+                    const rect = input.getBoundingClientRect();
+                    this.panelStyle = [
+                        'position: fixed',
+                        'left: ' + rect.left + 'px',
+                        'top: ' + rect.bottom + 'px',
+                        'width: ' + rect.width + 'px',
+                        'z-index: 9999',
+                    ].join('; ');
+                },
+            }));
+        };
+
+        if (window.Alpine) {
+            registerRecipeIngredientLookup();
+        }
+        document.addEventListener('alpine:init', registerRecipeIngredientLookup);
+        document.addEventListener('livewire:navigated', registerRecipeIngredientLookup);
+    </script>
+@endonce

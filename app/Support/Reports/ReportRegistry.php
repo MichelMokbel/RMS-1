@@ -47,4 +47,19 @@ class ReportRegistry
 
         return $reports[$key] ?? null;
     }
+
+    /**
+     * @return array{key: string, label: string, route: string, filters: array, outputs: array}|null
+     */
+    public static function findByRoute(?string $routeName): ?array
+    {
+        if (! $routeName) {
+            return null;
+        }
+
+        $reports = config('reports.reports', []);
+
+        return collect($reports)
+            ->first(fn (array $report) => ($report['route'] ?? null) === $routeName);
+    }
 }

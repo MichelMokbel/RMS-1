@@ -104,12 +104,67 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Customer') }}</label>
-                <select wire:model="customer_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                    <option value="">{{ __('Select customer') }}</option>
-                    @foreach($customers as $cust)
-                        <option value="{{ $cust->id }}">{{ $cust->name }}</option>
-                    @endforeach
-                </select>
+                @php
+                    $selectedCustomer = $customers->firstWhere('id', $customer_id);
+                    $customerOptions = $customers->map(fn ($cust) => [
+                        'id' => (string) $cust->id,
+                        'name' => (string) $cust->name,
+                        'phone' => (string) ($cust->phone ?? ''),
+                        'code' => (string) ($cust->customer_code ?? ''),
+                    ])->values();
+                @endphp
+                <div
+                    class="relative mt-1"
+                    x-data="subscriptionCustomerCombobox({
+                        options: @js($customerOptions),
+                        initialId: @js($customer_id ? (string) $customer_id : ''),
+                        initialLabel: @js($selectedCustomer?->name ?? '')
+                    })"
+                    x-init="init()"
+                    x-on:keydown.escape.stop="close()"
+                    x-on:click.outside="close()"
+                >
+                    <input type="hidden" x-model="selectedId" wire:model="customer_id" />
+                    <input
+                        x-ref="input"
+                        type="text"
+                        class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
+                        x-model="query"
+                        x-on:input.debounce.150ms="onInput()"
+                        x-on:focus="onFocus()"
+                        x-on:keydown.arrow-down.prevent="highlightNext()"
+                        x-on:keydown.arrow-up.prevent="highlightPrev()"
+                        x-on:keydown.enter.prevent="selectHighlighted()"
+                        placeholder="{{ __('Select customer') }}"
+                        autocomplete="off"
+                    />
+                    <div
+                        x-show="open"
+                        x-cloak
+                        class="absolute z-20 mt-1 w-full overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+                    >
+                        <div class="max-h-60 overflow-auto">
+                            <template x-for="(item, index) in filtered" :key="item.id">
+                                <button
+                                    type="button"
+                                    class="w-full px-3 py-2 text-left text-sm text-neutral-800 dark:text-neutral-100"
+                                    x-bind:class="index === highlightedIndex ? 'bg-neutral-100 dark:bg-neutral-800/80' : 'hover:bg-neutral-50 dark:hover:bg-neutral-800/60'"
+                                    x-on:mouseenter="highlightedIndex = index"
+                                    x-on:click="choose(item)"
+                                >
+                                    <div class="flex items-center justify-between gap-2">
+                                        <span class="font-medium" x-text="item.name"></span>
+                                        <span x-show="item.code" class="text-xs text-neutral-500 dark:text-neutral-400" x-text="item.code"></span>
+                                    </div>
+                                    <div x-show="item.phone" class="text-xs text-neutral-500 dark:text-neutral-400" x-text="item.phone"></div>
+                                </button>
+                            </template>
+                            <div x-show="!filtered.length" class="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">
+                                {{ __('No customers found.') }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <flux:input wire:model="branch_id" type="number" :label="__('Branch ID')" />
         </div>
@@ -184,3 +239,95 @@ new #[Layout('components.layouts.app')] class extends Component {
         <flux:button type="button" wire:click="save" variant="primary">{{ __('Save') }}</flux:button>
     </div>
 </div>
+
+@once
+    <script>
+        const registerSubscriptionCustomerCombobox = () => {
+            if (!window.Alpine || window.__subscriptionCustomerComboboxRegistered) {
+                return;
+            }
+            window.__subscriptionCustomerComboboxRegistered = true;
+
+            window.Alpine.data('subscriptionCustomerCombobox', ({ options, initialId, initialLabel }) => ({
+                options: Array.isArray(options) ? options : [],
+                open: false,
+                query: initialLabel || '',
+                selectedId: initialId || '',
+                filtered: [],
+                highlightedIndex: 0,
+                init() {
+                    this.filter();
+                    if (this.selectedId && !this.query) {
+                        const selected = this.options.find((item) => item.id === this.selectedId);
+                        this.query = selected ? selected.name : '';
+                    }
+                },
+                filter() {
+                    const term = this.query.trim().toLowerCase();
+                    this.filtered = this.options.filter((item) => {
+                        const haystack = [item.name, item.phone, item.code].join(' ').toLowerCase();
+                        return haystack.includes(term);
+                    });
+                    if (this.highlightedIndex >= this.filtered.length) {
+                        this.highlightedIndex = 0;
+                    }
+                },
+                onInput() {
+                    this.open = true;
+                    this.filter();
+                    const selected = this.options.find((item) => item.id === this.selectedId);
+                    if (selected && this.query !== selected.name) {
+                        this.selectedId = '';
+                    }
+                },
+                onFocus() {
+                    this.open = true;
+                    this.filter();
+                },
+                highlightNext() {
+                    if (!this.open) {
+                        this.open = true;
+                        this.filter();
+                        return;
+                    }
+                    if (!this.filtered.length) {
+                        return;
+                    }
+                    this.highlightedIndex = (this.highlightedIndex + 1) % this.filtered.length;
+                },
+                highlightPrev() {
+                    if (!this.open) {
+                        this.open = true;
+                        this.filter();
+                        return;
+                    }
+                    if (!this.filtered.length) {
+                        return;
+                    }
+                    this.highlightedIndex = (this.highlightedIndex - 1 + this.filtered.length) % this.filtered.length;
+                },
+                selectHighlighted() {
+                    if (!this.open || !this.filtered.length) {
+                        return;
+                    }
+                    this.choose(this.filtered[this.highlightedIndex]);
+                },
+                choose(item) {
+                    this.selectedId = item.id;
+                    this.query = item.name;
+                    this.open = false;
+                    this.filter();
+                },
+                close() {
+                    this.open = false;
+                },
+            }));
+        };
+
+        if (window.Alpine) {
+            registerSubscriptionCustomerCombobox();
+        } else {
+            document.addEventListener('alpine:init', registerSubscriptionCustomerCombobox, { once: true });
+        }
+    </script>
+@endonce

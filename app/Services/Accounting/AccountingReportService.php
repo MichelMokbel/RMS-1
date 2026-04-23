@@ -19,6 +19,7 @@ use App\Services\AR\ArAllocationIntegrityService;
 use App\Services\Spend\SpendReportService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 
 class AccountingReportService
@@ -187,10 +188,16 @@ class AccountingReportService
 
     public function cashFlow(int $companyId, string $dateTo): array
     {
+        return $this->cashFlowForRange($companyId, null, $dateTo);
+    }
+
+    public function cashFlowForRange(int $companyId, ?string $dateFrom, string $dateTo): array
+    {
         $cashAccountIds = $this->resolveCashAccountIds($companyId);
 
         if (empty($cashAccountIds)) {
             return [
+                'date_from' => $dateFrom,
                 'as_of' => $dateTo,
                 'inflow_total' => 0.0,
                 'outflow_total' => 0.0,
@@ -203,6 +210,7 @@ class AccountingReportService
             ->where('se.company_id', $companyId)
             ->where('se.status', 'posted')
             ->whereNull('se.voided_at')
+            ->when($dateFrom, fn ($query) => $query->whereDate('se.entry_date', '>=', $dateFrom))
             ->whereDate('se.entry_date', '<=', $dateTo)
             ->whereIn('sl.account_id', $cashAccountIds)
             ->selectRaw('SUM(sl.debit) as total_debit, SUM(sl.credit) as total_credit')
@@ -212,10 +220,170 @@ class AccountingReportService
         $outflows = round((float) ($row->total_credit ?? 0), 2);
 
         return [
+            'date_from' => $dateFrom,
             'as_of' => $dateTo,
             'inflow_total' => $inflows,
             'outflow_total' => $outflows,
             'net_cash_flow' => round($inflows - $outflows, 2),
+        ];
+    }
+
+    public function dailyGeneralLedger(int $companyId, ?string $dateFrom = null, ?string $dateTo = null, array $filters = []): array
+    {
+        $dateFrom = $dateFrom ?: now()->startOfMonth()->toDateString();
+        $dateTo = $dateTo ?: now()->toDateString();
+
+        $rows = DB::table('subledger_lines as sl')
+            ->join('subledger_entries as se', 'se.id', '=', 'sl.entry_id')
+            ->join('ledger_accounts as la', 'la.id', '=', 'sl.account_id')
+            ->leftJoin('branches as b', 'b.id', '=', 'se.branch_id')
+            ->leftJoin('departments as d', 'd.id', '=', 'se.department_id')
+            ->leftJoin((new Job)->getTable().' as j', 'j.id', '=', 'se.job_id')
+            ->where('se.company_id', $companyId)
+            ->where('se.status', 'posted')
+            ->whereNull('se.voided_at')
+            ->whereBetween('se.entry_date', [$dateFrom, $dateTo])
+            ->when(! empty($filters['branch_id']), fn ($query) => $query->where('se.branch_id', (int) $filters['branch_id']))
+            ->when(! empty($filters['department_id']), fn ($query) => $query->where('se.department_id', (int) $filters['department_id']))
+            ->when(! empty($filters['job_id']), fn ($query) => $query->where('se.job_id', (int) $filters['job_id']))
+            ->selectRaw('
+                se.id as entry_id,
+                se.entry_date,
+                se.event,
+                se.description as entry_description,
+                se.source_type,
+                se.source_id,
+                se.source_document_type,
+                se.source_document_id,
+                se.branch_id,
+                se.department_id,
+                se.job_id,
+                b.name as branch_name,
+                d.name as department_name,
+                j.name as job_name,
+                la.id as account_id,
+                la.code as account_code,
+                la.name as account_name,
+                sl.id as line_id,
+                sl.memo as line_memo,
+                sl.debit,
+                sl.credit
+            ')
+            ->orderBy('se.entry_date')
+            ->orderBy('la.code')
+            ->orderByRaw('COALESCE(se.source_document_type, se.source_type)')
+            ->orderByRaw('COALESCE(se.source_document_id, se.source_id)')
+            ->orderBy('se.id')
+            ->orderBy('sl.id')
+            ->get()
+            ->map(function ($row) {
+                $documentType = $row->source_document_type ?: $row->source_type;
+                $documentId = $row->source_document_id ?: $row->source_id;
+
+                return [
+                    'entry_id' => (int) $row->entry_id,
+                    'entry_date' => (string) $row->entry_date,
+                    'event' => (string) $row->event,
+                    'entry_description' => $row->entry_description,
+                    'source_type' => $row->source_type,
+                    'source_id' => (int) $row->source_id,
+                    'source_document_type' => $documentType,
+                    'source_document_id' => $documentId ? (int) $documentId : null,
+                    'source_label' => $this->humanizeSourceType($documentType),
+                    'source_reference' => $this->humanizeSourceType($documentType).($documentId ? ' #'.$documentId : ''),
+                    'source_route' => $this->sourceRouteNameFor($documentType),
+                    'source_route_params' => $this->sourceRouteParamsFor($documentType, $documentId ? (int) $documentId : null),
+                    'branch_id' => $row->branch_id ? (int) $row->branch_id : null,
+                    'department_id' => $row->department_id ? (int) $row->department_id : null,
+                    'job_id' => $row->job_id ? (int) $row->job_id : null,
+                    'branch_name' => $row->branch_name,
+                    'department_name' => $row->department_name,
+                    'job_name' => $row->job_name,
+                    'account_id' => (int) $row->account_id,
+                    'account_code' => (string) $row->account_code,
+                    'account_name' => (string) $row->account_name,
+                    'line_id' => (int) $row->line_id,
+                    'line_memo' => $row->line_memo,
+                    'debit' => round((float) $row->debit, 2),
+                    'credit' => round((float) $row->credit, 2),
+                ];
+            });
+
+        $groups = $rows
+            ->groupBy('entry_date')
+            ->map(function (Collection $dateBucket, string $entryDate) {
+                $accounts = $dateBucket
+                    ->groupBy(fn (array $row) => $row['account_id'].'|'.$row['account_code'])
+                    ->map(function (Collection $accountBucket) {
+                        $sample = $accountBucket->first();
+                        $sources = $accountBucket
+                            ->groupBy(fn (array $row) => implode('|', [
+                                $row['source_document_type'] ?? $row['source_type'] ?? 'manual',
+                                $row['source_document_id'] ?? $row['source_id'] ?? 0,
+                                $row['event'],
+                                $row['entry_id'],
+                            ]))
+                            ->map(function (Collection $sourceBucket) {
+                                $sample = $sourceBucket->first();
+
+                                return [
+                                    'entry_id' => $sample['entry_id'],
+                                    'event' => $sample['event'],
+                                    'source_label' => $sample['source_label'],
+                                    'source_reference' => $sample['source_reference'],
+                                    'source_route' => $sample['source_route'],
+                                    'source_route_params' => $sample['source_route_params'],
+                                    'is_source_linked' => $sample['source_route'] !== null && ! empty($sample['source_route_params']),
+                                    'description' => $sample['entry_description'],
+                                    'debit_total' => round((float) $sourceBucket->sum('debit'), 2),
+                                    'credit_total' => round((float) $sourceBucket->sum('credit'), 2),
+                                    'lines' => $sourceBucket
+                                        ->map(fn (array $line) => [
+                                            'line_id' => $line['line_id'],
+                                            'memo' => $line['line_memo'],
+                                            'debit' => $line['debit'],
+                                            'credit' => $line['credit'],
+                                            'branch_name' => $line['branch_name'],
+                                            'department_name' => $line['department_name'],
+                                            'job_name' => $line['job_name'],
+                                        ])
+                                        ->values()
+                                        ->all(),
+                                ];
+                            })
+                            ->values();
+
+                        return [
+                            'account_id' => $sample['account_id'],
+                            'account_code' => $sample['account_code'],
+                            'account_name' => $sample['account_name'],
+                            'debit_total' => round((float) $accountBucket->sum('debit'), 2),
+                            'credit_total' => round((float) $accountBucket->sum('credit'), 2),
+                            'sources' => $sources->all(),
+                        ];
+                    })
+                    ->sortBy('account_code')
+                    ->values();
+
+                return [
+                    'entry_date' => $entryDate,
+                    'debit_total' => round((float) $dateBucket->sum('debit'), 2),
+                    'credit_total' => round((float) $dateBucket->sum('credit'), 2),
+                    'accounts' => $accounts->all(),
+                ];
+            })
+            ->values();
+
+        return [
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
+            'groups' => $groups->all(),
+            'totals' => [
+                'debit_total' => round((float) $rows->sum('debit'), 2),
+                'credit_total' => round((float) $rows->sum('credit'), 2),
+                'line_count' => $rows->count(),
+                'entry_count' => $rows->pluck('entry_id')->unique()->count(),
+            ],
         ];
     }
 
@@ -241,6 +409,54 @@ class AccountingReportService
         }
 
         return array_values(array_unique(array_filter($ids)));
+    }
+
+    private function humanizeSourceType(?string $sourceType): string
+    {
+        if (! $sourceType) {
+            return 'Manual';
+        }
+
+        if (str_contains($sourceType, '\\')) {
+            $sourceType = class_basename($sourceType);
+        }
+
+        return str($sourceType)
+            ->replace(['_', '-'], ' ')
+            ->headline()
+            ->toString();
+    }
+
+    private function sourceRouteNameFor(?string $sourceType): ?string
+    {
+        $routeName = match ($sourceType) {
+            ArInvoice::class, 'ar_invoice' => 'invoices.show',
+            ApInvoice::class, 'ap_invoice' => 'payables.invoices.show',
+            Payment::class, 'ar_payment' => 'receivables.payments.show',
+            'ap_payment' => 'payables.payments.show',
+            'ar_clearing_settlement' => 'accounting.ar-clearing-show',
+            'ap_cheque_clearance' => 'accounting.ap-cheque-clearance-show',
+            default => null,
+        };
+
+        return $routeName && Route::has($routeName) ? $routeName : null;
+    }
+
+    private function sourceRouteParamsFor(?string $sourceType, ?int $sourceId): array
+    {
+        if (! $sourceId) {
+            return [];
+        }
+
+        return match ($sourceType) {
+            ArInvoice::class, 'ar_invoice' => [$sourceId],
+            ApInvoice::class, 'ap_invoice' => [$sourceId],
+            Payment::class, 'ar_payment' => [$sourceId],
+            'ap_payment' => [$sourceId],
+            'ar_clearing_settlement' => ['settlement' => $sourceId],
+            'ap_cheque_clearance' => ['clearance' => $sourceId],
+            default => [],
+        };
     }
 
     public function bankReconciliationSummary(int $companyId): array

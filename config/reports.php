@@ -265,6 +265,14 @@ return [
             'filters' => ['company', 'as_of'],
             'outputs' => ['screen'],
         ],
+        'accounting-daily-general-ledger' => [
+            'key' => 'accounting-daily-general-ledger',
+            'label' => 'Daily General Ledger',
+            'category' => 'accounting',
+            'route' => 'reports.accounting-daily-general-ledger',
+            'filters' => ['company', 'branch', 'department', 'job', 'date_range'],
+            'outputs' => ['screen', 'csv'],
+        ],
         'accounting-profit-loss' => [
             'key' => 'accounting-profit-loss',
             'label' => 'Profit & Loss',

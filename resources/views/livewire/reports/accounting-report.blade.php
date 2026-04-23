@@ -17,19 +17,30 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?int $branch_id = null;
     public ?int $department_id = null;
     public ?int $job_id = null;
+    public string $report_title = '';
+    public string $report_description = '';
+    public string $report_section = 'trial_balance';
 
     public function mount(): void
     {
+        $meta = $this->reportMeta(request()->route()?->getName());
+
         $this->company_id = AccountingCompany::query()->where('is_default', true)->value('id');
         $this->date_from = now()->startOfMonth()->toDateString();
         $this->date_to = now()->toDateString();
+        $this->report_title = $meta['title'];
+        $this->report_description = $meta['description'];
+        $this->report_section = $meta['section'];
     }
 
     public function with(AccountingReportService $service): array
     {
-        $routeName = request()->route()?->getName();
-        $meta = $this->reportMeta($routeName);
-        $report = $this->resolveReport($service, $meta['section']);
+        $meta = [
+            'title' => $this->report_title,
+            'description' => $this->report_description,
+            'section' => $this->report_section,
+        ];
+        $report = $this->resolveReport($service, $this->report_section);
 
         return [
             'companies' => AccountingCompany::query()->orderBy('name')->get(),
@@ -45,6 +56,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function resolveReport(AccountingReportService $service, string $section): array
     {
         return match ($section) {
+            'daily_general_ledger' => ['daily_general_ledger' => $service->dailyGeneralLedger((int) $this->company_id, $this->date_from, $this->date_to, [
+                'branch_id' => $this->branch_id,
+                'department_id' => $this->department_id,
+                'job_id' => $this->job_id,
+            ])],
             'trial_balance' => ['trial_balance' => $service->trialBalance((int) $this->company_id, (string) $this->date_to)],
             'profit_and_loss' => ['profit_and_loss' => $service->profitAndLoss((int) $this->company_id, (string) $this->date_to)],
             'balance_sheet' => ['balance_sheet' => $service->balanceSheet((int) $this->company_id, (string) $this->date_to)],
@@ -86,6 +102,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function reportMeta(?string $routeName): array
     {
         return match ($routeName) {
+            'reports.accounting-daily-general-ledger' => [
+                'title' => __('Daily General Ledger'),
+                'description' => __('Review posted ledger movement grouped by day, account, and source document.'),
+                'section' => 'daily_general_ledger',
+            ],
             'reports.accounting-trial-balance' => [
                 'title' => __('Trial Balance'),
                 'description' => __('Review account-by-account debit and credit balances as of the selected date.'),
@@ -187,7 +208,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endforeach
             </select>
         </div>
-        @if(in_array($meta['section'], ['vendor_ledger', 'expense_analysis'], true))
+        @if(in_array($meta['section'], ['daily_general_ledger', 'vendor_ledger', 'expense_analysis'], true))
             <flux:input wire:model.live="date_from" type="date" :label="__('Date From')" />
         @endif
         <flux:input wire:model.live="date_to" type="date" :label="__('As Of')" />
@@ -202,7 +223,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </select>
             </div>
         @endif
-        @if(in_array($meta['section'], ['ap_aging', 'vendor_ledger', 'expense_analysis'], true))
+        @if(in_array($meta['section'], ['daily_general_ledger', 'ap_aging', 'vendor_ledger', 'expense_analysis'], true))
             <div>
                 <label class="mb-1 block text-sm font-medium text-neutral-800 dark:text-neutral-200">{{ __('Branch') }}</label>
                 <select wire:model.live="branch_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
@@ -233,7 +254,123 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endif
     </div>
 
-    @if ($meta['section'] === 'ap_aging')
+    @if ($meta['section'] === 'daily_general_ledger')
+        <div class="space-y-4">
+            <div class="grid gap-4 md:grid-cols-4">
+                <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+                    <p class="text-xs uppercase tracking-wide text-neutral-500">{{ __('Entries') }}</p>
+                    <p class="mt-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{{ number_format((float) ($report['daily_general_ledger']['totals']['entry_count'] ?? 0), 0) }}</p>
+                </div>
+                <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+                    <p class="text-xs uppercase tracking-wide text-neutral-500">{{ __('Lines') }}</p>
+                    <p class="mt-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{{ number_format((float) ($report['daily_general_ledger']['totals']['line_count'] ?? 0), 0) }}</p>
+                </div>
+                <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+                    <p class="text-xs uppercase tracking-wide text-neutral-500">{{ __('Total Debits') }}</p>
+                    <p class="mt-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{{ number_format((float) ($report['daily_general_ledger']['totals']['debit_total'] ?? 0), 2) }}</p>
+                </div>
+                <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+                    <p class="text-xs uppercase tracking-wide text-neutral-500">{{ __('Total Credits') }}</p>
+                    <p class="mt-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{{ number_format((float) ($report['daily_general_ledger']['totals']['credit_total'] ?? 0), 2) }}</p>
+                </div>
+            </div>
+
+            <div class="space-y-4">
+                @forelse ($report['daily_general_ledger']['groups'] ?? [] as $day)
+                    <section class="rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+                        <div class="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+                            <div>
+                                <h2 class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ \Illuminate\Support\Carbon::parse($day['entry_date'])->format('D, d M Y') }}</h2>
+                                <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Posted ledger movement for this day') }}</p>
+                            </div>
+                            <div class="text-xs text-neutral-500 dark:text-neutral-400">
+                                {{ __('Debits') }}: {{ number_format((float) $day['debit_total'], 2) }}
+                                ·
+                                {{ __('Credits') }}: {{ number_format((float) $day['credit_total'], 2) }}
+                            </div>
+                        </div>
+
+                        <div class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                            @foreach ($day['accounts'] as $account)
+                                <div class="p-4">
+                                    <div class="mb-3 flex items-center justify-between">
+                                        <div>
+                                            <h3 class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $account['account_code'] }} · {{ $account['account_name'] }}</h3>
+                                            <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Grouped by source document and posting event') }}</p>
+                                        </div>
+                                        <div class="text-xs text-neutral-500 dark:text-neutral-400">
+                                            {{ __('Debits') }}: {{ number_format((float) $account['debit_total'], 2) }}
+                                            ·
+                                            {{ __('Credits') }}: {{ number_format((float) $account['credit_total'], 2) }}
+                                        </div>
+                                    </div>
+
+                                    <div class="app-table-shell">
+                                        <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
+                                            <thead class="bg-neutral-50 dark:bg-neutral-800/90">
+                                                <tr>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Source') }}</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Event') }}</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Description') }}</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Dimensions') }}</th>
+                                                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Debit') }}</th>
+                                                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Credit') }}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                                                @foreach ($account['sources'] as $source)
+                                                    <tr class="align-top">
+                                                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">
+                                                            @if (($source['is_source_linked'] ?? false) && ! empty($source['source_route']))
+                                                                <a href="{{ route($source['source_route'], $source['source_route_params'] ?? []) }}" wire:navigate class="hover:underline">
+                                                                    {{ $source['source_reference'] }}
+                                                                </a>
+                                                            @else
+                                                                <div>{{ $source['source_reference'] }}</div>
+                                                            @endif
+                                                            <div class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Entry #:id', ['id' => $source['entry_id']]) }}</div>
+                                                        </td>
+                                                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ str($source['event'])->headline() }}</td>
+                                                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">
+                                                            <div>{{ $source['description'] ?: '—' }}</div>
+                                                            @foreach ($source['lines'] as $line)
+                                                                @if ($line['memo'])
+                                                                    <div class="text-xs text-neutral-500 dark:text-neutral-400">{{ $line['memo'] }}</div>
+                                                                @endif
+                                                            @endforeach
+                                                        </td>
+                                                        <td class="px-3 py-2 text-xs text-neutral-600 dark:text-neutral-300">
+                                                            @php
+                                                                $dimensionLabels = collect($source['lines'])
+                                                                    ->flatMap(fn ($line) => array_filter([
+                                                                        $line['branch_name'] ? __('Branch: :name', ['name' => $line['branch_name']]) : null,
+                                                                        $line['department_name'] ? __('Department: :name', ['name' => $line['department_name']]) : null,
+                                                                        $line['job_name'] ? __('Job: :name', ['name' => $line['job_name']]) : null,
+                                                                    ]))
+                                                                    ->unique()
+                                                                    ->values();
+                                                            @endphp
+                                                            {{ $dimensionLabels->isNotEmpty() ? $dimensionLabels->implode(' · ') : '—' }}
+                                                        </td>
+                                                        <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">{{ number_format((float) $source['debit_total'], 2) }}</td>
+                                                        <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">{{ number_format((float) $source['credit_total'], 2) }}</td>
+                                                    </tr>
+                                                @endforeach
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </section>
+                @empty
+                    <div class="rounded-lg border border-dashed border-neutral-300 bg-white p-8 text-center text-sm text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300">
+                        {{ __('No posted ledger activity was found for the selected filters.') }}
+                    </div>
+                @endforelse
+            </div>
+        </div>
+    @elseif ($meta['section'] === 'ap_aging')
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
             <div class="mb-3 text-sm text-neutral-600 dark:text-neutral-300">
                 {{ __('Outstanding total') }}: {{ number_format((float) ($report['ap_aging']['totals']['total'] ?? 0), 2) }}

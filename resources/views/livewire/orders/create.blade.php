@@ -27,6 +27,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?int $daily_dish_portion_quantity = null;
     public ?int $subscription_id = null;
     public ?int $subscription_main_menu_item_id = null;
+    public string $subscription_main_menu_item_search = '';
     public string $type = 'Delivery';
     public string $status = 'Confirmed';
     public ?int $customer_id = null;
@@ -88,6 +89,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $subscriptionMainDishOptions = $subscriptionMenu
                     ? $subscriptionMenu->items->filter(fn ($i) => in_array($i->role ?? '', ['main', 'diet', 'vegetarian'], true))->values()
                     : collect();
+
+                if ($this->subscription_main_menu_item_id && trim($this->subscription_main_menu_item_search) === '') {
+                    $selectedMainDish = $subscriptionMainDishOptions->firstWhere('menu_item_id', $this->subscription_main_menu_item_id);
+                    if ($selectedMainDish) {
+                        $this->subscription_main_menu_item_search = (string) ($selectedMainDish->menuItem->name ?? $selectedMainDish->menu_item_id);
+                    }
+                }
             }
         }
 
@@ -129,6 +137,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->is_daily_dish_subscription = false;
         $this->subscription_id = null;
         $this->subscription_main_menu_item_id = null;
+        $this->subscription_main_menu_item_search = '';
 
         if (! $this->is_daily_dish) {
             $this->addItemRow();
@@ -156,6 +165,24 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->toArray()
             : [];
         $this->item_search = [];
+    }
+
+    public function updatedSubscriptionId(): void
+    {
+        $this->subscription_main_menu_item_id = null;
+        $this->subscription_main_menu_item_search = '';
+    }
+
+    public function setSubscriptionMainDishSelection(int $menuItemId, string $label = ''): void
+    {
+        $this->subscription_main_menu_item_id = $menuItemId;
+        $this->subscription_main_menu_item_search = trim($label);
+    }
+
+    public function clearSubscriptionMainDishSelection(): void
+    {
+        $this->subscription_main_menu_item_id = null;
+        $this->subscription_main_menu_item_search = '';
     }
 
     public function updatedCustomerSearch(): void
@@ -654,12 +681,57 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @if ($subscription_id)
                         <div>
                             <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Main dish') }}</label>
-                            <select wire:model="subscription_main_menu_item_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                                <option value="">{{ __('Select main dish') }}</option>
-                                @foreach($subscription_main_dish_options as $opt)
-                                    <option value="{{ $opt->menu_item_id }}">{{ $opt->menuItem->name ?? $opt->menu_item_id }}</option>
-                                @endforeach
-                            </select>
+                            <div
+                                class="relative mt-1"
+                                wire:ignore
+                                x-data="subscriptionMainDishLookup({
+                                    initial: @js($subscription_main_menu_item_search),
+                                    selectedId: @js($subscription_main_menu_item_id),
+                                    options: @js(collect($subscription_main_dish_options)->map(function ($opt) {
+                                        return [
+                                            'id' => (int) $opt->menu_item_id,
+                                            'name' => (string) ($opt->menuItem->name ?? $opt->menu_item_id),
+                                            'code' => (string) ($opt->menuItem->code ?? ''),
+                                        ];
+                                    })->values())
+                                })"
+                                x-on:keydown.escape.stop="close()"
+                                x-on:click.outside="close()"
+                            >
+                                <input
+                                    type="text"
+                                    class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
+                                    x-model="query"
+                                    x-on:input.debounce.150ms="onInput()"
+                                    x-on:focus="onInput(true)"
+                                    placeholder="{{ __('Search main dish') }}"
+                                />
+                                <template x-if="open">
+                                    <div
+                                        x-ref="panel"
+                                        x-bind:style="panelStyle"
+                                        class="mb-1 overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+                                    >
+                                        <div class="max-h-60 overflow-auto">
+                                            <template x-for="item in results" :key="item.id">
+                                                <button
+                                                    type="button"
+                                                    class="w-full px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-50 dark:text-neutral-100 dark:hover:bg-neutral-800/80"
+                                                    x-on:click="choose(item)"
+                                                >
+                                                    <div class="flex items-center justify-between gap-2">
+                                                        <span class="font-medium" x-text="item.name"></span>
+                                                        <span class="text-xs text-neutral-500 dark:text-neutral-400" x-show="item.code" x-text="item.code"></span>
+                                                    </div>
+                                                </button>
+                                            </template>
+                                            <div x-show="results.length === 0" class="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">
+                                                {{ __('No items found.') }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
                             @error('subscription_main_menu_item_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                             <p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{{ __('Salad, dessert, appetizer and water are added from the subscription.') }}</p>
                         </div>
@@ -844,6 +916,67 @@ new #[Layout('components.layouts.app')] class extends Component {
                 }));
                 };
 
+                window.registerSubscriptionMainDishLookup = () => {
+                    Alpine.data('subscriptionMainDishLookup', ({ initial, selectedId, options }) => ({
+                        query: initial || '',
+                        selectedId: selectedId || null,
+                        selectedLabel: initial || '',
+                        options: Array.isArray(options) ? options : [],
+                        results: [],
+                        open: false,
+                        panelStyle: '',
+                        init() {
+                            this.results = this.options;
+                        },
+                        onInput(force = false) {
+                            if (this.selectedId !== null && this.query !== this.selectedLabel) {
+                                this.selectedId = null;
+                                this.selectedLabel = '';
+                                this.$wire.clearSubscriptionMainDishSelection();
+                            }
+
+                            const term = this.query.trim().toLowerCase();
+                            if (!force && term.length < 1) {
+                                this.results = this.options;
+                                this.close();
+                                return;
+                            }
+
+                            this.results = this.options.filter((item) => {
+                                const name = (item.name || '').toLowerCase();
+                                const code = (item.code || '').toLowerCase();
+                                return name.includes(term) || code.includes(term);
+                            });
+                            this.open = true;
+                            this.$nextTick(() => this.positionDropdown());
+                        },
+                        choose(item) {
+                            this.selectedId = item.id;
+                            this.selectedLabel = item.name || '';
+                            this.query = this.selectedLabel;
+                            this.$wire.setSubscriptionMainDishSelection(item.id, this.selectedLabel);
+                            this.close();
+                        },
+                        close() {
+                            this.open = false;
+                        },
+                        positionDropdown() {
+                            const input = this.$el.querySelector('input');
+                            if (!input) {
+                                return;
+                            }
+                            const rect = input.getBoundingClientRect();
+                            this.panelStyle = [
+                                'position: fixed',
+                                'left: ' + rect.left + 'px',
+                                'top: ' + rect.bottom + 'px',
+                                'width: ' + rect.width + 'px',
+                                'z-index: 9999',
+                            ].join('; ');
+                        },
+                    }));
+                };
+
                 window.registerOrderItemsEditor = () => {
                     Alpine.data('orderItemsEditor', ({ initialItems, initialSearch, searchUrl, orderDiscount, isDailyDish }) => ({
                     items: [],
@@ -1014,10 +1147,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             if (window.Alpine) {
                 window.registerMenuItemLookup();
+                window.registerSubscriptionMainDishLookup();
                 window.registerOrderItemsEditor();
             } else {
                 document.addEventListener('alpine:init', () => {
                     window.registerMenuItemLookup();
+                    window.registerSubscriptionMainDishLookup();
                     window.registerOrderItemsEditor();
                 });
             }

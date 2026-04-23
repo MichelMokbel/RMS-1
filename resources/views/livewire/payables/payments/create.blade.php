@@ -166,12 +166,81 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                     <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Supplier') }}</label>
-                    <select wire:model="supplier_id" wire:change="loadInvoices" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                        <option value="">{{ __('Select supplier') }}</option>
-                        @foreach($this->suppliers() as $sup)
-                            <option value="{{ $sup->id }}">{{ $sup->name }}</option>
-                        @endforeach
-                    </select>
+                    <div
+                        class="relative"
+                        x-data="{
+                            open: false,
+                            query: '',
+                            selectedId: @js($supplier_id),
+                            options: @js($this->suppliers()->map(fn ($sup) => ['id' => (int) $sup->id, 'name' => $sup->name])->values()),
+                            init() {
+                                const selected = this.options.find((item) => Number(item.id) === Number(this.selectedId));
+                                this.query = selected ? selected.name : '';
+                            },
+                            get filteredOptions() {
+                                const term = this.query.trim().toLowerCase();
+                                if (term === '') {
+                                    return this.options;
+                                }
+
+                                return this.options.filter((item) => item.name.toLowerCase().includes(term));
+                            },
+                            choose(item) {
+                                this.selectedId = item.id;
+                                this.query = item.name;
+                                this.open = false;
+                                this.$wire.set('supplier_id', item.id);
+                                this.$wire.loadInvoices();
+                            },
+                            clearSelection() {
+                                this.selectedId = null;
+                                this.query = '';
+                                this.open = false;
+                                this.$wire.set('supplier_id', null);
+                                this.$wire.loadInvoices();
+                            },
+                        }"
+                        x-on:keydown.escape.stop="open = false"
+                        x-on:click.outside="open = false"
+                    >
+                        <input
+                            type="text"
+                            x-model="query"
+                            x-on:focus="open = true"
+                            x-on:input="open = true"
+                            placeholder="{{ __('Search supplier') }}"
+                            class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
+                        />
+                        <button
+                            x-show="selectedId !== null || query !== ''"
+                            x-on:click.prevent="clearSelection()"
+                            type="button"
+                            class="absolute inset-y-0 right-0 px-3 text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+                        >{{ __('Clear') }}</button>
+                        <div
+                            x-show="open"
+                            class="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+                        >
+                            <button
+                                type="button"
+                                x-on:click="clearSelection()"
+                                class="w-full px-3 py-2 text-left text-sm text-neutral-500 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/80"
+                            >
+                                {{ __('Select supplier') }}
+                            </button>
+                            <template x-for="item in filteredOptions" :key="item.id">
+                                <button
+                                    type="button"
+                                    x-on:click="choose(item)"
+                                    class="w-full px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-50 dark:text-neutral-100 dark:hover:bg-neutral-800/80"
+                                    x-text="item.name"
+                                ></button>
+                            </template>
+                            <div x-show="filteredOptions.length === 0" class="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">
+                                {{ __('No suppliers found.') }}
+                            </div>
+                        </div>
+                    </div>
                     @error('supplier_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                 </div>
                 <flux:input wire:model="payment_date" type="date" :label="__('Payment Date')" />

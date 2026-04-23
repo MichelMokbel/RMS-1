@@ -28,6 +28,7 @@ it('lists accounting report entries from the reports workspace', function () {
         ->get(route('reports.index', ['category' => 'accounting']))
         ->assertOk()
         ->assertSee('Trial Balance')
+        ->assertSee('Daily General Ledger')
         ->assertSee('Profit & Loss')
         ->assertSee('Balance Sheet')
         ->assertSee('Cash Flow')
@@ -54,7 +55,18 @@ it('renders the accounting trial balance report route', function () {
     $this->actingAs($user)
         ->get(route('reports.accounting-trial-balance'))
         ->assertOk()
-        ->assertSee('Trial Balance');
+        ->assertSee('Trial Balance')
+        ->assertSee(route('reports.index', ['category' => 'accounting']), false);
+});
+
+it('renders the accounting daily general ledger report route', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    $user->assignRole('admin');
+
+    $this->actingAs($user)
+        ->get(route('reports.accounting-daily-general-ledger'))
+        ->assertOk()
+        ->assertSee('Daily General Ledger');
 });
 
 it('renders the accounting ap aging report route', function () {

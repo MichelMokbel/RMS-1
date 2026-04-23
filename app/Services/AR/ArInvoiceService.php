@@ -240,6 +240,8 @@ class ArInvoiceService
         }
 
         return DB::transaction(function () use ($order, $items, $actorId, $notes) {
+            $defaultCreditTermId = $this->defaultThirtyDayCreditTermId();
+
             $invoice = $this->createDraft(
                 branchId: (int) $order->branch_id,
                 customerId: (int) $order->customer_id,
@@ -250,6 +252,9 @@ class ArInvoiceService
                 source: 'order',
                 sourceSaleId: null,
                 type: 'invoice',
+                paymentType: 'credit',
+                paymentTermId: $defaultCreditTermId,
+                paymentTermDays: 30,
             );
 
             // Link invoice to order
@@ -308,6 +313,8 @@ class ArInvoiceService
         })->all();
 
         return DB::transaction(function () use ($order, $items, $actorId, $notes) {
+            $defaultCreditTermId = $this->defaultThirtyDayCreditTermId();
+
             $invoice = $this->createDraft(
                 branchId: (int) $order->branch_id,
                 customerId: (int) $order->customer_id,
@@ -318,6 +325,10 @@ class ArInvoiceService
                 source: 'pastry_order',
                 sourceSaleId: null,
                 type: 'invoice',
+                paymentType: 'credit',
+                paymentTermId: $defaultCreditTermId,
+                paymentTermDays: 30,
+                lpoReference: $order->sales_order_number,
             );
 
             $invoice->update([
@@ -333,6 +344,15 @@ class ArInvoiceService
 
             return $invoice->fresh(['items']);
         });
+    }
+
+    private function defaultThirtyDayCreditTermId(): ?int
+    {
+        return PaymentTerm::query()
+            ->where('is_active', true)
+            ->where('is_credit', true)
+            ->where('days', 30)
+            ->value('id');
     }
 
     /**

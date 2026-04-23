@@ -1278,6 +1278,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Volt::route('supplier-aging-summary', 'reports.supplier-aging-summary')->name('supplier-aging-summary');
     Volt::route('subscription-details', 'reports.subscription-details')->name('subscription-details');
     Volt::route('accounting/trial-balance', 'reports.accounting-report')->name('accounting-trial-balance');
+    Volt::route('accounting/daily-general-ledger', 'reports.accounting-report')->name('accounting-daily-general-ledger');
     Volt::route('accounting/profit-loss', 'reports.accounting-report')->name('accounting-profit-loss');
     Volt::route('accounting/balance-sheet', 'reports.accounting-report')->name('accounting-balance-sheet');
     Volt::route('accounting/cash-flow', 'reports.accounting-report')->name('accounting-cash-flow');

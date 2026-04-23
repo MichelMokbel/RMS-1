@@ -8,6 +8,7 @@ use App\Models\BudgetVersion;
 use App\Models\JournalEntry;
 use App\Models\Job;
 use App\Models\Payment;
+use App\Services\Accounting\AccountingReportService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -16,10 +17,13 @@ use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
-    public function with(): array
+    public function with(AccountingReportService $reportService): array
     {
         $today = now()->startOfDay();
         $openInvoiceStatuses = ['draft', 'posted', 'partially_paid'];
+        $activeCompanyIds = Schema::hasTable('accounting_companies')
+            ? AccountingCompany::query()->where('is_active', true)->pluck('id')->map(fn ($id) => (int) $id)->all()
+            : [];
 
         $stats = [
             'companies' => 0,
@@ -58,22 +62,22 @@ new #[Layout('components.layouts.app')] class extends Component {
         $monthStart = $today->copy()->startOfMonth();
         $monthEnd = $today->copy()->endOfMonth();
 
-        if (Schema::hasTable('payments')) {
-            $stats['month_inflow'] = (float) Payment::query()
-                ->where('source', 'ar')
-                ->whereDate('received_at', '>=', $monthStart->toDateString())
-                ->whereDate('received_at', '<=', $monthEnd->toDateString())
-                ->sum(DB::raw('amount_cents / 100'));
+        if ($activeCompanyIds !== []) {
+            foreach ($activeCompanyIds as $companyId) {
+                $monthCash = $reportService->cashFlowForRange(
+                    $companyId,
+                    $monthStart->toDateString(),
+                    $monthEnd->toDateString()
+                );
+
+                $stats['month_inflow'] += (float) $monthCash['inflow_total'];
+                $stats['month_outflow'] += (float) $monthCash['outflow_total'];
+            }
         }
 
-        if (Schema::hasTable('ap_payments')) {
-            $stats['month_outflow'] = (float) ApPayment::query()
-                ->whereDate('payment_date', '>=', $monthStart->toDateString())
-                ->whereDate('payment_date', '<=', $monthEnd->toDateString())
-                ->sum('amount');
-        }
-
-        $stats['month_net'] = $stats['month_inflow'] - $stats['month_outflow'];
+        $stats['month_inflow'] = round($stats['month_inflow'], 2);
+        $stats['month_outflow'] = round($stats['month_outflow'], 2);
+        $stats['month_net'] = round($stats['month_inflow'] - $stats['month_outflow'], 2);
 
         if (Schema::hasTable('bank_transactions')) {
             $stats['open_bank_items'] = (int) BankTransaction::query()->where('status', 'open')->count();
@@ -103,22 +107,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             $inflow = 0.0;
             $outflow = 0.0;
 
-            if (Schema::hasTable('payments')) {
-                $inflow = (float) Payment::query()
-                    ->where('source', 'ar')
-                    ->whereDate('received_at', '>=', $start)
-                    ->whereDate('received_at', '<=', $end)
-                    ->sum(DB::raw('amount_cents / 100'));
+            foreach ($activeCompanyIds as $companyId) {
+                $cashFlow = $reportService->cashFlowForRange($companyId, $start, $end);
+                $inflow += (float) $cashFlow['inflow_total'];
+                $outflow += (float) $cashFlow['outflow_total'];
             }
 
-            if (Schema::hasTable('ap_payments')) {
-                $outflow = (float) ApPayment::query()
-                    ->whereDate('payment_date', '>=', $start)
-                    ->whereDate('payment_date', '<=', $end)
-                    ->sum('amount');
-            }
-
-            $net = $inflow - $outflow;
+            $inflow = round($inflow, 2);
+            $outflow = round($outflow, 2);
+            $net = round($inflow - $outflow, 2);
             $maxTrendAmount = max($maxTrendAmount, $inflow, $outflow, abs($net));
 
             $trend->push([
