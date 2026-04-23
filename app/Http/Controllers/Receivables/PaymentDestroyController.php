@@ -18,6 +18,6 @@ class PaymentDestroyController extends Controller
 
         return redirect()
             ->route('receivables.payments.index')
-            ->with('status', __('Payment deleted.'));
+            ->with('status', __('Payment voided.'));
     }
 }

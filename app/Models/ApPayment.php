@@ -19,6 +19,7 @@ class ApPayment extends Model
 
     protected $fillable = [
         'supplier_id',
+        'client_uuid',
         'company_id',
         'bank_account_id',
         'branch_id',
@@ -39,6 +40,7 @@ class ApPayment extends Model
     ];
 
     protected $casts = [
+        'client_uuid' => 'string',
         'company_id' => 'integer',
         'bank_account_id' => 'integer',
         'branch_id' => 'integer',

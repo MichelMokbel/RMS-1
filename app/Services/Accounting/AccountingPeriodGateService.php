@@ -13,8 +13,7 @@ class AccountingPeriodGateService
 {
     public function __construct(
         protected FinanceSettingsService $financeSettings
-    ) {
-    }
+    ) {}
 
     public function assertDateOpen(
         string $date,
@@ -33,6 +32,12 @@ class AccountingPeriodGateService
         }
 
         if (! Schema::hasTable('accounting_periods')) {
+            if (app()->isProduction()) {
+                throw ValidationException::withMessages([
+                    $errorKey => __('Accounting periods are not configured. Contact your system administrator.'),
+                ]);
+            }
+
             return;
         }
 
@@ -45,7 +50,9 @@ class AccountingPeriodGateService
                 ->first();
 
         if (! $period) {
-            return;
+            throw ValidationException::withMessages([
+                $errorKey => __('No accounting period exists for :date.', ['date' => $normalizedDate]),
+            ]);
         }
 
         if ($this->isLocked($period, $module) || $period->status === 'closed') {

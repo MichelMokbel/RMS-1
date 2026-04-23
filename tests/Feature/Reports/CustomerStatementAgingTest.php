@@ -2,6 +2,7 @@
 
 use App\Models\ArInvoice;
 use App\Models\Customer;
+use App\Models\Payment;
 use App\Models\User;
 use Carbon\Carbon;
 use Spatie\Permission\Models\Role;
@@ -100,4 +101,46 @@ it('filters fully paid invoices from the customer statement when only unpaid is 
     $response->assertOk();
     $response->assertSee('INV-OPEN');
     $response->assertDontSee('INV-PAID');
+});
+
+it('excludes voided payments from the customer statement', function () {
+    $customer = Customer::factory()->corporate()->create();
+
+    ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'issued',
+        'invoice_number' => 'INV-VOID-PMT',
+        'payment_type' => 'credit',
+        'issue_date' => '2026-03-01',
+        'due_date' => '2026-03-10',
+        'total_cents' => 50000,
+        'paid_total_cents' => 0,
+        'balance_cents' => 50000,
+    ]);
+
+    Payment::factory()->create([
+        'customer_id' => $customer->id,
+        'source' => 'ar',
+        'method' => 'bank_transfer',
+        'amount_cents' => 50000,
+        'reference' => 'VOIDED-PMT',
+        'received_at' => '2026-03-05 09:00:00',
+        'voided_at' => now(),
+        'voided_by' => 1,
+        'void_reason' => 'Voided',
+    ]);
+
+    $user = User::factory()->create(['status' => 'active']);
+    $user->assignRole('manager');
+
+    $response = $this->actingAs($user)->get(route('reports.customer-statement.print', [
+        'customer_id' => $customer->id,
+        'date_from' => '2026-03-01',
+        'date_to' => '2026-03-31',
+    ]));
+
+    $response->assertOk();
+    $response->assertSee('INV-VOID-PMT');
+    $response->assertDontSee('VOIDED-PMT');
 });

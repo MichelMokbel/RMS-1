@@ -5,7 +5,8 @@ namespace App\Services\AR;
 use App\Models\ArInvoice;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
-use App\Models\SubledgerEntry;
+use App\Services\Accounting\AccountingAuditLogService;
+use App\Services\Banking\BankTransactionService;
 use App\Services\Ledger\SubledgerService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -15,6 +16,8 @@ class ArPaymentDeleteService
     public function __construct(
         protected ArAllocationService $allocationService,
         protected SubledgerService $subledgerService,
+        protected BankTransactionService $bankTransactionService,
+        protected AccountingAuditLogService $auditLog,
     ) {
     }
 
@@ -38,22 +41,7 @@ class ArPaymentDeleteService
                 ]);
             }
 
-            // Reverse the subledger entry for this allocation
-            $entry = SubledgerEntry::query()
-                ->where('source_type', 'ar_payment_allocation')
-                ->where('source_id', $allocation->id)
-                ->where('event', 'apply')
-                ->first();
-
-            if ($entry) {
-                $this->subledgerService->recordReversalForEntry(
-                    $entry,
-                    'delete',
-                    'AR payment allocation remove '.$allocation->id,
-                    now()->toDateString(),
-                    $userId
-                );
-            }
+            $this->subledgerService->recordArAllocationReleased($allocation, $userId, 'delete');
 
             // Void the allocation record
             $allocation->voided_at = now();
@@ -79,12 +67,29 @@ class ArPaymentDeleteService
 
                 $this->allocationService->recalcStatus($invoice->fresh());
             }
+
+            $this->auditLog->log('ar_payment.allocation_removed', $userId, $allocation, [
+                'invoice_id' => $invoiceId,
+                'payment_id' => (int) $allocation->payment_id,
+                'amount_cents' => (int) $allocation->amount_cents,
+            ]);
         });
     }
 
     public function delete(Payment $payment, int $userId): void
     {
         DB::transaction(function () use ($payment, $userId): void {
+            // Guard: fail fast before acquiring the payment lock to reduce contention.
+            $settledItem = \App\Models\ArClearingSettlementItem::where('payment_id', $payment->id)
+                ->whereHas('settlement', fn ($q) => $q->whereNull('voided_at'))
+                ->lockForUpdate()
+                ->exists();
+            if ($settledItem) {
+                throw ValidationException::withMessages([
+                    'payment' => __('Cannot void a payment that has been settled. Void the clearing settlement first.'),
+                ]);
+            }
+
             $payment = Payment::query()
                 ->whereKey($payment->id)
                 ->lockForUpdate()
@@ -93,6 +98,11 @@ class ArPaymentDeleteService
             if ((string) $payment->source !== 'ar') {
                 throw ValidationException::withMessages([
                     'payment' => __('Only AR customer payments can be deleted here.'),
+                ]);
+            }
+            if ($payment->voided_at !== null) {
+                throw ValidationException::withMessages([
+                    'payment' => __('This payment has already been voided.'),
                 ]);
             }
 
@@ -108,45 +118,30 @@ class ArPaymentDeleteService
                 ->unique()
                 ->values();
 
+            $voidedAt = now();
+            $voidDate = $voidedAt->toDateString();
+
             foreach ($allocations as $allocation) {
-                $entry = SubledgerEntry::query()
-                    ->where('source_type', 'ar_payment_allocation')
-                    ->where('source_id', $allocation->id)
-                    ->where('event', 'apply')
-                    ->first();
-
-                if ($entry) {
-                    $this->subledgerService->recordReversalForEntry(
-                        $entry,
-                        'delete',
-                        'AR payment allocation delete '.$allocation->id,
-                        now()->toDateString(),
-                        $userId
-                    );
-                }
+                $this->subledgerService->recordArAllocationReleased($allocation, $userId, 'delete', $voidDate, skipFallbackWhenNoApplyEntry: true);
             }
 
-            $paymentEntry = SubledgerEntry::query()
-                ->where('source_type', 'ar_payment')
-                ->where('source_id', $payment->id)
-                ->where('event', 'payment')
-                ->first();
-
-            if ($paymentEntry) {
-                $this->subledgerService->recordReversalForEntry(
-                    $paymentEntry,
-                    'delete',
-                    'AR payment delete '.$payment->id,
-                    now()->toDateString(),
-                    $userId
-                );
-            }
+            $this->subledgerService->recordArPaymentVoided($payment, $userId, $voidDate);
 
             PaymentAllocation::query()
                 ->where('payment_id', $payment->id)
-                ->delete();
+                ->whereNull('voided_at')
+                ->update([
+                    'voided_at' => $voidedAt,
+                    'voided_by' => $userId,
+                    'void_reason' => 'Payment voided',
+                    'updated_at' => $voidedAt,
+                ]);
 
-            $payment->delete();
+            $payment->voided_at = $voidedAt;
+            $payment->voided_by = $userId;
+            $payment->void_reason = 'Payment voided';
+            $payment->save();
+            $this->bankTransactionService->voidArPayment($payment, $userId);
 
             foreach ($invoiceIds as $invoiceId) {
                 $invoice = ArInvoice::query()
@@ -171,6 +166,10 @@ class ArPaymentDeleteService
 
                 $this->allocationService->recalcStatus($invoice->fresh());
             }
+
+            $this->auditLog->log('ar_payment.voided', $userId, $payment, [
+                'allocation_count' => (int) $allocations->count(),
+            ]);
         });
     }
 }

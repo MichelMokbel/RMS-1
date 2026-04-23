@@ -34,10 +34,12 @@ class SupplierStatementReportController extends Controller
 
         $invoiceBase = ApInvoice::query()
             ->where('supplier_id', $supplierId)
+            ->whereNull('voided_at')
             ->whereIn('status', ['posted', 'partially_paid', 'paid']);
 
         $paymentBase = ApPayment::query()
-            ->where('supplier_id', $supplierId);
+            ->where('supplier_id', $supplierId)
+            ->whereNull('voided_at');
 
         $openingInvoices = $dateFrom ? (float) $invoiceBase->clone()->whereDate('invoice_date', '<', $dateFrom)->sum('total_amount') : 0.0;
         $openingPayments = $dateFrom ? (float) $paymentBase->clone()->whereDate('payment_date', '<', $dateFrom)->sum('amount') : 0.0;

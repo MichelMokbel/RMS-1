@@ -582,6 +582,49 @@ it('rejects manual AR allocations across accounting companies', function () {
     ], $user->id))->toThrow(ValidationException::class, 'same accounting company');
 });
 
+it('replays ar payment creation idempotently by client uuid and rejects conflicting payloads', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+    $customer = Customer::factory()->corporate()->create();
+
+    /** @var ArInvoiceService $invoices */
+    $invoices = app(ArInvoiceService::class);
+    $invoice = $invoices->createDraft(
+        branchId: 1,
+        customerId: $customer->id,
+        items: [
+            ['description' => 'Service', 'qty' => '1.000', 'unit_price_cents' => 10000, 'discount_cents' => 0, 'tax_cents' => 0, 'line_total_cents' => 10000],
+        ],
+        actorId: $user->id,
+    );
+    $invoice = $invoices->issue($invoice, $user->id);
+
+    /** @var ArPaymentService $payments */
+    $payments = app(ArPaymentService::class);
+    $payload = [
+        'customer_id' => $customer->id,
+        'branch_id' => 1,
+        'amount_cents' => 10000,
+        'method' => 'bank_transfer',
+        'client_uuid' => '33333333-3333-4333-8333-333333333333',
+        'allocations' => [
+            ['invoice_id' => $invoice->id, 'amount_cents' => 10000],
+        ],
+    ];
+
+    $first = $payments->createPaymentWithAllocations($payload, $user->id);
+    $replayed = $payments->createPaymentWithAllocations($payload, $user->id);
+
+    expect((int) $first->id)->toBe((int) $replayed->id);
+    expect(Payment::query()->where('client_uuid', $payload['client_uuid'])->count())->toBe(1);
+
+    $conflicting = $payload;
+    $conflicting['amount_cents'] = 9000;
+
+    expect(fn () => $payments->createPaymentWithAllocations($conflicting, $user->id))
+        ->toThrow(ValidationException::class);
+});
+
 it('detects and repairs cross-company ar allocations', function () {
     $user = User::factory()->create();
     $user->assignRole('manager');
@@ -692,6 +735,23 @@ it('voids an issued invoice when it has no allocations', function () {
     expect($voided->voided_by)->toBe($user->id);
     expect($voided->void_reason)->toBe('Customer cancelled');
     expect($voided->voided_at)->not->toBeNull();
+    $this->assertDatabaseHas('subledger_entries', [
+        'source_type' => 'ar_invoice',
+        'source_id' => $invoice->id,
+        'event' => 'void',
+    ]);
+    expect(AccountingAuditLog::query()
+        ->where('action', 'ar_invoice.issued')
+        ->where('subject_id', $invoice->id)
+        ->exists())->toBeTrue();
+    expect(AccountingAuditLog::query()
+        ->where('action', 'ar_invoice.voided')
+        ->where('subject_id', $invoice->id)
+        ->exists())->toBeTrue();
+    expect(AccountingAuditLog::query()
+        ->where('action', 'ar_invoice.allocation_voided')
+        ->where('payload->invoice_id', (int) $invoice->id)
+        ->exists())->toBeFalse();
 });
 
 it('allows voiding a paid invoice by voiding its allocations', function () {
@@ -730,6 +790,15 @@ it('allows voiding a paid invoice by voiding its allocations', function () {
 
     $payment = Payment::query()->latest('id')->firstOrFail();
     expect((int) $payment->unallocatedCents())->toBe((int) $payment->amount_cents);
+    $this->assertDatabaseHas('subledger_entries', [
+        'source_type' => 'ar_payment_allocation',
+        'source_id' => (int) $payment->allAllocations()->firstOrFail()->id,
+        'event' => 'void',
+    ]);
+    expect(AccountingAuditLog::query()
+        ->where('action', 'ar_invoice.allocation_voided')
+        ->where('payload->invoice_id', (int) $invoice->id)
+        ->exists())->toBeTrue();
 });
 
 it('voids and duplicates an invoice with incrementing V suffix on issue', function () {
@@ -766,6 +835,10 @@ it('voids and duplicates an invoice with incrementing V suffix on issue', functi
     expect((int) $original->paymentAllocations()->count())->toBe(0);
     expect($duplicate1->status)->toBe('draft');
     expect((int) data_get($duplicate1->meta, 'duplicate_revision'))->toBe(1);
+    expect(AccountingAuditLog::query()
+        ->where('action', 'ar_invoice.voided_and_duplicated')
+        ->where('subject_id', $original->id)
+        ->exists())->toBeTrue();
 
     $duplicate1 = $invoices->issue($duplicate1, $user->id);
     expect($duplicate1->invoice_number)->toBe($baseNumber.'V1');

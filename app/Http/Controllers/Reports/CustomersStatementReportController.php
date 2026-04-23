@@ -58,6 +58,7 @@ class CustomersStatementReportController extends Controller
         $invoices = ArInvoice::query()
             ->with(['customer:id,name,customer_code'])
             ->where('type', 'invoice')
+            ->whereNull('voided_at')
             ->whereIn('status', ['issued', 'partially_paid', 'paid'])
             ->when($branchId > 0, fn ($q) => $q->where('branch_id', $branchId))
             ->whereDate('issue_date', '>=', $from->toDateString())

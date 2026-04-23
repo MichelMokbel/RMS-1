@@ -11,9 +11,11 @@ use App\Models\ExpenseProfile;
 use App\Models\PeriodLock;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Services\Accounting\AccountingPeriodGateService;
 use App\Services\Accounting\AccountingPeriodChecklistService;
 use App\Services\Accounting\AccountingPeriodCloseService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -90,6 +92,14 @@ it('moves past periods to ended_open when statuses are refreshed', function () {
     app(AccountingPeriodCloseService::class)->syncStatuses($company->id);
 
     expect($period->fresh()->status)->toBe('ended_open');
+});
+
+it('fails closed when no accounting period exists for the posting date', function () {
+    $company = AccountingCompany::query()->where('is_default', true)->firstOrFail();
+
+    expect(function () use ($company) {
+        app(AccountingPeriodGateService::class)->assertDateOpen('2035-01-01', $company->id, null, 'ledger');
+    })->toThrow(ValidationException::class);
 });
 
 it('blocks close until required checklist items are complete', function () {

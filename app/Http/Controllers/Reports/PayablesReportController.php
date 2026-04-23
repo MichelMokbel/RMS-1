@@ -6,11 +6,19 @@ use App\Http\Controllers\Controller;
 use App\Services\AP\ApReportsService;
 use App\Support\Reports\CsvExport;
 use App\Support\Reports\PdfExport;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PayablesReportController extends Controller
 {
+    private function agingAsOf(Request $request): Carbon
+    {
+        return $request->filled('invoice_date_to')
+            ? Carbon::parse((string) $request->get('invoice_date_to'))->startOfDay()
+            : now()->startOfDay();
+    }
+
     private function formatMoney(?float $amount): string
     {
         return number_format((float) ($amount ?? 0), 3, '.', '');
@@ -35,7 +43,10 @@ class PayablesReportController extends Controller
         ];
         $invoicePage = $reportsService->invoiceRegister($invoiceFilters);
         $paymentPage = $reportsService->paymentRegister($paymentFilters);
-        $aging = $reportsService->agingSummary($request->filled('supplier_id') ? $request->integer('supplier_id') : null);
+        $aging = $reportsService->agingSummary(
+            $request->filled('supplier_id') ? $request->integer('supplier_id') : null,
+            $this->agingAsOf($request)
+        );
         $filters = $request->only(['tab', 'supplier_id', 'invoice_status', 'invoice_date_from', 'invoice_date_to', 'payment_date_from', 'payment_date_to', 'payment_method']);
 
         return view('reports.payables-print', [
@@ -101,7 +112,10 @@ class PayablesReportController extends Controller
         ];
         $invoicePage = $reportsService->invoiceRegister($invoiceFilters);
         $paymentPage = $reportsService->paymentRegister($paymentFilters);
-        $aging = $reportsService->agingSummary($request->filled('supplier_id') ? $request->integer('supplier_id') : null);
+        $aging = $reportsService->agingSummary(
+            $request->filled('supplier_id') ? $request->integer('supplier_id') : null,
+            $this->agingAsOf($request)
+        );
         $filters = $request->only(['tab', 'supplier_id', 'invoice_status', 'invoice_date_from', 'invoice_date_to', 'payment_date_from', 'payment_date_to', 'payment_method']);
 
         return PdfExport::download('reports.payables-print', [

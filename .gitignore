@@ -40,5 +40,6 @@ composer.json
 
 # Claude Code local config
 CLAUDE.local.md
+.cursor/debug.log
 
 .cursor/debug.log
