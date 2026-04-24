@@ -498,6 +498,12 @@
                             <td class="label-sep">:</td>
                             <td class="value">{{ $invoice->lpo_reference ?? '-' }}</td>
                         </tr>
+                        <tr>
+                            <td class="label-en">POS Reference</td>
+                            <td class="label-ar arabic">مرجع نقطة البيع</td>
+                            <td class="label-sep">:</td>
+                            <td class="value">{{ $invoice->pos_reference ?? '-' }}</td>
+                        </tr>
                     </table>
                 </div>
             </div>

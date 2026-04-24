@@ -32,6 +32,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?int $payment_term_id = null;
     public ?int $sales_person_id = null;
     public ?string $lpo_reference = null;
+    public ?string $pos_reference = null;
     public string $invoice_discount_type = 'fixed';
     public string $invoice_discount_value = '0.00';
 
@@ -90,6 +91,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->payment_term_id = $invoice->payment_term_id ? (int) $invoice->payment_term_id : null;
         $this->sales_person_id = $invoice->sales_person_id ? (int) $invoice->sales_person_id : Auth::id();
         $this->lpo_reference = $invoice->lpo_reference;
+        $this->pos_reference = $invoice->pos_reference;
         $this->invoice_discount_type = (string) ($invoice->invoice_discount_type ?: 'fixed');
         $this->invoice_discount_value = $this->invoice_discount_type === 'percent'
             ? number_format(((int) ($invoice->invoice_discount_value ?? 0)) / 100, 2, '.', '')
@@ -711,6 +713,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'payment_term_days' => 0,
                     'sales_person_id' => $this->sales_person_id,
                     'lpo_reference' => $this->lpo_reference,
+                    'pos_reference' => $this->pos_reference,
                     'invoice_discount_type' => $this->invoice_discount_type,
                     'invoice_discount_value' => $invoiceDiscountValue,
                     'notes' => $this->notes,
@@ -732,6 +735,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     paymentTermDays: 0,
                     salesPersonId: $this->sales_person_id,
                     jobId: $this->job_id,
+                    posReference: $this->pos_reference,
                     lpoReference: $this->lpo_reference,
                     invoiceDiscountType: $this->invoice_discount_type,
                     invoiceDiscountValue: $invoiceDiscountValue,
@@ -947,6 +951,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <div>
                 <flux:input wire:model.live="lpo_reference" :label="__('LPO Reference')" />
+            </div>
+            <div>
+                <flux:input wire:model.live="pos_reference" :label="__('POS Reference')" />
             </div>
         </div>
 

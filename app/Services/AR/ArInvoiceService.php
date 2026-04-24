@@ -614,6 +614,7 @@ class ArInvoiceService
                 'payment_term_days' => (int) ($payload['payment_term_days'] ?? $locked->payment_term_days),
                 'sales_person_id' => $payload['sales_person_id'] ?? $locked->sales_person_id,
                 'job_id' => $payload['job_id'] ?? $locked->job_id,
+                'pos_reference' => $payload['pos_reference'] ?? $locked->pos_reference,
                 'lpo_reference' => $payload['lpo_reference'] ?? $locked->lpo_reference,
                 'issue_date' => $payload['issue_date'] ?? $locked->issue_date?->toDateString(),
                 'due_date' => array_key_exists('due_date', $payload) ? $payload['due_date'] : $locked->due_date?->toDateString(),
