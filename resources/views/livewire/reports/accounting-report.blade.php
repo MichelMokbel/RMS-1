@@ -264,6 +264,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
                     <p class="text-xs uppercase tracking-wide text-neutral-500">{{ __('Lines') }}</p>
                     <p class="mt-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{{ number_format((float) ($report['daily_general_ledger']['totals']['line_count'] ?? 0), 0) }}</p>
+                    <p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                        {{ __('Audit-only') }}: {{ number_format((float) ($report['daily_general_ledger']['totals']['audit_only_line_count'] ?? 0), 0) }}
+                    </p>
                 </div>
                 <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
                     <p class="text-xs uppercase tracking-wide text-neutral-500">{{ __('Total Debits') }}</p>
@@ -328,6 +331,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                                                             @else
                                                                 <div>{{ $source['source_reference'] }}</div>
                                                             @endif
+                                                            @if (! ($source['affects_totals'] ?? true))
+                                                                <div class="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                                                                    {{ __($source['status_label']) }}
+                                                                </div>
+                                                            @endif
                                                             <div class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Entry #:id', ['id' => $source['entry_id']]) }}</div>
                                                         </td>
                                                         <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ str($source['event'])->headline() }}</td>
@@ -352,8 +360,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                                                             @endphp
                                                             {{ $dimensionLabels->isNotEmpty() ? $dimensionLabels->implode(' · ') : '—' }}
                                                         </td>
-                                                        <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">{{ number_format((float) $source['debit_total'], 2) }}</td>
-                                                        <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">{{ number_format((float) $source['credit_total'], 2) }}</td>
+                                                        <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">
+                                                            {{ number_format((float) $source['debit_total'], 2) }}
+                                                            @if (! ($source['affects_totals'] ?? true))
+                                                                <div class="text-[11px] text-neutral-500 dark:text-neutral-400">{{ __('Excluded from totals') }}</div>
+                                                            @endif
+                                                        </td>
+                                                        <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">
+                                                            {{ number_format((float) $source['credit_total'], 2) }}
+                                                            @if (! ($source['affects_totals'] ?? true))
+                                                                <div class="text-[11px] text-neutral-500 dark:text-neutral-400">{{ __('Excluded from totals') }}</div>
+                                                            @endif
+                                                        </td>
                                                     </tr>
                                                 @endforeach
                                             </tbody>

@@ -1,7 +1,9 @@
 <?php
 
 use App\Models\AccountingCompany;
+use App\Models\Customer;
 use App\Models\LedgerAccount;
+use App\Models\Payment;
 use App\Models\SubledgerEntry;
 use App\Models\SubledgerLine;
 use App\Services\Accounting\AccountingReportService;
@@ -25,9 +27,23 @@ beforeEach(function () {
 });
 
 it('sums subledger debits as inflows and credits as outflows for cash accounts', function () {
+    $customer = Customer::factory()->corporate()->create();
+
+    $payment = Payment::query()->create([
+        'branch_id' => 1,
+        'customer_id' => $customer->id,
+        'company_id' => $this->company->id,
+        'source' => 'ar',
+        'method' => 'cash',
+        'amount_cents' => 100000,
+        'currency' => 'QAR',
+        'received_at' => now(),
+        'created_by' => 1,
+    ]);
+
     $entry = SubledgerEntry::query()->create([
         'source_type' => 'ar_payment',
-        'source_id' => 1,
+        'source_id' => $payment->id,
         'company_id' => $this->company->id,
         'event' => 'payment',
         'entry_date' => now()->toDateString(),
@@ -48,9 +64,23 @@ it('sums subledger debits as inflows and credits as outflows for cash accounts',
 });
 
 it('excludes voided subledger entries from cash flow', function () {
+    $customer = Customer::factory()->corporate()->create();
+
+    $payment = Payment::query()->create([
+        'branch_id' => 1,
+        'customer_id' => $customer->id,
+        'company_id' => $this->company->id,
+        'source' => 'ar',
+        'method' => 'cash',
+        'amount_cents' => 100000,
+        'currency' => 'QAR',
+        'received_at' => now(),
+        'created_by' => 1,
+    ]);
+
     $posted = SubledgerEntry::query()->create([
         'source_type' => 'ar_payment',
-        'source_id' => 2,
+        'source_id' => $payment->id,
         'company_id' => $this->company->id,
         'event' => 'payment',
         'entry_date' => now()->toDateString(),
@@ -96,6 +126,8 @@ it('excludes voided subledger entries from cash flow', function () {
 });
 
 it('does not count non-cash account subledger lines in cash flow', function () {
+    $customer = Customer::factory()->corporate()->create();
+
     $arAccount = LedgerAccount::query()->where('code', '1500')->first()
         ?? LedgerAccount::factory()->create([
             'company_id' => $this->company->id,
@@ -104,9 +136,21 @@ it('does not count non-cash account subledger lines in cash flow', function () {
             'type' => 'asset',
         ]);
 
+    $payment = Payment::query()->create([
+        'branch_id' => 1,
+        'customer_id' => $customer->id,
+        'company_id' => $this->company->id,
+        'source' => 'ar',
+        'method' => 'cash',
+        'amount_cents' => 30000,
+        'currency' => 'QAR',
+        'received_at' => now(),
+        'created_by' => 1,
+    ]);
+
     $entry = SubledgerEntry::query()->create([
         'source_type' => 'ar_payment',
-        'source_id' => 10,
+        'source_id' => $payment->id,
         'company_id' => $this->company->id,
         'event' => 'payment',
         'entry_date' => now()->toDateString(),
@@ -124,4 +168,43 @@ it('does not count non-cash account subledger lines in cash flow', function () {
     expect($result['inflow_total'])->toBe(300.0)
         ->and($result['outflow_total'])->toBe(0.0)
         ->and($result['net_cash_flow'])->toBe(300.0);
+});
+
+it('excludes entries whose source payment has been voided', function () {
+    $customer = Customer::factory()->corporate()->create();
+
+    $payment = Payment::query()->create([
+        'branch_id' => 1,
+        'customer_id' => $customer->id,
+        'company_id' => $this->company->id,
+        'source' => 'ar',
+        'method' => 'cash',
+        'amount_cents' => 50000,
+        'currency' => 'QAR',
+        'received_at' => now(),
+        'created_by' => 1,
+        'voided_at' => now(),
+        'voided_by' => 1,
+        'void_reason' => 'Payment voided',
+    ]);
+
+    $entry = SubledgerEntry::query()->create([
+        'source_type' => 'ar_payment',
+        'source_id' => $payment->id,
+        'company_id' => $this->company->id,
+        'event' => 'payment',
+        'entry_date' => now()->toDateString(),
+        'description' => 'Voided source payment',
+        'currency_code' => 'QAR',
+        'status' => 'posted',
+        'posted_at' => now(),
+    ]);
+
+    SubledgerLine::query()->create(['entry_id' => $entry->id, 'account_id' => $this->cashAccount->id, 'debit' => 500, 'credit' => 0, 'memo' => 'Should be excluded']);
+
+    $result = app(AccountingReportService::class)->cashFlow($this->company->id, now()->toDateString());
+
+    expect($result['inflow_total'])->toBe(0.0)
+        ->and($result['outflow_total'])->toBe(0.0)
+        ->and($result['net_cash_flow'])->toBe(0.0);
 });

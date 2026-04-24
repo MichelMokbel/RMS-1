@@ -3,7 +3,10 @@
 namespace App\Services\Accounting;
 
 use App\Models\AccountingCompany;
+use App\Models\ApChequeClearance;
 use App\Models\ArInvoice;
+use App\Models\ArClearingSettlement;
+use App\Models\ApPayment;
 use App\Models\ApInvoice;
 use App\Models\LedgerAccount;
 use App\Models\Payment;
@@ -210,6 +213,7 @@ class AccountingReportService
             ->where('se.company_id', $companyId)
             ->where('se.status', 'posted')
             ->whereNull('se.voided_at')
+            ->tap(fn ($query) => $this->applyActiveSourceDocumentFilter($query, 'se'))
             ->when($dateFrom, fn ($query) => $query->whereDate('se.entry_date', '>=', $dateFrom))
             ->whereDate('se.entry_date', '<=', $dateTo)
             ->whereIn('sl.account_id', $cashAccountIds)
@@ -309,6 +313,22 @@ class AccountingReportService
                 ];
             });
 
+        $activeSources = $this->resolveActiveSourceDocuments($rows);
+        $rows = $rows->map(function (array $row) use ($activeSources) {
+            $sourceType = (string) ($row['source_type'] ?? '');
+            $sourceId = (int) ($row['source_id'] ?? 0);
+            $sourceKey = $sourceType.'#'.$sourceId;
+            $affectsTotals = $sourceType === '' || $sourceId <= 0
+                ? true
+                : ($activeSources[$sourceKey] ?? true);
+
+            return [
+                ...$row,
+                'affects_totals' => $affectsTotals,
+                'status_label' => $affectsTotals ? 'Posted' : 'Voided / Audit only',
+            ];
+        });
+
         $groups = $rows
             ->groupBy('entry_date')
             ->map(function (Collection $dateBucket, string $entryDate) {
@@ -334,15 +354,18 @@ class AccountingReportService
                                     'source_route' => $sample['source_route'],
                                     'source_route_params' => $sample['source_route_params'],
                                     'is_source_linked' => $sample['source_route'] !== null && ! empty($sample['source_route_params']),
+                                    'affects_totals' => (bool) $sample['affects_totals'],
+                                    'status_label' => $sample['status_label'],
                                     'description' => $sample['entry_description'],
-                                    'debit_total' => round((float) $sourceBucket->sum('debit'), 2),
-                                    'credit_total' => round((float) $sourceBucket->sum('credit'), 2),
+                                    'debit_total' => round((float) $sourceBucket->where('affects_totals', true)->sum('debit'), 2),
+                                    'credit_total' => round((float) $sourceBucket->where('affects_totals', true)->sum('credit'), 2),
                                     'lines' => $sourceBucket
                                         ->map(fn (array $line) => [
                                             'line_id' => $line['line_id'],
                                             'memo' => $line['line_memo'],
                                             'debit' => $line['debit'],
                                             'credit' => $line['credit'],
+                                            'affects_totals' => (bool) $line['affects_totals'],
                                             'branch_name' => $line['branch_name'],
                                             'department_name' => $line['department_name'],
                                             'job_name' => $line['job_name'],
@@ -357,8 +380,8 @@ class AccountingReportService
                             'account_id' => $sample['account_id'],
                             'account_code' => $sample['account_code'],
                             'account_name' => $sample['account_name'],
-                            'debit_total' => round((float) $accountBucket->sum('debit'), 2),
-                            'credit_total' => round((float) $accountBucket->sum('credit'), 2),
+                            'debit_total' => round((float) $accountBucket->where('affects_totals', true)->sum('debit'), 2),
+                            'credit_total' => round((float) $accountBucket->where('affects_totals', true)->sum('credit'), 2),
                             'sources' => $sources->all(),
                         ];
                     })
@@ -367,8 +390,8 @@ class AccountingReportService
 
                 return [
                     'entry_date' => $entryDate,
-                    'debit_total' => round((float) $dateBucket->sum('debit'), 2),
-                    'credit_total' => round((float) $dateBucket->sum('credit'), 2),
+                    'debit_total' => round((float) $dateBucket->where('affects_totals', true)->sum('debit'), 2),
+                    'credit_total' => round((float) $dateBucket->where('affects_totals', true)->sum('credit'), 2),
                     'accounts' => $accounts->all(),
                 ];
             })
@@ -379,10 +402,12 @@ class AccountingReportService
             'date_to' => $dateTo,
             'groups' => $groups->all(),
             'totals' => [
-                'debit_total' => round((float) $rows->sum('debit'), 2),
-                'credit_total' => round((float) $rows->sum('credit'), 2),
-                'line_count' => $rows->count(),
-                'entry_count' => $rows->pluck('entry_id')->unique()->count(),
+                'debit_total' => round((float) $rows->where('affects_totals', true)->sum('debit'), 2),
+                'credit_total' => round((float) $rows->where('affects_totals', true)->sum('credit'), 2),
+                'line_count' => $rows->where('affects_totals', true)->count(),
+                'entry_count' => $rows->where('affects_totals', true)->pluck('entry_id')->unique()->count(),
+                'audit_only_line_count' => $rows->where('affects_totals', false)->count(),
+                'audit_only_entry_count' => $rows->where('affects_totals', false)->pluck('entry_id')->unique()->count(),
             ],
         ];
     }
@@ -425,6 +450,88 @@ class AccountingReportService
             ->replace(['_', '-'], ' ')
             ->headline()
             ->toString();
+    }
+
+    private function resolveActiveSourceDocuments(Collection $rows): array
+    {
+        $sourceGroups = $rows
+            ->filter(fn (array $row) => ! empty($row['source_type']) && ! empty($row['source_id']))
+            ->groupBy('source_type');
+
+        $statusMap = [];
+
+        $resolverMap = [
+            'ar_payment' => Payment::class,
+            'ap_payment' => ApPayment::class,
+            'ar_clearing_settlement' => ArClearingSettlement::class,
+            'ap_cheque_clearance' => ApChequeClearance::class,
+        ];
+
+        foreach ($resolverMap as $sourceType => $modelClass) {
+            $ids = collect($sourceGroups->get($sourceType, []))
+                ->pluck('source_id')
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+
+            if ($ids->isEmpty()) {
+                continue;
+            }
+
+            $activeIds = $modelClass::query()
+                ->whereIn('id', $ids)
+                ->whereNull('voided_at')
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            foreach ($ids as $id) {
+                $statusMap[$sourceType.'#'.$id] = in_array((int) $id, $activeIds, true);
+            }
+        }
+
+        return $statusMap;
+    }
+
+    private function applyActiveSourceDocumentFilter($query, string $entryAlias = 'se')
+    {
+        return $query
+            ->where(function ($builder) use ($entryAlias) {
+                $builder->where("{$entryAlias}.source_type", '!=', 'ar_payment')
+                    ->orWhereExists(function ($subquery) use ($entryAlias) {
+                        $subquery->selectRaw('1')
+                            ->from((new Payment)->getTable().' as p')
+                            ->whereColumn('p.id', "{$entryAlias}.source_id")
+                            ->whereNull('p.voided_at');
+                    });
+            })
+            ->where(function ($builder) use ($entryAlias) {
+                $builder->where("{$entryAlias}.source_type", '!=', 'ap_payment')
+                    ->orWhereExists(function ($subquery) use ($entryAlias) {
+                        $subquery->selectRaw('1')
+                            ->from((new ApPayment)->getTable().' as ap')
+                            ->whereColumn('ap.id', "{$entryAlias}.source_id")
+                            ->whereNull('ap.voided_at');
+                    });
+            })
+            ->where(function ($builder) use ($entryAlias) {
+                $builder->where("{$entryAlias}.source_type", '!=', 'ar_clearing_settlement')
+                    ->orWhereExists(function ($subquery) use ($entryAlias) {
+                        $subquery->selectRaw('1')
+                            ->from((new ArClearingSettlement)->getTable().' as acs')
+                            ->whereColumn('acs.id', "{$entryAlias}.source_id")
+                            ->whereNull('acs.voided_at');
+                    });
+            })
+            ->where(function ($builder) use ($entryAlias) {
+                $builder->where("{$entryAlias}.source_type", '!=', 'ap_cheque_clearance')
+                    ->orWhereExists(function ($subquery) use ($entryAlias) {
+                        $subquery->selectRaw('1')
+                            ->from((new ApChequeClearance)->getTable().' as acc')
+                            ->whereColumn('acc.id', "{$entryAlias}.source_id")
+                            ->whereNull('acc.voided_at');
+                    });
+            });
     }
 
     private function sourceRouteNameFor(?string $sourceType): ?string
