@@ -39,6 +39,7 @@
         <thead>
             <tr>
                 <th style="width: 120px;">Order #</th>
+                <th style="width: 140px;">Sales Order #</th>
                 <th style="width: 100px;">Status</th>
                 <th>Customer</th>
                 <th style="width: 140px;">Scheduled</th>
@@ -48,13 +49,14 @@
             @forelse ($orders as $order)
                 <tr>
                     <td>{{ $order->order_number }}</td>
+                    <td>{{ $order->sales_order_number ?? '—' }}</td>
                     <td>{{ $order->status ?? '—' }}</td>
                     <td>{{ $order->customer_name_snapshot ?? '—' }}</td>
                     <td>{{ $order->scheduled_date?->format('d M Y') ?? '—' }}{{ $order->scheduled_time ? ' ' . \Carbon\Carbon::parse($order->scheduled_time)->format('g:i A') : '' }}</td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="4" style="text-align: center; color: #6b7280;">No pastry orders found.</td>
+                    <td colspan="5" style="text-align: center; color: #6b7280;">No pastry orders found.</td>
                 </tr>
             @endforelse
         </tbody>

@@ -56,6 +56,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $term = '%'.$this->search.'%';
                 $q->where(fn ($qq) => $qq
                     ->where('order_number', 'like', $term)
+                    ->orWhere('sales_order_number', 'like', $term)
                     ->orWhere('customer_name_snapshot', 'like', $term)
                     ->orWhere('customer_phone_snapshot', 'like', $term)
                 );
@@ -101,7 +102,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
         <div class="app-filter-grid">
             <div class="min-w-[200px] flex-1">
-                <flux:input wire:model.live.debounce.300ms="search" :label="__('Search')" placeholder="{{ __('Order # / customer / phone') }}" />
+                <flux:input wire:model.live.debounce.300ms="search" :label="__('Search')" placeholder="{{ __('Order # / sales order # / customer / phone') }}" />
             </div>
             <div class="w-40">
                 <label class="block text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">{{ __('Status') }}</label>
@@ -143,6 +144,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Order #') }}</th>
+                    <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Sales Order #') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Status') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Customer') }}</th>
                     <th class="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Scheduled') }}</th>
@@ -152,13 +154,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @forelse ($orders as $order)
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
                         <td class="px-3 py-3 text-sm font-medium text-neutral-900 dark:text-neutral-100">{{ $order->order_number }}</td>
+                        <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->sales_order_number ?? '—' }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->status }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->customer_name_snapshot ?? '—' }}</td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $order->scheduled_date?->format('d M Y') ?? '—' }}{{ $order->scheduled_time ? ' ' . \Carbon\Carbon::parse($order->scheduled_time)->format('g:i A') : '' }}</td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="4" class="px-4 py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">{{ __('No orders found.') }}</td>
+                        <td colspan="5" class="px-4 py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">{{ __('No orders found.') }}</td>
                     </tr>
                 @endforelse
             </tbody>

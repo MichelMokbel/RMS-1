@@ -39,6 +39,7 @@ class PastryOrdersReportController extends Controller
                 $term = '%'.$request->search.'%';
                 $q->where(fn ($qq) => $qq
                     ->where('order_number', 'like', $term)
+                    ->orWhere('sales_order_number', 'like', $term)
                     ->orWhere('customer_name_snapshot', 'like', $term)
                     ->orWhere('customer_phone_snapshot', 'like', $term)
                 );
@@ -66,6 +67,7 @@ class PastryOrdersReportController extends Controller
         $orders  = $this->query($request, 2000);
         $headers = [
             __('Order #'),
+            __('Sales Order #'),
             __('Customer'),
             __('Phone'),
             __('Type'),
@@ -76,6 +78,7 @@ class PastryOrdersReportController extends Controller
         ];
         $rows = $orders->map(fn ($o) => [
             $o->order_number,
+            $o->sales_order_number ?? '',
             $o->customer_name_snapshot ?? '',
             $o->customer_phone_snapshot ?? '',
             $o->type ?? '',
