@@ -1,0 +1,14 @@
+{
+  "id": "session-1777139786292",
+  "startedAt": "2026-04-25T17:56:26.292Z",
+  "cwd": "/Users/mohamadsafar/Desktop/Layla Kitchen/RMS-1",
+  "context": {},
+  "metrics": {
+    "edits": 0,
+    "commands": 0,
+    "tasks": 0,
+    "errors": 0
+  },
+  "endedAt": "2026-04-25T17:57:06.113Z",
+  "duration": 39827
+}

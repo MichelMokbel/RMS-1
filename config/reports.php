@@ -129,6 +129,14 @@ return [
             'filters' => ['branch', 'status', 'date_range'],
             'outputs' => ['screen', 'print', 'csv', 'pdf'],
         ],
+        'sales-by-item' => [
+            'key' => 'sales-by-item',
+            'label' => 'Sales by Item',
+            'category' => 'sales',
+            'route' => 'reports.sales-by-item',
+            'filters' => ['item', 'category', 'date_range'],
+            'outputs' => ['screen'],
+        ],
         'payables' => [
             'key' => 'payables',
             'label' => 'Payables (AP)',

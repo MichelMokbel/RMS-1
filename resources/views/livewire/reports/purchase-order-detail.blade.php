@@ -11,6 +11,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
 
     public string $search = '';
+    public string $item_search = '';
     public string $status = 'all';
     public ?int $supplier_id = null;
     public ?string $date_from = null;
@@ -26,7 +27,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function updating($name): void
     {
-        if (in_array($name, ['search', 'status', 'supplier_id', 'date_from', 'date_to'], true)) {
+        if (in_array($name, ['search', 'item_search', 'status', 'supplier_id', 'date_from', 'date_to'], true)) {
             $this->resetPage();
         }
     }
@@ -44,15 +45,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         return PurchaseOrderItem::query()
             ->with(['purchaseOrder.supplier', 'item'])
-            ->whereHas('purchaseOrder', function ($q) {
-                $q->when($this->search, fn ($q2) => $q2->where('po_number', 'like', '%'.$this->search.'%'))
-                    ->when($this->status !== 'all', fn ($q2) => $q2->where('status', $this->status))
-                    ->when($this->supplier_id, fn ($q2) => $q2->where('supplier_id', $this->supplier_id))
-                    ->when($this->date_from, fn ($q2) => $q2->whereDate('order_date', '>=', $this->date_from))
-                    ->when($this->date_to, fn ($q2) => $q2->whereDate('order_date', '<=', $this->date_to));
-            })
             ->join('purchase_orders as po', 'po.id', '=', 'purchase_order_items.purchase_order_id')
+            ->leftJoin('inventory_items as ii', 'ii.id', '=', 'purchase_order_items.item_id')
             ->select('purchase_order_items.*')
+            ->when($this->search, fn ($q) => $q->where('po.po_number', 'like', '%'.$this->search.'%'))
+            ->when($this->status !== 'all', fn ($q) => $q->where('po.status', $this->status))
+            ->when($this->supplier_id, fn ($q) => $q->where('po.supplier_id', $this->supplier_id))
+            ->when($this->date_from, fn ($q) => $q->whereDate('po.order_date', '>=', $this->date_from))
+            ->when($this->date_to, fn ($q) => $q->whereDate('po.order_date', '<=', $this->date_to))
+            ->when($this->item_search, fn ($q) => $q->where('ii.name', 'like', '%'.$this->item_search.'%'))
             ->orderByDesc('po.order_date')
             ->orderBy('po.po_number')
             ->orderBy('purchase_order_items.id');
@@ -62,6 +63,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         return array_filter([
             'search' => $this->search ?: null,
+            'item_search' => $this->item_search ?: null,
             'status' => $this->status !== 'all' ? $this->status : null,
             'supplier_id' => $this->supplier_id,
             'date_from' => $this->date_from,
@@ -90,6 +92,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="app-filter-grid">
             <div class="min-w-[200px]">
                 <flux:input wire:model.live.debounce.300ms="search" :label="__('Search PO #')" placeholder="{{ __('PO number') }}" />
+            </div>
+            <div class="min-w-[200px]">
+                <flux:input wire:model.live.debounce.300ms="item_search" :label="__('Search Item')" placeholder="{{ __('Item name') }}" />
             </div>
             <x-reports.date-range fromName="date_from" toName="date_to" />
             <x-reports.status-select name="status" :options="[

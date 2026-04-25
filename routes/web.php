@@ -1273,6 +1273,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Volt::route('daily-sales', 'reports.daily-sales')->name('daily-sales');
     Volt::route('sales-entry-daily', 'reports.sales-entry-daily')->name('sales-entry-daily');
     Volt::route('sales-entry-monthly', 'reports.sales-entry-monthly')->name('sales-entry-monthly');
+    Volt::route('sales-by-item', 'reports.sales-by-item')->name('sales-by-item');
     Volt::route('category-sales-summary', 'reports.category-sales-summary')->name('category-sales-summary');
     Volt::route('receivables-summary', 'reports.receivables-summary')->name('receivables-summary');
     Volt::route('customer-statement', 'reports.customer-statement')->name('customer-statement');
