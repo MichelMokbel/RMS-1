@@ -1,7 +1,8 @@
 <?php
 
+use App\Models\ArInvoiceItem;
 use App\Models\Category;
-use App\Models\OrderItem;
+use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -40,27 +41,32 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private function query()
     {
-        return OrderItem::query()
-            ->with(['menuItem.category'])
-            ->join('orders as o', 'o.id', '=', 'order_items.order_id')
-            ->leftJoin('menu_items as mi', 'mi.id', '=', 'order_items.menu_item_id')
+        return ArInvoiceItem::query()
+            ->join('ar_invoices as inv', 'inv.id', '=', 'ar_invoice_items.invoice_id')
+            ->leftJoin('menu_items as mi', function ($join) {
+                $join->on('mi.id', '=', 'ar_invoice_items.sellable_id')
+                     ->where('ar_invoice_items.sellable_type', '=', 'App\\Models\\MenuItem');
+            })
             ->leftJoin('categories as c', 'c.id', '=', 'mi.category_id')
-            ->select('order_items.*')
-            ->when($this->date_from, fn ($q) => $q->whereDate('o.scheduled_date', '>=', $this->date_from))
-            ->when($this->date_to, fn ($q) => $q->whereDate('o.scheduled_date', '<=', $this->date_to))
+            ->select('ar_invoice_items.*', 'c.name as category_name')
+            ->where('inv.type', 'invoice')
+            ->whereNotNull('inv.issue_date')
+            ->when($this->date_from, fn ($q) => $q->whereDate('inv.issue_date', '>=', $this->date_from))
+            ->when($this->date_to, fn ($q) => $q->whereDate('inv.issue_date', '<=', $this->date_to))
             ->when($this->item_search, function ($q) {
                 $like = '%'.$this->item_search.'%';
-                $q->where(fn ($inner) => $inner->where('mi.name', 'like', $like)->orWhere('order_items.description_snapshot', 'like', $like));
+                $q->where(fn ($inner) => $inner->where('ar_invoice_items.name_snapshot', 'like', $like)
+                    ->orWhere('ar_invoice_items.description', 'like', $like));
             })
             ->when($this->category_id, fn ($q) => $q->where('mi.category_id', $this->category_id))
-            ->orderByDesc('o.scheduled_date')
-            ->orderByDesc('o.id')
-            ->orderBy('order_items.sort_order');
+            ->orderByDesc('inv.issue_date')
+            ->orderByDesc('inv.id')
+            ->orderBy('ar_invoice_items.id');
     }
 
-    public function formatMoney(?float $amount): string
+    public function formatMoney(?int $cents): string
     {
-        return number_format((float) ($amount ?? 0), 2, '.', ',');
+        return MinorUnits::format((int) ($cents ?? 0));
     }
 }; ?>
 
@@ -104,11 +110,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                 @forelse ($rows as $row)
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
-                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $row->description_snapshot ?: ($row->menuItem?->name ?? '—') }}</td>
-                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row->menuItem?->category?->name ?? '—' }}</td>
-                        <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney($row->unit_price) }}</td>
-                        <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ number_format((float) $row->quantity, 3) }}</td>
-                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($row->line_total) }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $row->name_snapshot ?: ($row->description ?? '—') }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row->category_name ?? '—' }}</td>
+                        <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney($row->unit_price_cents) }}</td>
+                        <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ number_format((float) $row->qty, 3) }}</td>
+                        <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($row->line_total_cents) }}</td>
                     </tr>
                 @empty
                     <tr><td colspan="5" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No sale lines found.') }}</td></tr>
