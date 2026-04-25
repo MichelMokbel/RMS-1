@@ -185,6 +185,7 @@ class CustomerPortalAuthController extends Controller
             'token' => ['required', 'string'],
             'email' => ['required', 'email', 'max:255'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'password_confirmation' => ['required', 'string'],
         ]);
 
         $user = User::query()
