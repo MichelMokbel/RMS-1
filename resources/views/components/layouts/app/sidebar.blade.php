@@ -20,6 +20,7 @@
 
                 $inSales = request()->routeIs('orders.*')
                     || request()->routeIs('pastry-orders.*')
+                    || request()->routeIs('order-sheet.*')
                     || request()->routeIs('invoices.*')
                     || request()->routeIs('receivables.payments.*')
                     || request()->routeIs('receivables.orders-to-invoice');
@@ -92,6 +93,9 @@
                         </flux:navlist.item>
                         <flux:navlist.item icon="cake" :href="route('pastry-orders.index')" :current="request()->routeIs('pastry-orders.*')" wire:navigate>
                             {{ __('Pastry Orders') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="table-cells" :href="route('order-sheet.index')" :current="request()->routeIs('order-sheet.*')" wire:navigate>
+                            {{ __('Order Sheet') }}
                         </flux:navlist.item>
                         @if ($isManager)
                             <flux:navlist.item icon="clipboard-document-list" :href="route('receivables.orders-to-invoice')" :current="request()->routeIs('receivables.orders-to-invoice')" wire:navigate>
@@ -320,6 +324,7 @@
 
         {{ $slot }}
         <x-help.bot />
+        <x-toast />
 
         @livewireScripts
         @fluxScripts

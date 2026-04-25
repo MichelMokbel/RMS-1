@@ -212,6 +212,12 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|r
     Volt::route('customers', 'customers.index')->name('customers.index');
 });
 
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|cashier'])->group(function () {
+    Volt::route('order-sheet', 'order-sheet')->name('order-sheet.index');
+    Route::get('order-sheet/print/by-order', [\App\Http\Controllers\OrderSheet\OrderSheetPrintController::class, 'byOrder'])->name('order-sheet.print.by-order');
+    Route::get('order-sheet/print/by-item', [\App\Http\Controllers\OrderSheet\OrderSheetPrintController::class, 'byItemTotals'])->name('order-sheet.print.by-item');
+});
+
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|receivables.access'])->group(function () {
     Volt::route('customers/create', 'customers.create')->name('customers.create');
     Volt::route('customers/{customer}/edit', 'customers.edit')->name('customers.edit');
@@ -1039,6 +1045,8 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operation
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|catalog.access'])->group(function () {
     Volt::route('menu-items', 'menu-items.index')->name('menu-items.index');
+    Route::get('menu-items/export/print', [\App\Http\Controllers\MenuItems\MenuItemsExportController::class, 'print'])->name('menu-items.print');
+    Route::get('menu-items/export/csv',   [\App\Http\Controllers\MenuItems\MenuItemsExportController::class, 'csv'])->name('menu-items.csv');
 });
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|catalog.access|finance.access|operations.access'])->group(function () {

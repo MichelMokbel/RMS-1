@@ -30,7 +30,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             'items' => $this->query()->paginate(15),
             'categories' => Schema::hasTable('categories') ? Category::orderBy('name')->get() : collect(),
             'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
+            'exportParams' => $this->exportParams(),
         ];
+    }
+
+    public function exportParams(): array
+    {
+        return array_filter([
+            'search'      => $this->search ?: null,
+            'status'      => $this->status !== 'active' ? $this->status : null,
+            'category_id' => $this->category_id ?: null,
+            'branch_id'   => $this->branch_id ?: null,
+        ], fn ($v) => $v !== null);
     }
 
     private function query()
@@ -70,11 +81,15 @@ new #[Layout('components.layouts.app')] class extends Component {
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
             {{ __('Menu Items') }}
         </h1>
-        @if(auth()->check() && auth()->user()->hasAnyRole(['admin','manager']))
-            <flux:button :href="route('menu-items.create')" wire:navigate variant="primary">
-                {{ __('Create Menu Item') }}
-            </flux:button>
-        @endif
+        <div class="flex items-center gap-2">
+            <flux:button :href="route('menu-items.print') . '?' . http_build_query($exportParams)" target="_blank" variant="ghost">{{ __('Print') }}</flux:button>
+            <flux:button :href="route('menu-items.csv') . '?' . http_build_query($exportParams)" variant="ghost">{{ __('Export CSV') }}</flux:button>
+            @if(auth()->check() && auth()->user()->hasAnyRole(['admin','manager']))
+                <flux:button :href="route('menu-items.create')" wire:navigate variant="primary">
+                    {{ __('Create Menu Item') }}
+                </flux:button>
+            @endif
+        </div>
     </div>
 
     @if (session('status'))

@@ -10,6 +10,7 @@
     })"
     class="fixed bottom-5 right-5 z-50"
     x-cloak
+    x-on:open-help-bot.window="open = true"
 >
     <button
         type="button"

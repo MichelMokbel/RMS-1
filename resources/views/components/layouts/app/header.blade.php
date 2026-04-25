@@ -48,6 +48,17 @@
                 </flux:tooltip>
             </flux:navbar>
 
+            <!-- Help Bot trigger -->
+            <flux:tooltip :content="__('Help Bot')" position="bottom">
+                <flux:navbar.item
+                    class="!h-10 [&>div>svg]:size-5"
+                    icon="question-mark-circle"
+                    :label="__('Help')"
+                    x-on:click.prevent="$dispatch('open-help-bot')"
+                    href="#"
+                />
+            </flux:tooltip>
+
             <!-- Desktop User Menu -->
             <flux:dropdown position="top" align="end">
                 <flux:profile
