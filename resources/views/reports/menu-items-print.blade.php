@@ -18,8 +18,7 @@
         th { background: #f3f4f6; font-weight: 700; }
         td.code { font-family: monospace; white-space: nowrap; }
         td.price { text-align: right; white-space: nowrap; }
-        td.badge-active { color: #065f46; font-weight: 600; }
-        td.badge-inactive { color: #92400e; font-weight: 600; }
+        tfoot { display: table-row-group; }
         tfoot td { background: #f9fafb; font-weight: 700; }
         @media print { .no-print { display: none !important; } body { margin: 0; } }
     </style>
@@ -53,7 +52,6 @@
                 <th>Category</th>
                 <th>Unit</th>
                 <th style="text-align:right;">Price</th>
-                <th>Status</th>
             </tr>
         </thead>
         <tbody>
@@ -65,20 +63,17 @@
                     <td>{{ $item->category?->name ?? '—' }}</td>
                     <td>{{ $unitLabel($item->unit) }}</td>
                     <td class="price">{{ number_format((float) $item->selling_price_per_unit, 3) }}</td>
-                    <td class="{{ $item->is_active ? 'badge-active' : 'badge-inactive' }}">
-                        {{ $item->is_active ? 'Active' : 'Inactive' }}
-                    </td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="7">No menu items found.</td>
+                    <td colspan="6">No menu items found.</td>
                 </tr>
             @endforelse
         </tbody>
         <tfoot>
             <tr>
-                <td colspan="6"><strong>Total Items</strong></td>
-                <td><strong>{{ $items->count() }}</strong></td>
+                <td colspan="5"><strong>Total Items</strong></td>
+                <td class="price"><strong>{{ $items->count() }}</strong></td>
             </tr>
         </tfoot>
     </table>
