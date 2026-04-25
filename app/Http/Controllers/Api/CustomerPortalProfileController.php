@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Exceptions\CustomerPortalConflictException;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\User;
+use App\Services\Customers\CustomerPortalAccountService;
 use App\Services\Customers\CustomerPhoneVerificationService;
 use App\Services\Customers\PhoneNumberService;
 use Illuminate\Http\JsonResponse;
@@ -14,6 +14,7 @@ use Illuminate\Http\Request;
 class CustomerPortalProfileController extends Controller
 {
     public function __construct(
+        private readonly CustomerPortalAccountService $accounts,
         private readonly PhoneNumberService $phoneNumbers,
         private readonly CustomerPhoneVerificationService $verification,
     ) {
@@ -37,17 +38,14 @@ class CustomerPortalProfileController extends Controller
         $customer = $user->customer;
         $phoneE164 = $this->phoneNumbers->normalizeOrFail($data['phone']);
 
-        if (! $customer) {
-            return response()->json(['message' => 'Customer account not found.'], 404);
-        }
-
-        if ($customer->phone_e164 === $phoneE164) {
+        $currentPhoneE164 = $customer?->phone_e164 ?: $user->portal_phone_e164;
+        if ($currentPhoneE164 === $phoneE164) {
             return response()->json(['message' => 'That phone number is already active on this account.'], 409);
         }
 
         $matches = Customer::query()
             ->where('phone_e164', $phoneE164)
-            ->whereKeyNot($customer->id)
+            ->when($customer, fn ($query) => $query->whereKeyNot($customer->id))
             ->with('user')
             ->get();
 
@@ -100,36 +98,26 @@ class CustomerPortalProfileController extends Controller
             CustomerPhoneVerificationService::PURPOSE_PHONE_CHANGE
         );
         $challenge = $this->verification->verifyChallenge($challenge, $data['code']);
-        $customer = $challenge->customer()->firstOrFail();
-
-        $customer->forceFill([
-            'phone' => (string) ($payload['phone_raw'] ?? $customer->phone_e164),
-            'phone_e164' => $challenge->phone_e164,
-            'phone_verified_at' => now(),
-        ])->save();
 
         /** @var User $user */
         $user = $request->user()->load('customer');
 
+        if ($user->customer) {
+            $user->customer->forceFill([
+                'phone' => (string) ($payload['phone_raw'] ?? $user->customer->phone_e164),
+                'phone_e164' => $challenge->phone_e164,
+                'phone_verified_at' => now(),
+            ])->save();
+        } else {
+            $this->accounts->markPortalPhoneVerified(
+                $user,
+                (string) ($payload['phone_raw'] ?? $user->portal_phone ?? $challenge->phone_e164),
+                $challenge->phone_e164
+            );
+        }
+
         return response()->json([
-            'account' => [
-                'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                ],
-                'customer' => [
-                    'id' => $user->customer?->id,
-                    'name' => $user->customer?->name,
-                    'email' => $user->customer?->email,
-                    'phone' => $user->customer?->phone,
-                    'phone_e164' => $user->customer?->phone_e164,
-                    'phone_verified_at' => $user->customer?->phone_verified_at?->toIso8601String(),
-                    'delivery_address' => $user->customer?->delivery_address,
-                    'billing_address' => $user->customer?->billing_address,
-                    'customer_type' => $user->customer?->customer_type,
-                ],
-            ],
+            'account' => $this->accounts->serializeAccount($user->fresh('customer')),
         ]);
     }
 

@@ -61,6 +61,8 @@ Route::prefix('customer')->group(function () {
         Route::post('register/verify', [CustomerPortalAuthController::class, 'registerVerify']);
         Route::post('register/resend', [CustomerPortalAuthController::class, 'registerResend']);
         Route::post('login', [CustomerPortalAuthController::class, 'login']);
+        Route::post('forgot-password', [CustomerPortalAuthController::class, 'forgotPassword']);
+        Route::post('reset-password', [CustomerPortalAuthController::class, 'resetPassword']);
     });
 
     Route::middleware(['auth:sanctum', 'customer.portal'])->group(function () {

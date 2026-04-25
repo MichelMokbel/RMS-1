@@ -25,7 +25,7 @@ class CustomerPhoneVerificationService
 
     public function createChallenge(
         User $user,
-        Customer $customer,
+        ?Customer $customer,
         string $purpose,
         string $phoneE164,
         ?string $requestIp = null,
@@ -44,7 +44,7 @@ class CustomerPhoneVerificationService
 
             $challenge = CustomerPhoneVerificationChallenge::create([
                 'user_id' => $user->id,
-                'customer_id' => $customer->id,
+                'customer_id' => $customer?->id,
                 'purpose' => $purpose,
                 'phone_e164' => $phoneE164,
                 'code_hash' => Hash::make($this->generateCode()),
@@ -182,8 +182,12 @@ class CustomerPhoneVerificationService
         $challenge = CustomerPhoneVerificationChallenge::query()
             ->whereKey((int) $payload['challenge_id'])
             ->where('user_id', (int) $payload['user_id'])
-            ->where('customer_id', (int) $payload['customer_id'])
             ->where('purpose', $purpose)
+            ->when(
+                array_key_exists('customer_id', $payload) && $payload['customer_id'] !== null,
+                fn ($query) => $query->where('customer_id', (int) $payload['customer_id']),
+                fn ($query) => $query->whereNull('customer_id')
+            )
             ->first();
 
         if (! $challenge) {

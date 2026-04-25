@@ -35,11 +35,6 @@ class CustomerDailyDishOrderService
     public function create(User $user, array $payload): array
     {
         $customer = $user->customer;
-        if (! $customer instanceof Customer) {
-            throw ValidationException::withMessages([
-                'customer' => __('A linked customer account is required.'),
-            ]);
-        }
 
         $branchId = self::PUBLIC_ORDER_BRANCH_ID;
         if (Schema::hasTable('branches')) {
@@ -100,6 +95,7 @@ class CustomerDailyDishOrderService
                 $websiteDayTotal = ! $isSubscriptionRequest
                     ? $this->resolveWebsiteDayTotal($groupItems, (string) $date)
                     : null;
+                $dayNotes = $this->resolveDayNotes($groupItems);
 
                 $menu = DailyDishMenu::query()
                     ->where('branch_id', $branchId)
@@ -483,14 +479,15 @@ class CustomerDailyDishOrderService
                     'is_daily_dish' => 1,
                     'type' => 'Delivery',
                     'status' => 'Draft',
-                    'customer_id' => $customer->id,
+                    'customer_id' => $customer?->id,
+                    'user_id' => $user->id,
                     'customer_name_snapshot' => $payload['customerName'],
                     'customer_phone_snapshot' => $payload['phone'],
                     'customer_email_snapshot' => $payload['email'] ?? $user->email,
                     'delivery_address_snapshot' => $payload['address'],
                     'scheduled_date' => $date,
                     'scheduled_time' => null,
-                    'notes' => $payload['notes'] ?? null,
+                    'notes' => $dayNotes,
                     'total_before_tax' => $orderTotal,
                     'tax_amount' => 0,
                     'total_amount' => $orderTotal,
@@ -522,7 +519,7 @@ class CustomerDailyDishOrderService
             }
 
             $lead = MealPlanRequest::create([
-                'customer_id' => $customer->id,
+                'customer_id' => $customer?->id,
                 'user_id' => $user->id,
                 'customer_name' => $payload['customerName'],
                 'customer_phone' => $payload['phone'],
@@ -637,6 +634,15 @@ class CustomerDailyDishOrderService
             'email_sent_admin' => $emailSentAdmin,
             'email_sent_customer' => $emailSentCustomer,
         ];
+    }
+
+    private function resolveDayNotes(Collection $groupItems): ?string
+    {
+        $note = $groupItems
+            ->map(fn ($row) => trim((string) ($row['notes'] ?? '')))
+            ->first(fn (string $value) => $value !== '');
+
+        return $note !== null && $note !== '' ? $note : null;
     }
 
     /**

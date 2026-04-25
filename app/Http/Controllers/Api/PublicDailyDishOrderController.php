@@ -33,6 +33,7 @@ class PublicDailyDishOrderController extends Controller
             'items.*.dessert' => ['nullable', 'string'],
             'items.*.salad_qty' => ['nullable', 'integer', 'min:0'],
             'items.*.dessert_qty' => ['nullable', 'integer', 'min:0'],
+            'items.*.notes' => ['nullable', 'string'],
             'items.*.mealType' => ['nullable', 'string'],
             'items.*.main' => ['nullable', 'string'],
             'items.*.menu_item_id' => ['nullable', 'integer'],

@@ -19,6 +19,7 @@ class OrderFactory extends Factory
             'type' => 'Delivery',
             'status' => 'Draft',
             'customer_id' => null,
+            'user_id' => null,
             'customer_name_snapshot' => $this->faker->name(),
             'customer_phone_snapshot' => $this->faker->phoneNumber(),
             'delivery_address_snapshot' => $this->faker->address(),
@@ -43,4 +44,3 @@ class OrderFactory extends Factory
         return $this->state(fn () => ['source' => 'Subscription', 'is_daily_dish' => true]);
     }
 }
-

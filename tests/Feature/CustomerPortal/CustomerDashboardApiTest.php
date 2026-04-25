@@ -97,6 +97,8 @@ it('returns only the authenticated customer financial and order data', function 
 
     $this->getJson('/api/customer/dashboard')
         ->assertOk()
+        ->assertJsonPath('account.linked_customer', true)
+        ->assertJsonPath('account.link_status', 'linked')
         ->assertJsonPath('summary.active_subscriptions', 1)
         ->assertJsonPath('summary.unpaid_invoice_count', 2)
         ->assertJsonPath('summary.outstanding_balance.cents', 20000)
@@ -131,4 +133,62 @@ it('returns only the authenticated customer financial and order data', function 
     $this->getJson("/api/customer/invoices/{$todayInvoice->id}")
         ->assertOk()
         ->assertJsonPath('data.due_bucket', 'due_today');
+});
+
+it('returns portal profile metadata, user-owned orders, and empty financial data for an unlinked portal user', function () {
+    $user = User::factory()->create([
+        'name' => 'Portal Customer',
+        'email' => 'portal@example.com',
+        'customer_id' => null,
+        'portal_name' => 'Portal Customer',
+        'portal_phone' => '55123456',
+        'portal_phone_e164' => '+97455123456',
+        'portal_delivery_address' => 'West Bay',
+        'portal_phone_verified_at' => now(),
+    ]);
+    $user->assignRole('customer');
+
+    $order = Order::factory()->create([
+        'customer_id' => null,
+        'user_id' => $user->id,
+        'notes' => 'No onions on this day',
+        'total_amount' => 95.500,
+    ]);
+
+    Sanctum::actingAs($user, ['customer:*']);
+
+    $this->getJson('/api/customer/me')
+        ->assertOk()
+        ->assertJsonPath('account.linked_customer', false)
+        ->assertJsonPath('account.link_status', 'unlinked')
+        ->assertJsonPath('account.customer.data_source', 'portal')
+        ->assertJsonPath('account.customer.name', 'Portal Customer')
+        ->assertJsonPath('account.customer.phone', '55123456');
+
+    $this->getJson('/api/customer/dashboard')
+        ->assertOk()
+        ->assertJsonPath('account.linked_customer', false)
+        ->assertJsonPath('account.link_status', 'unlinked')
+        ->assertJsonPath('summary.active_subscriptions', 0)
+        ->assertJsonPath('summary.unpaid_invoice_count', 0)
+        ->assertJsonPath('summary.last_payment', null)
+        ->assertJsonPath('due_payments.overdue.cents', 0);
+
+    $this->getJson('/api/customer/orders')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $order->id)
+        ->assertJsonPath('data.0.notes', 'No onions on this day');
+
+    $this->getJson('/api/customer/invoices')
+        ->assertOk()
+        ->assertJsonCount(0, 'data');
+
+    $this->getJson('/api/customer/payments')
+        ->assertOk()
+        ->assertJsonCount(0, 'data');
+
+    $this->getJson('/api/customer/subscriptions')
+        ->assertOk()
+        ->assertJsonCount(0, 'data');
 });

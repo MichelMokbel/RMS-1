@@ -24,6 +24,7 @@ class Order extends Model
         'type',
         'status',
         'customer_id',
+        'user_id',
         'customer_name_snapshot',
         'customer_phone_snapshot',
         'customer_email_snapshot',
@@ -62,6 +63,11 @@ class Order extends Model
         return $this->belongsTo(Customer::class, 'customer_id');
     }
 
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
     public function invoice(): HasOne
     {
         return $this->hasOne(ArInvoice::class, 'source_order_id');
@@ -77,4 +83,3 @@ class Order extends Model
         return $this->invoiced_at !== null;
     }
 }
-

@@ -27,6 +27,11 @@ class User extends Authenticatable
         'username',
         'email',
         'customer_id',
+        'portal_name',
+        'portal_phone',
+        'portal_phone_e164',
+        'portal_delivery_address',
+        'portal_phone_verified_at',
         'password',
         'status',
         'pos_enabled',
@@ -61,6 +66,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'customer_id' => 'integer',
+            'portal_phone_verified_at' => 'datetime',
             'password' => 'hashed',
             'pos_enabled' => 'boolean',
         ];
@@ -93,7 +99,7 @@ class User extends Authenticatable
 
     public function isCustomerPortalUser(): bool
     {
-        return $this->hasRole('customer') && $this->customer_id !== null;
+        return $this->hasRole('customer');
     }
 
     /**

@@ -4,11 +4,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Exceptions\CustomerPortalConflictException;
 use App\Http\Controllers\Controller;
+use App\Notifications\CustomerPortalResetPassword;
+use App\Services\Customers\CustomerPortalAccountService;
 use App\Services\Customers\CustomerPhoneVerificationService;
 use App\Services\Customers\CustomerPortalRegistrationService;
 use App\Services\Customers\PhoneNumberService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use App\Models\User;
@@ -19,6 +22,7 @@ class CustomerPortalAuthController extends Controller
         private readonly CustomerPortalRegistrationService $registration,
         private readonly CustomerPhoneVerificationService $verification,
         private readonly PhoneNumberService $phoneNumbers,
+        private readonly CustomerPortalAccountService $accounts,
     ) {
     }
 
@@ -39,7 +43,7 @@ class CustomerPortalAuthController extends Controller
 
                 return response()->json([
                     'token' => $token->plainTextToken,
-                    'account' => $this->serializeAccount($result['user']->fresh('customer')),
+                    'account' => $this->accounts->serializeAccount($result['user']->fresh('customer')),
                     'verification_bypassed' => true,
                 ], 201);
             }
@@ -52,8 +56,8 @@ class CustomerPortalAuthController extends Controller
         return response()->json([
             'registration_token' => $result['registration_token'],
             'phone' => [
-                'e164' => $result['customer']->phone_e164,
-                'masked' => $this->phoneNumbers->mask((string) $result['customer']->phone_e164),
+                'e164' => $result['user']->portal_phone_e164,
+                'masked' => $this->phoneNumbers->mask((string) $result['user']->portal_phone_e164),
             ],
         ], 201);
     }
@@ -79,17 +83,15 @@ class CustomerPortalAuthController extends Controller
 
         $challenge = $this->verification->verifyChallenge($challenge, $data['code']);
         $user = $challenge->user()->with('customer')->firstOrFail();
-        $customer = $challenge->customer()->firstOrFail();
-
-        $customer->forceFill([
-            'phone_verified_at' => now(),
-        ])->save();
+        $phoneRaw = $this->verification
+            ->decodeChallengeToken($data['registration_token'], CustomerPhoneVerificationService::PURPOSE_SIGNUP)['phone_raw'] ?? $user->portal_phone;
+        $this->accounts->markPortalPhoneVerified($user, (string) $phoneRaw, $challenge->phone_e164);
 
         $token = $user->createToken('customer:'.$user->id, ['customer:*']);
 
         return response()->json([
             'token' => $token->plainTextToken,
-            'account' => $this->serializeAccount($user->fresh('customer')),
+            'account' => $this->accounts->serializeAccount($user->fresh('customer')),
         ]);
     }
 
@@ -152,7 +154,72 @@ class CustomerPortalAuthController extends Controller
 
         return response()->json([
             'token' => $token->plainTextToken,
-            'account' => $this->serializeAccount($user),
+            'account' => $this->accounts->serializeAccount($user),
+        ]);
+    }
+
+    public function forgotPassword(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'email' => ['required', 'email', 'max:255'],
+        ]);
+
+        $user = User::query()
+            ->whereRaw('LOWER(email) = ?', [strtolower(trim($data['email']))])
+            ->first();
+
+        if ($user && $user->isCustomerPortalUser()) {
+            $token = Password::broker()->createToken($user);
+            $user->notify(new CustomerPortalResetPassword($token));
+        }
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'If an account exists for that email, a password reset link has been sent.',
+        ]);
+    }
+
+    public function resetPassword(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'token' => ['required', 'string'],
+            'email' => ['required', 'email', 'max:255'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        $user = User::query()
+            ->whereRaw('LOWER(email) = ?', [strtolower(trim($data['email']))])
+            ->first();
+
+        if (! $user || ! $user->isCustomerPortalUser()) {
+            throw ValidationException::withMessages([
+                'email' => __('We could not reset the password for this account.'),
+            ]);
+        }
+
+        $status = Password::broker()->reset(
+            [
+                'email' => $data['email'],
+                'password' => $data['password'],
+                'password_confirmation' => $data['password_confirmation'],
+                'token' => $data['token'],
+            ],
+            function (User $user, string $password): void {
+                $user->forceFill([
+                    'password' => Hash::make($password),
+                ])->save();
+            }
+        );
+
+        if ($status !== Password::PASSWORD_RESET) {
+            throw ValidationException::withMessages([
+                'email' => __($status),
+            ]);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Your password has been reset successfully.',
         ]);
     }
 
@@ -169,35 +236,8 @@ class CustomerPortalAuthController extends Controller
         $user = $request->user()->load('customer');
 
         return response()->json([
-            'account' => $this->serializeAccount($user),
+            'account' => $this->accounts->serializeAccount($user),
         ]);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function serializeAccount(User $user): array
-    {
-        $customer = $user->customer;
-
-        return [
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-            ],
-            'customer' => [
-                'id' => $customer?->id,
-                'name' => $customer?->name,
-                'email' => $customer?->email,
-                'phone' => $customer?->phone,
-                'phone_e164' => $customer?->phone_e164,
-                'phone_verified_at' => $customer?->phone_verified_at?->toIso8601String(),
-                'delivery_address' => $customer?->delivery_address,
-                'billing_address' => $customer?->billing_address,
-                'customer_type' => $customer?->customer_type,
-            ],
-        ];
     }
 
     private function verificationBypassEnabled(): bool

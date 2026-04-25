@@ -3,7 +3,6 @@
 namespace App\Services\Customers;
 
 use App\Exceptions\CustomerPortalConflictException;
-use App\Models\Customer;
 use App\Models\CustomerPhoneVerificationChallenge;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +19,7 @@ class CustomerPortalRegistrationService
 
     /**
      * @param  array{name:string,email:string,password:string,phone:string,address?:string|null}  $data
-     * @return array{registration_token:string,user:User,customer:Customer,challenge:CustomerPhoneVerificationChallenge}
+     * @return array{registration_token:string,user:User,challenge:CustomerPhoneVerificationChallenge}
      */
     public function start(array $data, ?string $requestIp = null, ?string $userAgent = null): array
     {
@@ -29,11 +28,17 @@ class CustomerPortalRegistrationService
         $phoneE164 = $this->phoneNumbers->normalizeOrFail($phoneRaw);
 
         return DB::transaction(function () use ($data, $email, $phoneRaw, $phoneE164, $requestIp, $userAgent) {
-            $customer = $this->resolveCustomer($data['name'], $email, $phoneRaw, $phoneE164, $data['address'] ?? null);
-            $user = $this->resolveUser($customer, $data['name'], $email, $data['password']);
+            $user = $this->createPortalUser(
+                $data['name'],
+                $email,
+                $data['password'],
+                $phoneRaw,
+                $phoneE164,
+                $data['address'] ?? null,
+            );
             $challenge = $this->verification->createChallenge(
                 $user,
-                $customer,
+                null,
                 CustomerPhoneVerificationService::PURPOSE_SIGNUP,
                 $phoneE164,
                 $requestIp,
@@ -47,7 +52,6 @@ class CustomerPortalRegistrationService
             return [
                 'registration_token' => $token,
                 'user' => $user->fresh('customer'),
-                'customer' => $customer->fresh('user'),
                 'challenge' => $challenge,
             ];
         });
@@ -55,7 +59,7 @@ class CustomerPortalRegistrationService
 
     /**
      * @param  array{name:string,email:string,password:string,phone:string,address?:string|null}  $data
-     * @return array{user:User,customer:Customer}
+     * @return array{user:User}
      */
     public function startWithoutVerification(array $data): array
     {
@@ -64,102 +68,34 @@ class CustomerPortalRegistrationService
         $phoneE164 = $this->phoneNumbers->normalizeOrFail($phoneRaw);
 
         return DB::transaction(function () use ($data, $email, $phoneRaw, $phoneE164) {
-            $customer = $this->resolveCustomer($data['name'], $email, $phoneRaw, $phoneE164, $data['address'] ?? null);
-            $user = $this->resolveUser($customer, $data['name'], $email, $data['password']);
-
-            $customer->forceFill([
-                'phone_verified_at' => now(),
-            ])->save();
+            $user = $this->createPortalUser(
+                $data['name'],
+                $email,
+                $data['password'],
+                $phoneRaw,
+                $phoneE164,
+                $data['address'] ?? null,
+                true,
+            );
 
             return [
                 'user' => $user->fresh('customer'),
-                'customer' => $customer->fresh('user'),
             ];
         });
     }
 
-    private function resolveCustomer(
+    private function createPortalUser(
         string $name,
         string $email,
+        string $password,
         string $phoneRaw,
         string $phoneE164,
         ?string $address,
-    ): Customer {
-        $matchedByEmail = Customer::query()
-            ->active()
-            ->whereRaw('LOWER(email) = ?', [$email])
-            ->get();
-
-        if ($matchedByEmail->count() > 1) {
-            throw new CustomerPortalConflictException('Multiple customers already use this email. Please contact support.');
-        }
-
-        if ($matchedByEmail->count() === 1) {
-            return $this->hydrateMatchedCustomer($matchedByEmail->first(), $name, $email, $phoneRaw, $phoneE164, $address);
-        }
-
-        $matchedByPhone = Customer::query()
-            ->active()
-            ->where('phone_e164', $phoneE164)
-            ->get();
-
-        if ($matchedByPhone->count() > 1) {
-            throw new CustomerPortalConflictException('Multiple customers already use this phone number. Please contact support.');
-        }
-
-        if ($matchedByPhone->count() === 1) {
-            return $this->hydrateMatchedCustomer($matchedByPhone->first(), $name, $email, $phoneRaw, $phoneE164, $address);
-        }
-
-        return Customer::create([
-            'name' => $name,
-            'contact_name' => $name,
-            'customer_type' => Customer::TYPE_RETAIL,
-            'phone' => $phoneRaw,
-            'phone_e164' => $phoneE164,
-            'email' => $email,
-            'delivery_address' => $address,
-            'country' => 'Qatar',
-            'credit_limit' => 0,
-            'credit_terms_days' => 0,
-            'is_active' => true,
-        ]);
-    }
-
-    private function hydrateMatchedCustomer(
-        Customer $customer,
-        string $name,
-        string $email,
-        string $phoneRaw,
-        string $phoneE164,
-        ?string $address,
-    ): Customer {
-        if ($customer->user && ! $customer->user->hasRole('customer')) {
-            throw new CustomerPortalConflictException('This customer is already linked to a backoffice user.');
-        }
-
-        $customer->fill([
-            'name' => $name,
-            'contact_name' => $customer->contact_name ?: $name,
-            'phone' => $phoneRaw,
-            'phone_e164' => $phoneE164,
-            'email' => $email,
-            'delivery_address' => $address ?: $customer->delivery_address,
-            'is_active' => true,
-        ])->save();
-
-        return $customer->fresh();
-    }
-
-    private function resolveUser(Customer $customer, string $name, string $email, string $password): User
-    {
+        bool $markVerified = false,
+    ): User {
         $user = User::query()
             ->whereRaw('LOWER(email) = ?', [$email])
             ->first();
-
-        if ($customer->user && $user && $customer->user->isNot($user)) {
-            throw new CustomerPortalConflictException('This customer is already linked to another account.');
-        }
 
         if ($user) {
             $nonCustomerRoles = $user->getRoleNames()->filter(fn (string $role) => $role !== 'customer');
@@ -167,39 +103,23 @@ class CustomerPortalRegistrationService
                 throw new CustomerPortalConflictException('This email is already used by a staff account.');
             }
 
-            if ($user->customer_id && (int) $user->customer_id !== (int) $customer->id) {
-                throw new CustomerPortalConflictException('This email is already linked to another customer.');
-            }
-
-            if ($customer->phone_verified_at !== null && (int) $user->customer_id === (int) $customer->id) {
-                throw new CustomerPortalConflictException('An account already exists for this customer.');
-            }
-
-            $user->fill([
-                'name' => $name,
-                'email' => $email,
-                'customer_id' => $customer->id,
-                'status' => 'active',
-                'pos_enabled' => false,
-                'password' => Hash::make($password),
-            ]);
-
-            if (! $user->username) {
-                $user->username = $this->generateUniqueUsername($email, $name);
-            }
-
-            $user->save();
-        } else {
-            $user = User::create([
-                'name' => $name,
-                'username' => $this->generateUniqueUsername($email, $name),
-                'email' => $email,
-                'customer_id' => $customer->id,
-                'status' => 'active',
-                'pos_enabled' => false,
-                'password' => Hash::make($password),
-            ]);
+            throw new CustomerPortalConflictException('An account already exists for this email.');
         }
+
+        $user = User::create([
+            'name' => $name,
+            'username' => $this->generateUniqueUsername($email, $name),
+            'email' => $email,
+            'customer_id' => null,
+            'portal_name' => $name,
+            'portal_phone' => $phoneRaw,
+            'portal_phone_e164' => $phoneE164,
+            'portal_delivery_address' => $address,
+            'portal_phone_verified_at' => $markVerified ? now() : null,
+            'status' => 'active',
+            'pos_enabled' => false,
+            'password' => Hash::make($password),
+        ]);
 
         if (! $user->hasRole('customer')) {
             $user->assignRole('customer');

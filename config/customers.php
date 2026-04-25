@@ -13,4 +13,5 @@ return [
     'verification_max_sends' => env('CUSTOMER_VERIFICATION_MAX_SENDS', 3),
     'verification_resend_cooldown_seconds' => env('CUSTOMER_VERIFICATION_RESEND_COOLDOWN_SECONDS', 60),
     'registration_token_ttl_minutes' => env('CUSTOMER_REGISTRATION_TOKEN_TTL_MINUTES', 30),
+    'portal_base_url' => env('CUSTOMER_PORTAL_BASE_URL', env('DASHBOARD_BASE_URL', env('APP_URL'))),
 ];

@@ -6,6 +6,7 @@ use App\Services\Security\IamUserService;
 use App\Services\Security\RolePermissionService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Livewire\Volt\Volt;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -145,4 +146,42 @@ test('admin can edit role permissions from iam roles page', function () {
     app(RolePermissionService::class)->updateRolePermissions($admin, $role, ['orders.access']);
 
     expect($role->fresh()->hasPermissionTo('orders.access'))->toBeTrue();
+});
+
+test('admin can manually link and unlink a customer portal account', function () {
+    Role::findOrCreate('customer', 'web');
+
+    $admin = iamAdmin();
+    $user = User::factory()->create([
+        'email' => 'portal@example.com',
+        'customer_id' => null,
+        'portal_name' => 'Portal Customer',
+        'portal_phone' => '55123456',
+        'portal_phone_e164' => '+97455123456',
+        'status' => 'active',
+    ]);
+    $user->assignRole('customer');
+
+    $customer = Customer::factory()->create([
+        'name' => 'Existing Customer',
+        'email' => 'existing@example.com',
+        'phone' => '55123456',
+        'phone_e164' => '+97455123456',
+    ]);
+
+    $this->actingAs($admin);
+
+    Volt::test('customers.accounts')
+        ->call('startLinking', $user->id)
+        ->set('linkCustomerSearch', 'Existing')
+        ->call('linkCustomer', $customer->id)
+        ->assertSessionHas('status');
+
+    expect($user->fresh()->customer_id)->toBe($customer->id);
+
+    Volt::test('customers.accounts')
+        ->call('unlinkCustomer', $user->id)
+        ->assertSessionHas('status');
+
+    expect($user->fresh()->customer_id)->toBeNull();
 });

@@ -7,6 +7,7 @@ use App\Models\ArInvoice;
 use App\Models\MealSubscription;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\User;
 use App\Support\Money\MinorUnits;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,26 +16,38 @@ class CustomerPortalDashboardController extends Controller
 {
     public function dashboard(Request $request): JsonResponse
     {
-        $customer = $request->user()->customer;
+        /** @var User $user */
+        $user = $request->user()->load('customer');
+        $customer = $user->customer;
         $today = now()->toDateString();
 
-        $openInvoices = ArInvoice::query()
-            ->where('customer_id', $customer->id)
-            ->where('status', '!=', 'voided')
-            ->where('balance_cents', '>', 0);
+        $openInvoices = $customer
+            ? ArInvoice::query()
+                ->where('customer_id', $customer->id)
+                ->where('status', '!=', 'voided')
+                ->where('balance_cents', '>', 0)
+            : ArInvoice::query()->whereRaw('1 = 0');
 
-        $latestPayment = Payment::query()
-            ->where('customer_id', $customer->id)
-            ->whereNull('voided_at')
-            ->latest('received_at')
-            ->first();
+        $latestPayment = $customer
+            ? Payment::query()
+                ->where('customer_id', $customer->id)
+                ->whereNull('voided_at')
+                ->latest('received_at')
+                ->first()
+            : null;
 
         return response()->json([
+            'account' => [
+                'linked_customer' => $customer !== null,
+                'link_status' => $customer ? 'linked' : 'unlinked',
+            ],
             'summary' => [
-                'active_subscriptions' => MealSubscription::query()
-                    ->where('customer_id', $customer->id)
-                    ->where('status', 'active')
-                    ->count(),
+                'active_subscriptions' => $customer
+                    ? MealSubscription::query()
+                        ->where('customer_id', $customer->id)
+                        ->where('status', 'active')
+                        ->count()
+                    : 0,
                 'unpaid_invoice_count' => (clone $openInvoices)->count(),
                 'outstanding_balance' => $this->money((int) (clone $openInvoices)->sum('balance_cents')),
                 'overdue_balance' => $this->money((int) (clone $openInvoices)->whereDate('due_date', '<', $today)->sum('balance_cents')),
@@ -50,9 +63,16 @@ class CustomerPortalDashboardController extends Controller
 
     public function orders(Request $request): JsonResponse
     {
+        /** @var User $user */
+        $user = $request->user();
+
         $orders = Order::query()
             ->with(['invoice'])
-            ->where('customer_id', $request->user()->customer_id)
+            ->when(
+                $user->customer_id,
+                fn ($query) => $query->where('customer_id', $user->customer_id),
+                fn ($query) => $query->where('user_id', $user->id)
+            )
             ->latest('scheduled_date')
             ->paginate($this->perPage($request));
 
@@ -64,9 +84,10 @@ class CustomerPortalDashboardController extends Controller
 
     public function subscriptions(Request $request): JsonResponse
     {
+        $customerId = (int) ($request->user()->customer_id ?? 0);
         $subscriptions = MealSubscription::query()
             ->with(['days'])
-            ->where('customer_id', $request->user()->customer_id)
+            ->when($customerId > 0, fn ($query) => $query->where('customer_id', $customerId), fn ($query) => $query->whereRaw('1 = 0'))
             ->latest('id')
             ->paginate($this->perPage($request));
 
@@ -78,9 +99,10 @@ class CustomerPortalDashboardController extends Controller
 
     public function showSubscription(Request $request, int $subscription): JsonResponse
     {
+        $customerId = (int) ($request->user()->customer_id ?? 0);
         $record = MealSubscription::query()
             ->with(['days', 'pauses'])
-            ->where('customer_id', $request->user()->customer_id)
+            ->where('customer_id', $customerId)
             ->whereKey($subscription)
             ->firstOrFail();
 
@@ -91,8 +113,9 @@ class CustomerPortalDashboardController extends Controller
 
     public function invoices(Request $request): JsonResponse
     {
+        $customerId = (int) ($request->user()->customer_id ?? 0);
         $invoices = ArInvoice::query()
-            ->where('customer_id', $request->user()->customer_id)
+            ->when($customerId > 0, fn ($query) => $query->where('customer_id', $customerId), fn ($query) => $query->whereRaw('1 = 0'))
             ->where('status', '!=', 'voided')
             ->latest('issue_date')
             ->paginate($this->perPage($request));
@@ -105,8 +128,9 @@ class CustomerPortalDashboardController extends Controller
 
     public function showInvoice(Request $request, int $invoice): JsonResponse
     {
+        $customerId = (int) ($request->user()->customer_id ?? 0);
         $record = ArInvoice::query()
-            ->where('customer_id', $request->user()->customer_id)
+            ->where('customer_id', $customerId)
             ->whereKey($invoice)
             ->firstOrFail();
 
@@ -117,8 +141,9 @@ class CustomerPortalDashboardController extends Controller
 
     public function payments(Request $request): JsonResponse
     {
+        $customerId = (int) ($request->user()->customer_id ?? 0);
         $payments = Payment::query()
-            ->where('customer_id', $request->user()->customer_id)
+            ->when($customerId > 0, fn ($query) => $query->where('customer_id', $customerId), fn ($query) => $query->whereRaw('1 = 0'))
             ->latest('received_at')
             ->paginate($this->perPage($request));
 
@@ -130,8 +155,9 @@ class CustomerPortalDashboardController extends Controller
 
     public function showPayment(Request $request, int $payment): JsonResponse
     {
+        $customerId = (int) ($request->user()->customer_id ?? 0);
         $record = Payment::query()
-            ->where('customer_id', $request->user()->customer_id)
+            ->where('customer_id', $customerId)
             ->whereKey($payment)
             ->firstOrFail();
 
@@ -171,6 +197,7 @@ class CustomerPortalDashboardController extends Controller
             'status' => $order->status,
             'scheduled_date' => optional($order->scheduled_date)->toDateString(),
             'scheduled_time' => optional($order->scheduled_time)->format('H:i:s'),
+            'notes' => $order->notes,
             'total' => $this->decimalMoney((float) $order->total_amount),
             'invoice' => $order->invoice ? [
                 'id' => $order->invoice->id,

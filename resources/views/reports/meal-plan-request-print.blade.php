@@ -104,6 +104,13 @@
                         Orders:
                         {{ $day['orders']->map(fn ($order) => $order->order_number ?: ('#' . $order->id))->join(', ') }}
                     </div>
+                    @php($dayNotes = $day['orders']->pluck('notes')->filter(fn ($note) => trim((string) $note) !== '')->unique()->values())
+                    @if ($dayNotes->isNotEmpty())
+                        <div class="day-orders">
+                            Notes:
+                            {{ $dayNotes->join(' | ') }}
+                        </div>
+                    @endif
                 </div>
                 <div class="day-total">Day Total: {{ number_format((float) $day['day_total'], 3) }}</div>
             </div>

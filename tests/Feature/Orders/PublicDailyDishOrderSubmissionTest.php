@@ -133,7 +133,8 @@ it('allows newly registered bypassed customers to order because they are marked 
         ->assertOk()
         ->assertJson(['success' => true]);
 
-    expect($user->customer()->firstOrFail()->phone_verified_at)->not->toBeNull();
+    expect($user->customer_id)->toBeNull();
+    expect($user->fresh()->portal_phone_verified_at)->not->toBeNull();
 });
 
 it('creates only subscription orders with fixed 40 total and auto appetizer for mealPlan 20', function () {
@@ -283,6 +284,45 @@ it('creates website order and trusts submitted day_total for non-subscription re
 
     expect((float) $saladItem->unit_price)->toBe(0.0);
     expect((float) $dessertItem->unit_price)->toBe(0.0);
+});
+
+it('creates user-owned website orders for verified unlinked portal users and persists per-day notes', function () {
+    $user = User::factory()->create([
+        'email' => 'portal@example.com',
+        'customer_id' => null,
+        'portal_name' => 'Portal Customer',
+        'portal_phone' => '55123456',
+        'portal_phone_e164' => '+97455123456',
+        'portal_delivery_address' => 'West Bay',
+        'portal_phone_verified_at' => now(),
+    ]);
+    $user->assignRole('customer');
+    Sanctum::actingAs($user, ['customer:*']);
+
+    $main = MenuItem::factory()->create(['code' => 'MAIN-USER', 'name' => 'Website Main']);
+    $salad = MenuItem::factory()->create(['code' => 'SALAD-USER', 'name' => 'Website Salad']);
+    $dessert = MenuItem::factory()->create(['code' => 'DES-USER', 'name' => 'Website Dessert']);
+    createPublishedMenuForDate('2026-03-05', 1, $main, $salad, $dessert);
+
+    $payload = createWebsiteOrderPayload([
+        'items' => [[
+            'key' => '2026-03-05',
+            'notes' => 'Leave at reception',
+            'mains' => [['name' => 'Website Main', 'portion' => 'plate', 'qty' => 1]],
+            'salad_qty' => 1,
+            'dessert_qty' => 1,
+            'day_total' => 123.45,
+        ]],
+    ]);
+
+    $this->postJson('/api/public/daily-dish/orders', $payload)
+        ->assertOk()
+        ->assertJson(['success' => true]);
+
+    $order = Order::query()->firstOrFail();
+    expect($order->customer_id)->toBeNull();
+    expect((int) $order->user_id)->toBe($user->id);
+    expect($order->notes)->toBe('Leave at reception');
 });
 
 it('allows verified customer orders without branch access and forces branch 1', function () {
