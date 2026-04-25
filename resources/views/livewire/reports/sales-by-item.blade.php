@@ -48,7 +48,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                      ->where('ar_invoice_items.sellable_type', '=', 'App\\Models\\MenuItem');
             })
             ->leftJoin('categories as c', 'c.id', '=', 'mi.category_id')
-            ->select('ar_invoice_items.*', 'c.name as category_name')
+            ->select('ar_invoice_items.*', 'c.name as category_name', 'inv.invoice_number', 'inv.issue_date')
             ->where('inv.type', 'invoice')
             ->whereNotNull('inv.issue_date')
             ->when($this->date_from, fn ($q) => $q->whereDate('inv.issue_date', '>=', $this->date_from))
@@ -100,6 +100,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Invoice #') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Date') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Item') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Category') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Unit Price') }}</th>
@@ -110,6 +112,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                 @forelse ($rows as $row)
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
+                        <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $row->invoice_number ?? ('# '.$row->invoice_id) }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row->issue_date ? \Carbon\Carbon::parse($row->issue_date)->format('Y-m-d') : '—' }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $row->name_snapshot ?: ($row->description ?? '—') }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row->category_name ?? '—' }}</td>
                         <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney($row->unit_price_cents) }}</td>
@@ -117,7 +121,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($row->line_total_cents) }}</td>
                     </tr>
                 @empty
-                    <tr><td colspan="5" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No sale lines found.') }}</td></tr>
+                    <tr><td colspan="7" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No sale lines found.') }}</td></tr>
                 @endforelse
             </tbody>
         </table>
