@@ -141,73 +141,54 @@ class SubscriptionPaymentLinkService
     public function resyncMealsUsed(MealSubscription $subscription): int
     {
         if ($subscription->source_payment_id) {
-            // Payment-anchored: sum qty of subscription items across three identification paths.
+            // Payment-anchored: only invoices allocated to the linked payment are authoritative.
+            // For each invoice we compare the allocation amount against the subscription items'
+            // total value so that partially-paid invoices contribute proportional meal counts
+            // (e.g. a $100 invoice with 2 × $50 subscription items paid with $50 → 1 meal).
+            $planItemIds = array_values(config('subscriptions.plan_menu_item_ids', []));
 
-            // (B) Items tagged meta.subscription_id = this subscription — sum qty directly
-            $metaItemsQuery = \App\Models\ArInvoiceItem::query()
-                ->whereJsonContains('meta->is_subscription', true)
-                ->where(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(meta, '$.subscription_id'))"), (string) $subscription->id)
-                ->whereHas('invoice', fn ($q) => $q->whereNull('voided_at')->where('type', '!=', 'credit_note'));
-
-            $byMetaInvoiceIds = $metaItemsQuery->pluck('invoice_id')->unique();
-            $byMetaQty        = (int) (clone $metaItemsQuery)->sum('qty');
-
-            // (A) Invoices allocated to the subscription's source payment, not already in (B)
-            $byPaymentOnlyIds = \App\Models\ArInvoice::query()
+            $invoices = \App\Models\ArInvoice::query()
                 ->whereNull('voided_at')
                 ->where('type', '!=', 'credit_note')
-                ->whereHas('paymentAllocations', fn ($q) => $q->where('payment_id', $subscription->source_payment_id))
-                ->when($byMetaInvoiceIds->isNotEmpty(), fn ($q) => $q->whereNotIn('id', $byMetaInvoiceIds->all()))
-                ->pluck('id');
-
-            $byPaymentQty = 0;
-            if ($byPaymentOnlyIds->isNotEmpty()) {
-                $planItemIds = array_values(config('subscriptions.plan_menu_item_ids', []));
-                $qty = (int) \App\Models\ArInvoiceItem::query()
-                    ->whereIn('invoice_id', $byPaymentOnlyIds)
-                    ->where(function ($q) use ($planItemIds) {
+                ->whereHas('paymentAllocations', fn ($q) => $q
+                    ->where('payment_id', $subscription->source_payment_id)
+                    ->whereNull('voided_at'))
+                ->with([
+                    'paymentAllocations' => fn ($q) => $q
+                        ->where('payment_id', $subscription->source_payment_id)
+                        ->whereNull('voided_at'),
+                    'items' => fn ($q) => $q->where(function ($q) use ($planItemIds) {
                         $q->whereJsonContains('meta->is_subscription', true);
                         if ($planItemIds) {
                             $q->orWhere(fn ($q2) => $q2
                                 ->where('sellable_type', \App\Models\MenuItem::class)
                                 ->whereIn('sellable_id', $planItemIds));
                         }
-                    })
-                    ->sum('qty');
-                // Fall back to 1 per invoice when no subscription items are identifiable
-                $byPaymentQty = $qty > 0 ? $qty : $byPaymentOnlyIds->count();
-            }
+                    }),
+                ])
+                ->get();
 
-            // (C) Invoices linked via subscription order chain, not already counted
-            $orderIds = $subscription->subscriptionOrders()->pluck('order_id');
-            $byOrderChainQty = 0;
-            if ($orderIds->isNotEmpty()) {
-                $alreadyCounted = $byMetaInvoiceIds->merge($byPaymentOnlyIds)->unique();
-                $byOrderChainIds = \App\Models\ArInvoice::query()
-                    ->whereNull('voided_at')
-                    ->where('type', '!=', 'credit_note')
-                    ->whereIn('source_order_id', $orderIds)
-                    ->when($alreadyCounted->isNotEmpty(), fn ($q) => $q->whereNotIn('id', $alreadyCounted->all()))
-                    ->pluck('id');
+            $total = 0;
+            foreach ($invoices as $invoice) {
+                $subItems = $invoice->items;
 
-                if ($byOrderChainIds->isNotEmpty()) {
-                    $planItemIds = array_values(config('subscriptions.plan_menu_item_ids', []));
-                    $qty = (int) \App\Models\ArInvoiceItem::query()
-                        ->whereIn('invoice_id', $byOrderChainIds)
-                        ->where(function ($q) use ($planItemIds) {
-                            $q->whereJsonContains('meta->is_subscription', true);
-                            if ($planItemIds) {
-                                $q->orWhere(fn ($q2) => $q2
-                                    ->where('sellable_type', \App\Models\MenuItem::class)
-                                    ->whereIn('sellable_id', $planItemIds));
-                            }
-                        })
-                        ->sum('qty');
-                    $byOrderChainQty = $qty > 0 ? $qty : $byOrderChainIds->count();
+                if ($subItems->isEmpty()) {
+                    continue;
+                }
+
+                $subItemsQty   = (float) $subItems->sum('qty');
+                $subItemsTotal = (int) $subItems->sum('line_total_cents');
+                $allocated     = (int) $invoice->paymentAllocations->sum('amount_cents');
+
+                if ($subItemsTotal <= 0 || $allocated >= $subItemsTotal) {
+                    // Fully paid (or zero-value items): all subscription items are covered.
+                    $total += (int) $subItemsQty;
+                } else {
+                    // Partial payment: count only the whole items the allocation covers.
+                    $perUnitCents = $subItemsTotal / $subItemsQty;
+                    $total += (int) floor($allocated / $perUnitCents);
                 }
             }
-
-            $total = $byMetaQty + $byPaymentQty + $byOrderChainQty;
         } else {
             // Metadata-anchored: no payment link, derive from subscription item metadata.
 
