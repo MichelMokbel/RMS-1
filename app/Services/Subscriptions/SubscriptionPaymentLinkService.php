@@ -141,64 +141,100 @@ class SubscriptionPaymentLinkService
     public function resyncMealsUsed(MealSubscription $subscription): int
     {
         if ($subscription->source_payment_id) {
-            // Payment-anchored: union three identification paths so unallocated invoices are also counted.
+            // Payment-anchored: sum qty of subscription items across three identification paths.
 
-            // (A) Invoices allocated to the subscription's source payment
-            $byPayment = \App\Models\ArInvoice::query()
+            // (B) Items tagged meta.subscription_id = this subscription — sum qty directly
+            $metaItemsQuery = \App\Models\ArInvoiceItem::query()
+                ->whereJsonContains('meta->is_subscription', true)
+                ->where(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(meta, '$.subscription_id'))"), (string) $subscription->id)
+                ->whereHas('invoice', fn ($q) => $q->whereNull('voided_at')->where('type', '!=', 'credit_note'));
+
+            $byMetaInvoiceIds = $metaItemsQuery->pluck('invoice_id')->unique();
+            $byMetaQty        = (int) (clone $metaItemsQuery)->sum('qty');
+
+            // (A) Invoices allocated to the subscription's source payment, not already in (B)
+            $byPaymentOnlyIds = \App\Models\ArInvoice::query()
                 ->whereNull('voided_at')
                 ->where('type', '!=', 'credit_note')
                 ->whereHas('paymentAllocations', fn ($q) => $q->where('payment_id', $subscription->source_payment_id))
+                ->when($byMetaInvoiceIds->isNotEmpty(), fn ($q) => $q->whereNotIn('id', $byMetaInvoiceIds->all()))
                 ->pluck('id');
 
-            // (B) Invoices with items tagged meta.subscription_id = this subscription (Path A / auto-generated)
-            $byMeta = \App\Models\ArInvoiceItem::query()
-                ->whereJsonContains('meta->is_subscription', true)
-                ->where(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(meta, '$.subscription_id'))"), (string) $subscription->id)
-                ->whereHas('invoice', fn ($q) => $q->whereNull('voided_at')->where('type', '!=', 'credit_note'))
-                ->pluck('invoice_id');
+            $byPaymentQty = 0;
+            if ($byPaymentOnlyIds->isNotEmpty()) {
+                $planItemIds = array_values(config('subscriptions.plan_menu_item_ids', []));
+                $qty = (int) \App\Models\ArInvoiceItem::query()
+                    ->whereIn('invoice_id', $byPaymentOnlyIds)
+                    ->where(function ($q) use ($planItemIds) {
+                        $q->whereJsonContains('meta->is_subscription', true);
+                        if ($planItemIds) {
+                            $q->orWhere(fn ($q2) => $q2
+                                ->where('sellable_type', \App\Models\MenuItem::class)
+                                ->whereIn('sellable_id', $planItemIds));
+                        }
+                    })
+                    ->sum('qty');
+                // Fall back to 1 per invoice when no subscription items are identifiable
+                $byPaymentQty = $qty > 0 ? $qty : $byPaymentOnlyIds->count();
+            }
 
-            // (C) Invoices linked via subscription order chain (allocated or unallocated)
+            // (C) Invoices linked via subscription order chain, not already counted
             $orderIds = $subscription->subscriptionOrders()->pluck('order_id');
-            $byOrderChain = collect();
+            $byOrderChainQty = 0;
             if ($orderIds->isNotEmpty()) {
-                $byOrderChain = \App\Models\ArInvoice::query()
+                $alreadyCounted = $byMetaInvoiceIds->merge($byPaymentOnlyIds)->unique();
+                $byOrderChainIds = \App\Models\ArInvoice::query()
                     ->whereNull('voided_at')
                     ->where('type', '!=', 'credit_note')
                     ->whereIn('source_order_id', $orderIds)
+                    ->when($alreadyCounted->isNotEmpty(), fn ($q) => $q->whereNotIn('id', $alreadyCounted->all()))
                     ->pluck('id');
+
+                if ($byOrderChainIds->isNotEmpty()) {
+                    $planItemIds = array_values(config('subscriptions.plan_menu_item_ids', []));
+                    $qty = (int) \App\Models\ArInvoiceItem::query()
+                        ->whereIn('invoice_id', $byOrderChainIds)
+                        ->where(function ($q) use ($planItemIds) {
+                            $q->whereJsonContains('meta->is_subscription', true);
+                            if ($planItemIds) {
+                                $q->orWhere(fn ($q2) => $q2
+                                    ->where('sellable_type', \App\Models\MenuItem::class)
+                                    ->whereIn('sellable_id', $planItemIds));
+                            }
+                        })
+                        ->sum('qty');
+                    $byOrderChainQty = $qty > 0 ? $qty : $byOrderChainIds->count();
+                }
             }
 
-            // Merge and deduplicate — an invoice found via multiple paths is counted once
-            $total = $byPayment->merge($byMeta)->merge($byOrderChain)->unique()->count();
+            $total = $byMetaQty + $byPaymentQty + $byOrderChainQty;
         } else {
             // Metadata-anchored: no payment link, derive from subscription item metadata.
 
             // Primary: items tagged with subscription_id in meta (auto-generated, Step 5+)
-            $metaInvoiceIds = \App\Models\ArInvoiceItem::query()
+            $metaItems = \App\Models\ArInvoiceItem::query()
                 ->whereJsonContains('meta->is_subscription', true)
                 ->where(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(meta, '$.subscription_id'))"), (string) $subscription->id)
-                ->whereHas('invoice', fn ($q) => $q->whereNull('voided_at'))
-                ->pluck('invoice_id')
-                ->unique();
+                ->whereHas('invoice', fn ($q) => $q->whereNull('voided_at'));
 
-            $primaryCount = $metaInvoiceIds->count();
+            $metaInvoiceIds = $metaItems->pluck('invoice_id')->unique();
+            $primaryCount   = (int) (clone $metaItems)->sum('qty');
 
             // Fallback: items linked via order chain (pre-Step-5 invoices without subscription_id in meta)
             $orderIds = $subscription->subscriptionOrders()->pluck('order_id');
             $orderChainInvoiceIds = collect();
             $fallbackCount = 0;
             if ($orderIds->isNotEmpty()) {
-                $orderChainInvoiceIds = \App\Models\ArInvoiceItem::query()
+                $fallbackItems = \App\Models\ArInvoiceItem::query()
                     ->whereJsonContains('meta->is_subscription', true)
                     ->whereHas('invoice', function ($q) use ($orderIds) {
                         $q->whereNull('voided_at')
                           ->whereIn('source_order_id', $orderIds);
                     })
-                    ->whereRaw("(JSON_EXTRACT(meta, '$.subscription_id') IS NULL OR JSON_EXTRACT(meta, '$.subscription_id') != ?)", [$subscription->id])
-                    ->pluck('invoice_id')
-                    ->unique();
+                    ->whereRaw("(JSON_EXTRACT(meta, '$.subscription_id') IS NULL OR JSON_EXTRACT(meta, '$.subscription_id') != ?)", [$subscription->id]);
 
-                $fallbackCount = $orderChainInvoiceIds->count();
+                $orderChainInvoiceIds = $fallbackItems->pluck('invoice_id')->unique();
+                $fallbackCount        = (int) (clone $fallbackItems)->sum('qty');
             }
 
             // Path C: manually created plan-purchase invoices that have no subscription metadata.
@@ -212,16 +248,16 @@ class SubscriptionPaymentLinkService
                 if ($matchingMenuItemId) {
                     $alreadyCounted = $metaInvoiceIds->merge($orderChainInvoiceIds)->unique();
 
-                    $planPathCount = \App\Models\ArInvoice::query()
-                        ->whereNull('voided_at')
-                        ->where('type', '!=', 'credit_note')
-                        ->where('customer_id', $subscription->customer_id)
-                        ->whereHas('items', fn ($q) => $q
-                            ->where('sellable_type', \App\Models\MenuItem::class)
-                            ->where('sellable_id', $matchingMenuItemId)
-                        )
-                        ->when($alreadyCounted->isNotEmpty(), fn ($q) => $q->whereNotIn('id', $alreadyCounted->all()))
-                        ->count();
+                    $planPathCount = (int) \App\Models\ArInvoiceItem::query()
+                        ->where('sellable_type', \App\Models\MenuItem::class)
+                        ->where('sellable_id', $matchingMenuItemId)
+                        ->whereHas('invoice', function ($q) use ($subscription, $alreadyCounted) {
+                            $q->whereNull('voided_at')
+                              ->where('type', '!=', 'credit_note')
+                              ->where('customer_id', $subscription->customer_id)
+                              ->when($alreadyCounted->isNotEmpty(), fn ($q2) => $q2->whereNotIn('id', $alreadyCounted->all()));
+                        })
+                        ->sum('qty');
                 }
             }
 
