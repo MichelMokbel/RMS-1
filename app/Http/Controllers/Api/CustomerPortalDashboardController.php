@@ -73,6 +73,8 @@ class CustomerPortalDashboardController extends Controller
                 fn ($query) => $query->where('customer_id', $user->customer_id),
                 fn ($query) => $query->where('user_id', $user->id)
             )
+            ->when($request->filled('date_from'), fn ($query) => $query->whereDate('scheduled_date', '>=', $request->query('date_from')))
+            ->when($request->filled('date_to'), fn ($query) => $query->whereDate('scheduled_date', '<=', $request->query('date_to')))
             ->latest('scheduled_date')
             ->paginate($this->perPage($request));
 
@@ -88,6 +90,8 @@ class CustomerPortalDashboardController extends Controller
         $subscriptions = MealSubscription::query()
             ->with(['days'])
             ->when($customerId > 0, fn ($query) => $query->where('customer_id', $customerId), fn ($query) => $query->whereRaw('1 = 0'))
+            ->when($request->filled('date_from'), fn ($query) => $query->whereDate('start_date', '>=', $request->query('date_from')))
+            ->when($request->filled('date_to'), fn ($query) => $query->whereDate('start_date', '<=', $request->query('date_to')))
             ->latest('id')
             ->paginate($this->perPage($request));
 
@@ -117,6 +121,8 @@ class CustomerPortalDashboardController extends Controller
         $invoices = ArInvoice::query()
             ->when($customerId > 0, fn ($query) => $query->where('customer_id', $customerId), fn ($query) => $query->whereRaw('1 = 0'))
             ->where('status', '!=', 'voided')
+            ->when($request->filled('date_from'), fn ($query) => $query->whereDate('issue_date', '>=', $request->query('date_from')))
+            ->when($request->filled('date_to'), fn ($query) => $query->whereDate('issue_date', '<=', $request->query('date_to')))
             ->latest('issue_date')
             ->paginate($this->perPage($request));
 
@@ -144,6 +150,8 @@ class CustomerPortalDashboardController extends Controller
         $customerId = (int) ($request->user()->customer_id ?? 0);
         $payments = Payment::query()
             ->when($customerId > 0, fn ($query) => $query->where('customer_id', $customerId), fn ($query) => $query->whereRaw('1 = 0'))
+            ->when($request->filled('date_from'), fn ($query) => $query->whereDate('received_at', '>=', $request->query('date_from')))
+            ->when($request->filled('date_to'), fn ($query) => $query->whereDate('received_at', '<=', $request->query('date_to')))
             ->latest('received_at')
             ->paginate($this->perPage($request));
 
@@ -246,7 +254,9 @@ class CustomerPortalDashboardController extends Controller
     {
         $today = now()->toDateString();
         $dueBucket = 'upcoming';
-        if ($invoice->due_date && $invoice->due_date->lt($today)) {
+        if ((int) $invoice->balance_cents <= 0) {
+            $dueBucket = 'paid';
+        } elseif ($invoice->due_date && $invoice->due_date->lt($today)) {
             $dueBucket = 'overdue';
         } elseif ($invoice->due_date && $invoice->due_date->toDateString() === $today) {
             $dueBucket = 'due_today';

@@ -74,6 +74,13 @@ it('returns only the authenticated customer financial and order data', function 
         'balance_cents' => 5000,
         'due_date' => now()->toDateString(),
     ]);
+    $paidPastDueInvoice = ArInvoice::factory()->issued()->create([
+        'customer_id' => $customer->id,
+        'total_cents' => 9000,
+        'paid_total_cents' => 9000,
+        'balance_cents' => 0,
+        'due_date' => now()->subDays(10)->toDateString(),
+    ]);
     $otherInvoice = ArInvoice::factory()->issued()->create([
         'customer_id' => $otherCustomer->id,
         'total_cents' => 99000,
@@ -113,7 +120,7 @@ it('returns only the authenticated customer financial and order data', function 
 
     $this->getJson('/api/customer/invoices')
         ->assertOk()
-        ->assertJsonCount(2, 'data');
+        ->assertJsonCount(3, 'data');
 
     $this->getJson('/api/customer/payments')
         ->assertOk()
@@ -133,6 +140,10 @@ it('returns only the authenticated customer financial and order data', function 
     $this->getJson("/api/customer/invoices/{$todayInvoice->id}")
         ->assertOk()
         ->assertJsonPath('data.due_bucket', 'due_today');
+
+    $this->getJson("/api/customer/invoices/{$paidPastDueInvoice->id}")
+        ->assertOk()
+        ->assertJsonPath('data.due_bucket', 'paid');
 });
 
 it('returns portal profile metadata, user-owned orders, and empty financial data for an unlinked portal user', function () {
