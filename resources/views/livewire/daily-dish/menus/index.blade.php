@@ -693,7 +693,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                                 x-show="open"
                                                 x-ref="panel"
                                                 x-bind:style="panelStyle"
-                                                class="z-[9999] overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+                                                class="z-[100000] overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
                                             >
                                                 <div class="max-h-60 overflow-auto">
                                                     <button
@@ -777,7 +777,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                                         x-show="open"
                                                         x-ref="panel"
                                                         x-bind:style="panelStyle"
-                                                        class="z-[9999] overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+                                                        class="z-[100000] overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
                                                     >
                                                         <div class="max-h-60 overflow-auto">
                                                             <template x-for="item in results" :key="item.id">
@@ -967,6 +967,7 @@ const registerDailyDishMenuItemLookup = () => {
                 `top: ${rect.bottom + 4}px`,
                 `left: ${rect.left}px`,
                 `width: ${rect.width}px`,
+                'z-index: 100000',
                 'display: block',
             ].join('; ');
         },
@@ -1054,6 +1055,7 @@ const registerDailyDishCategoryLookup = () => {
                 `top: ${rect.bottom + 4}px`,
                 `left: ${rect.left}px`,
                 `width: ${rect.width}px`,
+                'z-index: 100000',
                 'display: block',
             ].join('; ');
         },
