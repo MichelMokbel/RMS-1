@@ -180,7 +180,7 @@ class SubscriptionPaymentLinkService
                 $subItemsTotal = (int) $subItems->sum('line_total_cents');
                 $allocated     = (int) $invoice->paymentAllocations->sum('amount_cents');
 
-                if ($subItemsTotal <= 0 || $allocated >= $subItemsTotal) {
+                if ($subItemsTotal <= 0 || $allocated >= $invoice->total_cents) {
                     // Fully paid (or zero-value items): all subscription items are covered.
                     $total += (int) $subItemsQty;
                 } else {
