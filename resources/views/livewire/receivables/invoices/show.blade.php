@@ -533,6 +533,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endcan
             </div>
 
+            @can('finance.write')
             @if ($active_tab === 'receive-payment' && in_array($invoice->status, ['issued', 'partially_paid'], true))
                 <div class="space-y-3">
                     <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Receive Payment') }}</h2>
@@ -568,7 +569,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @error('credit_amount') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
                 </div>
             @endif
+            @endcan
 
+            @can('finance.write')
             @if ($active_tab === 'apply-advance' && in_array($invoice->status, ['issued', 'partially_paid'], true))
                 <div class="space-y-3">
                     <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Apply Advance') }}</h2>
@@ -619,6 +622,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                 </div>
             @endif
+            @endcan
 
             @if ($active_tab === 'allocations')
                 <div class="space-y-3">
