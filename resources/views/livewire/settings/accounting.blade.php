@@ -418,7 +418,8 @@ new class extends Component {
 
     private function authorizeFinanceSettings(): void
     {
-        abort_unless(Auth::user()?->hasRole('admin'), 403);
+        $user = Auth::user();
+        abort_unless($user instanceof \App\Models\User && $user->hasRole('admin'), 403);
     }
 }; ?>
 
