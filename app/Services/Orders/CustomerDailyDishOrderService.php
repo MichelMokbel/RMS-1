@@ -460,17 +460,23 @@ class CustomerDailyDishOrderService
                     }
                 }
 
+                $subscriptionMealCount = $isSubscriptionRequest
+                    ? $this->resolveSubscriptionMealCount($lineGroups)
+                    : null;
+
                 if ($isSubscriptionRequest && $appetizerMenuItemId) {
                     $lineGroups['subscription-appetizer|'.$appetizerMenuItemId] = [
                         'menu_item_id' => $appetizerMenuItemId,
-                        'qty' => 1,
+                        'qty' => max(1, (int) $subscriptionMealCount),
                         'unit_price' => 0,
                         'label' => 'Appetizer',
                         'role' => 'appetizer',
                     ];
                 }
 
-                $orderTotal = $isSubscriptionRequest ? (float) $planPrice : (float) $websiteDayTotal;
+                $orderTotal = $isSubscriptionRequest
+                    ? round((float) $planPrice * max(1, (int) $subscriptionMealCount), 3)
+                    : (float) $websiteDayTotal;
 
                 $order = Order::create([
                     'order_number' => $this->numberService->generate(),
@@ -643,6 +649,16 @@ class CustomerDailyDishOrderService
             ->first(fn (string $value) => $value !== '');
 
         return $note !== null && $note !== '' ? $note : null;
+    }
+
+    /**
+     * @param  array<string, array{menu_item_id:int,qty:int|float,unit_price:float|int,label:string,role:string}>  $lineGroups
+     */
+    private function resolveSubscriptionMealCount(array $lineGroups): int
+    {
+        return max(0, (int) collect($lineGroups)
+            ->filter(fn (array $lineGroup) => ($lineGroup['role'] ?? null) === 'main')
+            ->sum(fn (array $lineGroup) => (int) ($lineGroup['qty'] ?? 0)));
     }
 
     /**

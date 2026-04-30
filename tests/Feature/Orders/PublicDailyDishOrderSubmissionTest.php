@@ -228,6 +228,43 @@ it('uses fixed 42.3 total for mealPlan 26', function () {
     expect($order->items()->where('role', 'appetizer')->exists())->toBeTrue();
 });
 
+it('multiplies subscription totals and appetizer quantity by the selected meals for the day', function () {
+    actingAsVerifiedCustomer();
+    $appetizer = MenuItem::factory()->create(['code' => 'APP-DEFAULT', 'name' => 'Default Appetizer', 'is_active' => true]);
+    $main = MenuItem::factory()->create(['code' => 'MAIN-MULTI', 'name' => 'Beef Stroganoff']);
+    $salad = MenuItem::factory()->create(['code' => 'SALAD-MULTI', 'name' => 'Beetroot Salad']);
+    $dessert = MenuItem::factory()->create(['code' => 'DES-MULTI', 'name' => 'Chocolate Cake']);
+    createPublishedMenuForDate('2026-03-06', 1, $main, $salad, $dessert);
+
+    $payload = [
+        'branch_id' => 1,
+        'customerName' => 'Multi Meal Customer',
+        'phone' => '123456',
+        'email' => 'multi@example.com',
+        'address' => 'Doha',
+        'mealPlan' => '26',
+        'items' => [[
+            'key' => '2026-03-06',
+            'mains' => [['name' => 'Beef Stroganoff', 'portion' => 'plate', 'qty' => 2]],
+            'salad_qty' => 2,
+            'dessert_qty' => 2,
+        ]],
+    ];
+
+    $this->postJson('/api/public/daily-dish/orders', $payload)
+        ->assertOk()
+        ->assertJson(['success' => true]);
+
+    $order = Order::query()->firstOrFail();
+    $appetizerLine = $order->items()->where('role', 'appetizer')->firstOrFail();
+    $mainLine = $order->items()->where('role', 'main')->firstOrFail();
+
+    expect((float) $order->total_amount)->toBe(84.6);
+    expect((float) $mainLine->quantity)->toBe(2.0);
+    expect((float) $appetizerLine->quantity)->toBe(2.0);
+    expect((int) $appetizerLine->menu_item_id)->toBe($appetizer->id);
+});
+
 it('returns 422 when subscription appetizer code is not configured to an active menu item', function () {
     actingAsVerifiedCustomer();
     Config::set('subscriptions.default_appetizer_code', 'MISSING-APP');
