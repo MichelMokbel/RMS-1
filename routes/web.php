@@ -193,19 +193,18 @@ Route::middleware(['auth', 'active', 'role:admin', 'ensure.admin'])->group(funct
     Volt::route('suppliers/{supplier}/edit', 'suppliers.edit')->name('suppliers.edit');
 });
 
-Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|finance.access|settings.pos_terminals.manage'])->group(function () {
+Route::middleware(['auth', 'active', 'role:admin', 'ensure.admin'])->group(function () {
     Volt::route('settings/finance', 'finance.settings')->name('finance.settings');
     Volt::route('settings/accounting', 'settings.accounting')->name('settings.accounting');
     Volt::route('settings/payment-terms', 'settings.payment-terms')->name('settings.payment-terms');
     Volt::route('settings/pos-terminals', 'settings.pos-terminals')->name('settings.pos-terminals');
+    Volt::route('settings/organization', 'settings.organization')->name('settings.organization');
     Route::redirect('finance/settings', 'settings/finance');
-
-    Volt::route('ledger/batches', 'ledger.batches.index')->name('ledger.batches.index');
-    Volt::route('ledger/batches/{batch}', 'ledger.batches.show')->name('ledger.batches.show');
 });
 
-Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|finance.access'])->group(function () {
-    Volt::route('settings/organization', 'settings.organization')->name('settings.organization');
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|finance.access|settings.pos_terminals.manage'])->group(function () {
+    Volt::route('ledger/batches', 'ledger.batches.index')->name('ledger.batches.index');
+    Volt::route('ledger/batches/{batch}', 'ledger.batches.show')->name('ledger.batches.show');
 });
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|receivables.access'])->group(function () {

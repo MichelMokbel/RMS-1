@@ -93,12 +93,8 @@ new class extends Component {
 
     private function authorizeManager(): void
     {
-        /** @var \App\Models\User|null $user */
         $user = Auth::user();
-
-        if (! $user || (! $user->hasRole('admin') && ! $user->hasRole('manager') && ! $user->can('finance.access'))) {
-            abort(403);
-        }
+        abort_unless($user instanceof \App\Models\User && $user->hasRole('admin'), 403);
     }
 }; ?>
 
