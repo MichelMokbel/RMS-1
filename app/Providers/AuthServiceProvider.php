@@ -19,9 +19,9 @@ class AuthServiceProvider extends ServiceProvider
         Gate::define('sale.checkout', fn (User $user, ?Sale $sale = null) => $user->hasAnyRole(['admin', 'manager', 'cashier']));
         Gate::define('sale.void', fn (User $user, ?Sale $sale = null) => $user->hasAnyRole(['admin', 'manager']));
 
-        Gate::define('ar.invoice.issue', fn (User $user, ?ArInvoice $invoice = null) => $user->hasAnyRole(['admin', 'manager']));
-        Gate::define('ar.invoice.applyPayment', fn (User $user, ?ArInvoice $invoice = null) => $user->hasAnyRole(['admin', 'manager']));
-        Gate::define('ar.invoice.creditNote', fn (User $user, ?ArInvoice $invoice = null) => $user->hasAnyRole(['admin', 'manager']));
+        Gate::define('ar.invoice.issue', fn (User $user, ?ArInvoice $invoice = null) => $user->hasAnyRole(['admin', 'manager', 'accounting']));
+        Gate::define('ar.invoice.applyPayment', fn (User $user, ?ArInvoice $invoice = null) => $user->hasAnyRole(['admin', 'manager', 'accounting']));
+        Gate::define('ar.invoice.creditNote', fn (User $user, ?ArInvoice $invoice = null) => $user->hasAnyRole(['admin', 'manager', 'accounting']));
     }
 }
 

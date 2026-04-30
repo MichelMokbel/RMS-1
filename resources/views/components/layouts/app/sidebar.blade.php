@@ -17,6 +17,7 @@
                 $isStaff = $user?->hasAnyRole(['admin','manager','staff']) ?? false;
                 $isPastryUser = $user?->hasRole('pastry-user') ?? false;
                 $canAccessMarketing = $user?->can('marketing.access') ?? false;
+                $isAccounting = $user?->hasAnyRole(['admin', 'manager', 'accounting']) ?? false;
 
                 $inSales = request()->routeIs('orders.*')
                     || request()->routeIs('pastry-orders.*')
@@ -125,7 +126,7 @@
                     </flux:navlist.group>
                 @endif
 
-                @if ($isManager)
+                @if ($isManager || $isAccounting)
                     <flux:navlist.group expandable :expanded="$inFinance" :heading="__('Finance')">
                         <flux:navlist.item icon="building-library" :href="route('accounting.dashboard')" :current="request()->routeIs('accounting.*')" wire:navigate>
                             {{ __('Accounting Home') }}
@@ -137,7 +138,9 @@
                             {{ __('Ledger Batches') }}
                         </flux:navlist.item>
                     </flux:navlist.group>
+                @endif
 
+                @if ($isManager)
                     <flux:navlist.group expandable :expanded="$inPrograms" :heading="__('Programs')">
                         <flux:navlist.item icon="clipboard-document" :href="route('meal-plan-requests.index')" :current="request()->routeIs('meal-plan-requests.*')" wire:navigate>
                             {{ __('Meal Plan Requests') }}
@@ -147,6 +150,20 @@
                         </flux:navlist.item>
                         <flux:navlist.item icon="building-office-2" :href="route('company-food.projects.index')" :current="request()->routeIs('company-food.*')" wire:navigate>
                             {{ __('Company Food') }}
+                        </flux:navlist.item>
+                    </flux:navlist.group>
+                @endif
+
+                @if ($isAccounting && ! $isCashier)
+                    <flux:navlist.group expandable :expanded="$inSales" :heading="__('Sales')">
+                        <flux:navlist.item icon="clipboard-document-list" :href="route('receivables.orders-to-invoice')" :current="request()->routeIs('receivables.orders-to-invoice')" wire:navigate>
+                            {{ __('Orders to Invoice') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="document-text" :href="route('invoices.index')" :current="request()->routeIs('invoices.*')" wire:navigate>
+                            {{ __('Invoices (AR)') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="credit-card" :href="route('receivables.payments.index')" :current="request()->routeIs('receivables.payments.*')" wire:navigate>
+                            {{ __('Customer Payments') }}
                         </flux:navlist.item>
                     </flux:navlist.group>
                 @endif
@@ -193,7 +210,7 @@
                     </flux:navlist.group>
                 @endif
 
-                @if ($isManager || $isStaff)
+                @if ($isManager || $isStaff || $isAccounting)
                     <flux:navlist.group expandable :expanded="$inReports" :heading="__('Reports')">
                         <flux:navlist.item icon="chart-bar" :href="route('reports.index')" :current="request()->routeIs('reports.index')" wire:navigate>
                             {{ __('All Reports') }}
