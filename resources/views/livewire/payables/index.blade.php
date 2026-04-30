@@ -504,10 +504,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Bills, expenses, reimbursements, approvals, payments, and aging in one finance workspace.') }}</p>
         </div>
         <div class="flex flex-wrap gap-2">
-            <flux:button :href="route('payables.create')" wire:navigate>{{ __('New Document') }}</flux:button>
-            @if ($this->canManageAp())
-                <flux:button :href="route('payables.payments.create')" wire:navigate variant="ghost">{{ __('New Payment') }}</flux:button>
-            @endif
+            @can('finance.write')
+                <flux:button :href="route('payables.create')" wire:navigate>{{ __('New Document') }}</flux:button>
+                @if ($this->canManageAp())
+                    <flux:button :href="route('payables.payments.create')" wire:navigate variant="ghost">{{ __('New Payment') }}</flux:button>
+                @endif
+            @endcan
         </div>
     </div>
 
@@ -749,41 +751,43 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     <div class="flex flex-wrap justify-end gap-2">
                                         <flux:button size="xs" :href="route('payables.invoices.show', $invoice)" wire:navigate>{{ __('View') }}</flux:button>
 
-                                        @if($invoice->status === 'draft')
-                                            <flux:button size="xs" :href="route('payables.invoices.edit', $invoice)" wire:navigate variant="ghost">{{ __('Edit') }}</flux:button>
-                                        @endif
-
-                                        @if($invoice->is_expense)
-                                            @if($invoice->approvalStatusLabel() === 'draft')
-                                                <flux:button size="xs" type="button" wire:click="submitExpense({{ $invoice->id }})">{{ __('Submit') }}</flux:button>
+                                        @can('finance.write')
+                                            @if($invoice->status === 'draft')
+                                                <flux:button size="xs" :href="route('payables.invoices.edit', $invoice)" wire:navigate variant="ghost">{{ __('Edit') }}</flux:button>
                                             @endif
 
-                                            @if($invoice->approvalStatusLabel() === 'submitted' && $this->canManagerApprove() && $this->canReviewExpense($invoice))
-                                                <flux:button size="xs" type="button" wire:click="approveManager({{ $invoice->id }})">{{ __('Manager Approve') }}</flux:button>
-                                                <flux:button size="xs" type="button" wire:click="rejectExpense({{ $invoice->id }})" variant="ghost">{{ __('Reject') }}</flux:button>
+                                            @if($invoice->is_expense)
+                                                @if($invoice->approvalStatusLabel() === 'draft')
+                                                    <flux:button size="xs" type="button" wire:click="submitExpense({{ $invoice->id }})">{{ __('Submit') }}</flux:button>
+                                                @endif
+
+                                                @if($invoice->approvalStatusLabel() === 'submitted' && $this->canManagerApprove() && $this->canReviewExpense($invoice))
+                                                    <flux:button size="xs" type="button" wire:click="approveManager({{ $invoice->id }})">{{ __('Manager Approve') }}</flux:button>
+                                                    <flux:button size="xs" type="button" wire:click="rejectExpense({{ $invoice->id }})" variant="ghost">{{ __('Reject') }}</flux:button>
+                                                @endif
+
+                                                @if($invoice->approvalStatusLabel() === 'manager_approved' && $this->canFinanceApprove() && $this->canReviewExpense($invoice))
+                                                    <flux:button size="xs" type="button" wire:click="approveFinance({{ $invoice->id }})">{{ __('Finance Approve') }}</flux:button>
+                                                    <flux:button size="xs" type="button" wire:click="rejectExpense({{ $invoice->id }})" variant="ghost">{{ __('Reject') }}</flux:button>
+                                                @endif
+
+                                                @if($invoice->approvalStatusLabel() === 'approved' && $invoice->status === 'draft' && $this->canFinanceApprove())
+                                                    <flux:button size="xs" type="button" wire:click="postDocument({{ $invoice->id }})">{{ __('Post') }}</flux:button>
+                                                @endif
+
+                                                @if(in_array($invoice->status, ['posted', 'partially_paid'], true) && ! $invoice->expenseProfile?->settled_at && $this->canFinanceApprove())
+                                                    <flux:button size="xs" type="button" wire:click="settleExpense({{ $invoice->id }})">{{ __('Settle') }}</flux:button>
+                                                @endif
+                                            @else
+                                                @if($invoice->status === 'draft' && $this->canManageAp())
+                                                    <flux:button size="xs" type="button" wire:click="postDocument({{ $invoice->id }})">{{ __('Post') }}</flux:button>
+                                                @endif
                                             @endif
 
-                                            @if($invoice->approvalStatusLabel() === 'manager_approved' && $this->canFinanceApprove() && $this->canReviewExpense($invoice))
-                                                <flux:button size="xs" type="button" wire:click="approveFinance({{ $invoice->id }})">{{ __('Finance Approve') }}</flux:button>
-                                                <flux:button size="xs" type="button" wire:click="rejectExpense({{ $invoice->id }})" variant="ghost">{{ __('Reject') }}</flux:button>
+                                            @if($invoice->canVoid() && $this->canManageAp())
+                                                <flux:button size="xs" type="button" wire:click="voidDocument({{ $invoice->id }})" variant="ghost">{{ __('Void') }}</flux:button>
                                             @endif
-
-                                            @if($invoice->approvalStatusLabel() === 'approved' && $invoice->status === 'draft' && $this->canFinanceApprove())
-                                                <flux:button size="xs" type="button" wire:click="postDocument({{ $invoice->id }})">{{ __('Post') }}</flux:button>
-                                            @endif
-
-                                            @if(in_array($invoice->status, ['posted', 'partially_paid'], true) && ! $invoice->expenseProfile?->settled_at && $this->canFinanceApprove())
-                                                <flux:button size="xs" type="button" wire:click="settleExpense({{ $invoice->id }})">{{ __('Settle') }}</flux:button>
-                                            @endif
-                                        @else
-                                            @if($invoice->status === 'draft' && $this->canManageAp())
-                                                <flux:button size="xs" type="button" wire:click="postDocument({{ $invoice->id }})">{{ __('Post') }}</flux:button>
-                                            @endif
-                                        @endif
-
-                                        @if($invoice->canVoid() && $this->canManageAp())
-                                            <flux:button size="xs" type="button" wire:click="voidDocument({{ $invoice->id }})" variant="ghost">{{ __('Void') }}</flux:button>
-                                        @endif
+                                        @endcan
                                     </div>
                                 </td>
                             </tr>
@@ -920,23 +924,29 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <div class="space-y-2">
                         <div class="flex items-center justify-between">
                             <h3 class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Template Lines') }}</h3>
-                            <flux:button type="button" wire:click="addRecurringLine" size="sm" variant="ghost">{{ __('Add Line') }}</flux:button>
+                            @can('finance.write')
+                                <flux:button type="button" wire:click="addRecurringLine" size="sm" variant="ghost">{{ __('Add Line') }}</flux:button>
+                            @endcan
                         </div>
                         @foreach($recurring_lines as $index => $line)
                             <div class="grid gap-3 md:grid-cols-[1fr,120px,120px,auto] items-end">
                                 <flux:input wire:model="recurring_lines.{{ $index }}.description" :label="__('Description')" />
                                 <flux:input wire:model="recurring_lines.{{ $index }}.quantity" type="number" step="0.001" :label="__('Qty')" />
                                 <flux:input wire:model="recurring_lines.{{ $index }}.unit_price" type="number" step="0.0001" :label="__('Unit Price')" />
-                                <flux:button type="button" wire:click="removeRecurringLine({{ $index }})" variant="ghost" size="sm">{{ __('Remove') }}</flux:button>
+                                @can('finance.write')
+                                    <flux:button type="button" wire:click="removeRecurringLine({{ $index }})" variant="ghost" size="sm">{{ __('Remove') }}</flux:button>
+                                @endcan
                             </div>
                         @endforeach
                     </div>
 
                     <div class="flex justify-end gap-2">
-                        @if($editing_recurring_template_id)
-                            <flux:button type="button" wire:click="resetRecurringTemplateForm" variant="ghost">{{ __('Cancel') }}</flux:button>
-                        @endif
-                        <flux:button type="submit">{{ __('Save Template') }}</flux:button>
+                        @can('finance.write')
+                            @if($editing_recurring_template_id)
+                                <flux:button type="button" wire:click="resetRecurringTemplateForm" variant="ghost">{{ __('Cancel') }}</flux:button>
+                            @endif
+                            <flux:button type="submit">{{ __('Save Template') }}</flux:button>
+                        @endcan
                     </div>
                 </form>
             </div>
@@ -971,13 +981,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     </td>
                                     <td class="px-3 py-2 text-right text-sm">
                                         <div class="flex flex-wrap justify-end gap-2">
-                                            <flux:button type="button" wire:click="editRecurringTemplate({{ $template->id }})" size="xs" variant="ghost">{{ __('Edit') }}</flux:button>
-                                            <flux:button type="button" wire:click="generateRecurringTemplate({{ $template->id }})" size="xs">{{ __('Generate') }}</flux:button>
-                                            @if($template->is_active)
-                                                <flux:button type="button" wire:click="pauseRecurringTemplate({{ $template->id }})" size="xs" variant="ghost">{{ __('Pause') }}</flux:button>
-                                            @else
-                                                <flux:button type="button" wire:click="resumeRecurringTemplate({{ $template->id }})" size="xs" variant="ghost">{{ __('Resume') }}</flux:button>
-                                            @endif
+                                            @can('finance.write')
+                                                <flux:button type="button" wire:click="editRecurringTemplate({{ $template->id }})" size="xs" variant="ghost">{{ __('Edit') }}</flux:button>
+                                                <flux:button type="button" wire:click="generateRecurringTemplate({{ $template->id }})" size="xs">{{ __('Generate') }}</flux:button>
+                                                @if($template->is_active)
+                                                    <flux:button type="button" wire:click="pauseRecurringTemplate({{ $template->id }})" size="xs" variant="ghost">{{ __('Pause') }}</flux:button>
+                                                @else
+                                                    <flux:button type="button" wire:click="resumeRecurringTemplate({{ $template->id }})" size="xs" variant="ghost">{{ __('Resume') }}</flux:button>
+                                                @endif
+                                            @endcan
                                         </div>
                                     </td>
                                 </tr>

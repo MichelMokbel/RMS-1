@@ -290,11 +290,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         </div>
 
-        <div class="flex justify-end gap-3">
-            <flux:button type="button" wire:click="resetForm" variant="ghost">{{ __('Reset') }}</flux:button>
-            <flux:button type="submit" variant="ghost">{{ __('Save Draft') }}</flux:button>
-            <flux:button type="button" wire:click="saveAndPost">{{ __('Save and Post') }}</flux:button>
-        </div>
+        @can('finance.write')
+            <div class="flex justify-end gap-3">
+                <flux:button type="button" wire:click="resetForm" variant="ghost">{{ __('Reset') }}</flux:button>
+                <flux:button type="submit" variant="ghost">{{ __('Save Draft') }}</flux:button>
+                <flux:button type="button" wire:click="saveAndPost">{{ __('Save and Post') }}</flux:button>
+            </div>
+        @endcan
     </form>
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
@@ -324,12 +326,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">{{ number_format((float) $journal->lines->sum('credit'), 2) }}</td>
                             <td class="px-3 py-2 text-right text-sm">
                                 <div class="flex justify-end gap-2">
-                                    @if($journal->status === 'draft')
-                                        <flux:button type="button" wire:click="editJournal({{ $journal->id }})" variant="ghost" size="sm">{{ __('Edit') }}</flux:button>
-                                        <flux:button type="button" wire:click="postJournal({{ $journal->id }})" size="sm">{{ __('Post') }}</flux:button>
-                                    @elseif($journal->status === 'posted')
-                                        <flux:button type="button" wire:click="reverseJournal({{ $journal->id }})" variant="ghost" size="sm">{{ __('Reverse') }}</flux:button>
-                                    @endif
+                                    @can('finance.write')
+                                        @if($journal->status === 'draft')
+                                            <flux:button type="button" wire:click="editJournal({{ $journal->id }})" variant="ghost" size="sm">{{ __('Edit') }}</flux:button>
+                                            <flux:button type="button" wire:click="postJournal({{ $journal->id }})" size="sm">{{ __('Post') }}</flux:button>
+                                        @elseif($journal->status === 'posted')
+                                            <flux:button type="button" wire:click="reverseJournal({{ $journal->id }})" variant="ghost" size="sm">{{ __('Reverse') }}</flux:button>
+                                        @endif
+                                    @endcan
                                 </div>
                             </td>
                         </tr>

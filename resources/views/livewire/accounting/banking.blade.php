@@ -271,7 +271,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                     <flux:input type="file" wire:model="statement_file" accept=".csv,.txt" :label="__('Statement File')" />
                     <div class="flex justify-end">
-                        <flux:button type="submit">{{ __('Import CSV') }}</flux:button>
+                        @can('finance.write')
+                            <flux:button type="submit">{{ __('Import CSV') }}</flux:button>
+                        @endcan
                     </div>
                 </form>
             </div>
@@ -291,7 +293,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <flux:input wire:model="statement_date" type="date" :label="__('Statement Date')" />
                     <flux:input wire:model="statement_ending_balance" type="number" step="0.01" :label="__('Statement Ending Balance')" />
                     <div class="flex justify-end">
-                        <flux:button type="submit">{{ __('Auto Match') }}</flux:button>
+                        @can('finance.write')
+                            <flux:button type="submit">{{ __('Auto Match') }}</flux:button>
+                        @endcan
                     </div>
                 </form>
             </div>

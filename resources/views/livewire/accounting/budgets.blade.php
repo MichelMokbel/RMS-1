@@ -344,7 +344,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </label>
                     </div>
                     <div class="flex justify-end">
-                        <flux:button type="submit">{{ $selected_budget_id ? __('Save Budget') : __('Create Budget') }}</flux:button>
+                        @can('finance.write')
+                            <flux:button type="submit">{{ $selected_budget_id ? __('Save Budget') : __('Create Budget') }}</flux:button>
+                        @endcan
                     </div>
                 </form>
             </div>
@@ -455,7 +457,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <label class="mb-1 block text-sm font-medium text-neutral-800 dark:text-neutral-200">{{ __('CSV File') }}</label>
                             <input wire:model="import_file" type="file" accept=".csv,.txt" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" />
                         </div>
-                        <flux:button type="submit">{{ __('Import CSV') }}</flux:button>
+                        @can('finance.write')
+                            <flux:button type="submit">{{ __('Import CSV') }}</flux:button>
+                        @endcan
                     </form>
                 </div>
             @endif

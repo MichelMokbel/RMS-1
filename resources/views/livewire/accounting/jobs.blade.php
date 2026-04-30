@@ -303,6 +303,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <div class="grid gap-6 xl:grid-cols-[360px,1fr]">
         <div class="space-y-6">
+            @can('finance.write')
             <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
                 <h2 class="mb-3 text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Create Job') }}</h2>
                 <form wire:submit="saveJob" class="space-y-4">
@@ -348,6 +349,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                 </form>
             </div>
+            @endcan
 
             <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
                 <h2 class="mb-3 text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Select Job') }}</h2>
@@ -423,7 +425,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 </select>
                             </div>
                             <div class="flex justify-end">
-                                <flux:button type="submit">{{ __('Save Phase') }}</flux:button>
+                                @can('finance.write')
+                                    <flux:button type="submit">{{ __('Save Phase') }}</flux:button>
+                                @endcan
                             </div>
                         </form>
                     </div>
@@ -446,10 +450,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                                             <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ Str::headline($phase->status) }}</td>
                                             <td class="px-3 py-2 text-right">
                                                 <div class="flex justify-end gap-2">
-                                                    <flux:button type="button" wire:click="editPhase({{ $phase->id }})" size="xs" variant="ghost">{{ __('Edit') }}</flux:button>
-                                                    @if($phase->status !== 'closed')
-                                                        <flux:button type="button" wire:click="closePhase({{ $phase->id }})" size="xs" variant="ghost">{{ __('Close') }}</flux:button>
-                                                    @endif
+                                                    @can('finance.write')
+                                                        <flux:button type="button" wire:click="editPhase({{ $phase->id }})" size="xs" variant="ghost">{{ __('Edit') }}</flux:button>
+                                                        @if($phase->status !== 'closed')
+                                                            <flux:button type="button" wire:click="closePhase({{ $phase->id }})" size="xs" variant="ghost">{{ __('Close') }}</flux:button>
+                                                        @endif
+                                                    @endcan
                                                 </div>
                                             </td>
                                         </tr>
@@ -482,7 +488,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 {{ __('Active') }}
                             </label>
                             <div class="flex justify-end">
-                                <flux:button type="submit">{{ __('Save Cost Code') }}</flux:button>
+                                @can('finance.write')
+                                    <flux:button type="submit">{{ __('Save Cost Code') }}</flux:button>
+                                @endcan
                             </div>
                         </form>
                     </div>
@@ -507,10 +515,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                                             <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $costCode->is_active ? __('Active') : __('Inactive') }}</td>
                                             <td class="px-3 py-2 text-right">
                                                 <div class="flex justify-end gap-2">
-                                                    <flux:button type="button" wire:click="editCostCode({{ $costCode->id }})" size="xs" variant="ghost">{{ __('Edit') }}</flux:button>
-                                                    @if($costCode->is_active)
-                                                        <flux:button type="button" wire:click="deactivateCostCode({{ $costCode->id }})" size="xs" variant="ghost">{{ __('Deactivate') }}</flux:button>
-                                                    @endif
+                                                    @can('finance.write')
+                                                        <flux:button type="button" wire:click="editCostCode({{ $costCode->id }})" size="xs" variant="ghost">{{ __('Edit') }}</flux:button>
+                                                        @if($costCode->is_active)
+                                                            <flux:button type="button" wire:click="deactivateCostCode({{ $costCode->id }})" size="xs" variant="ghost">{{ __('Deactivate') }}</flux:button>
+                                                        @endif
+                                                    @endcan
                                                 </div>
                                             </td>
                                         </tr>
@@ -547,7 +557,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </div>
                             <flux:input wire:model="budget_amount" type="number" step="0.01" :label="__('Budget Amount')" />
                             <div class="flex justify-end">
-                                <flux:button type="submit">{{ __('Save Budget') }}</flux:button>
+                                @can('finance.write')
+                                    <flux:button type="submit">{{ __('Save Budget') }}</flux:button>
+                                @endcan
                             </div>
                         </form>
                     </div>
@@ -570,8 +582,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                                             <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">{{ number_format((float) $budget->budget_amount, 2) }}</td>
                                             <td class="px-3 py-2 text-right">
                                                 <div class="flex justify-end gap-2">
-                                                    <flux:button type="button" wire:click="editBudget({{ $budget->id }})" size="xs" variant="ghost">{{ __('Edit') }}</flux:button>
-                                                    <flux:button type="button" wire:click="deleteBudgetEntry({{ $budget->id }})" size="xs" variant="ghost">{{ __('Delete') }}</flux:button>
+                                                    @can('finance.write')
+                                                        <flux:button type="button" wire:click="editBudget({{ $budget->id }})" size="xs" variant="ghost">{{ __('Edit') }}</flux:button>
+                                                        <flux:button type="button" wire:click="deleteBudgetEntry({{ $budget->id }})" size="xs" variant="ghost">{{ __('Delete') }}</flux:button>
+                                                    @endcan
                                                 </div>
                                             </td>
                                         </tr>
@@ -620,7 +634,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <flux:input wire:model="transaction_amount" type="number" step="0.01" :label="__('Amount')" />
                             <flux:textarea wire:model="transaction_memo" :label="__('Memo')" rows="2" />
                             <div class="flex justify-end">
-                                <flux:button type="submit">{{ __('Record Transaction') }}</flux:button>
+                                @can('finance.write')
+                                    <flux:button type="submit">{{ __('Record Transaction') }}</flux:button>
+                                @endcan
                             </div>
                         </form>
                     </div>

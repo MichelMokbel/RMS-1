@@ -54,7 +54,6 @@ return new class extends Migration
         $assignments = [
             'accounting' => [
                 'accounting.read',
-                'accounting.write',
                 'finance.access',
                 'receivables.access',
                 'reports.access',
