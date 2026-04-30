@@ -418,11 +418,7 @@ new class extends Component {
 
     private function authorizeFinanceSettings(): void
     {
-        $user = Auth::user();
-
-        if (! $user || (! $user->hasRole('admin') && ! $user->hasRole('manager') && ! $user->can('finance.access'))) {
-            abort(403);
-        }
+        abort_unless(Auth::user()?->hasRole('admin'), 403);
     }
 }; ?>
 
@@ -437,7 +433,7 @@ new class extends Component {
         @endif
 
         <div class="mt-6 space-y-6">
-            <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+            <div class="flex flex-wrap items-end justify-between gap-4">
                 <div class="flex flex-wrap gap-2">
                     @foreach ($tabs as $tabKey => $label)
                         <a href="{{ route('settings.accounting', ['tab' => $tabKey]) }}" wire:navigate class="{{ $tab === $tabKey ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900' : 'bg-white text-neutral-700 dark:bg-neutral-900 dark:text-neutral-200' }} rounded-md border border-neutral-200 px-3 py-2 text-sm font-medium shadow-sm dark:border-neutral-700">
@@ -445,7 +441,7 @@ new class extends Component {
                         </a>
                     @endforeach
                 </div>
-                <div>
+                <div class="w-52 shrink-0">
                     <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Company') }}</label>
                     <select wire:model.live="selected_company_id" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                         @foreach ($companies as $company)

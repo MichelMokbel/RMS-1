@@ -156,9 +156,6 @@
 
                 @if ($isAccounting && ! $isCashier)
                     <flux:navlist.group expandable :expanded="$inSales" :heading="__('Sales')">
-                        <flux:navlist.item icon="clipboard-document-list" :href="route('receivables.orders-to-invoice')" :current="request()->routeIs('receivables.orders-to-invoice')" wire:navigate>
-                            {{ __('Orders to Invoice') }}
-                        </flux:navlist.item>
                         <flux:navlist.item icon="document-text" :href="route('invoices.index')" :current="request()->routeIs('invoices.*')" wire:navigate>
                             {{ __('Invoices (AR)') }}
                         </flux:navlist.item>
@@ -224,20 +221,22 @@
                     </flux:navlist.item>
                 </flux:navlist.group>
 
-                <flux:navlist.group :heading="__('Tools')">
-                    <flux:navlist.item
-                        href="https://laylacardssystem.streamlit.app/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                    >
-                        {{ __('Cards Generator') }}
-                    </flux:navlist.item>
-                    <flux:navlist.item
-                        href="{{ route('tools.pos-app') }}"
-                    >
-                        {{ __('Install POS App') }}
-                    </flux:navlist.item>
-                </flux:navlist.group>
+                @if (! ($isAccounting && ! $isCashier))
+                    <flux:navlist.group :heading="__('Tools')">
+                        <flux:navlist.item
+                            href="https://laylacardssystem.streamlit.app/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                        >
+                            {{ __('Cards Generator') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item
+                            href="{{ route('tools.pos-app') }}"
+                        >
+                            {{ __('Install POS App') }}
+                        </flux:navlist.item>
+                    </flux:navlist.group>
+                @endif
             </flux:navlist>
 
             <flux:spacer />

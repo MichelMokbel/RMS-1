@@ -471,6 +471,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         @endif
 
+        @can('finance.write')
         @if($payment->customer_id)
             @php
                 $planOptions = collect(config('subscriptions.plan_menu_item_ids', []))->keys()->sort()->values();
@@ -499,6 +500,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endif
             </div>
         @endif
+        @endcan
     </div>
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">

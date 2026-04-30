@@ -25,6 +25,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
+        abort_unless(Auth::user()?->can('finance.write'), 403);
         $this->branch_id = (int) config('inventory.default_branch_id', 1) ?: 1;
         $this->date_from = now()->subDays(30)->toDateString();
         $this->date_to = now()->toDateString();
