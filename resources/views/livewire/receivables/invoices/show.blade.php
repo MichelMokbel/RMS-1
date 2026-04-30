@@ -50,6 +50,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function issue(ArInvoiceService $service): void
     {
+        abort_unless(Auth::user()?->can('finance.write'), 403);
         $userId = Auth::id();
         if (! $userId) {
             abort(403);
@@ -71,6 +72,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function voidInvoice(ArInvoiceService $service): void
     {
+        abort_unless(Auth::user()?->can('finance.write'), 403);
         $this->resetErrorBag();
         $userId = Auth::id();
         if (! $userId) {
@@ -94,6 +96,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function voidAndDuplicate(ArInvoiceService $service): void
     {
+        abort_unless(Auth::user()?->can('finance.write'), 403);
         $this->resetErrorBag();
         $userId = Auth::id();
         if (! $userId) {
@@ -117,6 +120,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function receivePayment(ArAllocationService $alloc): void
     {
+        abort_unless(Auth::user()?->can('finance.write'), 403);
         $this->resetErrorBag();
         $userId = Auth::id();
         if (! $userId) {
@@ -162,6 +166,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function applyCredit(ArInvoiceService $invoices, ArAllocationService $alloc): void
     {
+        abort_unless(Auth::user()?->can('finance.write'), 403);
         $this->resetErrorBag();
         $userId = Auth::id();
         if (! $userId) {
@@ -243,6 +248,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function applyAdvance(ArPaymentService $payments): void
     {
+        abort_unless(Auth::user()?->can('finance.write'), 403);
         $this->resetErrorBag();
         $userId = Auth::id();
         if (! $userId) {
@@ -354,10 +360,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
         <div class="flex items-center gap-2">
             <flux:button :href="route('invoices.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
-            <flux:button :href="route('invoices.create')" wire:navigate variant="ghost">{{ __('Create New Invoice') }}</flux:button>
-            @if ($invoice->status === 'draft')
-                <flux:button :href="route('invoices.edit', $invoice)" wire:navigate variant="ghost">{{ __('Edit') }}</flux:button>
-            @endif
+            @can('finance.write')
+                <flux:button :href="route('invoices.create')" wire:navigate variant="ghost">{{ __('Create New Invoice') }}</flux:button>
+                @if ($invoice->status === 'draft')
+                    <flux:button :href="route('invoices.edit', $invoice)" wire:navigate variant="ghost">{{ __('Edit') }}</flux:button>
+                @endif
+            @endcan
             @if ($invoice->status !== 'draft')
                 <flux:button :href="route('invoices.print', $invoice)" target="_blank">{{ __('Print') }}</flux:button>
             @endif
@@ -467,11 +475,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         @endif
 
-        @if ($invoice->status === 'draft')
-            <div class="flex justify-end">
-                <flux:button type="button" wire:click="issue" variant="primary">{{ __('Issue Invoice') }}</flux:button>
-            </div>
-        @endif
+        @can('finance.write')
+            @if ($invoice->status === 'draft')
+                <div class="flex justify-end">
+                    <flux:button type="button" wire:click="issue" variant="primary">{{ __('Issue Invoice') }}</flux:button>
+                </div>
+            @endif
+        @endcan
 
         <div class="border-t border-neutral-200 pt-4 dark:border-neutral-700">
             <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Items') }}</h2>
@@ -494,29 +504,33 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="border-t border-neutral-200 pt-4 dark:border-neutral-700 space-y-4">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div class="flex flex-wrap gap-2">
-                    @if (in_array($invoice->status, ['issued', 'partially_paid'], true))
-                        <flux:button type="button" wire:click="selectTab('receive-payment')" :variant="$active_tab === 'receive-payment' ? 'primary' : 'ghost'">
-                            {{ __('Receive Payment') }}
-                        </flux:button>
-                        <flux:button type="button" wire:click="selectTab('credit-note')" :variant="$active_tab === 'credit-note' ? 'primary' : 'ghost'">
-                            {{ __('Credit Note') }}
-                        </flux:button>
-                        <flux:button type="button" wire:click="selectTab('apply-advance')" :variant="$active_tab === 'apply-advance' ? 'primary' : 'ghost'">
-                            {{ __('Apply Advance') }}
-                        </flux:button>
-                    @endif
+                    @can('finance.write')
+                        @if (in_array($invoice->status, ['issued', 'partially_paid'], true))
+                            <flux:button type="button" wire:click="selectTab('receive-payment')" :variant="$active_tab === 'receive-payment' ? 'primary' : 'ghost'">
+                                {{ __('Receive Payment') }}
+                            </flux:button>
+                            <flux:button type="button" wire:click="selectTab('credit-note')" :variant="$active_tab === 'credit-note' ? 'primary' : 'ghost'">
+                                {{ __('Credit Note') }}
+                            </flux:button>
+                            <flux:button type="button" wire:click="selectTab('apply-advance')" :variant="$active_tab === 'apply-advance' ? 'primary' : 'ghost'">
+                                {{ __('Apply Advance') }}
+                            </flux:button>
+                        @endif
+                    @endcan
                     <flux:button type="button" wire:click="selectTab('allocations')" :variant="$active_tab === 'allocations' ? 'primary' : 'ghost'">
                         {{ __('Allocations') }}
                     </flux:button>
                 </div>
 
-                @if (in_array($invoice->status, ['draft', 'issued', 'partially_paid', 'paid'], true))
-                    <flux:modal.trigger name="void-invoice-modal">
-                        <flux:button type="button" variant="danger" x-data="" x-on:click.prevent="$dispatch('open-modal', 'void-invoice-modal')">
-                            {{ __('Void Invoice') }}
-                        </flux:button>
-                    </flux:modal.trigger>
-                @endif
+                @can('finance.write')
+                    @if (in_array($invoice->status, ['draft', 'issued', 'partially_paid', 'paid'], true))
+                        <flux:modal.trigger name="void-invoice-modal">
+                            <flux:button type="button" variant="danger" x-data="" x-on:click.prevent="$dispatch('open-modal', 'void-invoice-modal')">
+                                {{ __('Void Invoice') }}
+                            </flux:button>
+                        </flux:modal.trigger>
+                    @endif
+                @endcan
             </div>
 
             @if ($active_tab === 'receive-payment' && in_array($invoice->status, ['issued', 'partially_paid'], true))
@@ -655,12 +669,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <flux:modal.close>
                     <flux:button variant="filled">{{ __('Cancel') }}</flux:button>
                 </flux:modal.close>
-                <flux:button type="button" wire:click="voidInvoice" variant="danger">
-                    {{ __('Void') }}
-                </flux:button>
-                <flux:button type="button" wire:click="voidAndDuplicate" variant="primary">
-                    {{ __('Void & Duplicate') }}
-                </flux:button>
+                @can('finance.write')
+                    <flux:button type="button" wire:click="voidInvoice" variant="danger">
+                        {{ __('Void') }}
+                    </flux:button>
+                    <flux:button type="button" wire:click="voidAndDuplicate" variant="primary">
+                        {{ __('Void & Duplicate') }}
+                    </flux:button>
+                @endcan
             </div>
         </div>
     </flux:modal>

@@ -148,7 +148,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Invoices (AR)') }}</h1>
         <div class="flex items-center gap-2">
-            <flux:button :href="route('invoices.create')" wire:navigate variant="primary" class="touch-target">{{ __('New Invoice') }}</flux:button>
+            @can('finance.write')
+                <flux:button :href="route('invoices.create')" wire:navigate variant="primary" class="touch-target">{{ __('New Invoice') }}</flux:button>
+            @endcan
         </div>
     </div>
 
@@ -279,9 +281,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 <div class="flex flex-wrap gap-2">
                     <flux:button size="sm" :href="route('invoices.show', $inv)" wire:navigate class="touch-target">{{ __('View') }}</flux:button>
-                    @if ($inv->status === 'draft')
-                        <flux:button size="sm" variant="ghost" :href="route('invoices.edit', $inv)" wire:navigate class="touch-target">{{ __('Edit') }}</flux:button>
-                    @endif
+                    @can('finance.write')
+                        @if ($inv->status === 'draft')
+                            <flux:button size="sm" variant="ghost" :href="route('invoices.edit', $inv)" wire:navigate class="touch-target">{{ __('Edit') }}</flux:button>
+                        @endif
+                    @endcan
                     @if (in_array($inv->status, ['issued', 'partially_paid', 'paid'], true))
                         <flux:button size="sm" variant="ghost" :href="route('invoices.print', $inv)" target="_blank" class="touch-target">{{ __('Print') }}</flux:button>
                     @endif

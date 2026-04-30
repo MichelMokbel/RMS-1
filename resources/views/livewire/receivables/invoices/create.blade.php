@@ -609,11 +609,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
     public function saveDraft(ArInvoiceService $service): void
     {
+        abort_unless(Auth::user()?->can('finance.write'), 403);
         $this->persist($service, issue: false);
     }
 
     public function saveAndIssue(ArInvoiceService $service): void
     {
+        abort_unless(Auth::user()?->can('finance.write'), 403);
         $this->persist($service, issue: true);
     }
 
@@ -1137,8 +1139,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-        <flux:button type="button" wire:click="saveDraft" class="touch-target">{{ __('Save Draft') }}</flux:button>
-        <flux:button type="button" wire:click="saveAndIssue" variant="primary" class="touch-target">{{ __('Save & Issue') }}</flux:button>
+        @can('finance.write')
+            <flux:button type="button" wire:click="saveDraft" class="touch-target">{{ __('Save Draft') }}</flux:button>
+            <flux:button type="button" wire:click="saveAndIssue" variant="primary" class="touch-target">{{ __('Save & Issue') }}</flux:button>
+        @endcan
     </div>
 
     <flux:modal name="create-menu-item" focusable class="max-w-lg">

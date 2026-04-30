@@ -59,6 +59,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function linkSubscription(SubscriptionPaymentLinkService $service): void
     {
+        abort_unless(Auth::user()?->can('finance.write'), 403);
         $this->resetErrorBag();
 
         $userId = Auth::id();
@@ -202,6 +203,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function allocateInvoices(ArPaymentService $payments): void
     {
+        abort_unless(Auth::user()?->can('finance.write'), 403);
         $this->resetErrorBag();
 
         $userId = Auth::id();
@@ -322,7 +324,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </flux:button>
                 </form>
             @endif
-            <flux:button :href="route('receivables.payments.create', ['branch_id' => $payment->branch_id])" wire:navigate variant="ghost">{{ __('Create New Payment') }}</flux:button>
+            @can('finance.write')
+                <flux:button :href="route('receivables.payments.create', ['branch_id' => $payment->branch_id])" wire:navigate variant="ghost">{{ __('Create New Payment') }}</flux:button>
+            @endcan
             <flux:button :href="route('receivables.payments.print', $payment)" target="_blank" variant="ghost">{{ __('Print Receipt') }}</flux:button>
             <flux:button :href="route('receivables.payments.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
         </div>
@@ -431,7 +435,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
 
             <div class="flex justify-end">
-                <flux:button type="button" wire:click="allocateInvoices" variant="primary">{{ __('Apply Allocations') }}</flux:button>
+                @can('finance.write')
+                    <flux:button type="button" wire:click="allocateInvoices" variant="primary">{{ __('Apply Allocations') }}</flux:button>
+                @endcan
             </div>
         </div>
     @endif
@@ -459,7 +465,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <option value="{{ $sub->id }}">{{ $sub->subscription_code }} ({{ $sub->start_date?->format('Y-m-d') }} · {{ $sub->plan_meals_total ? $sub->plan_meals_total . ' meals' : 'Unlimited' }})</option>
                     @endforeach
                 </select>
-                <flux:button wire:click="linkSubscription" size="sm">{{ __('Link') }}</flux:button>
+                @can('finance.write')
+                    <flux:button wire:click="linkSubscription" size="sm">{{ __('Link') }}</flux:button>
+                @endcan
             </div>
         @endif
 
