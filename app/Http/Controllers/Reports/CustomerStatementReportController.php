@@ -35,6 +35,24 @@ class CustomerStatementReportController extends Controller
         return $candidate->greaterThan($today) ? $today : $candidate;
     }
 
+    private function safeCarbon(mixed $value): ?Carbon
+    {
+        if ($value instanceof Carbon) {
+            return $value;
+        }
+
+        $string = trim((string) ($value ?? ''));
+        if ($string === '' || str_starts_with($string, '0000-00-00')) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($string);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
     /**
      * @return array{0: Carbon, 1: Carbon}
      */
@@ -90,12 +108,13 @@ class CustomerStatementReportController extends Controller
             ->whereDate('issue_date', '<=', $dateTo)
             ->get()
             ->map(function (ArInvoice $inv) {
+                $issueDate = $this->safeCarbon($inv->getRawOriginal('issue_date'));
                 $amount = (int) ($inv->total_cents ?? 0);
                 $debit = $amount > 0 ? $amount : 0;
                 $credit = $amount < 0 ? abs($amount) : 0;
 
                 return [
-                    'date' => $inv->issue_date?->format('Y-m-d') ?? '',
+                    'date' => $issueDate?->format('Y-m-d') ?? '',
                     'description' => $inv->type === 'credit_note'
                         ? __('Credit Note :no', ['no' => $inv->invoice_number ?: '#'.$inv->id])
                         : __('Invoice :no', ['no' => $inv->invoice_number ?: '#'.$inv->id]),
@@ -110,9 +129,10 @@ class CustomerStatementReportController extends Controller
             ->whereDate('received_at', '<=', $dateTo)
             ->get()
             ->map(function (Payment $pay) {
+                $receivedAt = $this->safeCarbon($pay->getRawOriginal('received_at'));
                 $amount = (int) ($pay->amount_cents ?? 0);
                 return [
-                    'date' => $pay->received_at?->format('Y-m-d') ?? '',
+                    'date' => $receivedAt?->format('Y-m-d') ?? '',
                     'description' => __('Payment #:id', ['id' => $pay->id]),
                     'debit_cents' => 0,
                     'credit_cents' => $amount,
@@ -197,7 +217,8 @@ class CustomerStatementReportController extends Controller
 
         // ── Map invoice rows ──────────────────────────────────────────────────
         $invoiceRows = $invoices->map(function (ArInvoice $invoice) use ($branchNames, $asOf, $paymentRefsByInvoice): array {
-            $dueDate      = $invoice->due_date ?: $invoice->issue_date;
+            $issueDate    = $this->safeCarbon($invoice->getRawOriginal('issue_date'));
+            $dueDate      = $this->safeCarbon($invoice->getRawOriginal('due_date')) ?: $issueDate;
             $days         = $dueDate ? (int) floor((float) $dueDate->diffInDays($asOf, false)) : 0;
             $agingLabel   = $days <= 0 ? __('Not Due') : $days . ' ' . __('Days');
 
@@ -210,7 +231,7 @@ class CustomerStatementReportController extends Controller
 
             return [
                 'row_type'      => 'invoice',
-                'sort_date'     => $invoice->issue_date?->timestamp ?? 0,
+                'sort_date'     => $issueDate?->timestamp ?? 0,
                 'line_no'       => 0,
                 'document_no'   => $invoice->invoice_number ?: (string) $invoice->id,
                 'document_type' => 'AR Invoice',
@@ -218,7 +239,7 @@ class CustomerStatementReportController extends Controller
                 'type'          => strtolower((string) $invoice->payment_type) === 'credit'
                     ? 'On Credit'
                     : ucfirst((string) ($invoice->payment_type ?: 'Credit')),
-                'date'          => $invoice->issue_date?->format('d-M-Y') ?? '-',
+                'date'          => $issueDate?->format('d-M-Y') ?? '-',
                 'due_date'      => $dueDate?->format('d-M-Y') ?? '-',
                 'reference_no'  => $invoice->lpo_reference ?: ($invoice->pos_reference ?: '-'),
                 'amount_cents'  => $totalCents,
@@ -232,16 +253,17 @@ class CustomerStatementReportController extends Controller
         // ── Map payment rows ──────────────────────────────────────────────────
         $paymentRows = $payments->map(function (Payment $payment) use ($branchNames): array {
             $method = ucwords(str_replace('_', ' ', (string) ($payment->method ?? '')));
+            $receivedAt = $this->safeCarbon($payment->getRawOriginal('received_at'));
 
             return [
                 'row_type'      => 'payment',
-                'sort_date'     => $payment->received_at?->timestamp ?? 0,
+                'sort_date'     => $receivedAt?->timestamp ?? 0,
                 'line_no'       => 0,
                 'document_no'   => $payment->reference ?: ('PMT-'.$payment->id),
                 'document_type' => 'Payment Receipt',
                 'location'      => (string) ($branchNames[(int) $payment->branch_id] ?? ('Branch '.$payment->branch_id)),
                 'type'          => $method ?: 'Payment',
-                'date'          => $payment->received_at?->format('d-M-Y') ?? '-',
+                'date'          => $receivedAt?->format('d-M-Y') ?? '-',
                 'due_date'      => '-',
                 'reference_no'  => $payment->reference ?: '-',
                 'amount_cents'  => 0,
@@ -306,7 +328,8 @@ class CustomerStatementReportController extends Controller
                 continue;
             }
 
-            $dueDate = $invoice->due_date ?: $invoice->issue_date;
+            $issueDate = $this->safeCarbon($invoice->getRawOriginal('issue_date'));
+            $dueDate = $this->safeCarbon($invoice->getRawOriginal('due_date')) ?: $issueDate;
             $days = $dueDate ? (int) floor((float) $dueDate->diffInDays($asOf, false)) : 0;
 
             if ($days <= 0) {

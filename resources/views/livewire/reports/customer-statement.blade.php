@@ -77,6 +77,24 @@ new #[Layout('components.layouts.app')] class extends Component {
         return $candidate->greaterThan($today) ? $today : $candidate;
     }
 
+    private function safeCarbon(mixed $value): ?Carbon
+    {
+        if ($value instanceof Carbon) {
+            return $value;
+        }
+
+        $string = trim((string) ($value ?? ''));
+        if ($string === '' || str_starts_with($string, '0000-00-00')) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($string);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
     /**
      * @return Collection<int, array<string, int|string>>
      */
@@ -149,7 +167,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // ── Map invoice rows ──────────────────────────────────────────────────
         $invoiceRows = $invoices->map(function (ArInvoice $invoice) use ($asOf, $branchNames, $paymentRefsByInvoice): array {
-            $dueDate     = $invoice->due_date ?: $invoice->issue_date;
+            $issueDate    = $this->safeCarbon($invoice->getRawOriginal('issue_date'));
+            $dueDate      = $this->safeCarbon($invoice->getRawOriginal('due_date')) ?: $issueDate;
             $days        = $dueDate ? (int) floor((float) $dueDate->diffInDays($asOf, false)) : 0;
             $agingLabel  = $days <= 0 ? __('Not Due') : $days . ' ' . __('Days');
             $paymentType = strtolower((string) ($invoice->payment_type ?? 'credit'));
@@ -163,12 +182,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             return [
                 'row_type'      => 'invoice',
-                'sort_date'     => $invoice->issue_date?->timestamp ?? 0,
+                'sort_date'     => $issueDate?->timestamp ?? 0,
                 'document_no'   => $invoice->invoice_number ?: (string) $invoice->id,
                 'document_type' => 'AR Invoice',
                 'location'      => (string) ($branchNames[(int) $invoice->branch_id] ?? ('Branch '.$invoice->branch_id)),
                 'type'          => $paymentType === 'credit' ? 'On Credit' : ucfirst((string) ($invoice->payment_type ?: 'Credit')),
-                'date'          => $invoice->issue_date?->format('d-M-Y') ?? '-',
+                'date'          => $issueDate?->format('d-M-Y') ?? '-',
                 'due_date'      => $dueDate?->format('d-M-Y') ?? '-',
                 'reference_no'  => $invoice->lpo_reference ?: ($invoice->pos_reference ?: '-'),
                 'amount_cents'  => $totalCents,
@@ -182,7 +201,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         // ── Map payment rows ──────────────────────────────────────────────────
         $paymentRows = $payments->map(function (object $payment) use ($branchNames): array {
             $method     = ucwords(str_replace('_', ' ', (string) ($payment->method ?? '')));
-            $receivedAt = $payment->received_at ? now()->parse($payment->received_at) : null;
+            $receivedAt = $this->safeCarbon($payment->received_at ?? null);
 
             return [
                 'row_type'      => 'payment',
@@ -322,7 +341,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 continue;
             }
 
-            $dueDate = $invoice->due_date ?: $invoice->issue_date;
+            $issueDate = $this->safeCarbon($invoice->getRawOriginal('issue_date'));
+            $dueDate = $this->safeCarbon($invoice->getRawOriginal('due_date')) ?: $issueDate;
             $days = $dueDate ? (int) floor((float) $dueDate->diffInDays($asOf, false)) : 0;
 
             if ($days <= 0) {
