@@ -117,4 +117,12 @@ return [
 
     'daily_dish_admin_email' => env('DAILY_DISH_ADMIN_EMAIL', 'info@layla-kitchen.com'),
 
+    'daily_dish_admin_emails' => array_values(array_filter(array_map(
+        static fn (string $email): string => trim($email),
+        preg_split(
+            '/[,;]+/',
+            (string) env('DAILY_DISH_ADMIN_EMAILS', (string) env('DAILY_DISH_ADMIN_EMAIL', 'info@layla-kitchen.com'))
+        ) ?: []
+    ))),
+
 ];

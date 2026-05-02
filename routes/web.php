@@ -199,6 +199,7 @@ Route::middleware(['auth', 'active', 'role:admin', 'ensure.admin'])->group(funct
     Volt::route('settings/payment-terms', 'settings.payment-terms')->name('settings.payment-terms');
     Volt::route('settings/pos-terminals', 'settings.pos-terminals')->name('settings.pos-terminals');
     Volt::route('settings/organization', 'settings.organization')->name('settings.organization');
+    Volt::route('settings/logs', 'settings.logs')->name('settings.logs');
     Route::redirect('finance/settings', 'settings/finance');
 });
 

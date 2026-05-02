@@ -28,6 +28,7 @@
                 <flux:navlist.item :href="route('settings.accounting')" wire:navigate>{{ __('Accounting Setup') }}</flux:navlist.item>
                 <flux:navlist.item :href="route('settings.organization')" wire:navigate>{{ __('Organization') }}</flux:navlist.item>
                 <flux:navlist.item :href="route('settings.payment-terms')" wire:navigate>{{ __('Payment Terms') }}</flux:navlist.item>
+                <flux:navlist.item :href="route('settings.logs')" wire:navigate>{{ __('Logs') }}</flux:navlist.item>
             @endif
             @if($canManagePosDevices)
                 <flux:navlist.item :href="route('settings.pos-terminals')" wire:navigate>{{ __('POS Devices') }}</flux:navlist.item>

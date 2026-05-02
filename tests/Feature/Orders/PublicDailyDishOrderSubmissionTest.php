@@ -3,6 +3,7 @@
 use App\Models\DailyDishMenu;
 use App\Models\DailyDishMenuItem;
 use App\Models\Customer;
+use App\Models\EmailLog;
 use App\Models\MenuItem;
 use App\Models\OpsEvent;
 use App\Models\Order;
@@ -10,6 +11,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Role;
 
@@ -707,4 +709,100 @@ it('rejects conflicting duplicate keys when the same client uuid is reused for a
 
     expect(Order::query()->count())->toBe(1);
     expect(\App\Models\MealPlanRequest::query()->count())->toBe(1);
+});
+
+it('sends admin email to multiple configured recipients and logs sent emails', function () {
+    Config::set('mail.default', 'smtp');
+    Config::set('mail.daily_dish_admin_emails', [
+        'ops1@example.com',
+        'ops2@example.com',
+    ]);
+    Mail::fake();
+
+    $user = User::factory()->create([
+        'email' => 'portal@example.com',
+        'customer_id' => null,
+        'portal_name' => 'Portal Customer',
+        'portal_phone' => '55123456',
+        'portal_phone_e164' => '+97455123456',
+        'portal_delivery_address' => 'West Bay',
+        'portal_phone_verified_at' => now(),
+    ]);
+    $user->assignRole('customer');
+    Sanctum::actingAs($user, ['customer:*']);
+
+    $main = MenuItem::factory()->create(['code' => 'MAIN-MAIL', 'name' => 'Website Main']);
+    $salad = MenuItem::factory()->create(['code' => 'SALAD-MAIL', 'name' => 'Website Salad']);
+    $dessert = MenuItem::factory()->create(['code' => 'DES-MAIL', 'name' => 'Website Dessert']);
+    createPublishedMenuForDate('2026-03-11', 1, $main, $salad, $dessert);
+
+    $this->postJson('/api/public/daily-dish/orders', createWebsiteOrderPayload([
+        'email' => 'customer@example.com',
+        'items' => [[
+            'key' => '2026-03-11',
+            'mains' => [['name' => 'Website Main', 'portion' => 'plate', 'qty' => 1]],
+            'salad_qty' => 1,
+            'dessert_qty' => 1,
+            'day_total' => 123.45,
+        ]],
+    ]))->assertOk()->assertJson([
+        'success' => true,
+        'email_sent_admin' => true,
+        'email_sent_customer' => true,
+    ]);
+
+    Mail::assertSent(\App\Mail\DailyDishOrderAdminMail::class, function ($mail): bool {
+        return $mail->hasTo('ops1@example.com') && $mail->hasTo('ops2@example.com');
+    });
+
+    Mail::assertSent(\App\Mail\DailyDishOrderCustomerMail::class, function ($mail): bool {
+        return $mail->hasTo('customer@example.com');
+    });
+
+    expect(EmailLog::query()->count())->toBe(2);
+    expect(EmailLog::query()->where('recipient_type', 'admin')->where('status', 'sent')->firstOrFail()->to_recipients)
+        ->toBe(['ops1@example.com', 'ops2@example.com']);
+    expect(EmailLog::query()->where('recipient_type', 'customer')->where('status', 'sent')->firstOrFail()->to_recipients)
+        ->toBe(['customer@example.com']);
+});
+
+it('logs skipped emails when the configured mailer does not deliver externally', function () {
+    Config::set('mail.default', 'log');
+    Config::set('mail.daily_dish_admin_emails', ['ops1@example.com']);
+
+    $user = User::factory()->create([
+        'email' => 'portal@example.com',
+        'customer_id' => null,
+        'portal_name' => 'Portal Customer',
+        'portal_phone' => '55123456',
+        'portal_phone_e164' => '+97455123456',
+        'portal_delivery_address' => 'West Bay',
+        'portal_phone_verified_at' => now(),
+    ]);
+    $user->assignRole('customer');
+    Sanctum::actingAs($user, ['customer:*']);
+
+    $main = MenuItem::factory()->create(['code' => 'MAIN-MAIL-SKIP', 'name' => 'Website Main']);
+    $salad = MenuItem::factory()->create(['code' => 'SALAD-MAIL-SKIP', 'name' => 'Website Salad']);
+    $dessert = MenuItem::factory()->create(['code' => 'DES-MAIL-SKIP', 'name' => 'Website Dessert']);
+    createPublishedMenuForDate('2026-03-12', 1, $main, $salad, $dessert);
+
+    $this->postJson('/api/public/daily-dish/orders', createWebsiteOrderPayload([
+        'email' => 'customer@example.com',
+        'items' => [[
+            'key' => '2026-03-12',
+            'mains' => [['name' => 'Website Main', 'portion' => 'plate', 'qty' => 1]],
+            'salad_qty' => 1,
+            'dessert_qty' => 1,
+            'day_total' => 123.45,
+        ]],
+    ]))->assertOk()->assertJson([
+        'success' => true,
+        'email_sent_admin' => false,
+        'email_sent_customer' => false,
+    ]);
+
+    expect(EmailLog::query()->count())->toBe(2);
+    expect(EmailLog::query()->where('recipient_type', 'admin')->where('status', 'skipped')->exists())->toBeTrue();
+    expect(EmailLog::query()->where('recipient_type', 'customer')->where('status', 'skipped')->exists())->toBeTrue();
 });
