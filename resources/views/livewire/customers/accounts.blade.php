@@ -177,6 +177,26 @@ new #[Layout('components.layouts.app')] class extends Component {
 }; ?>
 
 <div class="app-page space-y-6">
+    <style>
+        .customer-accounts-mobile {
+            display: block;
+        }
+
+        .customer-accounts-desktop {
+            display: none;
+        }
+
+        @media (min-width: 768px) {
+            .customer-accounts-mobile {
+                display: none;
+            }
+
+            .customer-accounts-desktop {
+                display: block;
+            }
+        }
+    </style>
+
     <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
             <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Customer Accounts') }}</h1>
@@ -230,7 +250,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
-    <div class="space-y-4 md:hidden">
+    <div class="customer-accounts-mobile space-y-4">
         @forelse ($accounts as $account)
             @php($verificationAt = $account->customer?->phone_verified_at ?? $account->portal_phone_verified_at)
             <div class="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
@@ -352,7 +372,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endforelse
     </div>
 
-    <div class="hidden md:block app-table-shell">
+    <div class="customer-accounts-desktop app-table-shell">
         <table class="w-full min-w-full table-fixed divide-y divide-neutral-200 dark:divide-neutral-800">
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>
