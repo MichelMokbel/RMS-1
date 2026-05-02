@@ -71,6 +71,7 @@ function actingAsVerifiedCustomer(): array
     $user = User::factory()->create([
         'email' => 'portal@example.com',
         'customer_id' => $customer->id,
+        'portal_phone_verified_at' => null,
     ]);
     $user->assignRole('customer');
 
@@ -388,6 +389,8 @@ it('allows verified customer orders without branch access and forces branch 1', 
 });
 
 it('rejects unverified customer order submission', function () {
+    Config::set('customers.verification_bypass', false);
+
     $customer = Customer::factory()->create([
         'phone_verified_at' => null,
         'email' => 'portal@example.com',
@@ -399,6 +402,11 @@ it('rejects unverified customer order submission', function () {
     $user->assignRole('customer');
     Sanctum::actingAs($user, ['customer:*']);
 
+    $main = MenuItem::factory()->create(['code' => 'MAIN-UNVERIFIED', 'name' => 'Unverified Main']);
+    $salad = MenuItem::factory()->create(['code' => 'SALAD-UNVERIFIED', 'name' => 'Unverified Salad']);
+    $dessert = MenuItem::factory()->create(['code' => 'DES-UNVERIFIED', 'name' => 'Unverified Dessert']);
+    createPublishedMenuForDate('2026-03-05', 1, $main, $salad, $dessert);
+
     $this->postJson('/api/public/daily-dish/orders', [
         'branch_id' => 1,
         'customerName' => 'Portal User',
@@ -407,12 +415,82 @@ it('rejects unverified customer order submission', function () {
         'address' => 'Doha',
         'items' => [[
             'key' => '2026-03-05',
-            'mains' => [['name' => 'Website Main', 'portion' => 'plate', 'qty' => 1]],
+            'mains' => [['name' => 'Unverified Main', 'portion' => 'plate', 'qty' => 1]],
             'salad_qty' => 1,
             'dessert_qty' => 1,
             'day_total' => 123.45,
         ]],
     ])->assertStatus(403)->assertJson(['code' => 'PHONE_NOT_VERIFIED']);
+});
+
+it('allows linked customer orders when the portal account is verified even if the linked customer record is not', function () {
+    $customer = Customer::factory()->create([
+        'phone_verified_at' => null,
+        'email' => 'portal@example.com',
+    ]);
+    $user = User::factory()->create([
+        'email' => 'portal@example.com',
+        'customer_id' => $customer->id,
+        'portal_phone_verified_at' => now(),
+    ]);
+    $user->assignRole('customer');
+    Sanctum::actingAs($user, ['customer:*']);
+
+    $main = MenuItem::factory()->create(['code' => 'MAIN-LINKED-PORTAL', 'name' => 'Portal Verified Main']);
+    $salad = MenuItem::factory()->create(['code' => 'SALAD-LINKED-PORTAL', 'name' => 'Portal Verified Salad']);
+    $dessert = MenuItem::factory()->create(['code' => 'DES-LINKED-PORTAL', 'name' => 'Portal Verified Dessert']);
+    createPublishedMenuForDate('2026-03-05', 1, $main, $salad, $dessert);
+
+    $this->postJson('/api/public/daily-dish/orders', [
+        'branch_id' => 1,
+        'customerName' => 'Portal User',
+        'phone' => '55123456',
+        'email' => 'portal@example.com',
+        'address' => 'Doha',
+        'items' => [[
+            'key' => '2026-03-05',
+            'mains' => [['name' => 'Portal Verified Main', 'portion' => 'plate', 'qty' => 1]],
+            'salad_qty' => 1,
+            'dessert_qty' => 1,
+            'day_total' => 123.45,
+        ]],
+    ])->assertOk()->assertJson(['success' => true]);
+});
+
+it('allows customer orders when phone verification bypass is enabled even if neither record is verified', function () {
+    Config::set('customers.verification_bypass', true);
+
+    $customer = Customer::factory()->create([
+        'phone_verified_at' => null,
+        'email' => 'portal@example.com',
+    ]);
+    $user = User::factory()->create([
+        'email' => 'portal@example.com',
+        'customer_id' => $customer->id,
+        'portal_phone_verified_at' => null,
+    ]);
+    $user->assignRole('customer');
+    Sanctum::actingAs($user, ['customer:*']);
+
+    $main = MenuItem::factory()->create(['code' => 'MAIN-BYPASS-LINKED', 'name' => 'Bypass Main']);
+    $salad = MenuItem::factory()->create(['code' => 'SALAD-BYPASS-LINKED', 'name' => 'Bypass Salad']);
+    $dessert = MenuItem::factory()->create(['code' => 'DES-BYPASS-LINKED', 'name' => 'Bypass Dessert']);
+    createPublishedMenuForDate('2026-03-05', 1, $main, $salad, $dessert);
+
+    $this->postJson('/api/public/daily-dish/orders', [
+        'branch_id' => 1,
+        'customerName' => 'Bypassed Portal User',
+        'phone' => '55123456',
+        'email' => 'portal@example.com',
+        'address' => 'Doha',
+        'items' => [[
+            'key' => '2026-03-05',
+            'mains' => [['name' => 'Bypass Main', 'portion' => 'plate', 'qty' => 1]],
+            'salad_qty' => 1,
+            'dessert_qty' => 1,
+            'day_total' => 123.45,
+        ]],
+    ])->assertOk()->assertJson(['success' => true]);
 });
 
 it('uses the authenticated user customer link for verification even when another customer has the same phone', function () {

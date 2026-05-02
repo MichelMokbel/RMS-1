@@ -15,13 +15,14 @@ class CustomerPortalAccountService
 
     public function isPhoneVerified(User $user): bool
     {
-        $user->loadMissing('customer');
-
-        if ($user->customer) {
-            return $user->customer->phone_verified_at !== null;
+        if ((bool) config('customers.verification_bypass', false)) {
+            return true;
         }
 
-        return $user->portal_phone_verified_at !== null;
+        $user->loadMissing('customer');
+
+        return $user->customer?->phone_verified_at !== null
+            || $user->portal_phone_verified_at !== null;
     }
 
     /**
