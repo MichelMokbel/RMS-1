@@ -33,6 +33,7 @@ class CustomerPortalOrderAuditService
                 'customer_id' => $user?->customer_id,
                 'link_status' => $user && $user->customer_id ? 'linked' : 'unlinked',
                 'submitted_branch_id' => Arr::get($payload, 'branch_id'),
+                'client_uuid' => Arr::get($payload, 'client_uuid'),
                 'meal_plan' => Arr::get($payload, 'mealPlan'),
                 'item_count' => count((array) Arr::get($payload, 'items', [])),
                 'service_dates' => $this->resolveServiceDates($payload),
@@ -62,6 +63,7 @@ class CustomerPortalOrderAuditService
                 'user_id' => $user->id,
                 'customer_id' => $user->customer_id,
                 'link_status' => $user->customer_id ? 'linked' : 'unlinked',
+                'client_uuid' => Arr::get($payload, 'client_uuid'),
                 'meal_plan' => Arr::get($payload, 'mealPlan'),
                 'service_dates' => $this->resolveServiceDates($payload),
                 'order_ids' => array_values($result['order_ids']),
@@ -94,6 +96,7 @@ class CustomerPortalOrderAuditService
                 'user_id' => $user?->id,
                 'customer_id' => $user?->customer_id,
                 'link_status' => $user?->customer_id ? 'linked' : 'unlinked',
+                'client_uuid' => Arr::get($payload, 'client_uuid'),
                 'meal_plan' => Arr::get($payload, 'mealPlan'),
                 'service_dates' => $payload ? $this->resolveServiceDates($payload) : [],
                 'customer_name' => Arr::get($payload, 'customerName'),
@@ -102,6 +105,36 @@ class CustomerPortalOrderAuditService
                 'error_class' => $e::class,
                 'error_message' => Str::limit($e->getMessage(), 500),
                 'validation_errors' => $validationErrors,
+            ],
+            'created_at' => now(),
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  array<string, mixed>  $response
+     */
+    public function submissionReplayed(User $user, array $payload, array $response, string $auditId, ?string $originalAuditId, string $keyType): void
+    {
+        OpsEvent::create([
+            'event_type' => 'customer_portal_order_submission_replayed',
+            'branch_id' => 1,
+            'service_date' => $this->resolveFirstServiceDate($payload),
+            'order_id' => $response['order_ids'][0] ?? null,
+            'order_item_id' => null,
+            'actor_user_id' => $user->id,
+            'metadata_json' => [
+                'audit_id' => $auditId,
+                'original_audit_id' => $originalAuditId,
+                'key_type' => $keyType,
+                'user_id' => $user->id,
+                'customer_id' => $user->customer_id,
+                'link_status' => $user->customer_id ? 'linked' : 'unlinked',
+                'client_uuid' => Arr::get($payload, 'client_uuid'),
+                'meal_plan' => Arr::get($payload, 'mealPlan'),
+                'service_dates' => $this->resolveServiceDates($payload),
+                'order_ids' => array_values((array) ($response['order_ids'] ?? [])),
+                'meal_plan_request_id' => $response['meal_plan_request_id'] ?? null,
             ],
             'created_at' => now(),
         ]);

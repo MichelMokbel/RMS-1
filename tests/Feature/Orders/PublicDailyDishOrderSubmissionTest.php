@@ -539,3 +539,94 @@ it('writes a failed submission audit trail when order creation is rejected after
     expect(data_get($failed->metadata_json, 'error_class'))->toBe(\Illuminate\Validation\ValidationException::class);
     expect(data_get($failed->metadata_json, 'service_dates'))->toBe(['2026-03-08']);
 });
+
+it('replays duplicate customer portal submissions instead of creating a second meal plan request', function () {
+    $user = User::factory()->create([
+        'email' => 'portal@example.com',
+        'customer_id' => null,
+        'portal_name' => 'Portal Customer',
+        'portal_phone' => '55123456',
+        'portal_phone_e164' => '+97455123456',
+        'portal_delivery_address' => 'West Bay',
+        'portal_phone_verified_at' => now(),
+    ]);
+    $user->assignRole('customer');
+    Sanctum::actingAs($user, ['customer:*']);
+
+    $main = MenuItem::factory()->create(['code' => 'MAIN-REPLAY', 'name' => 'Website Main']);
+    $salad = MenuItem::factory()->create(['code' => 'SALAD-REPLAY', 'name' => 'Website Salad']);
+    $dessert = MenuItem::factory()->create(['code' => 'DES-REPLAY', 'name' => 'Website Dessert']);
+    createPublishedMenuForDate('2026-03-09', 1, $main, $salad, $dessert);
+
+    $payload = createWebsiteOrderPayload([
+        'items' => [[
+            'key' => '2026-03-09',
+            'notes' => 'Leave at reception',
+            'mains' => [['name' => 'Website Main', 'portion' => 'plate', 'qty' => 1]],
+            'salad_qty' => 1,
+            'dessert_qty' => 1,
+            'day_total' => 123.45,
+        ]],
+    ]);
+
+    $first = $this->postJson('/api/public/daily-dish/orders', $payload)
+        ->assertOk()
+        ->assertJson(['success' => true, 'replayed' => false]);
+
+    $second = $this->postJson('/api/public/daily-dish/orders', $payload)
+        ->assertOk()
+        ->assertJson(['success' => true, 'replayed' => true]);
+
+    expect(Order::query()->count())->toBe(1);
+    expect(\App\Models\MealPlanRequest::query()->count())->toBe(1);
+    expect(OpsEvent::query()->where('event_type', 'customer_portal_order_submission_received')->count())->toBe(2);
+    expect(OpsEvent::query()->where('event_type', 'customer_portal_order_submission_completed')->count())->toBe(1);
+    expect(OpsEvent::query()->where('event_type', 'customer_portal_order_submission_replayed')->count())->toBe(1);
+
+    expect($second->json('order_ids'))->toBe($first->json('order_ids'));
+    expect($second->json('replayed_audit_id'))->toBe($first->json('audit_id'));
+});
+
+it('rejects conflicting duplicate keys when the same client uuid is reused for a different order payload', function () {
+    $user = User::factory()->create([
+        'email' => 'portal@example.com',
+        'customer_id' => null,
+        'portal_name' => 'Portal Customer',
+        'portal_phone' => '55123456',
+        'portal_phone_e164' => '+97455123456',
+        'portal_delivery_address' => 'West Bay',
+        'portal_phone_verified_at' => now(),
+    ]);
+    $user->assignRole('customer');
+    Sanctum::actingAs($user, ['customer:*']);
+
+    $main = MenuItem::factory()->create(['code' => 'MAIN-UUID', 'name' => 'Website Main']);
+    $salad = MenuItem::factory()->create(['code' => 'SALAD-UUID', 'name' => 'Website Salad']);
+    $dessert = MenuItem::factory()->create(['code' => 'DES-UUID', 'name' => 'Website Dessert']);
+    createPublishedMenuForDate('2026-03-10', 1, $main, $salad, $dessert);
+
+    $basePayload = createWebsiteOrderPayload([
+        'client_uuid' => '44444444-4444-4444-8444-444444444444',
+        'items' => [[
+            'key' => '2026-03-10',
+            'mains' => [['name' => 'Website Main', 'portion' => 'plate', 'qty' => 1]],
+            'salad_qty' => 1,
+            'dessert_qty' => 1,
+            'day_total' => 123.45,
+        ]],
+    ]);
+
+    $this->postJson('/api/public/daily-dish/orders', $basePayload)
+        ->assertOk()
+        ->assertJson(['success' => true, 'replayed' => false]);
+
+    $conflictingPayload = $basePayload;
+    $conflictingPayload['items'][0]['notes'] = 'Different payload';
+
+    $this->postJson('/api/public/daily-dish/orders', $conflictingPayload)
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['client_uuid']);
+
+    expect(Order::query()->count())->toBe(1);
+    expect(\App\Models\MealPlanRequest::query()->count())->toBe(1);
+});

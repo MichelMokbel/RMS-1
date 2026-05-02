@@ -88,9 +88,10 @@ Route::prefix('customer')->group(function () {
 // Public endpoints for the external website form (no session/cookies)
 Route::middleware('api')->prefix('public')->group(function () {
     Route::middleware('throttle:60,1')->group(function () {
-        Route::get('daily-dish/menus', [PublicDailyDishController::class, 'menus']);
+        Route::get('daily-dish/menus', [PublicDailyDishController::class, 'menus'])
+            ->middleware('throttle:120,1');
         Route::post('daily-dish/orders', [PublicDailyDishOrderController::class, 'store'])
-            ->middleware(['auth:sanctum', 'customer.portal', 'customer.phone.verified', 'throttle:20,1']);
+            ->middleware(['auth:sanctum', 'customer.portal', 'customer.phone.verified', 'throttle:60,1']);
     });
 
     // Company Food (standalone module - no integration with orders/daily-dish)

@@ -62,6 +62,7 @@ it('returns only the authenticated customer financial and order data', function 
 
     $overdueInvoice = ArInvoice::factory()->issued()->create([
         'customer_id' => $customer->id,
+        'invoice_number' => 'INV-PORTAL-0001',
         'total_cents' => 15000,
         'paid_total_cents' => 0,
         'balance_cents' => 15000,
@@ -69,6 +70,7 @@ it('returns only the authenticated customer financial and order data', function 
     ]);
     $todayInvoice = ArInvoice::factory()->issued()->create([
         'customer_id' => $customer->id,
+        'invoice_number' => 'INV-PORTAL-0002',
         'total_cents' => 5000,
         'paid_total_cents' => 0,
         'balance_cents' => 5000,
@@ -76,6 +78,7 @@ it('returns only the authenticated customer financial and order data', function 
     ]);
     $paidPastDueInvoice = ArInvoice::factory()->issued()->create([
         'customer_id' => $customer->id,
+        'invoice_number' => 'INV-PORTAL-0003',
         'total_cents' => 9000,
         'paid_total_cents' => 9000,
         'balance_cents' => 0,
@@ -83,6 +86,7 @@ it('returns only the authenticated customer financial and order data', function 
     ]);
     $otherInvoice = ArInvoice::factory()->issued()->create([
         'customer_id' => $otherCustomer->id,
+        'invoice_number' => 'INV-PORTAL-0004',
         'total_cents' => 99000,
         'paid_total_cents' => 0,
         'balance_cents' => 99000,
@@ -202,4 +206,50 @@ it('returns portal profile metadata, user-owned orders, and empty financial data
     $this->getJson('/api/customer/subscriptions')
         ->assertOk()
         ->assertJsonCount(0, 'data');
+});
+
+it('returns linked customer orders and earlier user-owned draft portal orders together', function () {
+    $customer = Customer::factory()->create(['phone_verified_at' => now()]);
+
+    $user = User::factory()->create([
+        'email' => 'portal-linked@example.com',
+        'customer_id' => $customer->id,
+    ]);
+    $user->assignRole('customer');
+
+    $draftPortalOrder = Order::factory()->create([
+        'customer_id' => null,
+        'user_id' => $user->id,
+        'status' => 'Draft',
+        'scheduled_date' => now()->addDay()->toDateString(),
+        'notes' => 'Draft portal order',
+        'total_amount' => 42.300,
+    ]);
+
+    $customerOrder = Order::factory()->create([
+        'customer_id' => $customer->id,
+        'user_id' => null,
+        'status' => 'Confirmed',
+        'scheduled_date' => now()->addDays(2)->toDateString(),
+        'notes' => 'Linked customer order',
+        'total_amount' => 84.600,
+    ]);
+
+    Order::factory()->create([
+        'customer_id' => null,
+        'user_id' => null,
+        'status' => 'Draft',
+        'scheduled_date' => now()->addDay()->toDateString(),
+        'notes' => 'Unrelated order',
+    ]);
+
+    Sanctum::actingAs($user, ['customer:*']);
+
+    $this->getJson('/api/customer/orders')
+        ->assertOk()
+        ->assertJsonCount(2, 'data')
+        ->assertJsonPath('data.0.id', $customerOrder->id)
+        ->assertJsonPath('data.1.id', $draftPortalOrder->id)
+        ->assertJsonPath('data.1.status', 'Draft')
+        ->assertJsonPath('data.1.notes', 'Draft portal order');
 });

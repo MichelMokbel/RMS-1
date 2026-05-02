@@ -230,7 +230,129 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
-    <div class="app-table-shell">
+    <div class="space-y-4 md:hidden">
+        @forelse ($accounts as $account)
+            @php($verificationAt = $account->customer?->phone_verified_at ?? $account->portal_phone_verified_at)
+            <div class="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                        <div class="truncate text-base font-semibold text-neutral-900 dark:text-neutral-100">
+                            {{ $account->customer?->name ?? $account->portal_name ?? __('Unlinked customer') }}
+                        </div>
+                        <div class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                            {{ $account->customer?->customer_code ?: __('No customer linked yet') }}
+                        </div>
+                    </div>
+                    <span class="inline-flex shrink-0 items-center rounded-full px-2 py-1 text-xs font-semibold {{ $account->customer ? ($account->customer->is_active ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100' : 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100') : 'bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-100' }}">
+                        {{ $account->customer ? ($account->customer->is_active ? __('Customer Active') : __('Customer Inactive')) : __('Unlinked') }}
+                    </span>
+                </div>
+
+                <div class="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                    <div class="rounded-lg bg-neutral-50 p-3 dark:bg-neutral-800/70">
+                        <div class="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">{{ __('Login') }}</div>
+                        <div class="mt-1 break-all text-neutral-900 dark:text-neutral-100">{{ $account->email ?: '—' }}</div>
+                        <div class="mt-1 break-all text-xs text-neutral-500 dark:text-neutral-400">{{ $account->username ?: '—' }}</div>
+                    </div>
+                    <div class="rounded-lg bg-neutral-50 p-3 dark:bg-neutral-800/70">
+                        <div class="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">{{ __('Phone') }}</div>
+                        <div class="mt-1 text-neutral-900 dark:text-neutral-100">{{ $account->customer?->phone ?: ($account->portal_phone ?: '—') }}</div>
+                        <div class="mt-1 break-all text-xs text-neutral-500 dark:text-neutral-400">{{ $account->customer?->phone_e164 ?: ($account->portal_phone_e164 ?: '—') }}</div>
+                    </div>
+                    <div class="rounded-lg bg-neutral-50 p-3 dark:bg-neutral-800/70">
+                        <div class="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">{{ __('Verification') }}</div>
+                        @if ($verificationAt)
+                            <span class="mt-1 inline-flex items-center rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100">
+                                {{ __('Verified') }}
+                            </span>
+                            <div class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">{{ $verificationAt->format('Y-m-d H:i') }}</div>
+                        @else
+                            <span class="mt-1 inline-flex items-center rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-900 dark:text-amber-100">
+                                {{ __('Pending') }}
+                            </span>
+                        @endif
+                    </div>
+                    <div class="rounded-lg bg-neutral-50 p-3 dark:bg-neutral-800/70">
+                        <div class="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">{{ __('Account Status') }}</div>
+                        <span class="mt-1 inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold {{ $account->status === 'active' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100' : 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100' }}">
+                            {{ ucfirst($account->status) }}
+                        </span>
+                        <div class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">{{ __('Updated') }}: {{ optional($account->updated_at)->format('Y-m-d H:i') ?? '—' }}</div>
+                    </div>
+                </div>
+
+                <div class="mt-4 space-y-2">
+                    @if ($account->customer)
+                        <flux:button class="w-full justify-center" size="sm" :href="route('customers.edit', $account->customer)" wire:navigate>
+                            {{ __('Edit Customer') }}
+                        </flux:button>
+                        <flux:button
+                            class="w-full justify-center"
+                            size="sm"
+                            variant="ghost"
+                            wire:click="unlinkCustomer({{ $account->id }})"
+                        >
+                            {{ __('Unlink Customer') }}
+                        </flux:button>
+                    @else
+                        <flux:button
+                            class="w-full justify-center"
+                            size="sm"
+                            variant="ghost"
+                            wire:click="startLinking({{ $account->id }})"
+                        >
+                            {{ __('Link Customer') }}
+                        </flux:button>
+                    @endif
+                    <flux:button
+                        class="w-full justify-center"
+                        size="sm"
+                        variant="{{ $account->status === 'active' ? 'danger' : 'primary' }}"
+                        wire:click="toggleStatus({{ $account->id }})"
+                    >
+                        {{ $account->status === 'active' ? __('Deactivate Login') : __('Activate Login') }}
+                    </flux:button>
+                </div>
+
+                @if ($linkingUserId === $account->id)
+                    <div class="mt-4 space-y-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
+                        <flux:input
+                            wire:model.live.debounce.300ms="linkCustomerSearch"
+                            placeholder="{{ __('Search customer by name, email, phone, or code') }}"
+                        />
+                        @error('linkCustomerSearch')
+                            <div class="text-xs text-rose-600 dark:text-rose-400">{{ $message }}</div>
+                        @enderror
+                        <div class="space-y-2">
+                            @forelse ($linkCandidates as $candidate)
+                                <button
+                                    type="button"
+                                    class="w-full rounded-md border border-neutral-200 bg-white px-3 py-3 text-left text-sm text-neutral-800 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-700"
+                                    wire:click="linkCustomer({{ $candidate->id }})"
+                                >
+                                    <div class="font-medium">{{ $candidate->name }}</div>
+                                    <div class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                                        {{ $candidate->customer_code ?: '—' }} · {{ $candidate->email ?: '—' }} · {{ $candidate->phone ?: '—' }}
+                                    </div>
+                                </button>
+                            @empty
+                                <div class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('Search to find an unlinked customer record.') }}</div>
+                            @endforelse
+                        </div>
+                        <flux:button class="w-full justify-center" size="sm" variant="ghost" wire:click="cancelLinking">
+                            {{ __('Cancel') }}
+                        </flux:button>
+                    </div>
+                @endif
+            </div>
+        @empty
+            <div class="rounded-xl border border-neutral-200 bg-white px-4 py-6 text-center text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
+                {{ __('No customer accounts found.') }}
+            </div>
+        @endforelse
+    </div>
+
+    <div class="hidden md:block app-table-shell">
         <table class="w-full min-w-full table-fixed divide-y divide-neutral-200 dark:divide-neutral-800">
             <thead class="bg-neutral-50 dark:bg-neutral-800/90">
                 <tr>

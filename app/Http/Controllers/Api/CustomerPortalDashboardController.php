@@ -68,11 +68,13 @@ class CustomerPortalDashboardController extends Controller
 
         $orders = Order::query()
             ->with(['invoice'])
-            ->when(
-                $user->customer_id,
-                fn ($query) => $query->where('customer_id', $user->customer_id),
-                fn ($query) => $query->where('user_id', $user->id)
-            )
+            ->where(function ($query) use ($user) {
+                $query->where('user_id', $user->id);
+
+                if ($user->customer_id) {
+                    $query->orWhere('customer_id', $user->customer_id);
+                }
+            })
             ->when($request->filled('date_from'), fn ($query) => $query->whereDate('scheduled_date', '>=', $request->query('date_from')))
             ->when($request->filled('date_to'), fn ($query) => $query->whereDate('scheduled_date', '<=', $request->query('date_to')))
             ->latest('scheduled_date')
