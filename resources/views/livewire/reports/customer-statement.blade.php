@@ -6,6 +6,7 @@ use App\Support\Money\MinorUnits;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -31,7 +32,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $selected = Customer::find($this->customer_id);
-        $selectedLabel = $selected ? trim($selected->name.' '.($selected->phone ?? '')) : '';
+        $selectedLabel = $selected ? $this->customerLabel($selected) : '';
         if (trim($this->customer_search) !== $selectedLabel) {
             $this->customer_id = null;
         }
@@ -41,12 +42,32 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->customer_id = $id;
         $c = Customer::find($id);
-        $this->customer_search = $c ? trim($c->name.' '.($c->phone ?? '')) : '';
+        $this->customer_search = $c ? $this->customerLabel($c) : '';
+
+        Log::info('customer_statement_customer_selected', [
+            'customer_id' => $id,
+            'customer_search' => $this->customer_search,
+        ]);
     }
 
     public function with(): array
     {
-        $rows = $this->statementRows();
+        try {
+            $rows = $this->statementRows();
+        } catch (\Throwable $e) {
+            Log::error('customer_statement_rows_failed', [
+                'customer_id' => $this->customer_id,
+                'customer_search' => $this->customer_search,
+                'branch_id' => $this->branch_id,
+                'date_from' => $this->date_from,
+                'date_to' => $this->date_to,
+                'only_unpaid' => $this->only_unpaid,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
 
         $customers = collect();
         if (Schema::hasTable('customers') && $this->customer_id === null && trim($this->customer_search) !== '') {
@@ -56,17 +77,39 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->orderBy('name')
                 ->limit(25)
                 ->get();
+
+            $customers = $customers->map(fn (Customer $customer) => [
+                'id' => (int) $customer->id,
+                'name' => $this->safeText($customer->name, __('Unnamed Customer')),
+                'phone' => $this->safeText($customer->phone, ''),
+                'customer_code' => $this->safeText($customer->customer_code, ''),
+            ]);
         }
 
-        return [
-            'rows' => $rows,
-            'summary' => $this->statementSummary($rows),
-            'aging' => $this->agingSummary(),
-            'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
-            'customers' => $customers,
-            'exportParams' => $this->exportParams(),
-            'bankDetails' => (array) config('reports.customer_statement.bank_details', []),
-        ];
+        try {
+            return [
+                'rows' => $rows,
+                'summary' => $this->statementSummary($rows),
+                'aging' => $this->agingSummary(),
+                'branches' => Schema::hasTable('branches') ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get() : collect(),
+                'customers' => $customers,
+                'exportParams' => $this->exportParams(),
+                'bankDetails' => (array) config('reports.customer_statement.bank_details', []),
+            ];
+        } catch (\Throwable $e) {
+            Log::error('customer_statement_with_failed', [
+                'customer_id' => $this->customer_id,
+                'customer_search' => $this->customer_search,
+                'branch_id' => $this->branch_id,
+                'date_from' => $this->date_from,
+                'date_to' => $this->date_to,
+                'only_unpaid' => $this->only_unpaid,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
     }
 
     private function agingAsOf(Carbon $date): Carbon
@@ -95,7 +138,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
-    private function safeText(mixed $value, string $fallback = '-'): string
+    private function safeText(mixed $value, string $fallback = '-', ?array $logContext = null): string
     {
         $string = trim((string) ($value ?? ''));
 
@@ -106,7 +149,29 @@ new #[Layout('components.layouts.app')] class extends Component {
         $sanitized = @iconv('UTF-8', 'UTF-8//IGNORE', $string);
         $sanitized = $sanitized === false ? $string : trim($sanitized);
 
+        if ($logContext !== null && $sanitized !== $string) {
+            Log::warning('customer_statement_text_sanitized', $logContext + [
+                'original_hex' => bin2hex($string),
+                'sanitized' => $sanitized,
+            ]);
+        }
+
         return $sanitized !== '' ? $sanitized : $fallback;
+    }
+
+    private function customerLabel(Customer $customer): string
+    {
+        $name = $this->safeText($customer->name, __('Unnamed Customer'), [
+            'field' => 'customer.name',
+            'customer_id' => $customer->id,
+        ]);
+
+        $phone = $this->safeText($customer->phone, '', [
+            'field' => 'customer.phone',
+            'customer_id' => $customer->id,
+        ]);
+
+        return trim($name.' '.$phone);
     }
 
     /**
@@ -416,15 +481,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <div class="absolute z-10 mt-1 w-full overflow-hidden rounded-md border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
                         <div class="max-h-64 overflow-auto">
                             @forelse ($customers as $c)
-                                <button type="button" class="w-full px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-50 dark:text-neutral-100 dark:hover:bg-neutral-800/80" wire:click="selectCustomer({{ $c->id }})">
+                                <button type="button" class="w-full px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-50 dark:text-neutral-100 dark:hover:bg-neutral-800/80" wire:click="selectCustomer({{ $c['id'] }})">
                                     <div class="flex items-center justify-between gap-2">
-                                        <span class="font-medium">{{ $c->name }}</span>
-                                        @if($c->customer_code)
-                                            <span class="text-xs text-neutral-500 dark:text-neutral-400">{{ $c->customer_code }}</span>
+                                        <span class="font-medium">{{ $c['name'] }}</span>
+                                        @if($c['customer_code'] !== '')
+                                            <span class="text-xs text-neutral-500 dark:text-neutral-400">{{ $c['customer_code'] }}</span>
                                         @endif
                                     </div>
-                                    @if($c->phone)
-                                        <div class="text-xs text-neutral-500 dark:text-neutral-400">{{ $c->phone }}</div>
+                                    @if($c['phone'] !== '')
+                                        <div class="text-xs text-neutral-500 dark:text-neutral-400">{{ $c['phone'] }}</div>
                                     @endif
                                 </button>
                             @empty
