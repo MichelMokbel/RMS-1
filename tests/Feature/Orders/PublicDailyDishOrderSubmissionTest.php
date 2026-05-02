@@ -4,6 +4,7 @@ use App\Models\DailyDishMenu;
 use App\Models\DailyDishMenuItem;
 use App\Models\Customer;
 use App\Models\MenuItem;
+use App\Models\OpsEvent;
 use App\Models\Order;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -460,4 +461,81 @@ it('uses the authenticated user customer link for verification even when another
 
     $order = Order::query()->latest('id')->firstOrFail();
     expect((int) $order->customer_id)->toBe($customer->id);
+});
+
+it('writes a submission audit trail for successful customer portal orders', function () {
+    $user = User::factory()->create([
+        'email' => 'portal@example.com',
+        'customer_id' => null,
+        'portal_name' => 'Portal Customer',
+        'portal_phone' => '55123456',
+        'portal_phone_e164' => '+97455123456',
+        'portal_delivery_address' => 'West Bay',
+        'portal_phone_verified_at' => now(),
+    ]);
+    $user->assignRole('customer');
+    Sanctum::actingAs($user, ['customer:*']);
+
+    $main = MenuItem::factory()->create(['code' => 'MAIN-AUDIT', 'name' => 'Website Main']);
+    $salad = MenuItem::factory()->create(['code' => 'SALAD-AUDIT', 'name' => 'Website Salad']);
+    $dessert = MenuItem::factory()->create(['code' => 'DES-AUDIT', 'name' => 'Website Dessert']);
+    createPublishedMenuForDate('2026-03-07', 1, $main, $salad, $dessert);
+
+    $response = $this->postJson('/api/public/daily-dish/orders', createWebsiteOrderPayload([
+        'items' => [[
+            'key' => '2026-03-07',
+            'notes' => 'Leave at reception',
+            'mains' => [['name' => 'Website Main', 'portion' => 'plate', 'qty' => 1]],
+            'salad_qty' => 1,
+            'dessert_qty' => 1,
+            'day_total' => 123.45,
+        ]],
+    ]))->assertOk();
+
+    $auditId = $response->json('audit_id');
+    expect($auditId)->not->toBeEmpty();
+
+    $received = OpsEvent::query()->where('event_type', 'customer_portal_order_submission_received')->firstOrFail();
+    $completed = OpsEvent::query()->where('event_type', 'customer_portal_order_submission_completed')->firstOrFail();
+
+    expect(data_get($received->metadata_json, 'audit_id'))->toBe($auditId);
+    expect(data_get($received->metadata_json, 'link_status'))->toBe('unlinked');
+    expect(data_get($received->metadata_json, 'service_dates'))->toBe(['2026-03-07']);
+
+    expect(data_get($completed->metadata_json, 'audit_id'))->toBe($auditId);
+    expect(data_get($completed->metadata_json, 'link_status'))->toBe('unlinked');
+    expect(data_get($completed->metadata_json, 'order_count'))->toBe(1);
+    expect(data_get($completed->metadata_json, 'order_ids'))->toHaveCount(1);
+});
+
+it('writes a failed submission audit trail when order creation is rejected after request validation', function () {
+    $user = User::factory()->create([
+        'email' => 'portal@example.com',
+        'customer_id' => null,
+        'portal_name' => 'Portal Customer',
+        'portal_phone' => '55123456',
+        'portal_phone_e164' => '+97455123456',
+        'portal_delivery_address' => 'West Bay',
+        'portal_phone_verified_at' => now(),
+    ]);
+    $user->assignRole('customer');
+    Sanctum::actingAs($user, ['customer:*']);
+
+    $this->postJson('/api/public/daily-dish/orders', createWebsiteOrderPayload([
+        'items' => [[
+            'key' => '2026-03-08',
+            'mains' => [['name' => 'Missing Menu Main', 'portion' => 'plate', 'qty' => 1]],
+            'salad_qty' => 1,
+            'dessert_qty' => 1,
+            'day_total' => 123.45,
+        ]],
+    ]))->assertStatus(422);
+
+    expect(OpsEvent::query()->where('event_type', 'customer_portal_order_submission_received')->count())->toBe(1);
+    expect(OpsEvent::query()->where('event_type', 'customer_portal_order_submission_completed')->exists())->toBeFalse();
+
+    $failed = OpsEvent::query()->where('event_type', 'customer_portal_order_submission_failed')->firstOrFail();
+    expect(data_get($failed->metadata_json, 'stage'))->toBe('create');
+    expect(data_get($failed->metadata_json, 'error_class'))->toBe(\Illuminate\Validation\ValidationException::class);
+    expect(data_get($failed->metadata_json, 'service_dates'))->toBe(['2026-03-08']);
 });

@@ -25,6 +25,7 @@ class CustomerDailyDishOrderService
     public function __construct(
         private readonly OrderNumberService $numberService,
         private readonly MealPlanPricingService $pricingService,
+        private readonly CustomerPortalOrderAuditService $auditService,
     ) {
     }
 
@@ -32,7 +33,7 @@ class CustomerDailyDishOrderService
      * @param  array<string, mixed>  $payload
      * @return array{success:bool,order_ids:array<int, int>,meal_plan_request_id:int|null,email_sent_admin:bool,email_sent_customer:bool}
      */
-    public function create(User $user, array $payload): array
+    public function create(User $user, array $payload, ?string $auditId = null): array
     {
         $customer = $user->customer;
 
@@ -633,13 +634,19 @@ class CustomerDailyDishOrderService
             }
         }
 
-        return [
+        $result = [
             'success' => true,
             'order_ids' => $createdOrderIds,
             'meal_plan_request_id' => $leadId,
             'email_sent_admin' => $emailSentAdmin,
             'email_sent_customer' => $emailSentCustomer,
         ];
+
+        if ($auditId) {
+            $this->auditService->submissionCompleted($user, $payload, $result, $auditId);
+        }
+
+        return $result;
     }
 
     private function resolveDayNotes(Collection $groupItems): ?string
