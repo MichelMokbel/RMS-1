@@ -121,6 +121,7 @@ class CustomerStatementReportController extends Controller
             ->whereDate('issue_date', '>=', $dateFrom)
             ->whereDate('issue_date', '<=', $dateTo)
             ->get()
+            ->toBase()
             ->map(function (ArInvoice $inv) {
                 $issueDate = $this->safeCarbon($inv->getRawOriginal('issue_date'));
                 $amount = (int) ($inv->total_cents ?? 0);
@@ -142,6 +143,7 @@ class CustomerStatementReportController extends Controller
             ->whereDate('received_at', '>=', $dateFrom)
             ->whereDate('received_at', '<=', $dateTo)
             ->get()
+            ->toBase()
             ->map(function (Payment $pay) {
                 $receivedAt = $this->safeCarbon($pay->getRawOriginal('received_at'));
                 $amount = (int) ($pay->amount_cents ?? 0);
@@ -230,7 +232,7 @@ class CustomerStatementReportController extends Controller
         }
 
         // ── Map invoice rows ──────────────────────────────────────────────────
-        $invoiceRows = $invoices->map(function (ArInvoice $invoice) use ($branchNames, $asOf, $paymentRefsByInvoice): array {
+        $invoiceRows = $invoices->toBase()->map(function (ArInvoice $invoice) use ($branchNames, $asOf, $paymentRefsByInvoice): array {
             $issueDate    = $this->safeCarbon($invoice->getRawOriginal('issue_date'));
             $dueDate      = $this->safeCarbon($invoice->getRawOriginal('due_date')) ?: $issueDate;
             $days         = $dueDate ? (int) floor((float) $dueDate->diffInDays($asOf, false)) : 0;
@@ -265,7 +267,7 @@ class CustomerStatementReportController extends Controller
         });
 
         // ── Map payment rows ──────────────────────────────────────────────────
-        $paymentRows = $payments->map(function (Payment $payment) use ($branchNames): array {
+        $paymentRows = $payments->toBase()->map(function (Payment $payment) use ($branchNames): array {
             $method = ucwords(str_replace('_', ' ', (string) ($payment->method ?? '')));
             $receivedAt = $this->safeCarbon($payment->getRawOriginal('received_at'));
 

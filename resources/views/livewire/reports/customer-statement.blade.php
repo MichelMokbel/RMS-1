@@ -245,7 +245,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         // ── Map invoice rows ──────────────────────────────────────────────────
-        $invoiceRows = $invoices->map(function (ArInvoice $invoice) use ($asOf, $branchNames, $paymentRefsByInvoice): array {
+        $invoiceRows = $invoices->toBase()->map(function (ArInvoice $invoice) use ($asOf, $branchNames, $paymentRefsByInvoice): array {
             $issueDate    = $this->safeCarbon($invoice->getRawOriginal('issue_date'));
             $dueDate      = $this->safeCarbon($invoice->getRawOriginal('due_date')) ?: $issueDate;
             $days        = $dueDate ? (int) floor((float) $dueDate->diffInDays($asOf, false)) : 0;
@@ -278,7 +278,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         });
 
         // ── Map payment rows ──────────────────────────────────────────────────
-        $paymentRows = $payments->map(function (object $payment) use ($branchNames): array {
+        $paymentRows = $payments->toBase()->map(function (object $payment) use ($branchNames): array {
             $method     = ucwords(str_replace('_', ' ', (string) ($payment->method ?? '')));
             $receivedAt = $this->safeCarbon($payment->received_at ?? null);
 
