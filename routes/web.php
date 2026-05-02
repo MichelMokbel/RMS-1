@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Help\HelpBotController;
+use App\Http\Controllers\Reports\CustomerStatementReportController;
+use App\Models\Customer;
 use App\Models\InventoryItem;
 use App\Models\MenuItem;
 use App\Models\Order;
@@ -10,6 +12,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -1368,9 +1371,110 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Route::get('receivables-summary/print', [\App\Http\Controllers\Reports\ReceivablesSummaryReportController::class, 'print'])->name('receivables-summary.print');
     Route::get('receivables-summary/csv', [\App\Http\Controllers\Reports\ReceivablesSummaryReportController::class, 'csv'])->name('receivables-summary.csv');
     Route::get('receivables-summary/pdf', [\App\Http\Controllers\Reports\ReceivablesSummaryReportController::class, 'pdf'])->name('receivables-summary.pdf');
-    Route::get('customer-statement/print', [\App\Http\Controllers\Reports\CustomerStatementReportController::class, 'print'])->name('customer-statement.print');
-    Route::get('customer-statement/csv', [\App\Http\Controllers\Reports\CustomerStatementReportController::class, 'csv'])->name('customer-statement.csv');
-    Route::get('customer-statement/pdf', [\App\Http\Controllers\Reports\CustomerStatementReportController::class, 'pdf'])->name('customer-statement.pdf');
+    Route::get('customer-statement/print', [CustomerStatementReportController::class, 'print'])->name('customer-statement.print');
+    Route::get('customer-statement/csv', [CustomerStatementReportController::class, 'csv'])->name('customer-statement.csv');
+    Route::get('customer-statement/pdf', [CustomerStatementReportController::class, 'pdf'])->name('customer-statement.pdf');
+    Route::get('customer-statement/debug/{customer}', function (Customer $customer, Request $request) {
+        $controller = app(CustomerStatementReportController::class);
+        $reflection = new ReflectionClass($controller);
+
+        $invoke = function (string $method, array $arguments = []) use ($controller, $reflection) {
+            $refMethod = $reflection->getMethod($method);
+            $refMethod->setAccessible(true);
+
+            return $refMethod->invokeArgs($controller, $arguments);
+        };
+
+        $debugRequest = Request::create('/reports/customer-statement/debug', 'GET', [
+            'branch_id' => (int) $request->query('branch_id', 0),
+            'customer_id' => $customer->id,
+            'date_from' => (string) $request->query('date_from', '2026-05-01'),
+            'date_to' => (string) $request->query('date_to', '2026-05-31'),
+            'only_unpaid' => $request->boolean('only_unpaid'),
+        ]);
+
+        try {
+            $statement = $invoke('buildStatement', [$debugRequest]);
+            $rows = $invoke('buildPrintRows', [$debugRequest]);
+            $summary = $invoke('buildPrintSummary', [$debugRequest, $rows]);
+            $aging = $invoke('buildAgingSummary', [$debugRequest]);
+
+            $customerLabel = trim(implode(' ', array_filter([
+                (string) ($customer->name ?? ''),
+                (string) ($customer->phone ?? ''),
+            ])));
+
+            $payloads = [
+                'customer' => [
+                    'id' => $customer->id,
+                    'name' => $customer->name,
+                    'phone' => $customer->phone,
+                    'customer_code' => $customer->customer_code,
+                    'label' => $customerLabel,
+                ],
+                'statement' => [
+                    'opening_cents' => $statement['opening_cents'] ?? 0,
+                    'entries_count' => $statement['entries']->count(),
+                    'first_entry' => $statement['entries']->first(),
+                ],
+                'rows' => [
+                    'count' => $rows->count(),
+                    'first_row' => $rows->first(),
+                    'last_row' => $rows->last(),
+                ],
+                'summary' => $summary,
+                'aging' => $aging,
+            ];
+
+            $jsonDiagnostics = [];
+            foreach ($payloads as $key => $payload) {
+                try {
+                    json_encode($payload, JSON_THROW_ON_ERROR);
+                    $jsonDiagnostics[$key] = ['ok' => true];
+                } catch (\Throwable $e) {
+                    $jsonDiagnostics[$key] = [
+                        'ok' => false,
+                        'exception' => $e::class,
+                        'message' => $e->getMessage(),
+                    ];
+                }
+            }
+
+            return response()->json([
+                'ok' => true,
+                'auth_user_id' => auth()->id(),
+                'request' => $debugRequest->query(),
+                'customer' => $payloads['customer'],
+                'statement' => $payloads['statement'],
+                'rows' => $payloads['rows'],
+                'summary' => $summary,
+                'aging' => $aging,
+                'json_diagnostics' => $jsonDiagnostics,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('customer_statement_debug_route_failed', [
+                'auth_user_id' => auth()->id(),
+                'customer_id' => $customer->id,
+                'branch_id' => $debugRequest->query('branch_id'),
+                'date_from' => $debugRequest->query('date_from'),
+                'date_to' => $debugRequest->query('date_to'),
+                'only_unpaid' => $debugRequest->query('only_unpaid'),
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'ok' => false,
+                'auth_user_id' => auth()->id(),
+                'customer_id' => $customer->id,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => collect($e->getTrace())->take(12)->values(),
+            ], 500);
+        }
+    })->name('customer-statement.debug');
     Route::get('customers-statement/print', [\App\Http\Controllers\Reports\CustomersStatementReportController::class, 'print'])->name('customers-statement.print');
     Route::get('customers-statement/csv', [\App\Http\Controllers\Reports\CustomersStatementReportController::class, 'csv'])->name('customers-statement.csv');
     Route::get('customers-statement/pdf', [\App\Http\Controllers\Reports\CustomersStatementReportController::class, 'pdf'])->name('customers-statement.pdf');
