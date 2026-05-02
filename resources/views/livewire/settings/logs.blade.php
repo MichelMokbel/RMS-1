@@ -9,6 +9,7 @@ use Livewire\WithPagination;
 new class extends Component {
     use WithPagination;
 
+    public string $tab = 'ops';
     public string $opsEventType = '';
     public string $opsDateFrom = '';
     public string $opsDateTo = '';
@@ -22,6 +23,7 @@ new class extends Component {
 
     protected $paginationTheme = 'tailwind';
     protected $queryString = [
+        'tab' => ['except' => 'ops'],
         'opsEventType' => ['except' => ''],
         'opsDateFrom' => ['except' => ''],
         'opsDateTo' => ['except' => ''],
@@ -36,6 +38,9 @@ new class extends Component {
     public function mount(): void
     {
         $this->authorizeAccess();
+        if (! in_array($this->tab, ['ops', 'emails'], true)) {
+            $this->tab = 'ops';
+        }
     }
 
     public function with(): array
@@ -116,6 +121,15 @@ new class extends Component {
         $this->resetPage('emailPage');
     }
 
+    public function showTab(string $tab): void
+    {
+        if (! in_array($tab, ['ops', 'emails'], true)) {
+            return;
+        }
+
+        $this->tab = $tab;
+    }
+
     private function authorizeAccess(): void
     {
         $user = Auth::user();
@@ -132,7 +146,25 @@ new class extends Component {
     @include('partials.settings-heading')
 
     <x-settings.layout :heading="__('Logs')" :subheading="__('Inspect operational events and outbound email activity.')" contentClass="mt-5 w-full">
-        <div class="space-y-8">
+        <div class="space-y-6">
+            <div class="flex flex-wrap gap-2 rounded-xl border border-neutral-200 bg-white p-2 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+                <button
+                    type="button"
+                    wire:click="showTab('ops')"
+                    class="{{ $tab === 'ops' ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900' : 'bg-transparent text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-800' }} rounded-lg px-4 py-2 text-sm font-medium transition"
+                >
+                    {{ __('Ops Events') }}
+                </button>
+                <button
+                    type="button"
+                    wire:click="showTab('emails')"
+                    class="{{ $tab === 'emails' ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900' : 'bg-transparent text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-800' }} rounded-lg px-4 py-2 text-sm font-medium transition"
+                >
+                    {{ __('Email Logs') }}
+                </button>
+            </div>
+
+            @if ($tab === 'ops')
             <section class="space-y-4">
                 <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
                     <div>
@@ -195,7 +227,7 @@ new class extends Component {
                                         @if (!empty($event->metadata_json))
                                             <details class="group">
                                                 <summary class="cursor-pointer text-sm font-medium text-primary-600 dark:text-primary-400">{{ __('View metadata') }}</summary>
-                                                <pre class="mt-2 max-w-[28rem] overflow-x-auto rounded-lg bg-neutral-950 p-3 text-xs text-neutral-100">{{ json_encode($event->metadata_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                                                <pre class="mt-2 max-w-[28rem] overflow-x-auto rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-800 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100">{{ json_encode($event->metadata_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
                                             </details>
                                         @else
                                             <span class="text-neutral-400 dark:text-neutral-500">—</span>
@@ -213,7 +245,9 @@ new class extends Component {
 
                 {{ $opsEvents->links() }}
             </section>
+            @endif
 
+            @if ($tab === 'emails')
             <section class="space-y-4">
                 <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
                     <div>
@@ -301,7 +335,7 @@ new class extends Component {
                                         @if (!empty($log->context))
                                             <details class="group mt-2">
                                                 <summary class="cursor-pointer text-sm font-medium text-primary-600 dark:text-primary-400">{{ __('View context') }}</summary>
-                                                <pre class="mt-2 max-w-[28rem] overflow-x-auto rounded-lg bg-neutral-950 p-3 text-xs text-neutral-100">{{ json_encode($log->context, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                                                <pre class="mt-2 max-w-[28rem] overflow-x-auto rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-800 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100">{{ json_encode($log->context, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
                                             </details>
                                         @endif
                                     </td>
@@ -321,6 +355,7 @@ new class extends Component {
 
                 {{ $emailLogs->links() }}
             </section>
+            @endif
         </div>
     </x-settings.layout>
 </section>

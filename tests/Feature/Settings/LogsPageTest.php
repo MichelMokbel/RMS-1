@@ -44,7 +44,11 @@ it('allows admins to view the settings logs page with ops and email data', funct
         ->assertOk()
         ->assertSee('Ops Events')
         ->assertSee('Email Logs')
-        ->assertSee('customer_portal_order_submission_completed')
+        ->assertSee('customer_portal_order_submission_completed');
+
+    $this->actingAs($user)
+        ->get(route('settings.logs', ['tab' => 'emails']))
+        ->assertOk()
         ->assertSee('Test Subject');
 });
 
