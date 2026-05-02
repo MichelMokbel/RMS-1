@@ -95,6 +95,20 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
+    private function safeText(mixed $value, string $fallback = '-'): string
+    {
+        $string = trim((string) ($value ?? ''));
+
+        if ($string === '') {
+            return $fallback;
+        }
+
+        $sanitized = @iconv('UTF-8', 'UTF-8//IGNORE', $string);
+        $sanitized = $sanitized === false ? $string : trim($sanitized);
+
+        return $sanitized !== '' ? $sanitized : $fallback;
+    }
+
     /**
      * @return Collection<int, array<string, int|string>>
      */
@@ -183,18 +197,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             return [
                 'row_type'      => 'invoice',
                 'sort_date'     => $issueDate?->timestamp ?? 0,
-                'document_no'   => $invoice->invoice_number ?: (string) $invoice->id,
+                'document_no'   => $this->safeText($invoice->invoice_number ?: (string) $invoice->id),
                 'document_type' => 'AR Invoice',
-                'location'      => (string) ($branchNames[(int) $invoice->branch_id] ?? ('Branch '.$invoice->branch_id)),
-                'type'          => $paymentType === 'credit' ? 'On Credit' : ucfirst((string) ($invoice->payment_type ?: 'Credit')),
+                'location'      => $this->safeText($branchNames[(int) $invoice->branch_id] ?? ('Branch '.$invoice->branch_id)),
+                'type'          => $this->safeText($paymentType === 'credit' ? 'On Credit' : ucfirst((string) ($invoice->payment_type ?: 'Credit'))),
                 'date'          => $issueDate?->format('d-M-Y') ?? '-',
                 'due_date'      => $dueDate?->format('d-M-Y') ?? '-',
-                'reference_no'  => $invoice->lpo_reference ?: ($invoice->pos_reference ?: '-'),
+                'reference_no'  => $this->safeText($invoice->lpo_reference ?: ($invoice->pos_reference ?: '-')),
                 'amount_cents'  => $totalCents,
                 'paid_cents'    => $paidCents,
                 'balance_cents' => $balanceCents,
-                'aging_label'   => $agingLabel,
-                'payment_no'    => $paymentRefsByInvoice->get($invoice->id, '-'),
+                'aging_label'   => $this->safeText($agingLabel),
+                'payment_no'    => $this->safeText($paymentRefsByInvoice->get($invoice->id, '-')),
             ];
         });
 
@@ -206,18 +220,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             return [
                 'row_type'      => 'payment',
                 'sort_date'     => $receivedAt?->timestamp ?? 0,
-                'document_no'   => $payment->reference ?: ('PMT-'.$payment->id),
+                'document_no'   => $this->safeText($payment->reference ?: ('PMT-'.$payment->id)),
                 'document_type' => 'Payment Receipt',
-                'location'      => (string) ($branchNames[(int) $payment->branch_id] ?? ('Branch '.$payment->branch_id)),
-                'type'          => $method ?: 'Payment',
+                'location'      => $this->safeText($branchNames[(int) $payment->branch_id] ?? ('Branch '.$payment->branch_id)),
+                'type'          => $this->safeText($method ?: 'Payment'),
                 'date'          => $receivedAt?->format('d-M-Y') ?? '-',
                 'due_date'      => '-',
-                'reference_no'  => $payment->reference ?: '-',
+                'reference_no'  => $this->safeText($payment->reference ?: '-'),
                 'amount_cents'  => 0,
                 'paid_cents'    => (int) $payment->amount_cents,
                 'balance_cents' => 0,
                 'aging_label'   => '-',
-                'payment_no'    => $payment->reference ?: ('PMT-'.$payment->id),
+                'payment_no'    => $this->safeText($payment->reference ?: ('PMT-'.$payment->id)),
             ];
         });
 

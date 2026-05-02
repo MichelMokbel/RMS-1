@@ -53,6 +53,20 @@ class CustomerStatementReportController extends Controller
         }
     }
 
+    private function safeText(mixed $value, string $fallback = '-'): string
+    {
+        $string = trim((string) ($value ?? ''));
+
+        if ($string === '') {
+            return $fallback;
+        }
+
+        $sanitized = @iconv('UTF-8', 'UTF-8//IGNORE', $string);
+        $sanitized = $sanitized === false ? $string : trim($sanitized);
+
+        return $sanitized !== '' ? $sanitized : $fallback;
+    }
+
     /**
      * @return array{0: Carbon, 1: Carbon}
      */
@@ -116,8 +130,8 @@ class CustomerStatementReportController extends Controller
                 return [
                     'date' => $issueDate?->format('Y-m-d') ?? '',
                     'description' => $inv->type === 'credit_note'
-                        ? __('Credit Note :no', ['no' => $inv->invoice_number ?: '#'.$inv->id])
-                        : __('Invoice :no', ['no' => $inv->invoice_number ?: '#'.$inv->id]),
+                        ? $this->safeText(__('Credit Note :no', ['no' => $inv->invoice_number ?: '#'.$inv->id]), '')
+                        : $this->safeText(__('Invoice :no', ['no' => $inv->invoice_number ?: '#'.$inv->id]), ''),
                     'debit_cents' => $debit,
                     'credit_cents' => $credit,
                     'amount_cents' => $amount,
@@ -133,7 +147,7 @@ class CustomerStatementReportController extends Controller
                 $amount = (int) ($pay->amount_cents ?? 0);
                 return [
                     'date' => $receivedAt?->format('Y-m-d') ?? '',
-                    'description' => __('Payment #:id', ['id' => $pay->id]),
+                    'description' => $this->safeText(__('Payment #:id', ['id' => $pay->id]), ''),
                     'debit_cents' => 0,
                     'credit_cents' => $amount,
                     'amount_cents' => -$amount,
@@ -233,20 +247,20 @@ class CustomerStatementReportController extends Controller
                 'row_type'      => 'invoice',
                 'sort_date'     => $issueDate?->timestamp ?? 0,
                 'line_no'       => 0,
-                'document_no'   => $invoice->invoice_number ?: (string) $invoice->id,
+                'document_no'   => $this->safeText($invoice->invoice_number ?: (string) $invoice->id),
                 'document_type' => 'AR Invoice',
-                'location'      => (string) ($branchNames[(int) $invoice->branch_id] ?? ('Branch '.$invoice->branch_id)),
-                'type'          => strtolower((string) $invoice->payment_type) === 'credit'
+                'location'      => $this->safeText($branchNames[(int) $invoice->branch_id] ?? ('Branch '.$invoice->branch_id)),
+                'type'          => $this->safeText(strtolower((string) $invoice->payment_type) === 'credit'
                     ? 'On Credit'
-                    : ucfirst((string) ($invoice->payment_type ?: 'Credit')),
+                    : ucfirst((string) ($invoice->payment_type ?: 'Credit'))),
                 'date'          => $issueDate?->format('d-M-Y') ?? '-',
                 'due_date'      => $dueDate?->format('d-M-Y') ?? '-',
-                'reference_no'  => $invoice->lpo_reference ?: ($invoice->pos_reference ?: '-'),
+                'reference_no'  => $this->safeText($invoice->lpo_reference ?: ($invoice->pos_reference ?: '-')),
                 'amount_cents'  => $totalCents,
                 'paid_cents'    => $paidCents,
                 'balance_cents' => $balanceCents,
-                'aging_label'   => $agingLabel,
-                'payment_no'    => $paymentRefsByInvoice->get($invoice->id, '-'),
+                'aging_label'   => $this->safeText($agingLabel),
+                'payment_no'    => $this->safeText($paymentRefsByInvoice->get($invoice->id, '-')),
             ];
         });
 
@@ -259,18 +273,18 @@ class CustomerStatementReportController extends Controller
                 'row_type'      => 'payment',
                 'sort_date'     => $receivedAt?->timestamp ?? 0,
                 'line_no'       => 0,
-                'document_no'   => $payment->reference ?: ('PMT-'.$payment->id),
+                'document_no'   => $this->safeText($payment->reference ?: ('PMT-'.$payment->id)),
                 'document_type' => 'Payment Receipt',
-                'location'      => (string) ($branchNames[(int) $payment->branch_id] ?? ('Branch '.$payment->branch_id)),
-                'type'          => $method ?: 'Payment',
+                'location'      => $this->safeText($branchNames[(int) $payment->branch_id] ?? ('Branch '.$payment->branch_id)),
+                'type'          => $this->safeText($method ?: 'Payment'),
                 'date'          => $receivedAt?->format('d-M-Y') ?? '-',
                 'due_date'      => '-',
-                'reference_no'  => $payment->reference ?: '-',
+                'reference_no'  => $this->safeText($payment->reference ?: '-'),
                 'amount_cents'  => 0,
                 'paid_cents'    => (int) ($payment->amount_cents ?? 0),
                 'balance_cents' => 0,
                 'aging_label'   => '-',
-                'payment_no'    => $payment->reference ?: ('PMT-'.$payment->id),
+                'payment_no'    => $this->safeText($payment->reference ?: ('PMT-'.$payment->id)),
             ];
         });
 
