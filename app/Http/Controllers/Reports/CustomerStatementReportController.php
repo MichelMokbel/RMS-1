@@ -290,7 +290,9 @@ class CustomerStatementReportController extends Controller
             ];
         });
 
-        return $invoiceRows->merge($paymentRows)
+        $rows = $onlyUnpaid ? $invoiceRows : $invoiceRows->merge($paymentRows);
+
+        return $rows
             ->sortBy([['sort_date', 'asc'], ['row_type', 'asc']])
             ->values()
             ->map(function (array $row, int $index): array {

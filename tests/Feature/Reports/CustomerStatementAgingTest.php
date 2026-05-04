@@ -103,6 +103,47 @@ it('filters fully paid invoices from the customer statement when only unpaid is 
     $response->assertDontSee('INV-PAID');
 });
 
+it('hides payment rows from the customer statement when only unpaid is enabled', function () {
+    $customer = Customer::factory()->corporate()->create();
+
+    ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'partially_paid',
+        'invoice_number' => 'INV-WITH-PAYMENT',
+        'payment_type' => 'credit',
+        'issue_date' => '2026-03-02',
+        'due_date' => '2026-03-02',
+        'total_cents' => 80000,
+        'paid_total_cents' => 20000,
+        'balance_cents' => 60000,
+    ]);
+
+    Payment::factory()->create([
+        'customer_id' => $customer->id,
+        'source' => 'ar',
+        'method' => 'bank_transfer',
+        'amount_cents' => 20000,
+        'reference' => 'PMT-ONLY-UNPAID',
+        'received_at' => '2026-03-05 09:00:00',
+    ]);
+
+    $user = User::factory()->create(['status' => 'active']);
+    $user->assignRole('manager');
+
+    $response = $this->actingAs($user)->get(route('reports.customer-statement.print', [
+        'customer_id' => $customer->id,
+        'date_from' => '2026-03-01',
+        'date_to' => '2026-03-31',
+        'only_unpaid' => 1,
+    ]));
+
+    $response->assertOk();
+    $response->assertSee('INV-WITH-PAYMENT');
+    $response->assertDontSee('PMT-ONLY-UNPAID');
+    $response->assertDontSee('Payment Receipt');
+});
+
 it('excludes voided payments from the customer statement', function () {
     $customer = Customer::factory()->corporate()->create();
 

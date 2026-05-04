@@ -301,7 +301,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         });
 
         // ── Merge, sort by date, re-number ────────────────────────────────────
-        return $invoiceRows->merge($paymentRows)
+        $rows = $this->only_unpaid ? $invoiceRows : $invoiceRows->merge($paymentRows);
+
+        return $rows
             ->sortBy([['sort_date', 'asc'], ['row_type', 'asc']])
             ->values()
             ->map(function (array $row, int $index): array {
