@@ -161,6 +161,14 @@ return [
             'filters' => ['company', 'branch', 'customer', 'date_range'],
             'outputs' => ['screen', 'print', 'csv', 'pdf'],
         ],
+        'customer-payments' => [
+            'key' => 'customer-payments',
+            'label' => 'Customer Payments',
+            'category' => 'accounts',
+            'route' => 'reports.customer-payments',
+            'filters' => ['company', 'branch', 'customer', 'date_range'],
+            'outputs' => ['screen', 'print', 'excel', 'pdf'],
+        ],
         'session-branch-sales' => [
             'key' => 'session-branch-sales',
             'label' => 'Session Wise Branch Sales Summary',

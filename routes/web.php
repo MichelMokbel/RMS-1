@@ -1271,6 +1271,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Volt::route('payables', 'reports.payables')->name('payables');
     Volt::route('receivables', 'reports.receivables')->name('receivables');
     Volt::route('customer-advances', 'reports.customer-advances')->name('customer-advances');
+    Volt::route('customer-payments', 'reports.customer-payments')->name('customer-payments');
     Volt::route('sales-all', 'reports.sales-all')->name('sales-all');
     Volt::route('session-branch-sales', 'reports.session-branch-sales')->name('session-branch-sales');
     Volt::route('daily-sales', 'reports.daily-sales')->name('daily-sales');
@@ -1350,6 +1351,9 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Route::get('customer-advances/print', [\App\Http\Controllers\Reports\CustomerAdvancesReportController::class, 'print'])->name('customer-advances.print');
     Route::get('customer-advances/csv', [\App\Http\Controllers\Reports\CustomerAdvancesReportController::class, 'csv'])->name('customer-advances.csv');
     Route::get('customer-advances/pdf', [\App\Http\Controllers\Reports\CustomerAdvancesReportController::class, 'pdf'])->name('customer-advances.pdf');
+    Route::get('customer-payments/print', [\App\Http\Controllers\Reports\CustomerPaymentsReportController::class, 'print'])->name('customer-payments.print');
+    Route::get('customer-payments/xlsx', [\App\Http\Controllers\Reports\CustomerPaymentsReportController::class, 'xlsx'])->name('customer-payments.xlsx');
+    Route::get('customer-payments/pdf', [\App\Http\Controllers\Reports\CustomerPaymentsReportController::class, 'pdf'])->name('customer-payments.pdf');
     Route::get('sales-all/print', [\App\Http\Controllers\Reports\SalesAllReportController::class, 'print'])->name('sales-all.print');
     Route::get('sales-all/csv', [\App\Http\Controllers\Reports\SalesAllReportController::class, 'csv'])->name('sales-all.csv');
     Route::get('sales-all/pdf', [\App\Http\Controllers\Reports\SalesAllReportController::class, 'pdf'])->name('sales-all.pdf');

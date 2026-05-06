@@ -1,7 +1,7 @@
 <?php
 
-use App\Models\ArInvoice;
 use App\Models\AccountingCompany;
+use App\Models\ArInvoice;
 use App\Models\Customer;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
@@ -10,7 +10,7 @@ use App\Services\Accounting\AccountingContextService;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
-function makeAdvancePaymentsManager(): User
+function makeCustomerPaymentsManager(): User
 {
     app(PermissionRegistrar::class)->forgetCachedPermissions();
 
@@ -22,33 +22,52 @@ function makeAdvancePaymentsManager(): User
     return $user;
 }
 
-it('shows advance payments in the accounts reports list', function () {
-    $user = makeAdvancePaymentsManager();
+function extractCustomerPaymentsSheetXml(string $binary): string
+{
+    $path = tempnam(sys_get_temp_dir(), 'customer-payments-test-');
+    file_put_contents($path, $binary);
+
+    $zip = new \ZipArchive();
+    $opened = $zip->open($path);
+    expect($opened)->toBeTrue();
+
+    $sheetXml = $zip->getFromName('xl/worksheets/sheet1.xml');
+
+    $zip->close();
+    @unlink($path);
+
+    return (string) $sheetXml;
+}
+
+it('shows customer payments in the accounts reports list', function () {
+    $user = makeCustomerPaymentsManager();
 
     $this->actingAs($user)
         ->get(route('reports.index', ['category' => 'accounts']))
         ->assertOk()
-        ->assertSee('Advance Payments');
+        ->assertSee('Customer Payments');
 });
 
-it('shows only unallocated ar payments on the advance payments report', function () {
-    $user = makeAdvancePaymentsManager();
-    $customer = Customer::factory()->create(['name' => 'Advance Customer']);
+it('shows all ar customer payments including allocated ones and excludes non-ar or voided rows', function () {
+    $user = makeCustomerPaymentsManager();
+    $customer = Customer::factory()->create(['name' => 'Payment Customer']);
     $defaultCompanyId = app(AccountingContextService::class)->defaultCompanyId();
 
-    $visibleAdvance = Payment::factory()->create([
+    $openPayment = Payment::factory()->create([
         'customer_id' => $customer->id,
         'company_id' => $defaultCompanyId,
         'source' => 'ar',
         'amount_cents' => 15000,
+        'reference' => 'AR-OPEN',
         'received_at' => now()->toDateTimeString(),
     ]);
 
-    $fullyAllocated = Payment::factory()->create([
+    $allocatedPayment = Payment::factory()->create([
         'customer_id' => $customer->id,
         'company_id' => $defaultCompanyId,
         'source' => 'ar',
         'amount_cents' => 12000,
+        'reference' => 'AR-ALLOCATED',
         'received_at' => now()->subDay()->toDateTimeString(),
     ]);
 
@@ -60,7 +79,7 @@ it('shows only unallocated ar payments on the advance payments report', function
     ]);
 
     PaymentAllocation::query()->create([
-        'payment_id' => $fullyAllocated->id,
+        'payment_id' => $allocatedPayment->id,
         'allocatable_type' => ArInvoice::class,
         'allocatable_id' => $invoice->id,
         'amount_cents' => 12000,
@@ -71,26 +90,41 @@ it('shows only unallocated ar payments on the advance payments report', function
         'void_reason' => null,
     ]);
 
-    Payment::factory()->create([
+    $posPayment = Payment::factory()->create([
         'customer_id' => $customer->id,
         'company_id' => $defaultCompanyId,
         'source' => 'pos',
         'amount_cents' => 18000,
+        'reference' => 'POS-HIDDEN',
         'received_at' => now()->subDays(2)->toDateTimeString(),
     ]);
 
+    $voidedPayment = Payment::factory()->create([
+        'customer_id' => $customer->id,
+        'company_id' => $defaultCompanyId,
+        'source' => 'ar',
+        'amount_cents' => 9000,
+        'reference' => 'AR-VOIDED',
+        'received_at' => now()->subDays(3)->toDateTimeString(),
+        'voided_at' => now(),
+        'voided_by' => $user->id,
+        'void_reason' => 'Voided',
+    ]);
+
     $this->actingAs($user)
-        ->get(route('reports.customer-advances'))
+        ->get(route('reports.customer-payments'))
         ->assertOk()
-        ->assertSee('Advance Payments')
-        ->assertSee('Advance Customer')
-        ->assertSee('#'.$visibleAdvance->id)
-        ->assertDontSee('#'.$fullyAllocated->id)
-        ->assertDontSee('No advance payments found.');
+        ->assertSee('Customer Payments')
+        ->assertSee('Payment Customer')
+        ->assertSee('#'.$openPayment->id)
+        ->assertSee('#'.$allocatedPayment->id)
+        ->assertDontSee('#'.$posPayment->id)
+        ->assertDontSee('#'.$voidedPayment->id)
+        ->assertDontSee('No customer payments found.');
 });
 
-it('filters advance payments by accounting company on screen and csv export', function () {
-    $user = makeAdvancePaymentsManager();
+it('filters customer payments by accounting company on screen and excel export', function () {
+    $user = makeCustomerPaymentsManager();
 
     $companyA = AccountingCompany::query()->create([
         'name' => 'Company A',
@@ -108,13 +142,14 @@ it('filters advance payments by accounting company on screen and csv export', fu
         'is_default' => false,
     ]);
 
-    $customer = Customer::factory()->create(['name' => 'Scoped Customer']);
+    $customer = Customer::factory()->create(['name' => 'Scoped Payment Customer']);
 
     $visible = Payment::factory()->create([
         'customer_id' => $customer->id,
         'source' => 'ar',
         'company_id' => $companyB->id,
         'amount_cents' => 15000,
+        'reference' => 'B-PAYMENT',
         'received_at' => now()->toDateTimeString(),
     ]);
 
@@ -123,19 +158,26 @@ it('filters advance payments by accounting company on screen and csv export', fu
         'source' => 'ar',
         'company_id' => $companyA->id,
         'amount_cents' => 9000,
+        'reference' => 'A-PAYMENT',
         'received_at' => now()->subDay()->toDateTimeString(),
     ]);
 
     $this->actingAs($user)
-        ->get(route('reports.customer-advances', ['company_id' => $companyB->id]))
+        ->get(route('reports.customer-payments', ['company_id' => $companyB->id]))
         ->assertOk()
         ->assertSee('#'.$visible->id)
         ->assertDontSee('#'.$hidden->id);
 
     $response = $this->actingAs($user)
-        ->get(route('reports.customer-advances.csv', ['company_id' => $companyB->id]));
+        ->get(route('reports.customer-payments.xlsx', ['company_id' => $companyB->id]));
 
     $response->assertOk();
-    expect($response->streamedContent())->toContain((string) $visible->id)
-        ->not->toContain((string) $hidden->id);
+    $response->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+    $sheetXml = extractCustomerPaymentsSheetXml(file_get_contents($response->getFile()->getPathname()));
+
+    expect($sheetXml)->toContain((string) $visible->id)
+        ->toContain('B-PAYMENT')
+        ->not->toContain((string) $hidden->id)
+        ->not->toContain('A-PAYMENT');
 });
