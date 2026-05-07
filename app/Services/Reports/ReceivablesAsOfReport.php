@@ -68,11 +68,27 @@ class ReceivablesAsOfReport
             ->selectRaw('pa.allocatable_id, COALESCE(SUM(pa.amount_cents), 0) as paid_cents')
             ->pluck('paid_cents', 'allocatable_id');
 
+        $invoicesWithAllocationHistory = DB::table('payment_allocations as pa')
+            ->join('payments as p', 'p.id', '=', 'pa.payment_id')
+            ->whereIn('pa.allocatable_id', $invoices->pluck('id'))
+            ->where('pa.allocatable_type', ArInvoice::class)
+            ->where('p.source', 'ar')
+            ->whereNull('pa.voided_at')
+            ->whereNull('p.voided_at')
+            ->distinct()
+            ->pluck('pa.allocatable_id')
+            ->flip();
+
         return $invoices
-            ->map(function (ArInvoice $invoice) use ($paidByInvoice, $asOf): array {
+            ->map(function (ArInvoice $invoice) use ($paidByInvoice, $invoicesWithAllocationHistory, $asOf): array {
                 $totalCents = (int) ($invoice->total_cents ?? 0);
-                $paidCents = (int) ($paidByInvoice->get($invoice->id, 0) ?? 0);
-                $balanceCents = $totalCents - $paidCents;
+                $hasAllocationHistory = $invoicesWithAllocationHistory->has($invoice->id);
+                $paidCents = $hasAllocationHistory
+                    ? (int) ($paidByInvoice->get($invoice->id, 0) ?? 0)
+                    : max(0, (int) ($invoice->paid_total_cents ?? 0));
+                $balanceCents = $hasAllocationHistory
+                    ? $totalCents - $paidCents
+                    : (int) ($invoice->balance_cents ?? max(0, $totalCents - $paidCents));
                 $dueDate = $invoice->due_date ?: $invoice->issue_date;
                 $days = $dueDate ? (int) floor((float) $dueDate->diffInDays($asOf->copy()->startOfDay(), false)) : 0;
 

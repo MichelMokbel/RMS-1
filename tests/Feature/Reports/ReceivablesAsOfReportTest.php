@@ -136,6 +136,50 @@ it('excludes invoices fully paid before the as-of date', function () {
         ->assertDontSee('ASOF-PAID-BEFORE');
 });
 
+it('excludes imported paid invoices with zero balance and no payment records', function () {
+    $user = makeReceivablesAsOfManager();
+    $paidImport = createReceivablesAsOfInvoice([
+        'invoice_number' => 'ASOF-IMPORT-PAID',
+        'source' => 'import',
+        'status' => 'paid',
+        'total_cents' => 100000,
+        'paid_total_cents' => 100000,
+        'balance_cents' => 0,
+    ]);
+    $openInvoice = createReceivablesAsOfInvoice([
+        'invoice_number' => 'ASOF-IMPORT-CONTROL',
+        'total_cents' => 50000,
+        'balance_cents' => 50000,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('reports.receivables-as-of', ['as_of_date' => '2026-04-30']))
+        ->assertOk()
+        ->assertSee($openInvoice->invoice_number)
+        ->assertDontSee($paidImport->invoice_number);
+});
+
+it('uses imported invoice balance when no payment records exist', function () {
+    $user = makeReceivablesAsOfManager();
+    $importedPartial = createReceivablesAsOfInvoice([
+        'invoice_number' => 'ASOF-IMPORT-PARTIAL',
+        'source' => 'import',
+        'status' => 'partially_paid',
+        'total_cents' => 100000,
+        'paid_total_cents' => 60000,
+        'balance_cents' => 40000,
+    ]);
+
+    $response = $this->actingAs($user)
+        ->get(route('reports.receivables-as-of.print', ['as_of_date' => '2026-04-30']))
+        ->assertOk();
+
+    $response
+        ->assertSee($importedPartial->invoice_number)
+        ->assertSee('600.00')
+        ->assertSee('400.00');
+});
+
 it('filters receivables as of by branch and customer', function () {
     $user = makeReceivablesAsOfManager();
     $user->assignRole(Role::findOrCreate('admin', 'web'));
