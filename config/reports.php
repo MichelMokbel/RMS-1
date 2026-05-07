@@ -153,6 +153,14 @@ return [
             'filters' => ['branch', 'customer', 'status', 'date_range'],
             'outputs' => ['screen', 'print', 'csv', 'pdf'],
         ],
+        'receivables-as-of' => [
+            'key' => 'receivables-as-of',
+            'label' => 'Receivables As Of',
+            'category' => 'accounts',
+            'route' => 'reports.receivables-as-of',
+            'filters' => ['as_of_date', 'branch', 'customer'],
+            'outputs' => ['screen', 'print', 'csv', 'pdf'],
+        ],
         'customer-advances' => [
             'key' => 'customer-advances',
             'label' => 'Advance Payments',

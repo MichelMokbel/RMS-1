@@ -1270,6 +1270,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Volt::route('inventory-transactions', 'reports.inventory-transactions')->name('inventory-transactions');
     Volt::route('payables', 'reports.payables')->name('payables');
     Volt::route('receivables', 'reports.receivables')->name('receivables');
+    Volt::route('receivables-as-of', 'reports.receivables-as-of')->name('receivables-as-of');
     Volt::route('customer-advances', 'reports.customer-advances')->name('customer-advances');
     Volt::route('customer-payments', 'reports.customer-payments')->name('customer-payments');
     Volt::route('sales-all', 'reports.sales-all')->name('sales-all');
@@ -1348,6 +1349,9 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Route::get('receivables/print', [\App\Http\Controllers\Reports\ReceivablesReportController::class, 'print'])->name('receivables.print');
     Route::get('receivables/csv', [\App\Http\Controllers\Reports\ReceivablesReportController::class, 'csv'])->name('receivables.csv');
     Route::get('receivables/pdf', [\App\Http\Controllers\Reports\ReceivablesReportController::class, 'pdf'])->name('receivables.pdf');
+    Route::get('receivables-as-of/print', [\App\Http\Controllers\Reports\ReceivablesAsOfReportController::class, 'print'])->name('receivables-as-of.print');
+    Route::get('receivables-as-of/csv', [\App\Http\Controllers\Reports\ReceivablesAsOfReportController::class, 'csv'])->name('receivables-as-of.csv');
+    Route::get('receivables-as-of/pdf', [\App\Http\Controllers\Reports\ReceivablesAsOfReportController::class, 'pdf'])->name('receivables-as-of.pdf');
     Route::get('customer-advances/print', [\App\Http\Controllers\Reports\CustomerAdvancesReportController::class, 'print'])->name('customer-advances.print');
     Route::get('customer-advances/csv', [\App\Http\Controllers\Reports\CustomerAdvancesReportController::class, 'csv'])->name('customer-advances.csv');
     Route::get('customer-advances/pdf', [\App\Http\Controllers\Reports\CustomerAdvancesReportController::class, 'pdf'])->name('customer-advances.pdf');
