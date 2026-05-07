@@ -79,16 +79,34 @@ class ReceivablesAsOfReport
             ->pluck('pa.allocatable_id')
             ->flip();
 
+        $allocatedByInvoice = DB::table('payment_allocations as pa')
+            ->join('payments as p', 'p.id', '=', 'pa.payment_id')
+            ->whereIn('pa.allocatable_id', $invoices->pluck('id'))
+            ->where('pa.allocatable_type', ArInvoice::class)
+            ->where('p.source', 'ar')
+            ->whereNull('pa.voided_at')
+            ->whereNull('p.voided_at')
+            ->groupBy('pa.allocatable_id')
+            ->selectRaw('pa.allocatable_id, COALESCE(SUM(pa.amount_cents), 0) as allocated_cents')
+            ->pluck('allocated_cents', 'allocatable_id');
+
         return $invoices
-            ->map(function (ArInvoice $invoice) use ($paidByInvoice, $invoicesWithAllocationHistory, $asOf): array {
+            ->map(function (ArInvoice $invoice) use ($paidByInvoice, $invoicesWithAllocationHistory, $allocatedByInvoice, $asOf): array {
                 $totalCents = (int) ($invoice->total_cents ?? 0);
                 $hasAllocationHistory = $invoicesWithAllocationHistory->has($invoice->id);
-                $paidCents = $hasAllocationHistory
-                    ? (int) ($paidByInvoice->get($invoice->id, 0) ?? 0)
-                    : max(0, (int) ($invoice->paid_total_cents ?? 0));
-                $balanceCents = $hasAllocationHistory
-                    ? $totalCents - $paidCents
-                    : (int) ($invoice->balance_cents ?? max(0, $totalCents - $paidCents));
+                $recordedPaidCents = (int) ($paidByInvoice->get($invoice->id, 0) ?? 0);
+                $activeAllocatedCents = (int) ($allocatedByInvoice->get($invoice->id, 0) ?? 0);
+                $storedPaidCents = max(0, (int) ($invoice->paid_total_cents ?? 0));
+
+                if ($hasAllocationHistory) {
+                    $unrecordedPaidCents = max(0, min($storedPaidCents, $totalCents) - $activeAllocatedCents);
+                    $paidCents = $recordedPaidCents + $unrecordedPaidCents;
+                    $balanceCents = $totalCents - $paidCents;
+                } else {
+                    $paidCents = $storedPaidCents;
+                    $balanceCents = (int) ($invoice->balance_cents ?? max(0, $totalCents - $paidCents));
+                }
+
                 $dueDate = $invoice->due_date ?: $invoice->issue_date;
                 $days = $dueDate ? (int) floor((float) $dueDate->diffInDays($asOf->copy()->startOfDay(), false)) : 0;
 

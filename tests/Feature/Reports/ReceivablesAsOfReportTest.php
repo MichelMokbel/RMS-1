@@ -180,6 +180,28 @@ it('uses imported invoice balance when no payment records exist', function () {
         ->assertSee('400.00');
 });
 
+it('excludes manually settled imports when recorded allocations do not cover the full paid total', function () {
+    $user = makeReceivablesAsOfManager();
+    $invoice = createReceivablesAsOfInvoice([
+        'invoice_number' => '100708',
+        'source' => 'import',
+        'notes' => 'Imported from Sales Entry Daily Report',
+        'status' => 'paid',
+        'issue_date' => '2026-02-19',
+        'due_date' => '2026-02-19',
+        'total_cents' => 9198000,
+        'paid_total_cents' => 9198000,
+        'balance_cents' => 0,
+    ]);
+
+    allocateReceivablesAsOfPayment($invoice, 7330000, '2026-04-15 10:00:00');
+
+    $this->actingAs($user)
+        ->get(route('reports.receivables-as-of', ['as_of_date' => '2026-04-30']))
+        ->assertOk()
+        ->assertDontSee('100708');
+});
+
 it('filters receivables as of by branch and customer', function () {
     $user = makeReceivablesAsOfManager();
     $user->assignRole(Role::findOrCreate('admin', 'web'));
