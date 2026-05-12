@@ -95,28 +95,13 @@ class ProductCsvSeeder extends Seeder
         $this->command->info(count($categoryMap).' categories resolved.');
 
         // ---------------------------------------------------------------
-        // 2. Determine starting counters for auto-generated codes
-        // ---------------------------------------------------------------
-        $maxItemCode = InventoryItem::query()
-            ->where('item_code', 'like', 'ITEM-%')
-            ->selectRaw("MAX(CAST(SUBSTRING(item_code, 6) AS UNSIGNED)) as max_num")
-            ->value('max_num');
-        $nextItemNum = ($maxItemCode ?? 0) + 1;
-
-        $maxMenuCode = MenuItem::query()
-            ->where('code', 'like', 'MI-%')
-            ->selectRaw("MAX(CAST(SUBSTRING(code, 4) AS UNSIGNED)) as max_num")
-            ->value('max_num');
-        $nextMenuNum = ($maxMenuCode ?? 0) + 1;
-
-        // ---------------------------------------------------------------
-        // 3. Collect existing names so we can skip duplicates efficiently
+        // 2. Collect existing names so we can skip duplicates efficiently
         // ---------------------------------------------------------------
         $existingInventoryNames = InventoryItem::pluck('name')->map(fn ($n) => mb_strtolower(trim($n)))->flip()->toArray();
         $existingMenuNames = MenuItem::pluck('name')->map(fn ($n) => mb_strtolower(trim($n)))->flip()->toArray();
 
         // ---------------------------------------------------------------
-        // 4. Process rows inside a transaction
+        // 3. Process rows inside a transaction
         // ---------------------------------------------------------------
         $inventoryInserted = 0;
         $inventorySkipped = 0;
@@ -126,8 +111,6 @@ class ProductCsvSeeder extends Seeder
         DB::transaction(function () use (
             $rows,
             $categoryMap,
-            &$nextItemNum,
-            &$nextMenuNum,
             &$existingInventoryNames,
             &$existingMenuNames,
             &$inventoryInserted,
@@ -159,8 +142,7 @@ class ProductCsvSeeder extends Seeder
                         continue;
                     }
 
-                    $itemCode = 'ITEM-'.str_pad((string) $nextItemNum, 3, '0', STR_PAD_LEFT);
-                    $nextItemNum++;
+                    $itemCode = app(\App\Services\Inventory\InventoryItemPersistService::class)->nextItemCode();
 
                     InventoryItem::create([
                         'item_code' => $itemCode,
@@ -181,14 +163,10 @@ class ProductCsvSeeder extends Seeder
                         continue;
                     }
 
-                    $code = 'MI-'.str_pad((string) $nextMenuNum, 6, '0', STR_PAD_LEFT);
-                    $nextMenuNum++;
-
                     // Normalise unit to match MenuItem constants
                     $unit = $this->normaliseUnit($uom);
 
                     MenuItem::create([
-                        'code' => $code,
                         'name' => $name,
                         'arabic_name' => $arabicName !== '' ? $arabicName : null,
                         'category_id' => $categoryId,

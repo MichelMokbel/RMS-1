@@ -64,16 +64,7 @@ class CustomerCsvSeeder extends Seeder
         $this->command->info(count($rows).' rows read from CSV.');
 
         // ---------------------------------------------------------------
-        // 1. Determine starting counter for customer_code
-        // ---------------------------------------------------------------
-        $maxCode = Customer::query()
-            ->where('customer_code', 'like', 'CUST-%')
-            ->selectRaw("MAX(CAST(SUBSTRING(customer_code, 6) AS UNSIGNED)) as max_num")
-            ->value('max_num');
-        $nextNum = ($maxCode ?? 0) + 1;
-
-        // ---------------------------------------------------------------
-        // 2. Collect existing names for skip check
+        // 1. Collect existing names for skip check
         // ---------------------------------------------------------------
         $existingNames = Customer::pluck('name')
             ->map(fn ($n) => mb_strtolower(trim($n)))
@@ -81,14 +72,13 @@ class CustomerCsvSeeder extends Seeder
             ->toArray();
 
         // ---------------------------------------------------------------
-        // 3. Process rows inside a transaction
+        // 2. Process rows inside a transaction
         // ---------------------------------------------------------------
         $inserted = 0;
         $skipped = 0;
 
         DB::transaction(function () use (
             $rows,
-            &$nextNum,
             &$existingNames,
             &$inserted,
             &$skipped,
@@ -123,11 +113,7 @@ class CustomerCsvSeeder extends Seeder
                     $email = null;
                 }
 
-                $customerCode = 'CUST-'.str_pad((string) $nextNum, 4, '0', STR_PAD_LEFT);
-                $nextNum++;
-
                 Customer::create([
-                    'customer_code' => $customerCode,
                     'name' => $name,
                     'customer_type' => 'retail',
                     'phone' => $phone ?: null,
