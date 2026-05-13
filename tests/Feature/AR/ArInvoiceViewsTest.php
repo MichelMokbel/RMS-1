@@ -6,6 +6,7 @@ use App\Models\ArInvoiceItem;
 use App\Models\Customer;
 use App\Models\Job;
 use App\Models\MenuItem;
+use App\Models\Order;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
@@ -94,6 +95,59 @@ it('shows inline menu item creation controls on invoice create', function () {
         ->assertSee('Category')
         ->assertSee('Selling Price')
         ->assertSee('Unit');
+});
+
+it('lets users lock the invoice date for subsequent invoice creation', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    Volt::actingAs($user);
+
+    Volt::test('receivables.invoices.create', ['invoice' => null, 'order_id' => null])
+        ->set('invoice_date', '2026-05-12')
+        ->set('lock_invoice_date', true)
+        ->assertSet('lock_invoice_date', true);
+
+    expect(session('receivables.invoice.locked_date'))->toBe('2026-05-12');
+
+    $this->withSession(['receivables.invoice.locked_date' => '2026-05-12']);
+
+    Volt::test('receivables.invoices.create', ['invoice' => null, 'order_id' => null])
+        ->assertSet('invoice_date', '2026-05-12')
+        ->assertSet('lock_invoice_date', true);
+});
+
+it('clears the locked invoice date when users turn the lock off', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $this->withSession(['receivables.invoice.locked_date' => '2026-05-12']);
+
+    Volt::actingAs($user);
+
+    Volt::test('receivables.invoices.create', ['invoice' => null, 'order_id' => null])
+        ->assertSet('invoice_date', '2026-05-12')
+        ->set('lock_invoice_date', false)
+        ->assertSet('lock_invoice_date', false);
+
+    expect(session()->has('receivables.invoice.locked_date'))->toBeFalse();
+});
+
+it('uses the locked invoice date when creating an invoice from an order', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $order = Order::factory()->create([
+        'scheduled_date' => '2026-05-10',
+    ]);
+
+    $this->withSession(['receivables.invoice.locked_date' => '2026-05-12']);
+
+    $this->actingAs($user)
+        ->get(route('invoices.create-from-order', ['order_id' => $order->id]))
+        ->assertOk()
+        ->assertSee('2026-05-12')
+        ->assertDontSee('2026-05-10');
 });
 
 it('lets users clear the selected customer when editing a draft invoice', function () {

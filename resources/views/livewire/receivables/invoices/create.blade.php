@@ -27,6 +27,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $customer_search = '';
 
     public string $invoice_date;
+    public bool $lock_invoice_date = false;
     public string $due_date = '';
     public string $payment_type = 'credit';
     public ?int $payment_term_id = null;
@@ -62,7 +63,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $this->branch_id = (int) config('inventory.default_branch_id', 1) ?: 1;
-        $this->invoice_date = now()->toDateString();
+        $lockedDate = $this->lockedInvoiceDate();
+        $this->lock_invoice_date = $lockedDate !== null;
+        $this->invoice_date = $lockedDate ?? now()->toDateString();
         $this->sales_person_id = Auth::id();
         $this->payment_term_id = $this->defaultPaymentTermId('credit');
         $this->invoice_discount_value = $this->moneyZero();
@@ -151,7 +154,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->source_order_id = $order->id;
         $this->source_order_number = $order->order_number;
         $this->branch_id = (int) $order->branch_id;
-        $this->invoice_date = $order->scheduled_date?->toDateString() ?? now()->toDateString();
+        if (! $this->lock_invoice_date) {
+            $this->invoice_date = $order->scheduled_date?->toDateString() ?? now()->toDateString();
+        }
 
         if ($order->customer_id) {
             $this->customer_id = $order->customer_id;
@@ -333,6 +338,42 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function updatedPaymentType(): void
     {
         $this->payment_term_id = $this->defaultPaymentTermId($this->payment_type);
+    }
+
+    public function updatedInvoiceDate(): void
+    {
+        if ($this->lock_invoice_date) {
+            $this->storeLockedInvoiceDate();
+        }
+    }
+
+    public function updatedLockInvoiceDate(): void
+    {
+        if ($this->lock_invoice_date) {
+            $this->storeLockedInvoiceDate();
+            return;
+        }
+
+        session()->forget($this->lockedInvoiceDateSessionKey());
+    }
+
+    private function lockedInvoiceDate(): ?string
+    {
+        $date = session($this->lockedInvoiceDateSessionKey());
+
+        return is_string($date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) ? $date : null;
+    }
+
+    private function storeLockedInvoiceDate(): void
+    {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->invoice_date)) {
+            session()->put($this->lockedInvoiceDateSessionKey(), $this->invoice_date);
+        }
+    }
+
+    private function lockedInvoiceDateSessionKey(): string
+    {
+        return 'receivables.invoice.locked_date';
     }
 
     private function defaultPaymentTermId(string $type): ?int
@@ -903,6 +944,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Invoice Date') }}</label>
                 <input type="date" wire:model.live="invoice_date" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" />
+                @if (! $editing_invoice_id)
+                    <label class="mt-2 flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-300">
+                        <input type="checkbox" wire:model.live="lock_invoice_date" class="rounded border-neutral-300 text-primary-600 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800" />
+                        <span>{{ __('Lock date for new invoices') }}</span>
+                    </label>
+                @endif
             </div>
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Due Date') }}</label>
