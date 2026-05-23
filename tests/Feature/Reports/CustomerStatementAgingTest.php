@@ -185,3 +185,44 @@ it('excludes voided payments from the customer statement', function () {
     $response->assertSee('INV-VOID-PMT');
     $response->assertDontSee('VOIDED-PMT');
 });
+
+it('shows unallocated ar payments in the customer statement summary', function () {
+    $customer = Customer::factory()->corporate()->create();
+
+    ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'issued',
+        'invoice_number' => 'INV-UNALLOCATED',
+        'payment_type' => 'credit',
+        'issue_date' => '2026-03-01',
+        'due_date' => '2026-03-10',
+        'total_cents' => 90100,
+        'paid_total_cents' => 0,
+        'balance_cents' => 90100,
+    ]);
+
+    Payment::factory()->create([
+        'customer_id' => $customer->id,
+        'source' => 'ar',
+        'method' => 'bank_transfer',
+        'amount_cents' => 12300,
+        'reference' => 'PMT-UNALLOCATED',
+        'received_at' => '2026-03-05 09:00:00',
+    ]);
+
+    $user = User::factory()->create(['status' => 'active']);
+    $user->assignRole('manager');
+
+    $response = $this->actingAs($user)->get(route('reports.customer-statement.print', [
+        'customer_id' => $customer->id,
+        'date_from' => '2026-03-01',
+        'date_to' => '2026-03-31',
+    ]));
+
+    $response->assertOk();
+    $response->assertSee('PMT-UNALLOCATED');
+    $response->assertSee('Unallocated Amount');
+    $response->assertSee('123.00');
+    $response->assertSee('778.00');
+});

@@ -314,11 +314,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     /**
      * @param  Collection<int, array<string, int|string>>  $rows
-     * @return array{period_amount_cents:int,period_received_cents:int,period_balance_cents:int,previous_balance_cents:int,previous_advance_cents:int,total_outstanding_cents:int}
+     * @return array{period_amount_cents:int,period_received_cents:int,period_balance_cents:int,previous_balance_cents:int,unallocated_cents:int,total_outstanding_cents:int}
      */
     private function statementSummary(Collection $rows): array
     {
         $dateFrom = $this->date_from ? now()->parse($this->date_from)->startOfDay() : now()->startOfMonth()->startOfDay();
+        $dateTo = $this->date_to ? now()->parse($this->date_to)->endOfDay() : now()->endOfMonth()->endOfDay();
 
         // Use balance_cents as the authoritative outstanding per invoice.
         // Derive "received" as total − balance so it captures all payment channels
@@ -331,6 +332,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $previousInvoiceBalance = 0;
         // Previous period: advance payments made before the date range not yet allocated to any invoice
         $previousAdvance = 0;
+        // Current period: advances still unallocated as of the statement end date
+        $periodAdvance = 0;
 
         if ($this->customer_id) {
             $previousInvoiceBalance = (int) ArInvoice::query()
@@ -364,18 +367,41 @@ new #[Layout('components.layouts.app')] class extends Component {
                     ->sum('pa.amount_cents');
 
                 $previousAdvance = max(0, $prevPaidTotal - $prevAllocatedTotal);
+
+                $paidToDate = (int) DB::table('payments as p')
+                    ->where('p.customer_id', $this->customer_id)
+                    ->where('p.source', 'ar')
+                    ->whereNull('p.voided_at')
+                    ->where('p.received_at', '<=', $dateTo)
+                    ->when($this->branch_id > 0, fn ($q) => $q->where('p.branch_id', $this->branch_id))
+                    ->sum('p.amount_cents');
+
+                $allocatedToDate = (int) DB::table('payment_allocations as pa')
+                    ->join('payments as p', 'p.id', '=', 'pa.payment_id')
+                    ->where('p.customer_id', $this->customer_id)
+                    ->where('p.source', 'ar')
+                    ->whereNull('p.voided_at')
+                    ->whereNull('pa.voided_at')
+                    ->where('p.received_at', '<=', $dateTo)
+                    ->where('pa.created_at', '<=', $dateTo)
+                    ->when($this->branch_id > 0, fn ($q) => $q->where('p.branch_id', $this->branch_id))
+                    ->sum('pa.amount_cents');
+
+                $periodAdvance = max(0, $paidToDate - $allocatedToDate - $previousAdvance);
             }
         }
 
         $previousBalance = max(0, $previousInvoiceBalance - $previousAdvance);
+        $unallocatedCents = $previousAdvance + $periodAdvance;
+        $netOutstanding = max(0, $previousInvoiceBalance + $periodBalance - $unallocatedCents);
 
         return [
             'period_amount_cents'    => $periodAmount,
             'period_received_cents'  => $periodReceived,
             'period_balance_cents'   => $periodBalance,
             'previous_balance_cents' => $previousBalance,
-            'previous_advance_cents' => $previousAdvance,
-            'total_outstanding_cents' => $previousBalance + $periodBalance,
+            'unallocated_cents'      => $unallocatedCents,
+            'total_outstanding_cents' => $netOutstanding,
         ];
     }
 
@@ -569,7 +595,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </table>
     </div>
 
-    <div class="grid gap-4 md:grid-cols-3">
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
             <div class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Current Balance') }}</div>
             <div class="mt-1 text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($summary['period_balance_cents']) }}</div>
@@ -577,6 +603,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
             <div class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Previous Balance') }}</div>
             <div class="mt-1 text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($summary['previous_balance_cents']) }}</div>
+        </div>
+        <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+            <div class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Unallocated Amount') }}</div>
+            <div class="mt-1 text-xl font-semibold text-amber-700 dark:text-amber-400">{{ $this->formatMoney($summary['unallocated_cents']) }}</div>
         </div>
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
             <div class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Total Outstanding') }}</div>

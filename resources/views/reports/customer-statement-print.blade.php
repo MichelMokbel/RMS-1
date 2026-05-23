@@ -204,6 +204,10 @@
                     <td class="summary-value">{{ $formatCents($summary['previous_balance_cents']) }}</td>
                 </tr>
                 <tr>
+                    <td class="summary-label">Unallocated Amount</td>
+                    <td class="summary-value">{{ $formatCents($summary['unallocated_cents']) }}</td>
+                </tr>
+                <tr>
                     <td class="summary-label">Total Outstanding Amount</td>
                     <td class="summary-value">{{ $formatCents($summary['total_outstanding_cents']) }}</td>
                 </tr>

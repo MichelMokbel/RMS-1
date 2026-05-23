@@ -369,13 +369,13 @@ class CustomerStatementReportController extends Controller
     }
 
     /**
-     * @return array{period_amount_cents:int,period_received_cents:int,period_balance_cents:int,previous_balance_cents:int,total_outstanding_cents:int}
+     * @return array{period_amount_cents:int,period_received_cents:int,period_balance_cents:int,previous_balance_cents:int,unallocated_cents:int,total_outstanding_cents:int}
      */
     private function buildPrintSummary(Request $request, Collection $rows): array
     {
         $customerId = (int) ($request->integer('customer_id') ?? 0);
         $branchId   = $request->integer('branch_id') ?? 0;
-        [$dateFrom] = $this->resolvedRange($request);
+        [$dateFrom, $dateTo] = $this->resolvedRange($request);
 
         // Use balance_cents as the authoritative outstanding per invoice.
         // Derive "received" as total − balance so it captures all payment channels.
@@ -384,7 +384,8 @@ class CustomerStatementReportController extends Controller
         $periodReceived = $periodAmount - $periodBalance;
 
         $previousInvoiceBalance = 0;
-        $previousAdvance        = 0;
+        $previousAdvance = 0;
+        $periodAdvance = 0;
 
         if ($customerId > 0) {
             $previousInvoiceBalance = (int) ArInvoice::query()
@@ -415,16 +416,40 @@ class CustomerStatementReportController extends Controller
                 ->sum('pa.amount_cents');
 
             $previousAdvance = max(0, $prevPaidTotal - $prevAllocatedTotal);
+
+            $paidToDate = (int) \Illuminate\Support\Facades\DB::table('payments as p')
+                ->where('p.customer_id', $customerId)
+                ->where('p.source', 'ar')
+                ->whereNull('p.voided_at')
+                ->where('p.received_at', '<=', $dateTo)
+                ->when($branchId > 0, fn ($q) => $q->where('p.branch_id', $branchId))
+                ->sum('p.amount_cents');
+
+            $allocatedToDate = (int) \Illuminate\Support\Facades\DB::table('payment_allocations as pa')
+                ->join('payments as p', 'p.id', '=', 'pa.payment_id')
+                ->where('p.customer_id', $customerId)
+                ->where('p.source', 'ar')
+                ->whereNull('p.voided_at')
+                ->whereNull('pa.voided_at')
+                ->where('p.received_at', '<=', $dateTo)
+                ->where('pa.created_at', '<=', $dateTo)
+                ->when($branchId > 0, fn ($q) => $q->where('p.branch_id', $branchId))
+                ->sum('pa.amount_cents');
+
+            $periodAdvance = max(0, $paidToDate - $allocatedToDate - $previousAdvance);
         }
 
         $previousBalance = max(0, $previousInvoiceBalance - $previousAdvance);
+        $unallocatedCents = $previousAdvance + $periodAdvance;
+        $netOutstanding = max(0, $previousInvoiceBalance + $periodBalance - $unallocatedCents);
 
         return [
             'period_amount_cents'    => $periodAmount,
             'period_received_cents'  => $periodReceived,
             'period_balance_cents'   => $periodBalance,
             'previous_balance_cents' => $previousBalance,
-            'total_outstanding_cents' => $previousBalance + $periodBalance,
+            'unallocated_cents'      => $unallocatedCents,
+            'total_outstanding_cents' => $netOutstanding,
         ];
     }
 
