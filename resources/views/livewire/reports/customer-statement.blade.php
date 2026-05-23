@@ -308,6 +308,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'amount_cents'  => $totalCents,
                 'paid_cents'    => $paidCents,
                 'balance_cents' => $balanceCents,
+                'statement_delta_cents' => $totalCents,
                 'aging_label'   => $this->safeText($agingLabel),
                 'payment_no'    => $this->safeText($paymentRefsByInvoice->get($invoice->id, '-')),
             ];
@@ -331,6 +332,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'amount_cents'  => 0,
                 'paid_cents'    => (int) $payment->amount_cents,
                 'balance_cents' => 0,
+                'statement_delta_cents' => -(int) $payment->amount_cents,
                 'aging_label'   => '-',
                 'payment_no'    => $this->safeText($payment->reference ?: ('PMT-'.$payment->id)),
             ];
@@ -344,7 +346,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->sortBy([['sort_date', 'asc'], ['row_type', 'asc']])
             ->values()
             ->map(function (array $row, int $index) use (&$runningBalance): array {
-                $runningBalance += (int) $row['amount_cents'] - (int) $row['paid_cents'];
+                $runningBalance += (int) ($row['statement_delta_cents'] ?? 0);
                 $row['line_no'] = $index + 1;
                 $row['running_balance_cents'] = $runningBalance;
                 return $row;

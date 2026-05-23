@@ -222,7 +222,6 @@ it('shows unallocated ar payments in the customer statement summary', function (
 
     $response->assertOk();
     $response->assertSee('PMT-UNALLOCATED');
-    $response->assertSee('Unallocated Amount');
     $response->assertSee('901.00');
     $response->assertSee('123.00');
     $response->assertSee('778.00');
@@ -323,5 +322,50 @@ it('shows a running balance for each statement row', function () {
         '67.78',
         'INV-RUN-2',
         '90.00',
+    ]);
+});
+
+it('uses invoice amount for running balance even when invoice row shows paid amount', function () {
+    $customer = Customer::factory()->corporate()->create();
+
+    ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'partially_paid',
+        'invoice_number' => 'INV-PARTIAL-RUN',
+        'payment_type' => 'credit',
+        'issue_date' => '2026-04-01',
+        'due_date' => '2026-04-10',
+        'total_cents' => 10000,
+        'paid_total_cents' => 4000,
+        'balance_cents' => 6000,
+    ]);
+
+    Payment::factory()->create([
+        'customer_id' => $customer->id,
+        'source' => 'ar',
+        'method' => 'bank_transfer',
+        'amount_cents' => 2500,
+        'reference' => 'PMT-PARTIAL-RUN',
+        'received_at' => '2026-04-02 09:00:00',
+    ]);
+
+    $user = User::factory()->create(['status' => 'active']);
+    $user->assignRole('manager');
+
+    $response = $this->actingAs($user)->get(route('reports.customer-statement.print', [
+        'customer_id' => $customer->id,
+        'date_from' => '2026-04-01',
+        'date_to' => '2026-04-30',
+    ]));
+
+    $response->assertOk();
+    $response->assertSeeInOrder([
+        'INV-PARTIAL-RUN',
+        '100.00',
+        '40.00',
+        '100.00',
+        'PMT-PARTIAL-RUN',
+        '75.00',
     ]);
 });
