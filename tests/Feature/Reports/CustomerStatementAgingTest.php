@@ -364,8 +364,44 @@ it('uses invoice amount for running balance even when invoice row shows paid amo
         'INV-PARTIAL-RUN',
         '100.00',
         '40.00',
-        '100.00',
+        '60.00',
         'PMT-PARTIAL-RUN',
-        '75.00',
+        '35.00',
+    ]);
+});
+
+it('uses outstanding balance for legacy paid invoices with no payment number', function () {
+    $customer = Customer::factory()->corporate()->create();
+
+    ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'source' => 'import',
+        'status' => 'partially_paid',
+        'invoice_number' => 'INV-LEGACY-PARTIAL',
+        'payment_type' => 'credit',
+        'issue_date' => '2026-04-01',
+        'due_date' => '2026-04-10',
+        'total_cents' => 10000,
+        'paid_total_cents' => 4000,
+        'balance_cents' => 6000,
+    ]);
+
+    $user = User::factory()->create(['status' => 'active']);
+    $user->assignRole('manager');
+
+    $response = $this->actingAs($user)->get(route('reports.customer-statement.print', [
+        'customer_id' => $customer->id,
+        'date_from' => '2026-04-01',
+        'date_to' => '2026-04-30',
+    ]));
+
+    $response->assertOk();
+    $response->assertSeeInOrder([
+        'INV-LEGACY-PARTIAL',
+        '100.00',
+        '40.00',
+        '60.00',
+        '-',
     ]);
 });

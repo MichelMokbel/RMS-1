@@ -280,6 +280,9 @@ class CustomerStatementReportController extends Controller
             $totalCents   = (int) ($invoice->total_cents ?? 0);
             $balanceCents = max(0, (int) ($invoice->balance_cents ?? 0));
             $paidCents    = max(0, $totalCents - $balanceCents);
+            $paymentNo    = $this->safeText($paymentRefsByInvoice->get($invoice->id, '-'));
+            $legacySettledWithoutPaymentRecord = $paidCents > 0 && $paymentNo === '-';
+            $statementDeltaCents = $legacySettledWithoutPaymentRecord ? $balanceCents : $totalCents;
 
             return [
                 'row_type'      => 'invoice',
@@ -297,9 +300,9 @@ class CustomerStatementReportController extends Controller
                 'amount_cents'  => $totalCents,
                 'paid_cents'    => $paidCents,
                 'balance_cents' => $balanceCents,
-                'statement_delta_cents' => $totalCents,
+                'statement_delta_cents' => $statementDeltaCents,
                 'aging_label'   => $this->safeText($agingLabel),
-                'payment_no'    => $this->safeText($paymentRefsByInvoice->get($invoice->id, '-')),
+                'payment_no'    => $paymentNo,
             ];
         });
 
