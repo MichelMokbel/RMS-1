@@ -223,6 +223,105 @@ it('shows unallocated ar payments in the customer statement summary', function (
     $response->assertOk();
     $response->assertSee('PMT-UNALLOCATED');
     $response->assertSee('Unallocated Amount');
+    $response->assertSee('901.00');
     $response->assertSee('123.00');
     $response->assertSee('778.00');
+});
+
+it('shows a negative balance total when period receipts exceed invoices', function () {
+    $customer = Customer::factory()->corporate()->create();
+
+    ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'issued',
+        'invoice_number' => 'INV-CREDIT-BAL',
+        'payment_type' => 'credit',
+        'issue_date' => '2026-05-12',
+        'due_date' => '2026-06-11',
+        'total_cents' => 42800,
+        'paid_total_cents' => 0,
+        'balance_cents' => 42800,
+    ]);
+
+    Payment::factory()->create([
+        'customer_id' => $customer->id,
+        'source' => 'ar',
+        'method' => 'bank_transfer',
+        'amount_cents' => 109900,
+        'reference' => 'PMT-CREDIT-BAL',
+        'received_at' => '2026-05-15 09:00:00',
+    ]);
+
+    $user = User::factory()->create(['status' => 'active']);
+    $user->assignRole('manager');
+
+    $response = $this->actingAs($user)->get(route('reports.customer-statement.print', [
+        'customer_id' => $customer->id,
+        'date_from' => '2026-05-01',
+        'date_to' => '2026-05-31',
+    ]));
+
+    $response->assertOk();
+    $response->assertSee('428.00');
+    $response->assertSee('1099.00');
+    $response->assertSee('-671.00');
+});
+
+it('shows a running balance for each statement row', function () {
+    $customer = Customer::factory()->corporate()->create();
+
+    ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'issued',
+        'invoice_number' => 'INV-RUN-1',
+        'payment_type' => 'credit',
+        'issue_date' => '2026-03-01',
+        'due_date' => '2026-03-10',
+        'total_cents' => 10111,
+        'paid_total_cents' => 0,
+        'balance_cents' => 10111,
+    ]);
+
+    Payment::factory()->create([
+        'customer_id' => $customer->id,
+        'source' => 'ar',
+        'method' => 'bank_transfer',
+        'amount_cents' => 3333,
+        'reference' => 'PMT-RUN',
+        'received_at' => '2026-03-02 09:00:00',
+    ]);
+
+    ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'issued',
+        'invoice_number' => 'INV-RUN-2',
+        'payment_type' => 'credit',
+        'issue_date' => '2026-03-03',
+        'due_date' => '2026-03-12',
+        'total_cents' => 2222,
+        'paid_total_cents' => 0,
+        'balance_cents' => 2222,
+    ]);
+
+    $user = User::factory()->create(['status' => 'active']);
+    $user->assignRole('manager');
+
+    $response = $this->actingAs($user)->get(route('reports.customer-statement.print', [
+        'customer_id' => $customer->id,
+        'date_from' => '2026-03-01',
+        'date_to' => '2026-03-31',
+    ]));
+
+    $response->assertOk();
+    $response->assertSeeInOrder([
+        'INV-RUN-1',
+        '101.11',
+        'PMT-RUN',
+        '67.78',
+        'INV-RUN-2',
+        '90.00',
+    ]);
 });

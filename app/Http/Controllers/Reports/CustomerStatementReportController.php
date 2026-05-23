@@ -17,6 +17,42 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CustomerStatementReportController extends Controller
 {
+    private function openingStatementBalance(int $customerId, int $branchId, Carbon $dateFrom): int
+    {
+        if ($customerId <= 0) {
+            return 0;
+        }
+
+        $previousInvoiceBalance = (int) ArInvoice::query()
+            ->where('customer_id', $customerId)
+            ->where('type', 'invoice')
+            ->whereIn('status', ['issued', 'partially_paid', 'paid'])
+            ->where('balance_cents', '>', 0)
+            ->when($branchId > 0, fn ($q) => $q->where('branch_id', $branchId))
+            ->whereDate('issue_date', '<', $dateFrom)
+            ->sum('balance_cents');
+
+        $prevPaidTotal = (int) \Illuminate\Support\Facades\DB::table('payments as p')
+            ->where('p.customer_id', $customerId)
+            ->where('p.source', 'ar')
+            ->whereNull('p.voided_at')
+            ->where('p.received_at', '<', $dateFrom)
+            ->when($branchId > 0, fn ($q) => $q->where('p.branch_id', $branchId))
+            ->sum('p.amount_cents');
+
+        $prevAllocatedTotal = (int) \Illuminate\Support\Facades\DB::table('payment_allocations as pa')
+            ->join('payments as p', 'p.id', '=', 'pa.payment_id')
+            ->where('p.customer_id', $customerId)
+            ->where('p.source', 'ar')
+            ->whereNull('p.voided_at')
+            ->whereNull('pa.voided_at')
+            ->where('p.received_at', '<', $dateFrom)
+            ->when($branchId > 0, fn ($q) => $q->where('p.branch_id', $branchId))
+            ->sum('pa.amount_cents');
+
+        return $previousInvoiceBalance - max(0, $prevPaidTotal - $prevAllocatedTotal);
+    }
+
     private function formatCents(?int $cents): string
     {
         return MinorUnits::format((int) ($cents ?? 0));
@@ -291,12 +327,15 @@ class CustomerStatementReportController extends Controller
         });
 
         $rows = $onlyUnpaid ? $invoiceRows : $invoiceRows->merge($paymentRows);
+        $runningBalance = $this->openingStatementBalance($customerId, $branchId, $dateFrom);
 
         return $rows
             ->sortBy([['sort_date', 'asc'], ['row_type', 'asc']])
             ->values()
-            ->map(function (array $row, int $index): array {
+            ->map(function (array $row, int $index) use (&$runningBalance): array {
+                $runningBalance += (int) $row['amount_cents'] - (int) $row['paid_cents'];
                 $row['line_no'] = $index + 1;
+                $row['running_balance_cents'] = $runningBalance;
                 return $row;
             });
     }
@@ -377,25 +416,24 @@ class CustomerStatementReportController extends Controller
         $branchId   = $request->integer('branch_id') ?? 0;
         [$dateFrom, $dateTo] = $this->resolvedRange($request);
 
-        // Use balance_cents as the authoritative outstanding per invoice.
-        // Derive "received" as total − balance so it captures all payment channels.
         $periodAmount   = (int) $rows->where('row_type', 'invoice')->sum('amount_cents');
-        $periodBalance  = (int) $rows->where('row_type', 'invoice')->sum('balance_cents');
-        $periodReceived = $periodAmount - $periodBalance;
+        $periodReceived = 0;
+        $periodBalance = 0;
 
-        $previousInvoiceBalance = 0;
         $previousAdvance = 0;
         $periodAdvance = 0;
+        $previousBalance = 0;
 
         if ($customerId > 0) {
-            $previousInvoiceBalance = (int) ArInvoice::query()
-                ->where('customer_id', $customerId)
-                ->where('type', 'invoice')
-                ->whereIn('status', ['issued', 'partially_paid', 'paid'])
-                ->where('balance_cents', '>', 0)
-                ->when($branchId > 0, fn ($q) => $q->where('branch_id', $branchId))
-                ->whereDate('issue_date', '<', $dateFrom)
-                ->sum('balance_cents');
+            $periodReceived = (int) \Illuminate\Support\Facades\DB::table('payments as p')
+                ->where('p.customer_id', $customerId)
+                ->where('p.source', 'ar')
+                ->whereNull('p.voided_at')
+                ->whereBetween('p.received_at', [$dateFrom, $dateTo])
+                ->when($branchId > 0, fn ($q) => $q->where('p.branch_id', $branchId))
+                ->sum('p.amount_cents');
+
+            $previousBalance = $this->openingStatementBalance($customerId, $branchId, $dateFrom);
 
             $prevPaidTotal = (int) \Illuminate\Support\Facades\DB::table('payments as p')
                 ->where('p.customer_id', $customerId)
@@ -439,9 +477,9 @@ class CustomerStatementReportController extends Controller
             $periodAdvance = max(0, $paidToDate - $allocatedToDate - $previousAdvance);
         }
 
-        $previousBalance = max(0, $previousInvoiceBalance - $previousAdvance);
+        $periodBalance = $periodAmount - $periodReceived;
         $unallocatedCents = $previousAdvance + $periodAdvance;
-        $netOutstanding = max(0, $previousInvoiceBalance + $periodBalance - $unallocatedCents);
+        $netOutstanding = $previousBalance + $periodBalance;
 
         return [
             'period_amount_cents'    => $periodAmount,

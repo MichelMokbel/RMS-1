@@ -172,7 +172,7 @@
                         <td>{{ $row['reference_no'] }}</td>
                         <td class="right">{{ $isPayment ? '-' : $formatCents($row['amount_cents']) }}</td>
                         <td class="right">{{ $formatCents($row['paid_cents']) }}</td>
-                        <td class="right">{{ $isPayment ? '-' : $formatCents($row['balance_cents']) }}</td>
+                        <td class="right">{{ $formatCents($row['running_balance_cents']) }}</td>
                         <td>{{ $row['aging_label'] }}</td>
                         <td>{{ $row['payment_no'] }}</td>
                     </tr>
@@ -202,10 +202,6 @@
                 <tr>
                     <td class="summary-label">Previous Balance</td>
                     <td class="summary-value">{{ $formatCents($summary['previous_balance_cents']) }}</td>
-                </tr>
-                <tr>
-                    <td class="summary-label">Unallocated Amount</td>
-                    <td class="summary-value">{{ $formatCents($summary['unallocated_cents']) }}</td>
                 </tr>
                 <tr>
                     <td class="summary-label">Total Outstanding Amount</td>
