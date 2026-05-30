@@ -16,6 +16,8 @@ class SubscriptionDetailsReportController extends Controller
             ->withRenewalState()
             ->with(['customer', 'renewalSuccessor'])
             ->when($request->filled('status') && $request->status !== 'all', fn ($q) => $q->where('status', $request->status))
+            ->when($request->input('renewal_state') === 'expired_not_renewed', fn ($q) => $q->expiredNotRenewed())
+            ->when($request->input('renewal_state') === 'expired_renewed', fn ($q) => $q->where('status', 'expired')->whereNotNull('renewal_subscription_id'))
             ->when($request->filled('customer_id'), fn ($q) => $q->where('customer_id', $request->integer('customer_id')))
             ->when($request->filled('branch_id'), fn ($q) => $q->where('branch_id', $request->integer('branch_id')))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('start_date', '>=', $request->date_from))
@@ -36,7 +38,7 @@ class SubscriptionDetailsReportController extends Controller
     public function print(Request $request)
     {
         $subscriptions = $this->query($request);
-        $filters = $request->only(['status', 'customer_id', 'branch_id', 'date_from', 'date_to', 'search']);
+        $filters = $request->only(['status', 'renewal_state', 'customer_id', 'branch_id', 'date_from', 'date_to', 'search']);
 
         return view('reports.subscription-details-print', [
             'subscriptions' => $subscriptions,

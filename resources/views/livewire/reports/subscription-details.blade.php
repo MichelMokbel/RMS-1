@@ -12,6 +12,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
 
     public string $status = 'all';
+    public string $renewal_state = 'all';
     public ?int $customer_id = null;
     public string $customer_search = '';
     public ?int $branch_id = null;
@@ -29,7 +30,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function updating($name): void
     {
-        if (in_array($name, ['status', 'customer_id', 'customer_search', 'branch_id', 'date_from', 'date_to', 'search'], true)) {
+        if (in_array($name, ['status', 'renewal_state', 'customer_id', 'customer_search', 'branch_id', 'date_from', 'date_to', 'search'], true)) {
             $this->resetPage();
         }
     }
@@ -80,6 +81,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->withRenewalState()
             ->with(['customer', 'renewalSuccessor'])
             ->when($this->status !== 'all', fn ($q) => $q->where('status', $this->status))
+            ->when($this->renewal_state === 'expired_not_renewed', fn ($q) => $q->expiredNotRenewed())
+            ->when($this->renewal_state === 'expired_renewed', fn ($q) => $q->where('status', 'expired')->whereNotNull('renewal_subscription_id'))
             ->when($this->customer_id, fn ($q) => $q->where('customer_id', $this->customer_id))
             ->when($this->branch_id, fn ($q) => $q->where('branch_id', $this->branch_id))
             ->when($this->date_from, fn ($q) => $q->whereDate('start_date', '>=', $this->date_from))
@@ -99,6 +102,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         return array_filter([
             'status' => $this->status !== 'all' ? $this->status : null,
+            'renewal_state' => $this->renewal_state !== 'all' ? $this->renewal_state : null,
             'customer_id' => $this->customer_id,
             'branch_id' => $this->branch_id,
             'date_from' => $this->date_from,
@@ -164,6 +168,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <option value="paused">{{ __('Paused') }}</option>
                     <option value="cancelled">{{ __('Cancelled') }}</option>
                     <option value="expired">{{ __('Expired') }}</option>
+                </select>
+            </div>
+            <div class="w-48">
+                <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Renewal State') }}</label>
+                <select wire:model.live="renewal_state" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                    <option value="all">{{ __('All') }}</option>
+                    <option value="expired_not_renewed">{{ __('Expired Not Renewed') }}</option>
+                    <option value="expired_renewed">{{ __('Expired Renewed') }}</option>
                 </select>
             </div>
             <div class="w-40">

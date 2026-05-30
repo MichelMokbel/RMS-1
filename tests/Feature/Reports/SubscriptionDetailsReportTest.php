@@ -51,3 +51,50 @@ it('shows renewed state and renewal code on the subscription details report', fu
         ->assertSee('Renewed')
         ->assertSee('Renewed by SUB-REPORT-NEW');
 });
+
+it('filters the subscription details report to expired subscriptions that were not renewed', function () {
+    $admin = User::factory()->create(['status' => 'active']);
+    $admin->assignRole('admin');
+
+    $renewedCustomer = Customer::factory()->create(['name' => 'Renewed Customer']);
+    $notRenewedCustomer = Customer::factory()->create(['name' => 'Not Renewed Customer']);
+
+    MealSubscription::factory()->create([
+        'subscription_code' => 'SUB-EXPIRED-RENEWED',
+        'customer_id' => $renewedCustomer->id,
+        'branch_id' => 1,
+        'status' => 'expired',
+        'start_date' => '2025-01-01',
+        'end_date' => '2025-01-31',
+        'created_at' => '2025-01-01 09:00:00',
+    ]);
+
+    MealSubscription::factory()->create([
+        'subscription_code' => 'SUB-EXPIRED-RENEWED-NEXT',
+        'customer_id' => $renewedCustomer->id,
+        'branch_id' => 1,
+        'status' => 'active',
+        'start_date' => '2025-01-20',
+        'created_at' => '2025-02-01 09:00:00',
+    ]);
+
+    MealSubscription::factory()->create([
+        'subscription_code' => 'SUB-EXPIRED-NOT-RENEWED',
+        'customer_id' => $notRenewedCustomer->id,
+        'branch_id' => 1,
+        'status' => 'expired',
+        'start_date' => '2025-02-01',
+        'end_date' => '2025-02-28',
+        'created_at' => '2025-02-01 09:00:00',
+    ]);
+
+    $this->actingAs($admin);
+
+    Volt::test('reports.subscription-details')
+        ->set('date_from', '2025-01-01')
+        ->set('date_to', '2025-12-31')
+        ->set('renewal_state', 'expired_not_renewed')
+        ->assertSee('SUB-EXPIRED-NOT-RENEWED')
+        ->assertDontSee('SUB-EXPIRED-RENEWED')
+        ->assertSee('Not Renewed');
+});
