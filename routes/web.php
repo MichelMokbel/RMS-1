@@ -329,6 +329,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operation
     Volt::route('subscriptions', 'subscriptions.index')->name('subscriptions.index');
     Volt::route('subscriptions/create', 'subscriptions.create')->name('subscriptions.create');
     Volt::route('subscriptions/{subscription}', 'subscriptions.show')->name('subscriptions.show');
+    Volt::route('subscriptions/{subscription}/invoice-audit', 'subscriptions.invoice-audit')->name('subscriptions.invoice-audit');
     Volt::route('subscriptions/{subscription}/edit', 'subscriptions.edit')->name('subscriptions.edit');
     Volt::route('subscriptions/generate', 'subscriptions.generate')->name('subscriptions.generate');
 });

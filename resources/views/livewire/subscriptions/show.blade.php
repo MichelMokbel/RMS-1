@@ -202,6 +202,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ $subscription->customer->name ?? '—' }} · {{ $subscription->branch_id }}</p>
         </div>
         <div class="flex gap-2">
+            @if ($subscription->source_payment_id)
+                <flux:button :href="route('subscriptions.invoice-audit', $subscription)" wire:navigate variant="subtle">{{ __('Invoice Audit') }}</flux:button>
+            @endif
             <flux:button :href="route('subscriptions.edit', $subscription)" wire:navigate>{{ __('Edit') }}</flux:button>
             <flux:button :href="route('subscriptions.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
         </div>

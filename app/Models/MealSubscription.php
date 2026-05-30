@@ -173,26 +173,13 @@ class MealSubscription extends Model
             ->whereColumn('renewal_candidates.id', '!=', $table.'.id')
             ->where(function ($query) use ($table) {
                 $query
-                    ->where(function ($nested) use ($table) {
-                        $nested
-                            ->whereNotNull($table.'.end_date')
-                            ->whereColumn('renewal_candidates.start_date', '>', $table.'.end_date');
-                    })
-                    ->orWhere(function ($nested) use ($table) {
-                        $nested
-                            ->whereNull($table.'.end_date')
-                            ->where(function ($fallback) use ($table) {
-                                $fallback
-                                    ->whereColumn('renewal_candidates.start_date', '>', $table.'.start_date')
-                                    ->orWhere(function ($legacy) use ($table) {
-                                        $legacy
-                                            ->whereColumn('renewal_candidates.created_at', '>', $table.'.created_at')
-                                            ->whereColumn('renewal_candidates.id', '>', $table.'.id');
-                                    });
-                            });
+                    ->whereColumn('renewal_candidates.created_at', '>', $table.'.created_at')
+                    ->orWhere(function ($sameTimestamp) use ($table) {
+                        $sameTimestamp
+                            ->whereColumn('renewal_candidates.created_at', '=', $table.'.created_at')
+                            ->whereColumn('renewal_candidates.id', '>', $table.'.id');
                     });
             })
-            ->orderBy('renewal_candidates.start_date')
             ->orderBy('renewal_candidates.created_at')
             ->orderBy('renewal_candidates.id')
             ->limit(1);
@@ -208,52 +195,29 @@ class MealSubscription extends Model
             ->whereColumn('renewal_candidates.id', '!=', $table.'.id')
             ->where(function ($query) use ($table) {
                 $query
-                    ->where(function ($nested) use ($table) {
-                        $nested
-                            ->whereNotNull($table.'.end_date')
-                            ->whereColumn('renewal_candidates.start_date', '>', $table.'.end_date');
-                    })
-                    ->orWhere(function ($nested) use ($table) {
-                        $nested
-                            ->whereNull($table.'.end_date')
-                            ->where(function ($fallback) use ($table) {
-                                $fallback
-                                    ->whereColumn('renewal_candidates.start_date', '>', $table.'.start_date')
-                                    ->orWhere(function ($legacy) use ($table) {
-                                        $legacy
-                                            ->whereColumn('renewal_candidates.created_at', '>', $table.'.created_at')
-                                            ->whereColumn('renewal_candidates.id', '>', $table.'.id');
-                                    });
-                            });
+                    ->whereColumn('renewal_candidates.created_at', '>', $table.'.created_at')
+                    ->orWhere(function ($sameTimestamp) use ($table) {
+                        $sameTimestamp
+                            ->whereColumn('renewal_candidates.created_at', '=', $table.'.created_at')
+                            ->whereColumn('renewal_candidates.id', '>', $table.'.id');
                     });
             });
     }
 
     private function singleRecordRenewalCandidateQuery(): Builder
     {
-        $query = self::query()
+        return self::query()
             ->where('customer_id', $this->customer_id)
-            ->whereKeyNot($this->id);
-
-        if ($this->end_date !== null) {
-            return $query
-                ->whereDate('start_date', '>', $this->end_date->toDateString())
-                ->orderBy('start_date')
-                ->orderBy('created_at')
-                ->orderBy('id');
-        }
-
-        return $query
-            ->where(function ($fallback) {
-                $fallback
-                    ->whereDate('start_date', '>', $this->start_date->toDateString())
-                    ->orWhere(function ($legacy) {
-                        $legacy
-                            ->where('created_at', '>', $this->created_at)
+            ->whereKeyNot($this->id)
+            ->where(function ($query) {
+                $query
+                    ->where('created_at', '>', $this->created_at)
+                    ->orWhere(function ($sameTimestamp) {
+                        $sameTimestamp
+                            ->where('created_at', '=', $this->created_at)
                             ->where('id', '>', $this->id);
                     });
             })
-            ->orderBy('start_date')
             ->orderBy('created_at')
             ->orderBy('id');
     }

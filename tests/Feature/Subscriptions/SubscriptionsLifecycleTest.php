@@ -105,6 +105,36 @@ it('marks an expired subscription as renewed when the same customer has a later 
     expect($resolved->renewal_subscription_id)->toBe($renewal->id);
 });
 
+it('marks an expired subscription as renewed even when the later subscription overlaps its date range', function () {
+    seedSubscriptionBranch();
+
+    $customer = Customer::factory()->create();
+
+    $expired = MealSubscription::factory()->create([
+        'customer_id' => $customer->id,
+        'branch_id' => 1,
+        'status' => 'expired',
+        'start_date' => '2026-04-29',
+        'end_date' => '2026-05-29',
+        'created_at' => '2026-04-29 09:00:00',
+    ]);
+
+    $renewal = MealSubscription::factory()->create([
+        'customer_id' => $customer->id,
+        'branch_id' => 1,
+        'status' => 'active',
+        'start_date' => '2026-05-21',
+        'end_date' => '2026-06-21',
+        'created_at' => '2026-05-21 09:00:00',
+    ]);
+
+    $resolved = MealSubscription::query()->withRenewalState()->findOrFail($expired->id);
+
+    expect($resolved->is_renewed)->toBeTrue();
+    expect($resolved->is_expired_not_renewed)->toBeFalse();
+    expect($resolved->renewal_subscription_id)->toBe($renewal->id);
+});
+
 it('marks an expired subscription as not renewed when no later subscription exists', function () {
     seedSubscriptionBranch();
 
@@ -150,7 +180,7 @@ it('does not treat cancelled subscriptions as renewed', function () {
     expect($resolved->is_expired_not_renewed)->toBeFalse();
 });
 
-it('uses the legacy fallback when an expired subscription has no end date', function () {
+it('uses the later-record fallback when an expired subscription has no end date', function () {
     seedSubscriptionBranch();
 
     $customer = Customer::factory()->create();

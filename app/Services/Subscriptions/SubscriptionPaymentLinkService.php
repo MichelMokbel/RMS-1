@@ -5,11 +5,118 @@ namespace App\Services\Subscriptions;
 use App\Models\MealSubscription;
 use App\Models\MenuItem;
 use App\Models\Payment;
+use App\Models\ArInvoice;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class SubscriptionPaymentLinkService
 {
+    /**
+     * Build an invoice audit for a payment-linked subscription so staff can find
+     * invoices that are allocated to the subscription payment but do not contain
+     * the expected plan menu item.
+     *
+     * @return array{
+     *   expected_menu_item_id:int|null,
+     *   expected_menu_item_code:string|null,
+     *   expected_menu_item_name:string|null,
+     *   has_expected_menu_item:bool,
+     *   invoices:\Illuminate\Support\Collection<int, array<string, mixed>>
+     * }
+     */
+    public function auditInvoicesForSubscription(MealSubscription $subscription): array
+    {
+        $expectedMenuItemId = null;
+        if ($subscription->plan_meals_total !== null) {
+            $expectedMenuItemId = (int) (config('subscriptions.plan_menu_item_ids')[(int) $subscription->plan_meals_total] ?? 0) ?: null;
+        }
+
+        $expectedMenuItem = $expectedMenuItemId
+            ? MenuItem::query()->find($expectedMenuItemId)
+            : null;
+
+        if (! $subscription->source_payment_id) {
+            return [
+                'expected_menu_item_id' => $expectedMenuItemId,
+                'expected_menu_item_code' => $expectedMenuItem?->code,
+                'expected_menu_item_name' => $expectedMenuItem?->name,
+                'has_expected_menu_item' => $expectedMenuItem !== null,
+                'invoices' => collect(),
+            ];
+        }
+
+        $invoices = ArInvoice::query()
+            ->whereNull('voided_at')
+            ->where('type', '!=', 'credit_note')
+            ->whereHas('paymentAllocations', fn ($q) => $q
+                ->where('payment_id', $subscription->source_payment_id)
+                ->whereNull('voided_at'))
+            ->with([
+                'items',
+                'paymentAllocations' => fn ($q) => $q
+                    ->where('payment_id', $subscription->source_payment_id)
+                    ->whereNull('voided_at'),
+            ])
+            ->orderByDesc('issue_date')
+            ->orderByDesc('id')
+            ->get();
+
+        return [
+            'expected_menu_item_id' => $expectedMenuItemId,
+            'expected_menu_item_code' => $expectedMenuItem?->code,
+            'expected_menu_item_name' => $expectedMenuItem?->name,
+            'has_expected_menu_item' => $expectedMenuItem !== null,
+            'invoices' => $invoices->map(function (ArInvoice $invoice) use ($expectedMenuItemId): array {
+                $items = $invoice->items;
+
+                $expectedItems = $expectedMenuItemId
+                    ? $items->filter(fn ($item) => $item->sellable_type === MenuItem::class && (int) $item->sellable_id === (int) $expectedMenuItemId)
+                    : collect();
+
+                $planItemIds = array_values(config('subscriptions.plan_menu_item_ids', []));
+                $otherPlanItems = $items->filter(function ($item) use ($expectedMenuItemId, $planItemIds) {
+                    return $item->sellable_type === MenuItem::class
+                        && in_array((int) $item->sellable_id, $planItemIds, true)
+                        && (int) $item->sellable_id !== (int) $expectedMenuItemId;
+                });
+
+                $metaSubscriptionItems = $items->filter(fn ($item) => (bool) ($item->meta['is_subscription'] ?? false));
+
+                $allocatedCents = (int) $invoice->paymentAllocations->sum('amount_cents');
+
+                $actualItems = $items->map(function ($item): array {
+                    return [
+                        'description' => $item->name_snapshot ?: $item->description ?: '—',
+                        'sku' => $item->sku_snapshot,
+                        'qty' => (string) $item->qty,
+                        'sellable_id' => $item->sellable_id ? (int) $item->sellable_id : null,
+                        'is_subscription_meta' => (bool) ($item->meta['is_subscription'] ?? false),
+                    ];
+                })->values();
+
+                $problem = null;
+                if ($expectedMenuItemId === null) {
+                    $problem = 'no_expected_plan_item';
+                } elseif ($expectedItems->isEmpty()) {
+                    $problem = $otherPlanItems->isNotEmpty()
+                        ? 'wrong_plan_item'
+                        : ($metaSubscriptionItems->isNotEmpty() ? 'subscription_meta_only' : 'missing_plan_item');
+                }
+
+                return [
+                    'invoice' => $invoice,
+                    'allocated_cents' => $allocatedCents,
+                    'expected_item_found' => $expectedItems->isNotEmpty(),
+                    'expected_item_qty' => (float) $expectedItems->sum('qty'),
+                    'other_plan_item_found' => $otherPlanItems->isNotEmpty(),
+                    'subscription_meta_found' => $metaSubscriptionItems->isNotEmpty(),
+                    'problem' => $problem,
+                    'actual_items' => $actualItems,
+                ];
+            })->values(),
+        ];
+    }
+
     /**
      * Link an existing payment to an existing subscription (Direction A).
      * Validates same customer, payment not voided, subscription not already linked.
