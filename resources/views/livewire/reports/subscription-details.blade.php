@@ -77,7 +77,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function query()
     {
         return MealSubscription::query()
-            ->with(['customer'])
+            ->withRenewalState()
+            ->with(['customer', 'renewalSuccessor'])
             ->when($this->status !== 'all', fn ($q) => $q->where('status', $this->status))
             ->when($this->customer_id, fn ($q) => $q->where('customer_id', $this->customer_id))
             ->when($this->branch_id, fn ($q) => $q->where('branch_id', $this->branch_id))
@@ -185,6 +186,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Start Date') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('End Date') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Order Type') }}</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Renewal') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Plan') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Meals Used') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Created') }}</th>
@@ -206,10 +208,24 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         : 'bg-neutral-200 text-neutral-800 dark:bg-neutral-700 dark:text-neutral-100') }}">
                                     {{ ucfirst($subscription->status) }}
                                 </span>
+                                @if ($subscription->is_renewed)
+                                    <span class="ml-2 inline-flex items-center rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100">
+                                        {{ __('Renewed') }}
+                                    </span>
+                                @endif
                             </td>
                             <td class="px-4 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $subscription->start_date?->format('Y-m-d') ?? '—' }}</td>
                             <td class="px-4 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $subscription->end_date?->format('Y-m-d') ?? '—' }}</td>
                             <td class="px-4 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $subscription->default_order_type }}</td>
+                            <td class="px-4 py-3 text-sm text-neutral-700 dark:text-neutral-200">
+                                @if ($subscription->is_renewed)
+                                    {{ __('Renewed by :code', ['code' => $subscription->renewalSuccessor?->subscription_code ?? '—']) }}
+                                @elseif ($subscription->is_expired_not_renewed)
+                                    {{ __('Not Renewed') }}
+                                @else
+                                    —
+                                @endif
+                            </td>
                             <td class="px-4 py-3 text-sm text-neutral-700 dark:text-neutral-200">
                                 @if ($subscription->plan_meals_total)
                                     {{ $subscription->plan_meals_total }} {{ __('meals') }}
@@ -228,7 +244,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="9" class="px-4 py-8 text-center text-sm text-neutral-600 dark:text-neutral-300">
+                            <td colspan="10" class="px-4 py-8 text-center text-sm text-neutral-600 dark:text-neutral-300">
                                 {{ __('No subscriptions found.') }}
                             </td>
                         </tr>

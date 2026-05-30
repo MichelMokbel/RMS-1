@@ -44,6 +44,7 @@
                 <th style="width: 100px;">Start Date</th>
                 <th style="width: 100px;">End Date</th>
                 <th style="width: 90px;">Order Type</th>
+                <th style="width: 140px;">Renewal</th>
                 <th style="width: 100px;">Plan</th>
                 <th style="width: 90px;">Meals Used</th>
                 <th style="width: 100px;">Created</th>
@@ -54,10 +55,19 @@
                 <tr>
                     <td>{{ $subscription->subscription_code }}</td>
                     <td>{{ $subscription->customer->name ?? '—' }}</td>
-                    <td>{{ ucfirst($subscription->status) }}</td>
+                    <td>{{ $subscription->is_renewed ? ucfirst($subscription->status) . ' - Renewed' : ucfirst($subscription->status) }}</td>
                     <td>{{ $subscription->start_date?->format('Y-m-d') ?? '—' }}</td>
                     <td>{{ $subscription->end_date?->format('Y-m-d') ?? '—' }}</td>
                     <td>{{ $subscription->default_order_type }}</td>
+                    <td>
+                        @if ($subscription->is_renewed)
+                            {{ __('Renewed by :code', ['code' => $subscription->renewalSuccessor?->subscription_code ?? '—']) }}
+                        @elseif ($subscription->is_expired_not_renewed)
+                            {{ __('Not Renewed') }}
+                        @else
+                            —
+                        @endif
+                    </td>
                     <td>
                         @if ($subscription->plan_meals_total)
                             {{ $subscription->plan_meals_total }} meals
@@ -75,7 +85,7 @@
                     <td>{{ $subscription->created_at?->format('Y-m-d') ?? '—' }}</td>
                 </tr>
             @empty
-                <tr><td colspan="9">No subscriptions found.</td></tr>
+                <tr><td colspan="10">No subscriptions found.</td></tr>
             @endforelse
         </tbody>
     </table>

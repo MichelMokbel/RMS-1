@@ -13,7 +13,8 @@ class SubscriptionDetailsReportController extends Controller
     private function query(Request $request, int $limit = 500)
     {
         return MealSubscription::query()
-            ->with(['customer'])
+            ->withRenewalState()
+            ->with(['customer', 'renewalSuccessor'])
             ->when($request->filled('status') && $request->status !== 'all', fn ($q) => $q->where('status', $request->status))
             ->when($request->filled('customer_id'), fn ($q) => $q->where('customer_id', $request->integer('customer_id')))
             ->when($request->filled('branch_id'), fn ($q) => $q->where('branch_id', $request->integer('branch_id')))
@@ -54,6 +55,7 @@ class SubscriptionDetailsReportController extends Controller
             __('Start Date'),
             __('End Date'),
             __('Order Type'),
+            __('Renewal'),
             __('Plan'),
             __('Meals Used'),
             __('Created'),
@@ -61,10 +63,11 @@ class SubscriptionDetailsReportController extends Controller
         $rows = $subscriptions->map(fn ($s) => [
             $s->subscription_code,
             $s->customer->name ?? '',
-            ucfirst($s->status),
+            $s->is_renewed ? ucfirst($s->status) . ' - Renewed' : ucfirst($s->status),
             $s->start_date?->format('Y-m-d') ?? '',
             $s->end_date?->format('Y-m-d') ?? '',
             $s->default_order_type,
+            $s->is_renewed ? 'Renewed by ' . ($s->renewalSuccessor?->subscription_code ?? '—') : ($s->is_expired_not_renewed ? 'Not Renewed' : ''),
             $s->plan_meals_total ? $s->plan_meals_total . ' meals' : 'Unlimited',
             $s->plan_meals_total ? ($s->meals_used ?? 0) . ' / ' . $s->plan_meals_total : ($s->meals_used ?? 0),
             $s->created_at?->format('Y-m-d') ?? '',
