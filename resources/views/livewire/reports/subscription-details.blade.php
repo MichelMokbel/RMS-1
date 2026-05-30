@@ -82,7 +82,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->with(['customer', 'renewalSuccessor'])
             ->when($this->status !== 'all', fn ($q) => $q->where('status', $this->status))
             ->when($this->renewal_state === 'expired_not_renewed', fn ($q) => $q->expiredNotRenewed())
-            ->when($this->renewal_state === 'expired_renewed', fn ($q) => $q->where('status', 'expired')->whereNotNull('renewal_subscription_id'))
+            ->when($this->renewal_state === 'expired_renewed', fn ($q) => $q->expiredRenewed())
             ->when($this->customer_id, fn ($q) => $q->where('customer_id', $this->customer_id))
             ->when($this->branch_id, fn ($q) => $q->where('branch_id', $this->branch_id))
             ->when($this->date_from, fn ($q) => $q->whereDate('start_date', '>=', $this->date_from))

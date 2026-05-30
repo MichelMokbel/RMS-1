@@ -98,6 +98,13 @@ class MealSubscription extends Model
             ->whereNotExists($this->renewalCandidateExistsSubquery());
     }
 
+    public function scopeExpiredRenewed(Builder $query): Builder
+    {
+        return $query
+            ->where('status', 'expired')
+            ->whereExists($this->renewalCandidateExistsSubquery());
+    }
+
     public function getIsRenewedAttribute(): bool
     {
         if ($this->status !== 'expired') {
