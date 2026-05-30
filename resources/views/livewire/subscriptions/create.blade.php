@@ -2,6 +2,7 @@
 
 use App\Models\Customer;
 use App\Services\Subscriptions\MealSubscriptionService;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
@@ -42,22 +43,59 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function save(MealSubscriptionService $service): void
     {
-        $data = $this->validate($this->rules());
-        $data['weekdays']       = $this->weekdays;
-        $data['plan_meals_total'] = $this->plan_meals_total;
+        $userId = Illuminate\Support\Facades\Auth::id();
 
-        $sub = $service->save($data, null, Illuminate\Support\Facades\Auth::id());
+        Log::debug('subscriptions.create.save.start', [
+            'user_id' => $userId,
+            'customer_id' => $this->customer_id,
+            'branch_id' => $this->branch_id,
+            'status' => $this->status,
+            'start_date' => $this->start_date,
+            'end_date' => $this->end_date,
+            'plan_meals_total' => $this->plan_meals_total,
+            'weekdays' => array_values($this->weekdays),
+            'source_payment_id' => $this->source_payment_id,
+        ]);
 
-        // MealSubscriptionService::save() does not handle source_payment_id or uses_invoice_tracking.
-        // Set them directly after creation when coming from a payment.
-        if ($this->source_payment_id) {
-            $sub->source_payment_id    = $this->source_payment_id;
-            $sub->uses_invoice_tracking = true;
-            $sub->save();
+        try {
+            $data = $this->validate($this->rules());
+            $data['weekdays'] = $this->weekdays;
+            $data['plan_meals_total'] = $this->plan_meals_total;
+
+            $sub = $service->save($data, null, $userId);
+
+            if ($this->source_payment_id) {
+                $sub->source_payment_id = $this->source_payment_id;
+                $sub->uses_invoice_tracking = true;
+                $sub->save();
+            }
+
+            Log::debug('subscriptions.create.save.redirect', [
+                'subscription_id' => $sub->id,
+                'subscription_code' => $sub->subscription_code,
+                'redirect_route' => route('subscriptions.show', $sub, absolute: false),
+            ]);
+
+            session()->flash('status', __('Subscription created.'));
+            $this->redirectRoute('subscriptions.show', $sub, navigate: true);
+        } catch (\Throwable $e) {
+            Log::error('subscriptions.create.save.failed', [
+                'user_id' => $userId,
+                'customer_id' => $this->customer_id,
+                'branch_id' => $this->branch_id,
+                'status' => $this->status,
+                'start_date' => $this->start_date,
+                'end_date' => $this->end_date,
+                'plan_meals_total' => $this->plan_meals_total,
+                'weekdays' => array_values($this->weekdays),
+                'source_payment_id' => $this->source_payment_id,
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            throw $e;
         }
-
-        session()->flash('status', __('Subscription created.'));
-        $this->redirectRoute('subscriptions.show', $sub, navigate: true);
     }
 
     private function rules(): array
@@ -124,7 +162,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     x-on:keydown.escape.stop="close()"
                     x-on:click.outside="close()"
                 >
-                    <input type="hidden" x-model="selectedId" wire:model="customer_id" />
+                    <input type="hidden" x-model="selectedId" />
                     <input
                         x-ref="input"
                         type="text"
@@ -261,6 +299,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         const selected = this.options.find((item) => item.id === this.selectedId);
                         this.query = selected ? selected.name : '';
                     }
+                    if (this.selectedId) {
+                        this.$wire.$set('customer_id', Number(this.selectedId));
+                    }
                 },
                 filter() {
                     const term = this.query.trim().toLowerCase();
@@ -278,6 +319,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     const selected = this.options.find((item) => item.id === this.selectedId);
                     if (selected && this.query !== selected.name) {
                         this.selectedId = '';
+                        this.$wire.$set('customer_id', null);
                     }
                 },
                 onFocus() {
@@ -317,6 +359,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     this.query = item.name;
                     this.open = false;
                     this.filter();
+                    this.$wire.$set('customer_id', Number(item.id));
                 },
                 close() {
                     this.open = false;

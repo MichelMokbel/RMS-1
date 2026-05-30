@@ -404,4 +404,6 @@ it('uses outstanding balance for legacy paid invoices with no payment number', f
         '60.00',
         '-',
     ]);
+    $response->assertSee('60.00');
+    $response->assertSee('40.00');
 });

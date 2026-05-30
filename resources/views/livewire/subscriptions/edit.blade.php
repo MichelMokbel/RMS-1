@@ -3,6 +3,7 @@
 use App\Models\Customer;
 use App\Models\MealSubscription;
 use App\Services\Subscriptions\MealSubscriptionService;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
@@ -56,14 +57,53 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function save(MealSubscriptionService $service): void
     {
-        $data = $this->validate($this->rules());
-        $data['weekdays'] = $this->weekdays;
-        $data['plan_meals_total'] = $this->plan_meals_total;
+        $userId = Illuminate\Support\Facades\Auth::id();
 
-        $sub = $service->save($data, $this->subscription, Illuminate\Support\Facades\Auth::id());
+        Log::debug('subscriptions.edit.save.start', [
+            'subscription_id' => $this->subscription->id,
+            'user_id' => $userId,
+            'customer_id' => $this->customer_id,
+            'branch_id' => $this->branch_id,
+            'status' => $this->status,
+            'start_date' => $this->start_date,
+            'end_date' => $this->end_date,
+            'plan_meals_total' => $this->plan_meals_total,
+            'weekdays' => array_values($this->weekdays),
+        ]);
 
-        session()->flash('status', __('Subscription updated.'));
-        $this->redirectRoute('subscriptions.show', $sub, navigate: true);
+        try {
+            $data = $this->validate($this->rules());
+            $data['weekdays'] = $this->weekdays;
+            $data['plan_meals_total'] = $this->plan_meals_total;
+
+            $sub = $service->save($data, $this->subscription, $userId);
+
+            Log::debug('subscriptions.edit.save.redirect', [
+                'subscription_id' => $sub->id,
+                'subscription_code' => $sub->subscription_code,
+                'redirect_route' => route('subscriptions.show', $sub, absolute: false),
+            ]);
+
+            session()->flash('status', __('Subscription updated.'));
+            $this->redirectRoute('subscriptions.show', $sub, navigate: true);
+        } catch (\Throwable $e) {
+            Log::error('subscriptions.edit.save.failed', [
+                'subscription_id' => $this->subscription->id,
+                'user_id' => $userId,
+                'customer_id' => $this->customer_id,
+                'branch_id' => $this->branch_id,
+                'status' => $this->status,
+                'start_date' => $this->start_date,
+                'end_date' => $this->end_date,
+                'plan_meals_total' => $this->plan_meals_total,
+                'weekdays' => array_values($this->weekdays),
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            throw $e;
+        }
     }
 
     private function rules(): array
@@ -130,7 +170,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     x-on:keydown.escape.stop="close()"
                     x-on:click.outside="close()"
                 >
-                    <input type="hidden" x-model="selectedId" wire:model="customer_id" />
+                    <input type="hidden" x-model="selectedId" />
                     <input
                         x-ref="input"
                         type="text"
@@ -267,6 +307,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         const selected = this.options.find((item) => item.id === this.selectedId);
                         this.query = selected ? selected.name : '';
                     }
+                    if (this.selectedId) {
+                        this.$wire.$set('customer_id', Number(this.selectedId));
+                    }
                 },
                 filter() {
                     const term = this.query.trim().toLowerCase();
@@ -284,6 +327,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     const selected = this.options.find((item) => item.id === this.selectedId);
                     if (selected && this.query !== selected.name) {
                         this.selectedId = '';
+                        this.$wire.$set('customer_id', null);
                     }
                 },
                 onFocus() {
@@ -323,6 +367,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     this.query = item.name;
                     this.open = false;
                     this.filter();
+                    this.$wire.$set('customer_id', Number(item.id));
                 },
                 close() {
                     this.open = false;

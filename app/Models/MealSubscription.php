@@ -3,10 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Models\Payment;
+use Illuminate\Support\Facades\DB;
 
 class MealSubscription extends Model
 {
@@ -46,6 +48,7 @@ class MealSubscription extends Model
         'meals_used' => 'integer',
         'meal_plan_request_id' => 'integer',
         'source_payment_id' => 'integer',
+        'renewal_subscription_id' => 'integer',
         'uses_invoice_tracking' => 'boolean',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
@@ -61,6 +64,11 @@ class MealSubscription extends Model
         return $this->belongsTo(Payment::class, 'source_payment_id');
     }
 
+    public function renewalSuccessor(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'renewal_subscription_id');
+    }
+
     public function subscriptionOrders(): HasMany
     {
         return $this->hasMany(MealSubscriptionOrder::class, 'subscription_id');
@@ -74,6 +82,57 @@ class MealSubscription extends Model
     public function pauses(): HasMany
     {
         return $this->hasMany(MealSubscriptionPause::class, 'subscription_id');
+    }
+
+    public function scopeWithRenewalState(Builder $query): Builder
+    {
+        return $query->addSelect([
+            'renewal_subscription_id' => $this->renewalCandidateSubquery(),
+        ]);
+    }
+
+    public function scopeExpiredNotRenewed(Builder $query): Builder
+    {
+        return $query
+            ->where('status', 'expired')
+            ->whereNotExists($this->renewalCandidateExistsSubquery());
+    }
+
+    public function getIsRenewedAttribute(): bool
+    {
+        if ($this->status !== 'expired') {
+            return false;
+        }
+
+        if (array_key_exists('renewal_subscription_id', $this->attributes)) {
+            return $this->attributes['renewal_subscription_id'] !== null;
+        }
+
+        return $this->singleRecordRenewalCandidateQuery()->exists();
+    }
+
+    public function getIsExpiredNotRenewedAttribute(): bool
+    {
+        return $this->status === 'expired' && ! $this->is_renewed;
+    }
+
+    public function resolveRenewalSuccessor(): ?self
+    {
+        $candidateId = $this->renewal_subscription_id;
+
+        if ($candidateId === null) {
+            $candidateId = $this->singleRecordRenewalCandidateQuery()->value('id');
+        }
+
+        if (! $candidateId) {
+            return null;
+        }
+
+        if ($this->relationLoaded('renewalSuccessor') && (int) optional($this->renewalSuccessor)->getKey() === (int) $candidateId) {
+            return $this->renewalSuccessor;
+        }
+
+        return self::query()->with('customer:id,name')->find($candidateId);
     }
 
     public function isActiveOn($date): bool
@@ -102,5 +161,100 @@ class MealSubscription extends Model
     public function weekdayEnabled(int $weekday): bool
     {
         return $this->days->contains('weekday', $weekday);
+    }
+
+    private function renewalCandidateSubquery()
+    {
+        $table = $this->getTable();
+
+        return DB::table($table.' as renewal_candidates')
+            ->select('renewal_candidates.id')
+            ->whereColumn('renewal_candidates.customer_id', $table.'.customer_id')
+            ->whereColumn('renewal_candidates.id', '!=', $table.'.id')
+            ->where(function ($query) use ($table) {
+                $query
+                    ->where(function ($nested) use ($table) {
+                        $nested
+                            ->whereNotNull($table.'.end_date')
+                            ->whereColumn('renewal_candidates.start_date', '>', $table.'.end_date');
+                    })
+                    ->orWhere(function ($nested) use ($table) {
+                        $nested
+                            ->whereNull($table.'.end_date')
+                            ->where(function ($fallback) use ($table) {
+                                $fallback
+                                    ->whereColumn('renewal_candidates.start_date', '>', $table.'.start_date')
+                                    ->orWhere(function ($legacy) use ($table) {
+                                        $legacy
+                                            ->whereColumn('renewal_candidates.created_at', '>', $table.'.created_at')
+                                            ->whereColumn('renewal_candidates.id', '>', $table.'.id');
+                                    });
+                            });
+                    });
+            })
+            ->orderBy('renewal_candidates.start_date')
+            ->orderBy('renewal_candidates.created_at')
+            ->orderBy('renewal_candidates.id')
+            ->limit(1);
+    }
+
+    private function renewalCandidateExistsSubquery()
+    {
+        $table = $this->getTable();
+
+        return DB::table($table.' as renewal_candidates')
+            ->selectRaw('1')
+            ->whereColumn('renewal_candidates.customer_id', $table.'.customer_id')
+            ->whereColumn('renewal_candidates.id', '!=', $table.'.id')
+            ->where(function ($query) use ($table) {
+                $query
+                    ->where(function ($nested) use ($table) {
+                        $nested
+                            ->whereNotNull($table.'.end_date')
+                            ->whereColumn('renewal_candidates.start_date', '>', $table.'.end_date');
+                    })
+                    ->orWhere(function ($nested) use ($table) {
+                        $nested
+                            ->whereNull($table.'.end_date')
+                            ->where(function ($fallback) use ($table) {
+                                $fallback
+                                    ->whereColumn('renewal_candidates.start_date', '>', $table.'.start_date')
+                                    ->orWhere(function ($legacy) use ($table) {
+                                        $legacy
+                                            ->whereColumn('renewal_candidates.created_at', '>', $table.'.created_at')
+                                            ->whereColumn('renewal_candidates.id', '>', $table.'.id');
+                                    });
+                            });
+                    });
+            });
+    }
+
+    private function singleRecordRenewalCandidateQuery(): Builder
+    {
+        $query = self::query()
+            ->where('customer_id', $this->customer_id)
+            ->whereKeyNot($this->id);
+
+        if ($this->end_date !== null) {
+            return $query
+                ->whereDate('start_date', '>', $this->end_date->toDateString())
+                ->orderBy('start_date')
+                ->orderBy('created_at')
+                ->orderBy('id');
+        }
+
+        return $query
+            ->where(function ($fallback) {
+                $fallback
+                    ->whereDate('start_date', '>', $this->start_date->toDateString())
+                    ->orWhere(function ($legacy) {
+                        $legacy
+                            ->where('created_at', '>', $this->created_at)
+                            ->where('id', '>', $this->id);
+                    });
+            })
+            ->orderBy('start_date')
+            ->orderBy('created_at')
+            ->orderBy('id');
     }
 }

@@ -33,11 +33,16 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function with(): array
     {
-        $this->subscription->loadMissing(['days', 'pauses', 'customer', 'sourcePayment']);
+        $subscription = MealSubscription::query()
+            ->withRenewalState()
+            ->with(['days', 'pauses', 'customer', 'sourcePayment', 'renewalSuccessor.customer'])
+            ->findOrFail($this->subscription->id);
+
         return [
-            'subscription'    => $this->subscription,
-            'sourcePayment'   => $this->subscription->sourcePayment,
-            'linkablePayments' => Payment::where('customer_id', $this->subscription->customer_id)
+            'subscription'    => $subscription,
+            'sourcePayment'   => $subscription->sourcePayment,
+            'renewalSuccessor' => $subscription->resolveRenewalSuccessor(),
+            'linkablePayments' => Payment::where('customer_id', $subscription->customer_id)
                 ->whereNull('voided_at')
                 ->whereDoesntHave('mealSubscriptions')
                 ->orderByDesc('received_at')
@@ -216,6 +221,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                     : 'bg-neutral-200 text-neutral-800 dark:bg-neutral-700 dark:text-neutral-100') }}">
                 {{ ucfirst($subscription->status) }}
             </span>
+            @if ($subscription->is_renewed)
+                <span class="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100">
+                    {{ __('Renewed') }}
+                </span>
+            @elseif ($subscription->is_expired_not_renewed)
+                <span class="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-900 dark:text-amber-100">
+                    {{ __('Not Renewed') }}
+                </span>
+            @endif
             <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Start') }}: {{ $subscription->start_date?->format('Y-m-d') }}</span>
             <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('End') }}: {{ $subscription->end_date?->format('Y-m-d') ?? '—' }}</span>
             <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Order Type') }}: {{ $subscription->default_order_type }}</span>
@@ -232,6 +246,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="text-sm text-neutral-800 dark:text-neutral-200">
             {{ $subscription->notes ?? __('No notes.') }}
         </div>
+        @if ($subscription->is_renewed && $renewalSuccessor)
+            <div class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100">
+                {{ __('Renewed by :code starting :date.', ['code' => $renewalSuccessor->subscription_code, 'date' => $renewalSuccessor->start_date?->format('Y-m-d') ?? '—']) }}
+                <a href="{{ route('subscriptions.show', $renewalSuccessor) }}" wire:navigate class="ml-2 underline">
+                    {{ __('View renewal') }}
+                </a>
+            </div>
+        @elseif ($subscription->is_expired_not_renewed)
+            <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                {{ __('This expired subscription has not been renewed yet.') }}
+            </div>
+        @endif
         <div class="flex gap-2">
             @if ($subscription->status === 'active')
                 <flux:button type="button" wire:click="$set('showPauseModal', true)">{{ __('Pause') }}</flux:button>

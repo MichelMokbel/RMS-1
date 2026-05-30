@@ -421,7 +421,12 @@ class CustomerStatementReportController extends Controller
         $branchId   = $request->integer('branch_id') ?? 0;
         [$dateFrom, $dateTo] = $this->resolvedRange($request);
 
-        $periodAmount   = (int) $rows->where('row_type', 'invoice')->sum('amount_cents');
+        $periodAmount = (int) $rows->where('row_type', 'invoice')->sum('amount_cents');
+        $periodReceiptCents = 0;
+        $legacyPaidCents = (int) $rows
+            ->where('row_type', 'invoice')
+            ->filter(fn (array $row): bool => ((int) ($row['paid_cents'] ?? 0)) > 0 && (($row['payment_no'] ?? '-') === '-'))
+            ->sum('paid_cents');
         $periodReceived = 0;
         $periodBalance = 0;
 
@@ -430,7 +435,7 @@ class CustomerStatementReportController extends Controller
         $previousBalance = 0;
 
         if ($customerId > 0) {
-            $periodReceived = (int) \Illuminate\Support\Facades\DB::table('payments as p')
+            $periodReceiptCents = (int) \Illuminate\Support\Facades\DB::table('payments as p')
                 ->where('p.customer_id', $customerId)
                 ->where('p.source', 'ar')
                 ->whereNull('p.voided_at')
@@ -482,6 +487,7 @@ class CustomerStatementReportController extends Controller
             $periodAdvance = max(0, $paidToDate - $allocatedToDate - $previousAdvance);
         }
 
+        $periodReceived = $periodReceiptCents + $legacyPaidCents;
         $periodBalance = $periodAmount - $periodReceived;
         $unallocatedCents = $previousAdvance + $periodAdvance;
         $netOutstanding = $previousBalance + $periodBalance;

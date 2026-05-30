@@ -2,14 +2,24 @@
 
 use App\Models\ArInvoice;
 use App\Models\Customer;
+use App\Models\MealSubscription;
 use App\Models\Order;
 use App\Models\User;
 use App\Support\Money\MinorUnits;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
+uses(RefreshDatabase::class);
+
 beforeEach(function () {
     app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    DB::table('branches')->updateOrInsert(
+        ['id' => 1],
+        ['name' => 'Main Branch', 'code' => 'MAIN', 'is_active' => 1, 'created_at' => now(), 'updated_at' => now()]
+    );
 });
 
 test('guests are redirected to the login page', function () {
@@ -158,4 +168,60 @@ test('dashboard quick actions show only the supported shortcuts', function () {
     $response->assertSee('Create Invoice');
     $response->assertSee('Add Customer Payment');
     $response->assertDontSee('Create Order');
+});
+
+test('dashboard keeps expired not renewed subscriptions in the subscription attention section', function () {
+    Role::findOrCreate('admin', 'web');
+    $admin = User::factory()->create(['status' => 'active']);
+    $admin->assignRole('admin');
+
+    $customer = Customer::factory()->create(['name' => 'Low Meals Customer']);
+    $expiredCustomer = Customer::factory()->create(['name' => 'Expired Customer']);
+    $renewedExpiredCustomer = Customer::factory()->create(['name' => 'Renewed Expired Customer']);
+
+    MealSubscription::factory()->create([
+        'subscription_code' => 'SUB-LOW-001',
+        'customer_id' => $customer->id,
+        'branch_id' => 1,
+        'status' => 'active',
+        'plan_meals_total' => 20,
+        'meals_used' => 19,
+    ]);
+
+    MealSubscription::factory()->create([
+        'subscription_code' => 'SUB-EXP-001',
+        'customer_id' => $expiredCustomer->id,
+        'branch_id' => 1,
+        'status' => 'expired',
+        'start_date' => '2025-01-01',
+        'end_date' => '2025-01-31',
+    ]);
+
+    MealSubscription::factory()->create([
+        'subscription_code' => 'SUB-EXP-OLD',
+        'customer_id' => $renewedExpiredCustomer->id,
+        'branch_id' => 1,
+        'status' => 'expired',
+        'start_date' => '2025-02-01',
+        'end_date' => '2025-02-28',
+    ]);
+
+    MealSubscription::factory()->create([
+        'subscription_code' => 'SUB-EXP-RENEWAL',
+        'customer_id' => $renewedExpiredCustomer->id,
+        'branch_id' => 1,
+        'status' => 'active',
+        'start_date' => '2025-03-05',
+    ]);
+
+    $response = $this->actingAs($admin)->get(route('dashboard'));
+
+    $response->assertOk();
+    $response->assertSee('Subscription Attention Needed');
+    $response->assertSee('Low Meals Customer');
+    $response->assertSee('Low meals');
+    $response->assertSee('Expired Customer');
+    $response->assertSee('Expired not renewed');
+    $response->assertSee('Expired not renewed: 1');
+    $response->assertDontSee('Renewed Expired Customer');
 });

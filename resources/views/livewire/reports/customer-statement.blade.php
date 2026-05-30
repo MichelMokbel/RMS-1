@@ -365,7 +365,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         $dateFrom = $this->date_from ? now()->parse($this->date_from)->startOfDay() : now()->startOfMonth()->startOfDay();
         $dateTo = $this->date_to ? now()->parse($this->date_to)->endOfDay() : now()->endOfMonth()->endOfDay();
 
-        $periodAmount   = (int) $rows->where('row_type', 'invoice')->sum('amount_cents');
+        $periodAmount = (int) $rows->where('row_type', 'invoice')->sum('amount_cents');
+        $periodReceiptCents = 0;
+        $legacyPaidCents = (int) $rows
+            ->where('row_type', 'invoice')
+            ->filter(fn (array $row): bool => ((int) ($row['paid_cents'] ?? 0)) > 0 && (($row['payment_no'] ?? '-') === '-'))
+            ->sum('paid_cents');
         $periodReceived = 0;
         $periodBalance = 0;
 
@@ -377,7 +382,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $previousBalance = 0;
 
         if ($this->customer_id) {
-            $periodReceived = (int) DB::table('payments as p')
+            $periodReceiptCents = (int) DB::table('payments as p')
                 ->where('p.customer_id', $this->customer_id)
                 ->where('p.source', 'ar')
                 ->whereNull('p.voided_at')
@@ -433,6 +438,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
         }
 
+        $periodReceived = $periodReceiptCents + $legacyPaidCents;
         $periodBalance = $periodAmount - $periodReceived;
         $unallocatedCents = $previousAdvance + $periodAdvance;
         $netOutstanding = $previousBalance + $periodBalance;

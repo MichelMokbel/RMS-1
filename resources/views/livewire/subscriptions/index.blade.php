@@ -43,6 +43,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function query()
     {
         return MealSubscription::query()
+            ->with(['customer:id,name'])
+            ->withRenewalState()
             ->when($this->status !== 'all', fn ($q) => $q->where('status', $this->status))
             ->when($this->branch_id, fn ($q) => $q->where('branch_id', $this->branch_id))
             ->when($this->search, function ($q) {
@@ -115,7 +117,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $sub->subscription_code }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $sub->customer->name ?? '—' }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $sub->branch_id }}</td>
-                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ ucfirst($sub->status) }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
+                            <span>{{ ucfirst($sub->status) }}</span>
+                            @if ($sub->is_renewed)
+                                <span class="text-emerald-700 dark:text-emerald-300">{{ __('• Renewed') }}</span>
+                            @elseif ($sub->is_expired_not_renewed)
+                                <span class="text-amber-700 dark:text-amber-300">{{ __('• Not Renewed') }}</span>
+                            @endif
+                        </td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">
                             {{ $sub->start_date?->format('Y-m-d') }} / {{ $sub->end_date?->format('Y-m-d') ?? '—' }}
                         </td>
@@ -152,4 +161,3 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{ $subs->links() }}
     </div>
 </div>
-
