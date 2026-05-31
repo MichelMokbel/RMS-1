@@ -51,7 +51,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $term = '%'.$this->search.'%';
                 $q->where(function ($qq) use ($term) {
                     $qq->where('subscription_code', 'like', $term)
-                       ->orWhere('phone_snapshot', 'like', $term);
+                       ->orWhere('phone_snapshot', 'like', $term)
+                       ->orWhereHas('customer', fn ($qc) => $qc->where('name', 'like', $term));
                 });
             })
             ->orderByDesc('created_at');
@@ -73,7 +74,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
         <div class="app-filter-grid">
             <div class="flex-1 min-w-[200px]">
-                <flux:input wire:model.live.debounce.300ms="search" placeholder="{{ __('Search code or phone') }}" />
+                <flux:input wire:model.live.debounce.300ms="search" placeholder="{{ __('Search code, phone, or customer name') }}" />
             </div>
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Status') }}</label>
