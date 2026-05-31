@@ -750,6 +750,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         <td class="px-3 py-2 text-sm">
                                             <div
                                                 class="relative"
+                                                wire:key="drawer-menu-item-lookup-{{ $drawer_service_date }}-{{ $index }}-{{ $row['menu_item_id'] ?? 'none' }}"
                                                 wire:ignore
                                                 x-data="dailyDishMenuItemLookup({
                                                     index: {{ $index }},
