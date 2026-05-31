@@ -170,3 +170,39 @@ it('allocates an existing payment to an invoice from payment show', function () 
     expect($invoice->fresh()->balance_cents)->toBe(5000);
     expect($payment->fresh()->unallocatedCents())->toBe(5000);
 });
+
+it('blocks allocation changes on a voided payment', function () {
+    $user = makeReceivablesManager();
+    $customer = Customer::factory()->create();
+
+    $payment = Payment::factory()->create([
+        'customer_id' => $customer->id,
+        'branch_id' => 1,
+        'source' => 'ar',
+        'currency' => 'QAR',
+        'amount_cents' => 8000,
+        'voided_at' => now(),
+        'void_reason' => 'Payment voided',
+    ]);
+
+    $invoice = ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'branch_id' => 1,
+        'currency' => 'QAR',
+        'type' => 'invoice',
+        'status' => 'issued',
+        'invoice_number' => 'INV-VOIDED-001',
+        'issue_date' => now()->toDateString(),
+        'due_date' => now()->addDays(7)->toDateString(),
+        'total_cents' => 8000,
+        'balance_cents' => 8000,
+    ]);
+
+    Volt::actingAs($user);
+
+    Volt::test('receivables.payments.show', ['payment' => $payment])
+        ->call('allocateInvoices')
+        ->assertHasErrors(['allocations']);
+
+    expect($invoice->fresh()->balance_cents)->toBe(8000);
+});

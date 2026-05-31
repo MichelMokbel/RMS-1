@@ -243,3 +243,51 @@ it('prevents non admins from deleting customer payments', function () {
         ->delete(route('receivables.payments.destroy', $payment))
         ->assertForbidden();
 });
+
+it('shows voided status and hides mutation actions for a voided payment', function () {
+    $admin = makeReceivablesAdmin();
+    $customer = Customer::factory()->create();
+
+    $payment = Payment::factory()->create([
+        'customer_id' => $customer->id,
+        'source' => 'ar',
+        'amount_cents' => 15000,
+        'voided_at' => now(),
+        'voided_by' => $admin->id,
+        'void_reason' => 'Payment voided',
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('receivables.payments.show', $payment))
+        ->assertOk()
+        ->assertSeeText('Voided')
+        ->assertSeeText('This payment was voided on')
+        ->assertSeeText('Reason: Payment voided')
+        ->assertDontSeeText('Delete Payment')
+        ->assertDontSeeText('Allocate Payment')
+        ->assertDontSeeText('Apply Allocations')
+        ->assertDontSeeText('Link')
+        ->assertDontSeeText('Create Subscription');
+});
+
+it('shows voided payments on the customer payments index', function () {
+    $manager = makeReceivablesManagerUser();
+    $active = Payment::factory()->create([
+        'source' => 'ar',
+        'amount_cents' => 10000,
+    ]);
+    $voided = Payment::factory()->create([
+        'source' => 'ar',
+        'amount_cents' => 15000,
+        'voided_at' => now(),
+        'void_reason' => 'Payment voided',
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('receivables.payments.index'))
+        ->assertOk()
+        ->assertSeeText('#'.$active->id)
+        ->assertSeeText('#'.$voided->id)
+        ->assertSeeText('Active')
+        ->assertSeeText('Voided');
+});

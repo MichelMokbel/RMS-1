@@ -62,6 +62,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless(Auth::user()?->can('finance.write'), 403);
         $this->resetErrorBag();
 
+        if ($this->payment->voided_at) {
+            $this->addError('link_subscription', __('Voided payments cannot be changed.'));
+            return;
+        }
+
         $userId = Auth::id();
         if (! $userId) {
             abort(403);
@@ -92,7 +97,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $user = Auth::user();
 
-        return (bool) ($user && method_exists($user, 'hasRole') && $user->hasRole('admin'));
+        return (bool) ($user && method_exists($user, 'hasRole') && $user->hasRole('admin') && ! $this->payment->voided_at);
+    }
+
+    public function canMutatePayment(): bool
+    {
+        return $this->payment->voided_at === null;
     }
 
     public function moneyScaleDigits(): int
@@ -123,7 +133,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function loadInvoices(): void
     {
         if (
-            $this->payment->source !== 'ar'
+            $this->payment->voided_at !== null
+            || $this->payment->source !== 'ar'
             || ! $this->payment->customer_id
             || $this->payment->unallocatedCents() <= 0
         ) {
@@ -206,6 +217,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless(Auth::user()?->can('finance.write'), 403);
         $this->resetErrorBag();
 
+        if ($this->payment->voided_at) {
+            $this->addError('allocations', __('Voided payments cannot be changed.'));
+            return;
+        }
+
         $userId = Auth::id();
         if (! $userId) {
             abort(403);
@@ -275,6 +291,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             abort(403);
         }
 
+        if ($this->payment->voided_at) {
+            $this->addError('allocation', __('Voided payments cannot be changed.'));
+            return;
+        }
+
         $allocation = PaymentAllocation::findOrFail($allocationId);
 
         try {
@@ -312,7 +333,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="flex items-center justify-between">
         <div>
             <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Payment') }} #{{ $payment->id }}</h1>
-            <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ $payment->received_at?->format('Y-m-d H:i') }}</p>
+            <div class="mt-1 flex items-center gap-2">
+                <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ $payment->received_at?->format('Y-m-d H:i') }}</p>
+                @if($payment->voided_at)
+                    <span class="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:bg-rose-900/40 dark:text-rose-200">
+                        {{ __('Voided') }}
+                    </span>
+                @endif
+            </div>
         </div>
         <div class="flex items-center gap-2">
             @if($this->canDeletePayment())
@@ -338,6 +366,15 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     @endif
 
+    @if($payment->voided_at)
+        <div class="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-100">
+            {{ __('This payment was voided on :date.', ['date' => $payment->voided_at?->format('Y-m-d H:i')]) }}
+            @if($payment->void_reason)
+                {{ __('Reason') }}: {{ $payment->void_reason }}
+            @endif
+        </div>
+    @endif
+
     @php
         $allocated = (int) $payment->allocations->sum('amount_cents');
         $remaining = (int) $payment->amount_cents - $allocated;
@@ -349,6 +386,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Method') }}: {{ strtoupper($payment->method ?? '—') }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Reference') }}: {{ $payment->reference ?? '—' }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Notes') }}: {{ $payment->notes ?? '—' }}</p>
+            @if($payment->voided_at)
+                <p class="text-sm text-rose-700 dark:text-rose-300">{{ __('Status') }}: {{ __('Voided') }}</p>
+            @endif
             @if($payment->clearing_settled_at)
                 <p class="text-sm text-emerald-700 dark:text-emerald-300">
                     {{ __('Cleared to bank') }}: {{ $payment->clearing_settled_at?->format('Y-m-d H:i') }}
@@ -370,7 +410,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
-    @if($payment->source === 'ar' && $payment->customer_id && $payment->unallocatedCents() > 0)
+    @if($this->canMutatePayment() && $payment->source === 'ar' && $payment->customer_id && $payment->unallocatedCents() > 0)
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
             <div class="flex items-center justify-between">
                 <h3 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Allocate Payment') }}</h3>
@@ -457,7 +497,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         @error('link_subscription') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
 
-        @if($linkableSubscriptions->isNotEmpty())
+        @if($this->canMutatePayment() && $linkableSubscriptions->isNotEmpty())
             <div class="flex items-center gap-2">
                 <select wire:model="link_subscription_id" class="flex-1 rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
                     <option value="">{{ __('Select subscription to link…') }}</option>
@@ -472,7 +512,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endif
 
         @can('finance.write')
-        @if($payment->customer_id)
+        @if($this->canMutatePayment() && $payment->customer_id)
             @php
                 $planOptions = collect(config('subscriptions.plan_menu_item_ids', []))->keys()->sort()->values();
                 $detectedMeals = collect($detectedPlans)->pluck('plan_meals_total')->first();
@@ -512,7 +552,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Invoice') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Invoice Date') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Amount') }}</th>
-                    @if(auth()->user()?->hasRole('admin'))
+                    @if(auth()->user()?->hasRole('admin') && $this->canMutatePayment())
                         <th class="px-3 py-2"></th>
                     @endif
                 </tr>
@@ -530,7 +570,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             {{ $invoice?->issue_date?->format('Y-m-d') ?? '—' }}
                         </td>
                         <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney($alloc->amount_cents) }}</td>
-                        @if(auth()->user()?->hasRole('admin'))
+                        @if(auth()->user()?->hasRole('admin') && $this->canMutatePayment())
                             <td class="px-3 py-2 text-right">
                                 <flux:button
                                     wire:click="removeAllocation({{ $alloc->id }})"
@@ -542,7 +582,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endif
                     </tr>
                 @empty
-                    <tr><td colspan="{{ auth()->user()?->hasRole('admin') ? 4 : 3 }}" class="px-3 py-3 text-sm text-neutral-600 dark:text-neutral-300 text-center">{{ __('No allocations') }}</td></tr>
+                    <tr><td colspan="{{ auth()->user()?->hasRole('admin') && $this->canMutatePayment() ? 4 : 3 }}" class="px-3 py-3 text-sm text-neutral-600 dark:text-neutral-300 text-center">{{ __('No allocations') }}</td></tr>
                 @endforelse
             </tbody>
         </table>
