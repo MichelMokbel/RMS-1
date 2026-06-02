@@ -766,19 +766,28 @@ class AccountingReportService
                     ->orWhereNull('b.company_id');
             })
             ->whereDate('it.transaction_date', '<=', $dateTo)
-            ->selectRaw('ii.id as item_id, ii.name, b.id as branch_id, b.name as branch_name, SUM(it.quantity) as quantity_total, MAX(ii.cost_per_unit) as current_cost')
-            ->groupBy('ii.id', 'ii.name', 'b.id', 'b.name')
+            ->selectRaw('ii.id as item_id, ii.name, ii.units_per_package, b.id as branch_id, b.name as branch_name, SUM(it.quantity) as quantity_total, MAX(ii.cost_per_unit) as current_cost')
+            ->groupBy('ii.id', 'ii.name', 'ii.units_per_package', 'b.id', 'b.name')
             ->orderBy('ii.name')
             ->get()
-            ->map(fn ($row) => [
-                'item_id' => (int) $row->item_id,
-                'item_name' => $row->name,
-                'branch_id' => $row->branch_id ? (int) $row->branch_id : null,
-                'branch_name' => $row->branch_name,
-                'quantity' => round((float) $row->quantity_total, 3),
-                'unit_cost' => round((float) $row->current_cost, 4),
-                'valuation_amount' => round((float) $row->quantity_total * (float) $row->current_cost, 2),
-            ]);
+            ->map(function ($row) {
+                $quantity = round((float) $row->quantity_total, 3);
+                $packageCost = (float) $row->current_cost;
+                $unitsPerPackage = (float) ($row->units_per_package ?? 0);
+                $unitCost = $unitsPerPackage > 0
+                    ? round($packageCost / $unitsPerPackage, 4)
+                    : round($packageCost, 4);
+
+                return [
+                    'item_id' => (int) $row->item_id,
+                    'item_name' => $row->name,
+                    'branch_id' => $row->branch_id ? (int) $row->branch_id : null,
+                    'branch_name' => $row->branch_name,
+                    'quantity' => $quantity,
+                    'unit_cost' => $unitCost,
+                    'valuation_amount' => round($quantity * $unitCost, 2),
+                ];
+            });
 
         return [
             'as_of' => $dateTo,
