@@ -136,6 +136,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function openCreateItem(string $target = 'single', ?int $index = null): void
     {
+        $this->resetCreateItemForm();
         $this->create_item_target = in_array($target, ['single', 'bulk'], true) ? $target : 'single';
         $this->create_item_target_index = $index;
     }
@@ -145,6 +146,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->create_item_target = 'single';
         $this->create_item_target_index = null;
         $this->resetCreateItemForm();
+        $this->dispatch('modal-close', name: 'create-inventory-item');
     }
 
     public function createItem(InventoryItemPersistService $persist): void
@@ -186,6 +188,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetCreateItemForm();
         $this->create_item_target = 'single';
         $this->create_item_target_index = null;
+        $this->dispatch('modal-close', name: 'create-inventory-item');
         session()->flash('status', __('Inventory item created.'));
     }
 
@@ -344,7 +347,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <h2 class="text-base font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Bulk Adjust Quantities') }}</h2>
                     <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{{ __('Set the target stock for multiple items and post the adjustments in one go.') }}</p>
                 </div>
-                <div class="text-sm text-neutral-500 dark:text-neutral-400">{{ __('Add missing items from the quick create panel on the right.') }}</div>
+                <flux:button type="button" variant="ghost" size="sm" wire:click="openCreateItem('bulk', 0)" x-data="" x-on:click.prevent="$dispatch('open-modal', 'create-inventory-item')">{{ __('New Item') }}</flux:button>
             </div>
 
             <form wire:submit="saveBulkAdjustments" class="space-y-4">
@@ -471,7 +474,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <h2 class="text-base font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Quick Transaction') }}</h2>
                         <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{{ __('Record a single in, out, or adjustment transaction.') }}</p>
                     </div>
-                    <div class="text-sm text-neutral-500 dark:text-neutral-400">{{ __('Create a new inventory item below.') }}</div>
+                    <flux:button type="button" variant="ghost" size="sm" wire:click="openCreateItem('single')" x-data="" x-on:click.prevent="$dispatch('open-modal', 'create-inventory-item')">{{ __('New Item') }}</flux:button>
                 </div>
 
                 <form wire:submit="save" class="space-y-4">
@@ -566,47 +569,48 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </form>
             </div>
 
-            <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
-                <div class="mb-4 flex items-start justify-between gap-3">
-                    <div>
-                        <h2 class="text-base font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Create Inventory Item') }}</h2>
-                        <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{{ __('Add the item here and it will be available immediately in the transaction pickers.') }}</p>
-                    </div>
-                    @if ($create_item_target === 'bulk' && $create_item_target_index !== null)
-                        <div class="text-sm text-neutral-500 dark:text-neutral-400">{{ __('Next created item will be selected for the current bulk row.') }}</div>
-                    @endif
-                </div>
-
-                <form wire:submit="createItem" class="space-y-4">
-                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                        <flux:input wire:model="new_item_name" :label="__('Name')" maxlength="200" />
-                        @if ($categories->count())
-                            <div>
-                                <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Category') }}</label>
-                                <select wire:model="new_item_category_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                                    <option value="">{{ __('None') }}</option>
-                                    @foreach ($categories as $category)
-                                        <option value="{{ $category->id }}">{{ $category->fullName() }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                        @endif
-                        <flux:input wire:model="new_item_units_per_package" type="number" min="0.001" step="0.001" :label="__('Units per Package')" />
-                        <flux:input wire:model="new_item_package_label" :label="__('Package Label')" maxlength="50" />
-                        <flux:input wire:model="new_item_unit_of_measure" :label="__('Unit of Measure')" maxlength="50" />
-                        <flux:input wire:model="new_item_cost_per_unit" type="number" min="0" step="0.0001" :label="__('Package Cost (optional)')" />
-                    </div>
-
-                    <flux:textarea wire:model="new_item_description" :label="__('Description (optional)')" rows="2" />
-
-                    <div class="flex justify-end gap-2">
-                        <flux:button type="button" variant="ghost" wire:click="closeCreateItem">{{ __('Clear') }}</flux:button>
-                        <flux:button type="submit" variant="primary">{{ __('Create Item') }}</flux:button>
-                    </div>
-                </form>
-            </div>
         </div>
     </div>
+
+    <flux:modal name="create-inventory-item" focusable class="max-w-2xl">
+        <form wire:submit="createItem" class="space-y-4">
+            <div class="space-y-1">
+                <flux:heading size="lg">{{ __('Create Inventory Item') }}</flux:heading>
+                <flux:subheading>{{ __('Add the item here and it will be available immediately in the transaction pickers.') }}</flux:subheading>
+                @if ($create_item_target === 'bulk' && $create_item_target_index !== null)
+                    <p class="text-sm text-neutral-500 dark:text-neutral-400">{{ __('Next created item will be selected for the current bulk row.') }}</p>
+                @endif
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <flux:input wire:model="new_item_name" :label="__('Name')" maxlength="200" />
+                @if ($categories->count())
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Category') }}</label>
+                        <select wire:model="new_item_category_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                            <option value="">{{ __('None') }}</option>
+                            @foreach ($categories as $category)
+                                <option value="{{ $category->id }}">{{ $category->fullName() }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                @endif
+                <flux:input wire:model="new_item_units_per_package" type="number" min="0.001" step="0.001" :label="__('Units per Package')" />
+                <flux:input wire:model="new_item_package_label" :label="__('Package Label')" maxlength="50" />
+                <flux:input wire:model="new_item_unit_of_measure" :label="__('Unit of Measure')" maxlength="50" />
+                <flux:input wire:model="new_item_cost_per_unit" type="number" min="0" step="0.0001" :label="__('Package Cost (optional)')" />
+            </div>
+
+            <flux:textarea wire:model="new_item_description" :label="__('Description (optional)')" rows="2" />
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button type="button" variant="filled" wire:click="closeCreateItem">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+                <flux:button type="submit" variant="primary">{{ __('Create Item') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
 
     <div class="app-table-shell">
         <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
