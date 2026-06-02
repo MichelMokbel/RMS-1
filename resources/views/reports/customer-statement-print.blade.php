@@ -184,7 +184,7 @@
             </tbody>
             <tfoot>
                 <tr>
-                    <td colspan="8" class="right">TOTAL (Invoiced / Received / Net)</td>
+                    <td colspan="8" class="right">PERIOD ACTIVITY (Invoiced This Period / Received This Period / Net Movement)</td>
                     <td class="right">{{ $formatCents($summary['period_amount_cents']) }}</td>
                     <td class="right">{{ $formatCents($summary['period_received_cents']) }}</td>
                     <td class="right">{{ $formatCents($summary['period_balance_cents']) }}</td>

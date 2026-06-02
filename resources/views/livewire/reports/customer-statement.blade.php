@@ -652,11 +652,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             @if ($rows->count() > 0)
                 <tfoot class="bg-neutral-50 dark:bg-neutral-800/90 divide-y divide-neutral-200 dark:divide-neutral-700">
                     <tr>
-                        <td colspan="8" class="px-3 py-2 text-right text-sm font-semibold text-neutral-700 dark:text-neutral-200">{{ __('Period Total Invoiced') }}</td>
+                        <td colspan="8" class="px-3 py-2 text-right text-sm font-semibold text-neutral-700 dark:text-neutral-200">{{ __('Period Activity (Invoiced This Period / Received This Period / Net Movement)') }}</td>
                         <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($summary['period_amount_cents']) }}</td>
                         <td class="px-3 py-2 text-sm text-right font-semibold text-emerald-700 dark:text-emerald-400">{{ $this->formatMoney($summary['period_received_cents']) }}</td>
                         <td class="px-3 py-2 text-sm text-right font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($summary['period_balance_cents']) }}</td>
-                        <td colspan="2" class="px-3 py-2 text-xs text-neutral-500 dark:text-neutral-400">{{ __('Net = Invoiced − Received') }}</td>
+                        <td colspan="2" class="px-3 py-2 text-xs text-neutral-500 dark:text-neutral-400">{{ __('Net movement for the selected date range') }}</td>
                     </tr>
                 </tfoot>
             @endif
