@@ -296,7 +296,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             $paidCents    = max(0, $totalCents - $balanceCents);
             $paymentNo    = $this->safeText($paymentRefsByInvoice->get($invoice->id, '-'));
             $legacySettledWithoutPaymentRecord = $paidCents > 0 && $paymentNo === '-';
-            $statementDeltaCents = $legacySettledWithoutPaymentRecord ? $balanceCents : $totalCents;
+            $statementDeltaCents = $this->only_unpaid
+                ? $balanceCents
+                : ($legacySettledWithoutPaymentRecord ? $balanceCents : $totalCents);
 
             return [
                 'row_type'      => 'invoice',
@@ -365,10 +367,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         $dateFrom = $this->date_from ? now()->parse($this->date_from)->startOfDay() : now()->startOfMonth()->startOfDay();
         $dateTo = $this->date_to ? now()->parse($this->date_to)->endOfDay() : now()->endOfMonth()->endOfDay();
 
-        $periodAmount = (int) $rows->where('row_type', 'invoice')->sum('amount_cents');
+        $invoiceRows = $rows->where('row_type', 'invoice');
+        $periodAmount = (int) $invoiceRows->sum('amount_cents');
+        $visiblePaidCents = (int) $invoiceRows->sum('paid_cents');
+        $visibleBalanceCents = (int) $invoiceRows->sum('balance_cents');
         $periodReceiptCents = 0;
-        $legacyPaidCents = (int) $rows
-            ->where('row_type', 'invoice')
+        $legacyPaidCents = (int) $invoiceRows
             ->filter(fn (array $row): bool => ((int) ($row['paid_cents'] ?? 0)) > 0 && (($row['payment_no'] ?? '-') === '-'))
             ->sum('paid_cents');
         $periodReceived = 0;
@@ -438,8 +442,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
         }
 
-        $periodReceived = $periodReceiptCents + $legacyPaidCents;
-        $periodBalance = $periodAmount - $periodReceived;
+        $periodReceived = $this->only_unpaid ? $visiblePaidCents : ($periodReceiptCents + $legacyPaidCents);
+        $periodBalance = $this->only_unpaid ? $visibleBalanceCents : ($periodAmount - $periodReceived);
         $unallocatedCents = $previousAdvance + $periodAdvance;
         $netOutstanding = $previousBalance + $periodBalance;
 

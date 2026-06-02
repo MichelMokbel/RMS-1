@@ -3,6 +3,7 @@
 use App\Models\ArInvoice;
 use App\Models\Customer;
 use App\Models\Payment;
+use App\Models\PaymentAllocation;
 use App\Models\User;
 use Carbon\Carbon;
 use Spatie\Permission\Models\Role;
@@ -142,6 +143,91 @@ it('hides payment rows from the customer statement when only unpaid is enabled',
     $response->assertSee('INV-WITH-PAYMENT');
     $response->assertDontSee('PMT-ONLY-UNPAID');
     $response->assertDontSee('Payment Receipt');
+});
+
+it('uses visible unpaid balances for totals and running balances when only unpaid is enabled', function () {
+    $customer = Customer::factory()->corporate()->create();
+
+    $openInvoice = ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'partially_paid',
+        'invoice_number' => 'INV-OPEN-ONLY',
+        'payment_type' => 'credit',
+        'issue_date' => '2026-03-02',
+        'due_date' => '2026-03-10',
+        'total_cents' => 10000,
+        'paid_total_cents' => 4000,
+        'balance_cents' => 6000,
+    ]);
+
+    $openPayment = Payment::factory()->create([
+        'customer_id' => $customer->id,
+        'source' => 'ar',
+        'method' => 'bank_transfer',
+        'amount_cents' => 4000,
+        'reference' => 'PMT-OPEN-ONLY',
+        'received_at' => '2026-03-03 09:00:00',
+    ]);
+
+    PaymentAllocation::factory()->create([
+        'payment_id' => $openPayment->id,
+        'allocatable_type' => ArInvoice::class,
+        'allocatable_id' => $openInvoice->id,
+        'amount_cents' => 4000,
+    ]);
+
+    $paidInvoice = ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'paid',
+        'invoice_number' => 'INV-PAID-HIDDEN',
+        'payment_type' => 'credit',
+        'issue_date' => '2026-03-04',
+        'due_date' => '2026-03-04',
+        'total_cents' => 5000,
+        'paid_total_cents' => 5000,
+        'balance_cents' => 0,
+    ]);
+
+    $paidPayment = Payment::factory()->create([
+        'customer_id' => $customer->id,
+        'source' => 'ar',
+        'method' => 'bank_transfer',
+        'amount_cents' => 5000,
+        'reference' => 'PMT-PAID-HIDDEN',
+        'received_at' => '2026-03-05 09:00:00',
+    ]);
+
+    PaymentAllocation::factory()->create([
+        'payment_id' => $paidPayment->id,
+        'allocatable_type' => ArInvoice::class,
+        'allocatable_id' => $paidInvoice->id,
+        'amount_cents' => 5000,
+    ]);
+
+    $user = User::factory()->create(['status' => 'active']);
+    $user->assignRole('manager');
+
+    $response = $this->actingAs($user)->get(route('reports.customer-statement.print', [
+        'customer_id' => $customer->id,
+        'date_from' => '2026-03-01',
+        'date_to' => '2026-03-31',
+        'only_unpaid' => 1,
+    ]));
+
+    $response->assertOk();
+    $response->assertSee('INV-OPEN-ONLY');
+    $response->assertDontSee('INV-PAID-HIDDEN');
+    $response->assertDontSee('Payment Receipt');
+    $response->assertDontSee('PMT-PAID-HIDDEN');
+
+    $html = $response->getContent();
+
+    expect($html)->toMatch('/INV-OPEN-ONLY.*?>100\.00<.*?>40\.00<.*?>60\.00</s');
+    expect($html)->toMatch('/TOTAL \(Invoiced \/ Received \/ Net\).*?>100\.00<.*?>40\.00<.*?>60\.00</s');
+    expect($html)->toMatch('/Total Amount<\/td>\s*<td class="summary-value">60\.00<\/td>/');
+    expect($html)->toMatch('/Total Outstanding Amount<\/td>\s*<td class="summary-value">60\.00<\/td>/');
 });
 
 it('excludes voided payments from the customer statement', function () {

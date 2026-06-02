@@ -268,7 +268,7 @@ class CustomerStatementReportController extends Controller
         }
 
         // ── Map invoice rows ──────────────────────────────────────────────────
-        $invoiceRows = $invoices->toBase()->map(function (ArInvoice $invoice) use ($branchNames, $asOf, $paymentRefsByInvoice): array {
+        $invoiceRows = $invoices->toBase()->map(function (ArInvoice $invoice) use ($branchNames, $asOf, $paymentRefsByInvoice, $onlyUnpaid): array {
             $issueDate    = $this->safeCarbon($invoice->getRawOriginal('issue_date'));
             $dueDate      = $this->safeCarbon($invoice->getRawOriginal('due_date')) ?: $issueDate;
             $days         = $dueDate ? (int) floor((float) $dueDate->diffInDays($asOf, false)) : 0;
@@ -282,7 +282,9 @@ class CustomerStatementReportController extends Controller
             $paidCents    = max(0, $totalCents - $balanceCents);
             $paymentNo    = $this->safeText($paymentRefsByInvoice->get($invoice->id, '-'));
             $legacySettledWithoutPaymentRecord = $paidCents > 0 && $paymentNo === '-';
-            $statementDeltaCents = $legacySettledWithoutPaymentRecord ? $balanceCents : $totalCents;
+            $statementDeltaCents = $onlyUnpaid
+                ? $balanceCents
+                : ($legacySettledWithoutPaymentRecord ? $balanceCents : $totalCents);
 
             return [
                 'row_type'      => 'invoice',
@@ -421,10 +423,13 @@ class CustomerStatementReportController extends Controller
         $branchId   = $request->integer('branch_id') ?? 0;
         [$dateFrom, $dateTo] = $this->resolvedRange($request);
 
-        $periodAmount = (int) $rows->where('row_type', 'invoice')->sum('amount_cents');
+        $onlyUnpaid = $this->onlyUnpaid($request);
+        $invoiceRows = $rows->where('row_type', 'invoice');
+        $periodAmount = (int) $invoiceRows->sum('amount_cents');
+        $visiblePaidCents = (int) $invoiceRows->sum('paid_cents');
+        $visibleBalanceCents = (int) $invoiceRows->sum('balance_cents');
         $periodReceiptCents = 0;
-        $legacyPaidCents = (int) $rows
-            ->where('row_type', 'invoice')
+        $legacyPaidCents = (int) $invoiceRows
             ->filter(fn (array $row): bool => ((int) ($row['paid_cents'] ?? 0)) > 0 && (($row['payment_no'] ?? '-') === '-'))
             ->sum('paid_cents');
         $periodReceived = 0;
@@ -487,8 +492,8 @@ class CustomerStatementReportController extends Controller
             $periodAdvance = max(0, $paidToDate - $allocatedToDate - $previousAdvance);
         }
 
-        $periodReceived = $periodReceiptCents + $legacyPaidCents;
-        $periodBalance = $periodAmount - $periodReceived;
+        $periodReceived = $onlyUnpaid ? $visiblePaidCents : ($periodReceiptCents + $legacyPaidCents);
+        $periodBalance = $onlyUnpaid ? $visibleBalanceCents : ($periodAmount - $periodReceived);
         $unallocatedCents = $previousAdvance + $periodAdvance;
         $netOutstanding = $previousBalance + $periodBalance;
 
