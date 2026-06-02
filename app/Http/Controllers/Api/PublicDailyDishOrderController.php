@@ -30,7 +30,7 @@ class PublicDailyDishOrderController extends Controller
                 'customerName' => ['required', 'string', 'max:255'],
                 'phone' => ['required', 'string', 'max:50'],
                 'email' => ['nullable', 'email', 'max:255'],
-                'address' => ['required', 'string'],
+                'address' => ['nullable', 'string'],
                 'notes' => ['nullable', 'string'],
                 'mealPlan' => ['nullable', 'in:20,26'],
                 'items' => ['required', 'array', 'min:1'],
