@@ -225,8 +225,8 @@ it('uses visible unpaid balances for totals and running balances when only unpai
     $html = $response->getContent();
 
     expect($html)->toMatch('/INV-OPEN-ONLY.*?>100\.00<.*?>40\.00<.*?>60\.00</s');
-    expect($html)->toMatch('/TOTAL \(Invoiced \/ Received \/ Net\).*?>100\.00<.*?>40\.00<.*?>60\.00</s');
-    expect($html)->toMatch('/Total Amount<\/td>\s*<td class="summary-value">60\.00<\/td>/');
+    expect($html)->toMatch('/PERIOD ACTIVITY \(Invoiced This Period \/ Received This Period \/ Net Movement\).*?>100\.00<.*?>40\.00<.*?>60\.00</s');
+    expect($html)->toMatch('/Net Movement This Period<\/td>\s*<td class="summary-value">60\.00<\/td>/');
     expect($html)->toMatch('/Total Outstanding Amount<\/td>\s*<td class="summary-value">60\.00<\/td>/');
 });
 
@@ -427,6 +427,8 @@ it('shows a negative balance total when period receipts exceed invoices', functi
     $response->assertSee('428.00');
     $response->assertSee('1099.00');
     $response->assertSee('-671.00');
+    $response->assertSee('Available Credit');
+    $response->assertSee('671.00');
 });
 
 it('shows a running balance for each statement row', function () {

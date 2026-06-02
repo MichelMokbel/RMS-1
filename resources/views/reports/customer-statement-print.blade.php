@@ -153,7 +153,7 @@
                     <th>REFERENCE NO</th>
                     <th class="right">AMOUNT</th>
                     <th class="right">PAID</th>
-                    <th class="right">BALANCE</th>
+                    <th class="right">RUNNING BALANCE</th>
                     <th>AGING</th>
                     <th>PAYMENT NO</th>
                 </tr>
@@ -196,16 +196,16 @@
         <div class="summary">
             <table>
                 <tr>
-                    <td class="summary-label">Total Amount</td>
+                    <td class="summary-label">Net Movement This Period</td>
                     <td class="summary-value">{{ $formatCents($summary['period_balance_cents']) }}</td>
                 </tr>
                 <tr>
-                    <td class="summary-label">Previous Balance</td>
-                    <td class="summary-value">{{ $formatCents($summary['previous_balance_cents']) }}</td>
+                    <td class="summary-label">{{ $summary['previous_balance_cents'] < 0 ? 'Opening Credit' : 'Opening Balance' }}</td>
+                    <td class="summary-value">{{ $formatCents(abs($summary['previous_balance_cents'])) }}</td>
                 </tr>
                 <tr>
-                    <td class="summary-label">Total Outstanding Amount</td>
-                    <td class="summary-value">{{ $formatCents($summary['total_outstanding_cents']) }}</td>
+                    <td class="summary-label">{{ $summary['available_credit_cents'] > 0 ? 'Available Credit' : 'Total Outstanding Amount' }}</td>
+                    <td class="summary-value">{{ $formatCents($summary['available_credit_cents'] > 0 ? $summary['available_credit_cents'] : $summary['total_outstanding_cents']) }}</td>
                 </tr>
             </table>
         </div>

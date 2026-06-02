@@ -431,7 +431,7 @@ class CustomerStatementReportController extends Controller
     }
 
     /**
-     * @return array{period_amount_cents:int,period_received_cents:int,period_balance_cents:int,previous_balance_cents:int,unallocated_cents:int,total_outstanding_cents:int}
+     * @return array{period_amount_cents:int,period_received_cents:int,period_balance_cents:int,previous_balance_cents:int,unallocated_cents:int,total_outstanding_cents:int,closing_position_cents:int,available_credit_cents:int}
      */
     private function buildPrintSummary(Request $request, Collection $rows): array
     {
@@ -512,6 +512,8 @@ class CustomerStatementReportController extends Controller
         $periodBalance = $onlyUnpaid ? $visibleBalanceCents : ($periodAmount - $periodReceived);
         $unallocatedCents = $previousAdvance + $periodAdvance;
         $netOutstanding = $this->outstandingBalanceAsOf($customerId, $branchId, $dateTo);
+        $closingPosition = $previousBalance + $periodBalance;
+        $availableCredit = max(0, -$closingPosition);
 
         return [
             'period_amount_cents'    => $periodAmount,
@@ -520,6 +522,8 @@ class CustomerStatementReportController extends Controller
             'previous_balance_cents' => $previousBalance,
             'unallocated_cents'      => $unallocatedCents,
             'total_outstanding_cents' => $netOutstanding,
+            'closing_position_cents' => $closingPosition,
+            'available_credit_cents' => $availableCredit,
         ];
     }
 

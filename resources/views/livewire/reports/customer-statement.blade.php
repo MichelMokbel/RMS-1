@@ -376,7 +376,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     /**
      * @param  Collection<int, array<string, int|string>>  $rows
-     * @return array{period_amount_cents:int,period_received_cents:int,period_balance_cents:int,previous_balance_cents:int,unallocated_cents:int,total_outstanding_cents:int}
+     * @return array{period_amount_cents:int,period_received_cents:int,period_balance_cents:int,previous_balance_cents:int,unallocated_cents:int,total_outstanding_cents:int,closing_position_cents:int,available_credit_cents:int}
      */
     private function statementSummary(Collection $rows): array
     {
@@ -462,6 +462,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $periodBalance = $this->only_unpaid ? $visibleBalanceCents : ($periodAmount - $periodReceived);
         $unallocatedCents = $previousAdvance + $periodAdvance;
         $netOutstanding = $this->outstandingBalanceAsOf($dateTo);
+        $closingPosition = $previousBalance + $periodBalance;
+        $availableCredit = max(0, -$closingPosition);
 
         return [
             'period_amount_cents'    => $periodAmount,
@@ -470,6 +472,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'previous_balance_cents' => $previousBalance,
             'unallocated_cents'      => $unallocatedCents,
             'total_outstanding_cents' => $netOutstanding,
+            'closing_position_cents' => $closingPosition,
+            'available_credit_cents' => $availableCredit,
         ];
     }
 
@@ -616,7 +620,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Reference No') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Amount') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Paid') }}</th>
-                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Balance') }}</th>
+                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Running Balance') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Aging') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Payment No') }}</th>
                 </tr>
@@ -665,16 +669,22 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <div class="grid gap-4 md:grid-cols-3">
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
-            <div class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Current Balance') }}</div>
+            <div class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Net Movement This Period') }}</div>
             <div class="mt-1 text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($summary['period_balance_cents']) }}</div>
         </div>
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
-            <div class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Previous Balance') }}</div>
-            <div class="mt-1 text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($summary['previous_balance_cents']) }}</div>
+            <div class="text-sm text-neutral-600 dark:text-neutral-300">
+                {{ $summary['previous_balance_cents'] < 0 ? __('Opening Credit') : __('Opening Balance') }}
+            </div>
+            <div class="mt-1 text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney(abs($summary['previous_balance_cents'])) }}</div>
         </div>
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
-            <div class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Total Outstanding') }}</div>
-            <div class="mt-1 text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($summary['total_outstanding_cents']) }}</div>
+            <div class="text-sm text-neutral-600 dark:text-neutral-300">
+                {{ $summary['available_credit_cents'] > 0 ? __('Available Credit') : __('Total Outstanding') }}
+            </div>
+            <div class="mt-1 text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+                {{ $this->formatMoney($summary['available_credit_cents'] > 0 ? $summary['available_credit_cents'] : $summary['total_outstanding_cents']) }}
+            </div>
         </div>
     </div>
 
