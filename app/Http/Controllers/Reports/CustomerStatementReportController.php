@@ -53,6 +53,22 @@ class CustomerStatementReportController extends Controller
         return $previousInvoiceBalance - max(0, $prevPaidTotal - $prevAllocatedTotal);
     }
 
+    private function outstandingBalanceAsOf(int $customerId, int $branchId, Carbon $asOf): int
+    {
+        if ($customerId <= 0) {
+            return 0;
+        }
+
+        return (int) ArInvoice::query()
+            ->where('customer_id', $customerId)
+            ->where('type', 'invoice')
+            ->whereIn('status', ['issued', 'partially_paid', 'paid'])
+            ->where('balance_cents', '>', 0)
+            ->when($branchId > 0, fn ($q) => $q->where('branch_id', $branchId))
+            ->whereDate('issue_date', '<=', $asOf)
+            ->sum('balance_cents');
+    }
+
     private function formatCents(?int $cents): string
     {
         return MinorUnits::format((int) ($cents ?? 0));
@@ -495,7 +511,7 @@ class CustomerStatementReportController extends Controller
         $periodReceived = $onlyUnpaid ? $visiblePaidCents : ($periodReceiptCents + $legacyPaidCents);
         $periodBalance = $onlyUnpaid ? $visibleBalanceCents : ($periodAmount - $periodReceived);
         $unallocatedCents = $previousAdvance + $periodAdvance;
-        $netOutstanding = $previousBalance + $periodBalance;
+        $netOutstanding = $this->outstandingBalanceAsOf($customerId, $branchId, $dateTo);
 
         return [
             'period_amount_cents'    => $periodAmount,

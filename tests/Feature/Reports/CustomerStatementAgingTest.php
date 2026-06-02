@@ -230,6 +230,82 @@ it('uses visible unpaid balances for totals and running balances when only unpai
     expect($html)->toMatch('/Total Outstanding Amount<\/td>\s*<td class="summary-value">60\.00<\/td>/');
 });
 
+it('keeps total outstanding amount consistent across date ranges with the same statement end date', function () {
+    $customer = Customer::factory()->corporate()->create();
+
+    ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'paid',
+        'invoice_number' => 'INV-HISTORIC',
+        'payment_type' => 'credit',
+        'issue_date' => '2026-04-16',
+        'due_date' => '2026-04-16',
+        'total_cents' => 9600,
+        'paid_total_cents' => 9600,
+        'balance_cents' => 0,
+    ]);
+
+    ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'issued',
+        'invoice_number' => 'INV-OPEN-END',
+        'payment_type' => 'credit',
+        'issue_date' => '2026-04-30',
+        'due_date' => '2026-04-30',
+        'total_cents' => 2105000,
+        'paid_total_cents' => 0,
+        'balance_cents' => 2105000,
+    ]);
+
+    ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'paid',
+        'invoice_number' => 'INV-CLEARED-END',
+        'payment_type' => 'credit',
+        'issue_date' => '2026-05-14',
+        'due_date' => '2026-05-14',
+        'total_cents' => 300000,
+        'paid_total_cents' => 300000,
+        'balance_cents' => 0,
+    ]);
+
+    Payment::factory()->create([
+        'customer_id' => $customer->id,
+        'source' => 'ar',
+        'method' => 'bank_transfer',
+        'amount_cents' => 300000,
+        'reference' => 'PMT-END-RANGE',
+        'received_at' => '2026-06-02 09:00:00',
+    ]);
+
+    $user = User::factory()->create(['status' => 'active']);
+    $user->assignRole('manager');
+
+    $fullRange = $this->actingAs($user)->get(route('reports.customer-statement.print', [
+        'customer_id' => $customer->id,
+        'date_from' => '2026-04-01',
+        'date_to' => '2026-06-02',
+    ]));
+
+    $shortRange = $this->actingAs($user)->get(route('reports.customer-statement.print', [
+        'customer_id' => $customer->id,
+        'date_from' => '2026-06-02',
+        'date_to' => '2026-06-02',
+    ]));
+
+    $fullRange->assertOk();
+    $shortRange->assertOk();
+
+    $fullHtml = $fullRange->getContent();
+    $shortHtml = $shortRange->getContent();
+
+    expect($fullHtml)->toMatch('/Total Outstanding Amount<\/td>\s*<td class="summary-value">21050\.00<\/td>/');
+    expect($shortHtml)->toMatch('/Total Outstanding Amount<\/td>\s*<td class="summary-value">21050\.00<\/td>/');
+});
+
 it('excludes voided payments from the customer statement', function () {
     $customer = Customer::factory()->corporate()->create();
 

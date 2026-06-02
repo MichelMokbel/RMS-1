@@ -210,6 +210,22 @@ new #[Layout('components.layouts.app')] class extends Component {
         return $previousInvoiceBalance - max(0, $prevPaidTotal - $prevAllocatedTotal);
     }
 
+    private function outstandingBalanceAsOf(Carbon $asOf): int
+    {
+        if (! $this->customer_id) {
+            return 0;
+        }
+
+        return (int) ArInvoice::query()
+            ->where('customer_id', $this->customer_id)
+            ->where('type', 'invoice')
+            ->whereIn('status', ['issued', 'partially_paid', 'paid'])
+            ->where('balance_cents', '>', 0)
+            ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id))
+            ->whereDate('issue_date', '<=', $asOf)
+            ->sum('balance_cents');
+    }
+
     /**
      * @return Collection<int, array<string, int|string>>
      */
@@ -445,7 +461,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $periodReceived = $this->only_unpaid ? $visiblePaidCents : ($periodReceiptCents + $legacyPaidCents);
         $periodBalance = $this->only_unpaid ? $visibleBalanceCents : ($periodAmount - $periodReceived);
         $unallocatedCents = $previousAdvance + $periodAdvance;
-        $netOutstanding = $previousBalance + $periodBalance;
+        $netOutstanding = $this->outstandingBalanceAsOf($dateTo);
 
         return [
             'period_amount_cents'    => $periodAmount,
