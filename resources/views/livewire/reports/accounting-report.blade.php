@@ -810,7 +810,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Item') }}</th>
                             <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Branch') }}</th>
                             <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Quantity') }}</th>
-                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Package Cost') }}</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Unit Cost') }}</th>
                             <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Valuation') }}</th>
                         </tr>
                     </thead>
@@ -820,7 +820,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $row['item_name'] }}</td>
                                 <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['branch_name'] ?? '—' }}</td>
                                 <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">{{ number_format((float) $row['quantity'], 3) }}</td>
-                                <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">{{ number_format((float) $row['package_cost'], 4) }}</td>
+                                <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">{{ number_format((float) $row['unit_cost'], 4) }}</td>
                                 <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">{{ number_format((float) $row['valuation_amount'], 2) }}</td>
                             </tr>
                         @empty
