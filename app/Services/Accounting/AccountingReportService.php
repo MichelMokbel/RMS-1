@@ -776,7 +776,7 @@ class AccountingReportService
                 'branch_id' => $row->branch_id ? (int) $row->branch_id : null,
                 'branch_name' => $row->branch_name,
                 'quantity' => round((float) $row->quantity_total, 3),
-                'unit_cost' => round((float) $row->current_cost, 4),
+                'package_cost' => round((float) $row->current_cost, 4),
                 'valuation_amount' => round((float) $row->quantity_total * (float) $row->current_cost, 2),
             ]);
 

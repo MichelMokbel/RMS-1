@@ -17,7 +17,10 @@ class InventoryItemRules
 
     public function updateRules(int $itemId): array
     {
-        return $this->baseRules(ignoreId: $itemId);
+        $rules = $this->baseRules(ignoreId: $itemId);
+        unset($rules['current_stock']);
+
+        return $rules;
     }
 
     private function baseRules(?int $ignoreId): array

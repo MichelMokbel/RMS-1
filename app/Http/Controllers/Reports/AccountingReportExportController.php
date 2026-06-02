@@ -134,12 +134,12 @@ class AccountingReportExportController extends Controller
         $report = $service->inventoryValuation($companyId, $dateTo);
 
         return CsvExport::stream(
-            ['Item', 'Branch', 'Quantity', 'Unit Cost', 'Valuation'],
+            ['Item', 'Branch', 'Quantity', 'Package Cost', 'Valuation'],
             collect($report['rows'])->map(fn ($row) => [
                 $row['item_name'],
                 $row['branch_name'],
                 number_format((float) $row['quantity'], 3, '.', ''),
-                number_format((float) $row['unit_cost'], 4, '.', ''),
+                number_format((float) $row['package_cost'], 4, '.', ''),
                 number_format((float) $row['valuation_amount'], 2, '.', ''),
             ]),
             'inventory-valuation.csv'
