@@ -347,7 +347,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <h2 class="text-base font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Bulk Adjust Quantities') }}</h2>
                     <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{{ __('Set the target stock for multiple items and post the adjustments in one go.') }}</p>
                 </div>
-                <flux:button type="button" variant="ghost" size="sm" wire:click="openCreateItem('bulk', 0)" x-data="" x-on:click.prevent="$dispatch('open-modal', 'create-inventory-item')">{{ __('New Item') }}</flux:button>
+                <flux:modal.trigger name="create-inventory-item">
+                    <flux:button type="button" variant="ghost" size="sm" wire:click="openCreateItem('bulk', 0)">{{ __('New Item') }}</flux:button>
+                </flux:modal.trigger>
             </div>
 
             <form wire:submit="saveBulkAdjustments" class="space-y-4">
@@ -474,7 +476,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <h2 class="text-base font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Quick Transaction') }}</h2>
                         <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{{ __('Record a single in, out, or adjustment transaction.') }}</p>
                     </div>
-                    <flux:button type="button" variant="ghost" size="sm" wire:click="openCreateItem('single')" x-data="" x-on:click.prevent="$dispatch('open-modal', 'create-inventory-item')">{{ __('New Item') }}</flux:button>
+                    <flux:modal.trigger name="create-inventory-item">
+                        <flux:button type="button" variant="ghost" size="sm" wire:click="openCreateItem('single')">{{ __('New Item') }}</flux:button>
+                    </flux:modal.trigger>
                 </div>
 
                 <form wire:submit="save" class="space-y-4">
