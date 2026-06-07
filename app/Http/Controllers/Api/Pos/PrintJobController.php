@@ -55,14 +55,18 @@ class PrintJobController extends Controller
             return response()->json(['message' => 'AUTH_ERROR', 'reason' => 'TERMINAL_NOT_FOUND'], 403);
         }
 
+        $waitSeconds = $request->validated('wait_seconds');
+        $effectiveWaitSeconds = max(0, min(60, (int) ($waitSeconds ?? config('pos.print_jobs.pull_wait_seconds', 25))));
+
         $jobs = $this->jobs->pull(
             terminal: $terminal,
-            waitSeconds: $request->validated('wait_seconds'),
+            waitSeconds: $waitSeconds,
             limit: $request->validated('limit')
         );
 
         return response()->json([
             'jobs' => array_map(fn (PosPrintJob $job) => $this->serializePulledJob($job, $terminal), $jobs),
+            'recommended_wait_seconds' => $effectiveWaitSeconds,
             'server_timestamp' => now()->utc()->toISOString(),
         ]);
     }

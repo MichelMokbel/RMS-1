@@ -5,12 +5,15 @@ namespace App\Services\POS;
 use App\Models\Branch;
 use App\Models\Category;
 use App\Models\Customer;
+use App\Models\ArInvoice;
+use App\Models\ApInvoice;
 use App\Models\ExpenseCategory;
 use App\Models\MenuItem;
 use App\Models\PettyCashWallet;
 use App\Models\RestaurantArea;
 use App\Models\RestaurantTable;
 use App\Models\RestaurantTableSession;
+use App\Models\Supplier;
 use App\Support\Money\MinorUnits;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
@@ -26,6 +29,7 @@ class PosBootstrapService
 
         $branchId = (int) $terminal->branch_id;
         $scale = MinorUnits::posScale();
+        $cashCustomerId = $this->activeCashCustomerId();
 
         $categories = Category::query()
             ->when($sinceAt, fn ($q) => $this->whereUpdatedSince($q, 'categories', $sinceAt))
@@ -79,6 +83,88 @@ class PosBootstrapService
                 'is_active' => (bool) $c->is_active,
                 'updated_at' => optional($c->updated_at)?->toISOString(),
             ])
+            ->values();
+
+        $openArInvoices = ArInvoice::query()
+            ->where('branch_id', $branchId)
+            ->whereIn('status', ['issued', 'partially_paid'])
+            ->where('balance_cents', '>', 0)
+            ->when($sinceAt, fn ($q) => $this->whereUpdatedSince($q, 'ar_invoices', $sinceAt))
+            ->orderBy('issue_date')
+            ->orderBy('invoice_number')
+            ->limit(5000)
+            ->get()
+            ->map(fn (ArInvoice $i) => [
+                'id' => (int) $i->id,
+                'invoice_number' => (string) ($i->invoice_number ?? $i->id),
+                'pos_reference' => (string) ($i->pos_reference ?? ''),
+                'customer_id' => (int) $i->customer_id,
+                'branch_id' => (int) $i->branch_id,
+                'issue_date' => optional($i->issue_date)?->toDateString(),
+                'due_date' => optional($i->due_date)?->toDateString(),
+                'currency' => (string) ($i->currency ?: config('pos.currency', 'QAR')),
+                'status' => (string) $i->status,
+                'payment_type' => (string) ($i->payment_type ?? ''),
+                'total_cents' => (int) $i->total_cents,
+                'paid_total_cents' => (int) $i->paid_total_cents,
+                'balance_cents' => (int) $i->balance_cents,
+                'updated_at' => optional($i->updated_at)?->toISOString(),
+            ])
+            ->values();
+
+        $suppliers = Supplier::query()
+            ->active()
+            ->when($sinceAt, fn ($q) => $this->whereUpdatedSince($q, 'suppliers', $sinceAt))
+            ->ordered()
+            ->limit(5000)
+            ->get()
+            ->map(fn (Supplier $s) => [
+                'id' => (int) $s->id,
+                'name' => (string) $s->name,
+                'phone' => (string) ($s->phone ?? ''),
+                'email' => (string) ($s->email ?? ''),
+                'status' => (string) ($s->status ?? ''),
+                'preferred_payment_method' => (string) ($s->preferred_payment_method ?? ''),
+                'updated_at' => optional($s->updated_at)?->toISOString(),
+            ])
+            ->values();
+
+        $openApInvoices = ApInvoice::query()
+            ->withSum('allocations as paid_amount_sum', 'allocated_amount')
+            ->whereIn('status', ['posted', 'partially_paid'])
+            ->when(Schema::hasColumn('ap_invoices', 'branch_id'), function ($q) use ($branchId) {
+                $q->where(function ($inner) use ($branchId) {
+                    $inner->whereNull('branch_id')
+                        ->orWhere('branch_id', $branchId);
+                });
+            })
+            ->when($sinceAt, fn ($q) => $this->whereUpdatedSince($q, 'ap_invoices', $sinceAt))
+            ->orderBy('invoice_date')
+            ->orderBy('invoice_number')
+            ->limit(5000)
+            ->get()
+            ->map(function (ApInvoice $i) use ($scale) {
+                $total = round((float) $i->total_amount, 2);
+                $paid = round((float) ($i->paid_amount_sum ?? 0), 2);
+                $outstanding = max(0, round($total - $paid, 2));
+
+                return [
+                    'id' => (int) $i->id,
+                    'invoice_number' => (string) ($i->invoice_number ?? $i->id),
+                    'supplier_id' => (int) $i->supplier_id,
+                    'branch_id' => $i->branch_id ? (int) $i->branch_id : null,
+                    'invoice_date' => optional($i->invoice_date)?->toDateString(),
+                    'due_date' => optional($i->due_date)?->toDateString(),
+                    'currency' => (string) ($i->currency_code ?: config('pos.currency', 'QAR')),
+                    'status' => (string) $i->status,
+                    'total_amount' => number_format($total, 2, '.', ''),
+                    'paid_amount' => number_format($paid, 2, '.', ''),
+                    'outstanding_amount' => number_format($outstanding, 2, '.', ''),
+                    'outstanding_cents' => MinorUnits::parse(number_format($outstanding, 2, '.', ''), $scale),
+                    'updated_at' => optional($i->updated_at)?->toISOString(),
+                ];
+            })
+            ->filter(fn (array $i) => (int) $i['outstanding_cents'] > 0)
             ->values();
 
         $areas = RestaurantArea::query()
@@ -168,6 +254,7 @@ class PosBootstrapService
             'settings' => [
                 'currency' => (string) config('pos.currency', 'QAR'),
                 'money_scale' => (int) config('pos.money_scale', 100),
+                'cash_customer_id' => $cashCustomerId,
             ],
             'terminal' => [
                 'id' => (int) $terminal->id,
@@ -178,6 +265,9 @@ class PosBootstrapService
             'categories' => $categories,
             'menu_items' => $menuItems,
             'customers' => $customers,
+            'open_ar_invoices' => $openArInvoices,
+            'suppliers' => $suppliers,
+            'open_ap_invoices' => $openApInvoices,
             'restaurant_areas' => $areas,
             'restaurant_tables' => $tables,
             'restaurant_table_sessions' => $sessions,
@@ -185,6 +275,19 @@ class PosBootstrapService
             'expense_categories' => $expenseCategories,
             'server_timestamp' => now()->utc()->toISOString(),
         ];
+    }
+
+    private function activeCashCustomerId(): ?int
+    {
+        $id = (int) config('pos.cash_customer_id', 0);
+        if ($id <= 0) {
+            return null;
+        }
+
+        return Customer::query()
+            ->whereKey($id)
+            ->where('is_active', 1)
+            ->exists() ? $id : null;
     }
 
     private function buildReceiptProfile($terminal): array

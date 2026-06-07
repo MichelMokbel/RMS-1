@@ -12,8 +12,9 @@
 - [6. Event Types (DETAILED)](#6-event-types-detailed)
 - [7. Restaurant Table Management Contract](#7-restaurant-table-management-contract)
 - [8. Data Types & Conventions](#8-data-types--conventions)
-- [9. End-to-End Test Plan (REQUIRED)](#9-end-to-end-test-plan-required)
-- [10. Error Codes Catalog](#10-error-codes-catalog)
+- [9. Print Jobs](#9-print-jobs)
+- [10. End-to-End Test Plan (REQUIRED)](#10-end-to-end-test-plan-required)
+- [11. Error Codes Catalog](#11-error-codes-catalog)
 
 ## 1. Overview
 
@@ -46,7 +47,7 @@ Evidence:
 
 ### Offline-first model (what to call, and why)
 
-1) **Bootstrap**: seed local database (catalog + customers + tables + open sessions) and pull deltas later.
+1) **Bootstrap**: seed local database (catalog + customers + suppliers + open AR/AP invoices + tables + open sessions) and pull deltas later.
 2) **Reserve sequences**: allocate POS reference numbers offline-safe per terminal per business date.
 3) **Sync**: push local “outbox” events and receive server deltas in the same round-trip.
 
@@ -54,6 +55,7 @@ Evidence:
 - Bootstrap implementation: `app/Services/POS/PosBootstrapService.php::bootstrap()`
 - Sequence reservation: `app/Services/POS/PosSequenceService.php::reserve()`
 - Sync: `app/Services/POS/PosSyncService.php::sync()`
+- Print jobs: `app/Services/POS/PosPrintJobService.php::pull()`
 
 ### Idempotency principles (server-side)
 
@@ -213,7 +215,8 @@ Response payload sections (200):
 {
   "settings": {
     "currency": "string (config pos.currency, default QAR)",
-    "money_scale": "int (config pos.money_scale, default 100)"
+    "money_scale": "int (config pos.money_scale, default 100)",
+    "cash_customer_id": "int|null (configured active POS Cash Customer; config pos.cash_customer_id / POS_CASH_CUSTOMER_ID, deployment default 433)"
   },
   "terminal": { "id": "int", "code": "string", "branch_id": "int" },
   "receipt_profile": {
@@ -250,6 +253,52 @@ Response payload sections (200):
   ],
   "customers": [
     { "id": "int", "name": "string", "phone": "string", "email": "string", "is_active": "bool", "updated_at": "string|null (ISO8601)" }
+  ],
+  "open_ar_invoices": [
+    {
+      "id": "int",
+      "invoice_number": "string",
+      "pos_reference": "string",
+      "customer_id": "int",
+      "branch_id": "int",
+      "issue_date": "string|null (YYYY-MM-DD)",
+      "due_date": "string|null (YYYY-MM-DD)",
+      "currency": "string",
+      "status": "string (issued|partially_paid)",
+      "payment_type": "string",
+      "total_cents": "int",
+      "paid_total_cents": "int",
+      "balance_cents": "int",
+      "updated_at": "string|null (ISO8601)"
+    }
+  ],
+  "suppliers": [
+    {
+      "id": "int",
+      "name": "string",
+      "phone": "string",
+      "email": "string",
+      "status": "string",
+      "preferred_payment_method": "string",
+      "updated_at": "string|null (ISO8601)"
+    }
+  ],
+  "open_ap_invoices": [
+    {
+      "id": "int",
+      "invoice_number": "string",
+      "supplier_id": "int",
+      "branch_id": "int|null",
+      "invoice_date": "string|null (YYYY-MM-DD)",
+      "due_date": "string|null (YYYY-MM-DD)",
+      "currency": "string",
+      "status": "string (posted|partially_paid)",
+      "total_amount": "string(decimal)",
+      "paid_amount": "string(decimal)",
+      "outstanding_amount": "string(decimal)",
+      "outstanding_cents": "int",
+      "updated_at": "string|null (ISO8601)"
+    }
   ],
   "restaurant_areas": [
     { "id": "int", "name": "string", "display_order": "int", "active": "bool", "updated_at": "string|null (ISO8601)" }
@@ -298,6 +347,12 @@ Delta sync semantics (`since` behavior)
   - If `since` is **omitted**: returns **only** `active=1` sessions (open sessions snapshot).
   - If `since` is provided: returns sessions updated since (can include closed sessions).
 - Customers are capped at 5000 rows per call.
+- `settings.cash_customer_id` is returned only when the configured Cash Customer exists and is active.
+- Cash Customer resolution order for paid counter sales without `customer_id`:
+  1. `config('pos.cash_customer_id')`
+  2. env `POS_CASH_CUSTOMER_ID`
+  3. deployment default `433` from `config/pos.php`
+  If that customer is missing or inactive, paid counter invoice sync returns a clear `VALIDATION_ERROR`.
 
 Evidence:
 - Updated-since filtering: `app/Services/POS/PosBootstrapService.php::whereUpdatedSince()`
@@ -712,8 +767,9 @@ Payload JSON schema (as implemented)
   "client_uuid": "string (required, UUID v4-ish; used as ar_invoices.client_uuid)",
   "pos_reference": "string (required, regex ^T\\d{2}-\\d{8}-\\d{6}$; must start with {terminal_code}-)",
   "payment_type": "string (required, one of cash|card|credit|mixed)",
-  "customer_id": "int (required, min 1)",
+  "customer_id": "int|null (required for credit; optional for cash|card|mixed counter sales)",
   "issue_date": "string (required, YYYY-MM-DD)",
+  "sale_mode": "string|null (optional, one of counter|table; defaults to table when table/session IDs are present, otherwise counter)",
   "pos_shift_id": "int|null (optional, min 1)",
   "restaurant_table_id": "int|null (optional, min 1)",
   "table_session_id": "int|null (optional, min 1)",
@@ -748,6 +804,11 @@ Validation rules / business rules:
 - Payments rules:
   - If `payment_type=credit`: `payments` must be empty.
   - If `payment_type!=credit`: `payments` must be non-empty.
+- Customer rules:
+  - If `payment_type=credit`: `customer_id` is required.
+  - If `payment_type` is `cash`, `card`, or `mixed`: `customer_id` may be omitted.
+  - When a paid sale omits `customer_id`, the server uses the configured active POS Cash Customer (`settings.cash_customer_id` from bootstrap).
+  - If the configured Cash Customer is missing or inactive, sync returns `VALIDATION_ERROR`.
 - `pos_reference` must start with `{terminal_code}-` (terminal code mismatch is a validation error).
 - Invoice client UUID:
   - Read from `payload.client_uuid` (not inside `lines`).
@@ -760,6 +821,7 @@ Validation rules / business rules:
   - `totals.*` must match the computed sums.
 - Non-credit payments integrity:
   - Sum of `payments.amount_cents` must equal `ar_invoices.total_cents` or validation fails.
+  - `mixed` payments create one `payments` row per submitted method and allocate all rows to the same invoice.
 - ACK display numbering fields:
   - `invoice_no` is always returned as a non-empty string for successful `ar_invoice` ACKs.
   - `ref_no` is always returned as a non-empty string for successful `ar_invoice` ACKs.
@@ -774,12 +836,17 @@ Server side effects (successful apply):
   - then updates:
     - `terminal_id`, `pos_shift_id`, `client_uuid`, `restaurant_table_id`, `table_session_id`
     - `meta.device_id`
+    - `meta.sale_mode`
 - If `payment_type != 'credit'`:
   - Inserts into `payments` for each payment:
     - `source='pos'`, `terminal_id`, `pos_shift_id`, `client_uuid`, `method`, `amount_cents`, `currency`, `received_at`, `reference`
   - Inserts into `payment_allocations` to allocate payments to the invoice.
   - Posts subledger entries for payments (ledger integration).
 - Recalculates invoice totals/status.
+- Accounting treatment:
+  - Paid counter sale: AR invoice is issued to the Cash Customer, payment rows are created, allocations close the invoice, and payment/subledger records are posted.
+  - Credit sale: AR invoice is issued to the selected customer, no payment rows are created, and the open balance remains.
+  - Mixed payment: separate payment rows are created per method and allocated to the same invoice.
 
 Idempotency keys:
 - Sync-level: `events[*].client_uuid` (`pos_sync_events`)
@@ -792,6 +859,9 @@ Common errors:
   - `pos_reference`: “Terminal code mismatch.”
   - `customer_id`: “Customer not found.”
   - `lines`/`totals`: “Invalid menu item.” / “Line totals mismatch.” / “Totals mismatch.”
+- Additional `customer_id` validation cases:
+  - Credit invoices without `customer_id`: "Customer is required for credit invoices."
+  - Paid counter invoices without a valid configured Cash Customer: "Configured POS cash customer is missing or inactive."
 - `SERVER_ERROR`: unexpected exceptions.
 
 Example request event (cash invoice):
@@ -804,7 +874,7 @@ Example request event (cash invoice):
     "client_uuid": "6a91b1b1-2c08-4bf6-b9c4-4a1f0b71b2d1",
     "pos_reference": "T01-20260204-000123",
     "payment_type": "cash",
-    "customer_id": 100,
+    "sale_mode": "counter",
     "issue_date": "2026-02-04",
     "lines": [
       { "menu_item_id": 10, "qty": "1.000", "unit_price_cents": 500, "line_discount_cents": 0, "line_total_cents": 500 }
@@ -955,6 +1025,77 @@ Common errors:
 
 Evidence:
 - Handler: `app/Services/POS/PosSyncService.php::handleCategoryUpsert()`
+
+### menu_item.upsert
+
+When POS sends it:
+- When creating/updating a sellable POS product. POS products are `menu_items`, not inventory stock items.
+
+Payload JSON schema:
+```json
+{
+  "menu_item": {
+    "id": "int|null (optional, min 1 when present)",
+    "code": "string|null (optional, max 50; must be unique when provided)",
+    "name": "string (required, max 255)",
+    "arabic_name": "string|null (optional, max 255)",
+    "category_id": "int|null (optional, min 1; must exist when provided)",
+    "unit": "string|null (optional, max 30; defaults to each)",
+    "selling_price_per_unit": "decimal|null (optional, min 0)",
+    "price_cents": "int|null (optional, min 0; preferred POS price field)",
+    "tax_rate": "decimal|null (optional, min 0, max 100; defaults to 0)",
+    "is_active": "bool (optional; defaults to true)",
+    "display_order": "int (optional, min 0; defaults to 0)",
+    "branch_ids": ["int (optional branch availability IDs)"],
+    "updated_at": "string|null (optional, date parseable)"
+  }
+}
+```
+
+Validation rules / business rules:
+- If `menu_item.id` is provided:
+  - Locks the menu item row.
+  - If incoming `updated_at` is older than server `menu_items.updated_at`, server returns success without applying the update.
+- If `price_cents` is provided, it is converted to `selling_price_per_unit` using `settings.money_scale`.
+- If `price_cents` is omitted, `selling_price_per_unit` is used; if both are omitted, price defaults to 0.
+- If `branch_ids` is omitted, availability defaults to the current terminal branch.
+- If `branch_ids` is provided, all IDs must exist in `branches` when that table is present.
+
+Server side effects:
+- Inserts or updates `menu_items` fields: `code`, `name`, `arabic_name`, `category_id`, `unit`, `selling_price_per_unit`, `tax_rate`, `is_active`, `display_order`.
+- Syncs branch availability in `menu_item_branches` when that table exists.
+
+Idempotency keys:
+- Sync-level: `events[*].client_uuid`
+
+Common errors:
+- `VALIDATION_ERROR` on duplicate code, missing category, invalid branch availability, or bad schema.
+
+Example request event:
+```json
+{
+  "event_id": "mi-001",
+  "type": "menu_item.upsert",
+  "client_uuid": "d462ae6a-2f0e-4a92-8fd3-9e4519f4aab1",
+  "payload": {
+    "menu_item": {
+      "code": "POS-COFFEE",
+      "name": "Counter Coffee",
+      "arabic_name": "Counter Coffee AR",
+      "category_id": 10,
+      "price_cents": 1250,
+      "tax_rate": "0",
+      "is_active": true,
+      "display_order": 10,
+      "branch_ids": [1]
+    }
+  }
+}
+```
+
+Evidence:
+- Handler: `app/Services/POS/PosSyncService.php::handleMenuItemUpsert()`
+- Model/table: `app/Models/MenuItem.php` (`menu_items`, `menu_item_branches`)
 
 ### customer.payment.create
 
@@ -1242,6 +1383,7 @@ Evidence:
 
 - Server entity IDs are integers (DB primary keys).
 - `client_uuid` fields are UUID strings used for idempotency (sync events) and some domain entities.
+- POS counter paid sales may omit `customer_id`; the server will use the configured active Cash Customer. The POS should still read `settings.cash_customer_id` from bootstrap and auto-select it deliberately in the UI when showing counter/cash customer state.
 
 Evidence:
 - Sync request rule: `app/Http/Requests/Api/Pos/SyncRequest.php`
@@ -1262,7 +1404,109 @@ Evidence:
 MISSING / TO BE IMPLEMENTED:
 - “Order type” (`dine_in` / `takeaway`) is not part of `/api/pos/sync` invoice payloads in this codebase. If the POS needs to persist order type at invoice level, backend changes are required.
 
-## 9. End-to-End Test Plan (REQUIRED)
+## 9. Print Jobs
+
+### Preferred printer-agent protocol
+
+Production printer agents should use long polling:
+
+```
+GET /api/pos/print-jobs/pull
+```
+
+When `wait_seconds` is omitted, the server uses `config('pos.print_jobs.pull_wait_seconds')`, default `25`. Use `wait_seconds=0` only for diagnostics, tests, or manual queue inspection. SSE remains available at `/api/pos/print-jobs/stream`, but long-poll pull/ack is the normal production printer-agent path.
+
+Evidence:
+- Pull implementation: `app/Services/POS/PosPrintJobService.php::pull()`
+- Pull controller response: `app/Http/Controllers/Api/Pos/PrintJobController.php::pull()`
+
+### POST `/api/pos/print-jobs`
+
+Purpose: enqueue a print job from one POS terminal to a target terminal in the same branch.
+
+Request JSON schema:
+```json
+{
+  "client_job_id": "string (required, max 100; idempotency key per source terminal)",
+  "target_terminal_code": "string (required, max 20, regex ^[A-Za-z0-9._-]+$)",
+  "target": "string (required, max 100)",
+  "doc_type": "string (required, max 60)",
+  "payload_base64": "string (required)",
+  "created_at": "string (required, date parseable)",
+  "metadata": "object|null (optional)"
+}
+```
+
+Response (200):
+```json
+{
+  "job_id": "int",
+  "client_job_id": "string",
+  "status": "string",
+  "target_terminal_code": "string",
+  "queued_at": "string|null (ISO8601)"
+}
+```
+
+### GET `/api/pos/print-jobs/pull`
+
+Query params:
+- `wait_seconds` optional integer `0..60`. Omit for configured long poll default.
+- `limit` optional integer `1..100`, default `20`.
+
+Response (200):
+```json
+{
+  "jobs": [
+    {
+      "job_id": "int",
+      "client_job_id": "string",
+      "target_terminal_code": "string",
+      "target": "string",
+      "doc_type": "string",
+      "payload_base64": "string",
+      "created_at": "string|null (client-created ISO8601)",
+      "metadata": "object",
+      "claim_token": "string",
+      "attempt_count": "int",
+      "claim_expires_at": "string|null (ISO8601)",
+      "queued_at": "string|null (ISO8601)"
+    }
+  ],
+  "recommended_wait_seconds": "int (effective wait used by server; 0 means immediate diagnostic poll)",
+  "server_timestamp": "string (ISO8601, UTC)"
+}
+```
+
+Client behavior:
+- If `jobs` is empty, immediately issue another pull. Do not add a tight client-side polling loop; the server wait provides the backoff.
+- If jobs are returned, print them and ACK each job using the returned `claim_token`.
+- If a claim expires or a failed job becomes retryable, later pulls can reclaim it with a new `claim_token`.
+
+### POST `/api/pos/print-jobs/{job_id}/ack`
+
+Request JSON schema:
+```json
+{
+  "claim_token": "string (required, max 120)",
+  "status": "string (required, printed|failed)",
+  "error_code": "string|null (required when status=failed, max 80)",
+  "error_message": "string|null (optional, max 4000)",
+  "processing_ms": "int|null (optional, min 0)"
+}
+```
+
+Response (200):
+```json
+{
+  "job_id": "int",
+  "final_status": "string",
+  "attempt_count": "int",
+  "next_retry_at": "string|null (ISO8601)"
+}
+```
+
+## 10. End-to-End Test Plan (REQUIRED)
 
 This is a minimal Postman-style script using only implemented endpoints.
 
@@ -1270,9 +1514,11 @@ Assumptions / setup:
 - There exists an active `pos_terminals` row with:
   - `code="T01"`, `device_id="DEV-A"`, `active=1`, `branch_id=1`
 - There is at least:
-  - one `customers` row (or create one via `customer.upsert`)
+  - one active Cash Customer configured by `POS_CASH_CUSTOMER_ID` / `pos.cash_customer_id` (deployment default `433` if active)
+  - one `customers` row for credit/customer payment flows (or create one via `customer.upsert`)
   - one `menu_items` row available in branch 1
   - one `restaurant_tables` row in branch 1
+  - one active `suppliers` row and one posted/partially paid `ap_invoices` row if testing vendor payment
   - petty cash wallet + expense category if testing petty cash
 
 ### Step 1) Login
@@ -1419,7 +1665,7 @@ Request event:
     "client_uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
     "pos_reference": "T01-20260204-000001",
     "payment_type": "cash",
-    "customer_id": 100,
+    "sale_mode": "counter",
     "issue_date": "2026-02-04",
     "lines": [
       { "menu_item_id": 10, "qty": "1.000", "unit_price_cents": 500, "line_discount_cents": 0, "line_total_cents": 500 }
@@ -1437,6 +1683,7 @@ Expected ACK: `server_entity_type="ar_invoice"`, `server_entity_id>0`.
 DB expectations:
 - `ar_invoices` row created with:
   - `source='pos'`, `pos_reference` set, `client_uuid` set, `terminal_id` set
+  - `customer_id` set to the configured Cash Customer because the paid counter event omitted `customer_id`
 - `ar_invoice_items` rows created
 - `payments` row(s) created with `source='pos'`, `client_uuid` set
 - `payment_allocations` rows created allocating to the invoice
@@ -1642,7 +1889,7 @@ Expected:
   - `ar_invoices` count for that `pos_reference` remains 1
   - `payments` count for that `payments[*].client_uuid` remains 1
 
-## 10. Error Codes Catalog
+## 11. Error Codes Catalog
 
 This catalog lists observed (implemented) codes and required-but-missing codes.
 

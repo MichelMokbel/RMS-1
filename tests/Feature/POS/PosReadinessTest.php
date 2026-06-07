@@ -5,6 +5,8 @@ use App\Models\ApInvoice;
 use App\Models\Customer;
 use App\Models\ExpenseCategory;
 use App\Models\MenuItem;
+use App\Models\Payment;
+use App\Models\PaymentAllocation;
 use App\Models\PettyCashWallet;
 use App\Models\PosDocumentSequence;
 use App\Models\PosPrintJob;
@@ -351,6 +353,21 @@ test('print pull returns 200 with empty jobs array when queue is empty', functio
     expect((string) ($resp['server_timestamp'] ?? ''))->not->toBe('');
 });
 
+test('print pull without wait_seconds reports configured long poll wait', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    seedPosTerminal('PRINT-DEV-LONGPOLL', 'T09', 1);
+    $token = posToken($user, 'PRINT-DEV-LONGPOLL');
+
+    config()->set('pos.print_jobs.pull_wait_seconds', 1);
+
+    $resp = $this->withToken($token)->getJson('/api/pos/print-jobs/pull?limit=20')
+        ->assertOk()
+        ->json();
+
+    expect($resp['jobs'] ?? null)->toBeArray()->toBe([]);
+    expect((int) ($resp['recommended_wait_seconds'] ?? -1))->toBe(1);
+});
+
 test('print stream emits ready, job, keepalive and terminal_status', function () {
     $user = User::factory()->create(['status' => 'active']);
     seedPosTerminal('PRINT-DEV-SSE', 'T06', 1);
@@ -636,6 +653,52 @@ test('bootstrap returns only active menu items and active customers', function (
         ->toBeTrue();
 });
 
+test('bootstrap includes cash customer and open AR/AP page datasets', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    seedPosTerminal('DEV-PAGES', 'T10', 1);
+    $token = posToken($user, 'DEV-PAGES');
+
+    $cashCustomer = Customer::factory()->create(['is_active' => true, 'name' => 'Cash Customer']);
+    config()->set('pos.cash_customer_id', (int) $cashCustomer->id);
+
+    $creditCustomer = Customer::factory()->create(['is_active' => true]);
+    $openAr = ArInvoice::factory()->create([
+        'branch_id' => 1,
+        'customer_id' => $creditCustomer->id,
+        'invoice_number' => 'AR-POS-OPEN',
+        'status' => 'issued',
+        'issue_date' => now()->toDateString(),
+        'due_date' => now()->toDateString(),
+        'total_cents' => 5000,
+        'paid_total_cents' => 1000,
+        'balance_cents' => 4000,
+    ]);
+
+    $supplier = Supplier::factory()->create(['status' => 'active']);
+    $openAp = ApInvoice::factory()->create([
+        'branch_id' => 1,
+        'supplier_id' => $supplier->id,
+        'invoice_number' => 'AP-POS-OPEN',
+        'status' => 'posted',
+        'subtotal' => 75,
+        'tax_amount' => 0,
+        'total_amount' => 75,
+    ]);
+
+    $resp = $this->withToken($token)
+        ->getJson('/api/pos/bootstrap')
+        ->assertOk()
+        ->json();
+
+    expect((int) ($resp['settings']['cash_customer_id'] ?? 0))->toBe((int) $cashCustomer->id);
+    expect(collect($resp['open_ar_invoices'] ?? [])->pluck('id')->map(fn ($id) => (int) $id)->all())
+        ->toContain((int) $openAr->id);
+    expect(collect($resp['suppliers'] ?? [])->pluck('id')->map(fn ($id) => (int) $id)->all())
+        ->toContain((int) $supplier->id);
+    expect(collect($resp['open_ap_invoices'] ?? [])->pluck('id')->map(fn ($id) => (int) $id)->all())
+        ->toContain((int) $openAp->id);
+});
+
 test('invoice.finalize is idempotent by client_uuid and by (branch_id, pos_reference)', function () {
     $user = User::factory()->create(['status' => 'active']);
     seedPosTerminal('DEV-A', 'T01', 1);
@@ -754,6 +817,220 @@ test('invoice.finalize is idempotent by client_uuid and by (branch_id, pos_refer
     expect((string) ($resp3['acks'][0]['invoice_no'] ?? ''))->toBe($expectedInvoiceNo);
     expect((string) ($resp3['acks'][0]['ref_no'] ?? ''))->toBe($posReference);
     expect(ArInvoice::query()->where('pos_reference', $posReference)->count())->toBe(1);
+});
+
+test('paid invoice.finalize without customer uses configured cash customer and closes invoice', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    seedPosTerminal('DEV-COUNTER-CASH', 'T11', 1);
+    $token = posToken($user, 'DEV-COUNTER-CASH');
+
+    $cashCustomer = Customer::factory()->create(['is_active' => true]);
+    config()->set('pos.cash_customer_id', (int) $cashCustomer->id);
+
+    $menu = MenuItem::factory()->create(['is_active' => true]);
+    $paymentUuid = (string) Str::uuid();
+
+    $resp = $this->withToken($token)->postJson('/api/pos/sync', [
+        'device_id' => 'DEV-COUNTER-CASH',
+        'terminal_code' => 'T11',
+        'branch_id' => 1,
+        'last_pulled_at' => null,
+        'events' => [
+            [
+                'event_id' => 'counter-cash-1',
+                'type' => 'invoice.finalize',
+                'client_uuid' => (string) Str::uuid(),
+                'payload' => [
+                    'client_uuid' => (string) Str::uuid(),
+                    'pos_reference' => 'T11-20260204-000001',
+                    'payment_type' => 'cash',
+                    'sale_mode' => 'counter',
+                    'issue_date' => '2026-02-04',
+                    'lines' => [[
+                        'menu_item_id' => $menu->id,
+                        'qty' => '1.000',
+                        'unit_price_cents' => 1200,
+                        'line_discount_cents' => 0,
+                        'line_total_cents' => 1200,
+                    ]],
+                    'totals' => [
+                        'subtotal_cents' => 1200,
+                        'discount_cents' => 0,
+                        'tax_cents' => 0,
+                        'total_cents' => 1200,
+                    ],
+                    'payments' => [[
+                        'client_uuid' => $paymentUuid,
+                        'method' => 'cash',
+                        'amount_cents' => 1200,
+                    ]],
+                ],
+            ],
+        ],
+    ])->assertOk()->json();
+
+    expect($resp['acks'][0]['ok'])->toBeTrue();
+    $invoice = ArInvoice::query()->whereKey((int) $resp['acks'][0]['server_entity_id'])->firstOrFail();
+    expect((int) $invoice->customer_id)->toBe((int) $cashCustomer->id);
+    expect($invoice->status)->toBe('paid');
+    expect((int) $invoice->balance_cents)->toBe(0);
+    expect(Payment::query()->where('client_uuid', $paymentUuid)->exists())->toBeTrue();
+});
+
+test('credit invoice.finalize without customer is rejected', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    seedPosTerminal('DEV-CREDIT-NOCUST', 'T12', 1);
+    $token = posToken($user, 'DEV-CREDIT-NOCUST');
+    $menu = MenuItem::factory()->create(['is_active' => true]);
+
+    $resp = $this->withToken($token)->postJson('/api/pos/sync', [
+        'device_id' => 'DEV-CREDIT-NOCUST',
+        'terminal_code' => 'T12',
+        'branch_id' => 1,
+        'last_pulled_at' => null,
+        'events' => [
+            [
+                'event_id' => 'credit-nocust-1',
+                'type' => 'invoice.finalize',
+                'client_uuid' => (string) Str::uuid(),
+                'payload' => [
+                    'client_uuid' => (string) Str::uuid(),
+                    'pos_reference' => 'T12-20260204-000001',
+                    'payment_type' => 'credit',
+                    'issue_date' => '2026-02-04',
+                    'lines' => [[
+                        'menu_item_id' => $menu->id,
+                        'qty' => '1.000',
+                        'unit_price_cents' => 900,
+                        'line_discount_cents' => 0,
+                        'line_total_cents' => 900,
+                    ]],
+                    'totals' => [
+                        'subtotal_cents' => 900,
+                        'discount_cents' => 0,
+                        'tax_cents' => 0,
+                        'total_cents' => 900,
+                    ],
+                ],
+            ],
+        ],
+    ])->assertOk()->json();
+
+    expect($resp['acks'][0]['ok'])->toBeFalse();
+    expect($resp['acks'][0]['error_code'])->toBe('VALIDATION_ERROR');
+    expect((string) $resp['acks'][0]['error_message'])->toContain('Customer is required');
+});
+
+test('mixed cash card invoice.finalize creates separate payments and exact allocations', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    seedPosTerminal('DEV-MIXED', 'T13', 1);
+    $token = posToken($user, 'DEV-MIXED');
+
+    $cashCustomer = Customer::factory()->create(['is_active' => true]);
+    config()->set('pos.cash_customer_id', (int) $cashCustomer->id);
+    $menu = MenuItem::factory()->create(['is_active' => true]);
+    $cashUuid = (string) Str::uuid();
+    $cardUuid = (string) Str::uuid();
+
+    $resp = $this->withToken($token)->postJson('/api/pos/sync', [
+        'device_id' => 'DEV-MIXED',
+        'terminal_code' => 'T13',
+        'branch_id' => 1,
+        'last_pulled_at' => null,
+        'events' => [
+            [
+                'event_id' => 'mixed-1',
+                'type' => 'invoice.finalize',
+                'client_uuid' => (string) Str::uuid(),
+                'payload' => [
+                    'client_uuid' => (string) Str::uuid(),
+                    'pos_reference' => 'T13-20260204-000001',
+                    'payment_type' => 'mixed',
+                    'issue_date' => '2026-02-04',
+                    'lines' => [[
+                        'menu_item_id' => $menu->id,
+                        'qty' => '1.000',
+                        'unit_price_cents' => 1000,
+                        'line_discount_cents' => 0,
+                        'line_total_cents' => 1000,
+                    ]],
+                    'totals' => [
+                        'subtotal_cents' => 1000,
+                        'discount_cents' => 0,
+                        'tax_cents' => 0,
+                        'total_cents' => 1000,
+                    ],
+                    'payments' => [
+                        ['client_uuid' => $cashUuid, 'method' => 'cash', 'amount_cents' => 700],
+                        ['client_uuid' => $cardUuid, 'method' => 'card', 'amount_cents' => 300],
+                    ],
+                ],
+            ],
+        ],
+    ])->assertOk()->json();
+
+    expect($resp['acks'][0]['ok'])->toBeTrue();
+    $invoiceId = (int) $resp['acks'][0]['server_entity_id'];
+    $payments = Payment::query()->whereIn('client_uuid', [$cashUuid, $cardUuid])->get();
+    expect($payments)->toHaveCount(2);
+    expect($payments->pluck('method')->sort()->values()->all())->toBe(['card', 'cash']);
+    expect((int) PaymentAllocation::query()
+        ->whereIn('payment_id', $payments->pluck('id')->all())
+        ->where('allocatable_type', ArInvoice::class)
+        ->where('allocatable_id', $invoiceId)
+        ->sum('amount_cents'))->toBe(1000);
+});
+
+test('paid invoice.finalize without customer fails clearly when cash customer inactive', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    seedPosTerminal('DEV-CASH-INACTIVE', 'T14', 1);
+    $token = posToken($user, 'DEV-CASH-INACTIVE');
+
+    $cashCustomer = Customer::factory()->create(['is_active' => false]);
+    config()->set('pos.cash_customer_id', (int) $cashCustomer->id);
+    $menu = MenuItem::factory()->create(['is_active' => true]);
+
+    $resp = $this->withToken($token)->postJson('/api/pos/sync', [
+        'device_id' => 'DEV-CASH-INACTIVE',
+        'terminal_code' => 'T14',
+        'branch_id' => 1,
+        'last_pulled_at' => null,
+        'events' => [
+            [
+                'event_id' => 'cash-inactive-1',
+                'type' => 'invoice.finalize',
+                'client_uuid' => (string) Str::uuid(),
+                'payload' => [
+                    'client_uuid' => (string) Str::uuid(),
+                    'pos_reference' => 'T14-20260204-000001',
+                    'payment_type' => 'cash',
+                    'issue_date' => '2026-02-04',
+                    'lines' => [[
+                        'menu_item_id' => $menu->id,
+                        'qty' => '1.000',
+                        'unit_price_cents' => 1000,
+                        'line_discount_cents' => 0,
+                        'line_total_cents' => 1000,
+                    ]],
+                    'totals' => [
+                        'subtotal_cents' => 1000,
+                        'discount_cents' => 0,
+                        'tax_cents' => 0,
+                        'total_cents' => 1000,
+                    ],
+                    'payments' => [[
+                        'client_uuid' => (string) Str::uuid(),
+                        'method' => 'cash',
+                        'amount_cents' => 1000,
+                    ]],
+                ],
+            ],
+        ],
+    ])->assertOk()->json();
+
+    expect($resp['acks'][0]['ok'])->toBeFalse();
+    expect($resp['acks'][0]['error_code'])->toBe('VALIDATION_ERROR');
+    expect((string) $resp['acks'][0]['error_message'])->toContain('cash customer');
 });
 
 test('table session open is multi-device safe (second open rejected)', function () {

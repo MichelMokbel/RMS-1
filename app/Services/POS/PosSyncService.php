@@ -29,6 +29,7 @@ use App\Support\Money\MinorUnits;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
@@ -197,6 +198,7 @@ class PosSyncService
                     'petty_cash.expense.create',
                     'customer.upsert',
                     'category.upsert',
+                    'menu_item.upsert',
                     'customer.payment.create',
                     'customer.advance.create',
                     'customer.advance.apply',
@@ -242,10 +244,11 @@ class PosSyncService
                     'petty_cash.expense.create' => $this->handlePettyCashExpenseCreate($terminal, $user, $payload),
                     'customer.upsert' => $this->handleCustomerUpsert($terminal, $user, $payload),
                     'category.upsert' => $this->handleCategoryUpsert($terminal, $user, $payload),
+                    'menu_item.upsert' => $this->handleMenuItemUpsert($terminal, $user, $payload),
                     'customer.payment.create' => $this->handleCustomerPaymentCreate($terminal, $user, $deviceId, $payload),
                     'customer.advance.create' => $this->handleCustomerAdvanceCreate($terminal, $user, $deviceId, $payload),
                     'customer.advance.apply' => $this->handleCustomerAdvanceApply($terminal, $user, $payload),
-                    'supplier.payment.create' => $this->handleSupplierPaymentCreate($terminal, $user, $payload),
+                    'supplier.payment.create' => $this->handleSupplierPaymentCreate($terminal, $user, $payload, $clientUuid),
                     'restaurant_area.upsert' => $this->handleAreaUpsert($terminal, $user, $payload),
                     'restaurant_table.upsert' => $this->handleTableUpsert($terminal, $user, $payload),
                 };
@@ -287,7 +290,7 @@ class PosSyncService
             return array_merge($this->ackError($eventId, (string) $e->errorCode, (string) $e->getMessage()), $e->data);
         } catch (ValidationException $e) {
             $msg = $this->firstValidationMessage($e);
-            $this->markEventFailed(
+            $this->markEventRejected(
                 terminalId: (int) $terminal->id,
                 eventId: $eventId,
                 clientUuid: $clientUuid,
@@ -478,23 +481,7 @@ class PosSyncService
     {
         try {
             DB::transaction(function () use ($terminalId, $eventId, $clientUuid, $type, $errorCode, $errorMessage) {
-                $row = PosSyncEvent::query()
-                    ->where('client_uuid', $clientUuid)
-                    ->lockForUpdate()
-                    ->first();
-
-                if (! $row) {
-                    $row = new PosSyncEvent();
-                    $row->terminal_id = $terminalId;
-                    $row->event_id = $eventId;
-                    $row->client_uuid = $clientUuid;
-                    $row->type = $type;
-                } else {
-                    $row->terminal_id = $terminalId;
-                    $row->event_id = $eventId;
-                    $row->type = $type;
-                }
-
+                $row = $this->lockOrNewSyncEvent($terminalId, $eventId, $clientUuid, $type);
                 $row->status = self::STATUS_FAILED;
                 $row->error_code = $errorCode;
                 $row->error_message = $errorMessage;
@@ -503,6 +490,40 @@ class PosSyncService
             }, 3);
         } catch (\Throwable $ignored) {
         }
+    }
+
+    private function markEventRejected(int $terminalId, string $eventId, string $clientUuid, string $type, string $errorCode, string $errorMessage): void
+    {
+        try {
+            DB::transaction(function () use ($terminalId, $eventId, $clientUuid, $type, $errorCode, $errorMessage) {
+                $row = $this->lockOrNewSyncEvent($terminalId, $eventId, $clientUuid, $type);
+                $row->status = self::STATUS_REJECTED;
+                $row->error_code = $errorCode;
+                $row->error_message = $errorMessage;
+                $row->applied_at = null;
+                $row->save();
+            }, 3);
+        } catch (\Throwable $ignored) {
+        }
+    }
+
+    private function lockOrNewSyncEvent(int $terminalId, string $eventId, string $clientUuid, string $type): PosSyncEvent
+    {
+        $row = PosSyncEvent::query()
+            ->where('client_uuid', $clientUuid)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $row) {
+            $row = new PosSyncEvent();
+            $row->client_uuid = $clientUuid;
+        }
+
+        $row->terminal_id = $terminalId;
+        $row->event_id = $eventId;
+        $row->type = $type;
+
+        return $row;
     }
 
     private function deterministicPayloadShapeError(string $type, array $payload): ?string
@@ -546,8 +567,9 @@ class PosSyncService
                     'client_uuid' => ['required', 'uuid'],
                     'pos_reference' => ['required', 'string', 'max:50'],
                     'payment_type' => ['required', 'in:cash,card,mixed,credit'],
-                    'customer_id' => ['required', 'integer', 'min:1'],
+                    'customer_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
                     'issue_date' => ['required', 'date_format:Y-m-d'],
+                    'sale_mode' => ['sometimes', 'nullable', 'in:counter,table'],
                     'pos_shift_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
                     'restaurant_table_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
                     'table_session_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
@@ -564,9 +586,27 @@ class PosSyncService
                     'totals.total_cents' => ['required', 'integer', 'min:0'],
                     'payments' => ['sometimes', 'array'],
                     'payments.*.client_uuid' => ['required_with:payments', 'uuid'],
-                    'payments.*.method' => ['required_with:payments', 'string', 'max:30'],
-                    'payments.*.amount_cents' => ['required_with:payments', 'integer', 'min:0'],
+                    'payments.*.method' => ['required_with:payments', 'string', 'in:cash,card,online,bank,voucher'],
+                    'payments.*.amount_cents' => ['required_with:payments', 'integer', 'min:1'],
                     'payments.*.received_at' => ['sometimes', 'nullable', 'date'],
+                ])->validate(),
+
+                'menu_item.upsert' => Validator::make($payload, [
+                    'menu_item' => ['required', 'array'],
+                    'menu_item.id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+                    'menu_item.code' => ['sometimes', 'nullable', 'string', 'max:50'],
+                    'menu_item.name' => ['required', 'string', 'max:255'],
+                    'menu_item.arabic_name' => ['sometimes', 'nullable', 'string', 'max:255'],
+                    'menu_item.category_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+                    'menu_item.unit' => ['sometimes', 'nullable', 'string', 'max:30'],
+                    'menu_item.selling_price_per_unit' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+                    'menu_item.price_cents' => ['sometimes', 'nullable', 'integer', 'min:0'],
+                    'menu_item.tax_rate' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100'],
+                    'menu_item.is_active' => ['sometimes', 'boolean'],
+                    'menu_item.display_order' => ['sometimes', 'integer', 'min:0'],
+                    'menu_item.branch_ids' => ['sometimes', 'array'],
+                    'menu_item.branch_ids.*' => ['integer', 'min:1'],
+                    'menu_item.updated_at' => ['sometimes', 'nullable', 'date'],
                 ])->validate(),
 
                 'petty_cash.expense.create' => Validator::make($payload, [
@@ -682,6 +722,25 @@ class PosSyncService
             }
         }
         return 'Validation error.';
+    }
+
+    private function resolveCashCustomer(): Customer
+    {
+        $customerId = (int) config('pos.cash_customer_id', 0);
+        if ($customerId <= 0) {
+            throw ValidationException::withMessages([
+                'customer_id' => 'POS cash customer is not configured.',
+            ]);
+        }
+
+        $customer = Customer::query()->whereKey($customerId)->first();
+        if (! $customer || ! $customer->isActive()) {
+            throw ValidationException::withMessages([
+                'customer_id' => 'Configured POS cash customer is missing or inactive.',
+            ]);
+        }
+
+        return $customer;
     }
 
     private function handleShiftOpen($terminal, $user, string $deviceId, array $payload): array
@@ -872,8 +931,9 @@ class PosSyncService
         $v = Validator::make($payload, [
             'pos_reference' => ['required', 'string', 'regex:/^[A-Za-z0-9._-]+-\\d{8}-\\d{6}$/'],
             'payment_type' => ['required', 'string', 'in:cash,card,credit,mixed'],
-            'customer_id' => ['required', 'integer', 'min:1'],
+            'customer_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'issue_date' => ['required', 'date_format:Y-m-d'],
+            'sale_mode' => ['sometimes', 'nullable', 'string', 'in:counter,table'],
             'pos_shift_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'restaurant_table_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'table_session_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
@@ -898,6 +958,9 @@ class PosSyncService
 
         if ($v['payment_type'] === 'credit' && ! empty($v['payments'] ?? [])) {
             throw ValidationException::withMessages(['payments' => 'Credit invoices must not include payments.']);
+        }
+        if ($v['payment_type'] === 'credit' && empty($v['customer_id'])) {
+            throw ValidationException::withMessages(['customer_id' => 'Customer is required for credit invoices.']);
         }
         if ($v['payment_type'] !== 'credit' && empty($v['payments'] ?? [])) {
             throw ValidationException::withMessages(['payments' => 'Payments are required.']);
@@ -942,9 +1005,16 @@ class PosSyncService
             ];
         }
 
-        $customer = Customer::find((int) $v['customer_id']);
+        $customer = ! empty($v['customer_id'])
+            ? Customer::find((int) $v['customer_id'])
+            : $this->resolveCashCustomer();
         if (! $customer) {
             throw ValidationException::withMessages(['customer_id' => 'Customer not found.']);
+        }
+
+        $saleMode = trim((string) ($v['sale_mode'] ?? ''));
+        if ($saleMode === '') {
+            $saleMode = (! empty($v['restaurant_table_id']) || ! empty($v['table_session_id'])) ? 'table' : 'counter';
         }
 
         $items = [];
@@ -1025,6 +1095,7 @@ class PosSyncService
             'table_session_id' => $v['table_session_id'] ?? null,
             'meta' => [
                 'device_id' => $deviceId,
+                'sale_mode' => $saleMode,
             ],
             'updated_by' => (int) $user->id,
         ]);
@@ -1051,6 +1122,11 @@ class PosSyncService
                 $amount = (int) $p['amount_cents'];
                 $alloc = min($remaining, $amount);
                 $remaining -= $alloc;
+
+                $existingPayment = Payment::query()->where('client_uuid', $paymentUuid)->first();
+                if ($existingPayment) {
+                    continue;
+                }
 
                 $payment = Payment::create([
                     'branch_id' => (int) $invoice->branch_id,
@@ -1260,6 +1336,142 @@ class PosSyncService
         return ['entity_type' => 'category', 'entity_id' => (int) $category->id];
     }
 
+    private function handleMenuItemUpsert($terminal, $user, array $payload): array
+    {
+        $v = Validator::make($payload, [
+            'menu_item' => ['required', 'array'],
+            'menu_item.id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'menu_item.code' => ['sometimes', 'nullable', 'string', 'max:50'],
+            'menu_item.name' => ['required', 'string', 'max:255'],
+            'menu_item.arabic_name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'menu_item.category_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'menu_item.unit' => ['sometimes', 'nullable', 'string', 'max:30'],
+            'menu_item.selling_price_per_unit' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'menu_item.price_cents' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'menu_item.tax_rate' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100'],
+            'menu_item.is_active' => ['sometimes', 'boolean'],
+            'menu_item.display_order' => ['sometimes', 'integer', 'min:0'],
+            'menu_item.branch_ids' => ['sometimes', 'array'],
+            'menu_item.branch_ids.*' => ['integer', 'min:1'],
+            'menu_item.updated_at' => ['sometimes', 'nullable', 'date'],
+        ])->validate();
+
+        $m = (array) $v['menu_item'];
+        $incomingUpdatedAt = isset($m['updated_at']) ? Carbon::parse($m['updated_at']) : null;
+        $categoryId = isset($m['category_id']) ? (int) $m['category_id'] : null;
+        if ($categoryId && ! Category::query()->whereKey($categoryId)->exists()) {
+            throw ValidationException::withMessages(['menu_item.category_id' => 'Category not found.']);
+        }
+
+        $code = trim((string) ($m['code'] ?? ''));
+        if ($code !== '') {
+            $duplicate = MenuItem::query()
+                ->where('code', $code)
+                ->when(! empty($m['id']), fn ($q) => $q->whereKeyNot((int) $m['id']))
+                ->exists();
+            if ($duplicate) {
+                throw ValidationException::withMessages(['menu_item.code' => 'Menu item code already exists.']);
+            }
+        }
+
+        $price = $this->menuItemPriceDecimal($m);
+        $data = [
+            'code' => $code !== '' ? $code : null,
+            'name' => (string) $m['name'],
+            'arabic_name' => $m['arabic_name'] ?? null,
+            'category_id' => $categoryId,
+            'unit' => (string) ($m['unit'] ?? MenuItem::UNIT_EACH),
+            'selling_price_per_unit' => $price,
+            'tax_rate' => (string) ($m['tax_rate'] ?? '0'),
+            'is_active' => (bool) ($m['is_active'] ?? true),
+            'display_order' => (int) ($m['display_order'] ?? 0),
+        ];
+
+        if (! empty($m['id'])) {
+            $menuItem = MenuItem::query()->whereKey((int) $m['id'])->lockForUpdate()->firstOrFail();
+            if ($incomingUpdatedAt && $menuItem->updated_at && $menuItem->updated_at->greaterThan($incomingUpdatedAt)) {
+                return ['entity_type' => 'menu_item', 'entity_id' => (int) $menuItem->id];
+            }
+
+            $menuItem->update($data);
+        } else {
+            $menuItem = MenuItem::create($data);
+        }
+
+        $branchIds = $this->menuItemBranchIds($terminal, $m);
+        $this->syncMenuItemBranches($menuItem, $branchIds);
+
+        return ['entity_type' => 'menu_item', 'entity_id' => (int) $menuItem->id];
+    }
+
+    private function menuItemPriceDecimal(array $menuItem): string
+    {
+        if (array_key_exists('price_cents', $menuItem) && $menuItem['price_cents'] !== null) {
+            return MinorUnits::format((int) $menuItem['price_cents'], MinorUnits::posScale(), false);
+        }
+
+        return number_format((float) ($menuItem['selling_price_per_unit'] ?? 0), 3, '.', '');
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function menuItemBranchIds($terminal, array $menuItem): array
+    {
+        $branchIds = array_key_exists('branch_ids', $menuItem)
+            ? array_map(static fn ($id) => (int) $id, (array) $menuItem['branch_ids'])
+            : [(int) $terminal->branch_id];
+
+        $branchIds = array_values(array_unique(array_filter($branchIds, static fn (int $id) => $id > 0)));
+        if ($branchIds === []) {
+            $branchIds = [(int) $terminal->branch_id];
+        }
+
+        if (Schema::hasTable('branches')) {
+            $existing = DB::table('branches')
+                ->whereIn('id', $branchIds)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+            sort($existing);
+            $expected = $branchIds;
+            sort($expected);
+            if ($existing !== $expected) {
+                throw ValidationException::withMessages(['menu_item.branch_ids' => 'Invalid branch availability.']);
+            }
+        }
+
+        return $branchIds;
+    }
+
+    /**
+     * @param  array<int, int>  $branchIds
+     */
+    private function syncMenuItemBranches(MenuItem $menuItem, array $branchIds): void
+    {
+        if (! Schema::hasTable('menu_item_branches')) {
+            return;
+        }
+
+        DB::table('menu_item_branches')
+            ->where('menu_item_id', (int) $menuItem->id)
+            ->whereNotIn('branch_id', $branchIds)
+            ->delete();
+
+        foreach ($branchIds as $branchId) {
+            DB::table('menu_item_branches')->updateOrInsert(
+                [
+                    'menu_item_id' => (int) $menuItem->id,
+                    'branch_id' => (int) $branchId,
+                ],
+                [
+                    'updated_at' => now(),
+                    'created_at' => now(),
+                ]
+            );
+        }
+    }
+
     private function handleCustomerPaymentCreate($terminal, $user, string $deviceId, array $payload): array
     {
         $v = Validator::make($payload, [
@@ -1393,7 +1605,7 @@ class PosSyncService
         return ['entity_type' => 'payment_allocation', 'entity_id' => (int) $allocation->id];
     }
 
-    private function handleSupplierPaymentCreate($terminal, $user, array $payload): array
+    private function handleSupplierPaymentCreate($terminal, $user, array $payload, string $eventClientUuid): array
     {
         $v = Validator::make($payload, [
             'supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
@@ -1417,7 +1629,9 @@ class PosSyncService
         }
 
         $payment = $this->apAllocations->createPaymentWithAllocations([
+            'client_uuid' => $eventClientUuid,
             'supplier_id' => (int) $v['supplier_id'],
+            'branch_id' => (int) $terminal->branch_id,
             'payment_date' => Carbon::parse($v['payment_date'])->toDateString(),
             'amount' => $amount,
             'payment_method' => (string) $v['payment_method'],

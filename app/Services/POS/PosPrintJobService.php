@@ -166,7 +166,8 @@ class PosPrintJobService
     public function pull(PosTerminal $terminal, ?int $waitSeconds = null, ?int $limit = null): array
     {
         $terminalId = (int) $terminal->id;
-        $waitSeconds = max(0, min(60, (int) ($waitSeconds ?? 0)));
+        $configuredWaitSeconds = (int) config('pos.print_jobs.pull_wait_seconds', 25);
+        $waitSeconds = max(0, min(60, (int) ($waitSeconds ?? $configuredWaitSeconds)));
         $limit = max(1, min(100, (int) ($limit ?? 20)));
         $sleepMs = max(25, min(5000, (int) config('pos.print_jobs.pull_idle_sleep_ms', 250)));
         $deadline = microtime(true) + $waitSeconds;

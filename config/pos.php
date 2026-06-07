@@ -16,8 +16,9 @@ $parseReceiptLines = static function ($value): array {
 return [
     'currency' => env('POS_CURRENCY', 'QAR'),
     'money_scale' => (int) env('POS_MONEY_SCALE', 100),
+    'cash_customer_id' => (int) env('POS_CASH_CUSTOMER_ID', 433),
     'print_jobs' => [
-        'pull_wait_seconds' => (int) env('POS_PRINT_PULL_WAIT_SECONDS', 0),
+        'pull_wait_seconds' => (int) env('POS_PRINT_PULL_WAIT_SECONDS', 25),
         'pull_idle_sleep_ms' => (int) env('POS_PRINT_PULL_IDLE_SLEEP_MS', 250),
         'claim_ttl_seconds' => (int) env('POS_PRINT_CLAIM_TTL_SECONDS', 45),
         'retry_base_seconds' => (int) env('POS_PRINT_RETRY_BASE_SECONDS', 2),

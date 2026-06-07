@@ -7,6 +7,7 @@ use App\Models\ArInvoice;
 use App\Models\ArInvoiceItem;
 use App\Models\Category;
 use App\Models\Customer;
+use App\Models\MenuItem;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Models\PosShift;
@@ -15,6 +16,7 @@ use App\Models\Supplier;
 use App\Models\User;
 use App\Services\AR\ArInvoiceService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
 
@@ -131,6 +133,90 @@ test('category.upsert creates, updates, and rejects cycles', function () {
 
     expect($resp3['acks'][0]['ok'])->toBeFalse();
     expect($resp3['acks'][0]['error_code'])->toBe('VALIDATION_ERROR');
+});
+
+test('menu item upsert creates sellable product with branch availability and is idempotent', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    seedPosTerminalForExtendedSync('DEV-MENU', 'T15', 1);
+    $token = posTokenForExtendedDevice($user, 'DEV-MENU');
+
+    if (Schema::hasTable('branches')) {
+        DB::table('branches')->insertOrIgnore([
+            'id' => 1,
+            'name' => 'Branch 1',
+            'code' => 'B1',
+            'is_active' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    $category = Category::create(['name' => 'POS Products']);
+    $eventUuid = (string) Str::uuid();
+
+    $payload = [
+        'menu_item' => [
+            'code' => 'POS-COFFEE',
+            'name' => 'Counter Coffee',
+            'arabic_name' => 'Counter Coffee AR',
+            'category_id' => $category->id,
+            'price_cents' => 1250,
+            'tax_rate' => '0',
+            'is_active' => true,
+            'display_order' => 10,
+            'branch_ids' => [1],
+        ],
+    ];
+
+    $resp = $this->withToken($token)->postJson('/api/pos/sync', [
+        'device_id' => 'DEV-MENU',
+        'terminal_code' => 'T15',
+        'branch_id' => 1,
+        'last_pulled_at' => null,
+        'events' => [
+            [
+                'event_id' => 'menu-1',
+                'type' => 'menu_item.upsert',
+                'client_uuid' => $eventUuid,
+                'payload' => $payload,
+            ],
+        ],
+    ])->assertOk()->json();
+
+    expect($resp['acks'][0]['ok'])->toBeTrue();
+    $menuItemId = (int) ($resp['acks'][0]['server_entity_id'] ?? 0);
+    expect($menuItemId)->toBeGreaterThan(0);
+
+    $menuItem = MenuItem::query()->whereKey($menuItemId)->firstOrFail();
+    expect($menuItem->code)->toBe('POS-COFFEE');
+    expect($menuItem->name)->toBe('Counter Coffee');
+    expect((string) $menuItem->selling_price_per_unit)->toBe('12.500');
+
+    if (Schema::hasTable('menu_item_branches')) {
+        expect(DB::table('menu_item_branches')
+            ->where('menu_item_id', $menuItemId)
+            ->where('branch_id', 1)
+            ->exists())->toBeTrue();
+    }
+
+    $replay = $this->withToken($token)->postJson('/api/pos/sync', [
+        'device_id' => 'DEV-MENU',
+        'terminal_code' => 'T15',
+        'branch_id' => 1,
+        'last_pulled_at' => null,
+        'events' => [
+            [
+                'event_id' => 'menu-1-replay',
+                'type' => 'menu_item.upsert',
+                'client_uuid' => $eventUuid,
+                'payload' => $payload,
+            ],
+        ],
+    ])->assertOk()->json();
+
+    expect($replay['acks'][0]['ok'])->toBeTrue();
+    expect((int) $replay['acks'][0]['server_entity_id'])->toBe($menuItemId);
+    expect(MenuItem::query()->where('code', 'POS-COFFEE')->count())->toBe(1);
 });
 
 test('customer payment and advance flows create payments and allocations', function () {
