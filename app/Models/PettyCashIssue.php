@@ -20,6 +20,7 @@ class PettyCashIssue extends Model
         'issue_date',
         'amount',
         'method',
+        'bank_account_id',
         'reference',
         'issued_by',
         'voided_at',
@@ -29,6 +30,7 @@ class PettyCashIssue extends Model
     protected $casts = [
         'issue_date' => 'date',
         'amount' => 'decimal:2',
+        'bank_account_id' => 'integer',
         'created_at' => 'datetime',
         'voided_at' => 'datetime',
     ];
@@ -54,6 +56,11 @@ class PettyCashIssue extends Model
     public function wallet(): BelongsTo
     {
         return $this->belongsTo(PettyCashWallet::class, 'wallet_id');
+    }
+
+    public function bankAccount(): BelongsTo
+    {
+        return $this->belongsTo(BankAccount::class, 'bank_account_id');
     }
 
     public function issuer(): BelongsTo

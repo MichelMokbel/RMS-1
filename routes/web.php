@@ -1162,7 +1162,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|fin
     Volt::route('payables/invoices/{invoice}', 'payables.invoices.show')->name('payables.invoices.show');
     Volt::route('payables/invoices/{invoice}/edit', 'payables.invoices.edit')->name('payables.invoices.edit');
     Route::get('spend', fn () => redirect()->route('payables.index', ['tab' => 'approvals']))->name('spend.index');
-    Route::get('petty-cash', fn () => redirect()->route('payables.index', ['tab' => 'expenses', 'expense_channel' => 'petty_cash']))->name('petty-cash.index');
+    Volt::route('petty-cash', 'petty-cash.index')->name('petty-cash.index');
     Route::get('expenses', fn () => redirect()->route('payables.index', ['tab' => 'expenses']))->name('expenses.index');
     Route::get('expenses/create', fn () => redirect()->route('payables.create'))->name('expenses.create');
     Route::get('expenses/categories', fn () => redirect()->route('payables.index', ['tab' => 'expenses']))->name('expenses.categories');

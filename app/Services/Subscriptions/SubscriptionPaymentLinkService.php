@@ -275,7 +275,7 @@ class SubscriptionPaymentLinkService
                 ])
                 ->get();
 
-            $total = 0;
+            $coveredMeals = 0.0;
             foreach ($invoices as $invoice) {
                 $subItems = $invoice->items;
 
@@ -287,15 +287,22 @@ class SubscriptionPaymentLinkService
                 $subItemsTotal = (int) $subItems->sum('line_total_cents');
                 $allocated     = (int) $invoice->paymentAllocations->sum('amount_cents');
 
+                if ($subItemsQty <= 0) {
+                    continue;
+                }
+
                 if ($subItemsTotal <= 0 || $allocated >= $invoice->total_cents) {
                     // Fully paid (or zero-value items): all subscription items are covered.
-                    $total += (int) $subItemsQty;
+                    $coveredMeals += $subItemsQty;
                 } else {
-                    // Partial payment: count only the whole items the allocation covers.
+                    // Partial payment: keep the fractional meal coverage so that small
+                    // under/over allocations across multiple invoices still net out.
                     $perUnitCents = $subItemsTotal / $subItemsQty;
-                    $total += (int) floor($allocated / $perUnitCents);
+                    $coveredMeals += min($subItemsQty, $allocated / $perUnitCents);
                 }
             }
+
+            $total = (int) floor($coveredMeals + 0.000001);
         } else {
             // Metadata-anchored: no payment link, derive from subscription item metadata.
 

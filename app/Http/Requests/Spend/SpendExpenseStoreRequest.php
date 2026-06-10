@@ -30,6 +30,7 @@ class SpendExpenseStoreRequest extends FormRequest
             'currency_code' => ['nullable', 'string', 'max:10'],
             'notes' => ['nullable', 'string'],
             'reference' => ['nullable', 'string', 'max:100'],
+            'not_settled' => ['nullable', 'boolean'],
         ];
     }
 

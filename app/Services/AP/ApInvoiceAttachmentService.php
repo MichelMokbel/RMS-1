@@ -12,6 +12,8 @@ use Illuminate\Validation\ValidationException;
 
 class ApInvoiceAttachmentService
 {
+    private const DISK = 's3';
+
     public function __construct(
         protected AccountingAuditLogService $auditLog
     ) {
@@ -35,7 +37,7 @@ class ApInvoiceAttachmentService
         $path = $file->storeAs(
             'ap-invoices/'.$invoice->id,
             Str::uuid().'.'.$file->getClientOriginalExtension(),
-            'public'
+            self::DISK
         );
 
         $attachment = ApInvoiceAttachment::create([
@@ -69,8 +71,8 @@ class ApInvoiceAttachmentService
             'original_name' => $attachment->original_name,
         ];
 
-        if ($attachment->file_path && Storage::disk('public')->exists($attachment->file_path)) {
-            Storage::disk('public')->delete($attachment->file_path);
+        if ($attachment->file_path && Storage::disk(self::DISK)->exists($attachment->file_path)) {
+            Storage::disk(self::DISK)->delete($attachment->file_path);
         }
 
         $attachment->delete();

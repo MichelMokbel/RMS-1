@@ -134,6 +134,9 @@
                         <flux:navlist.item icon="banknotes" :href="route('payables.index')" :current="request()->routeIs('payables.*')" wire:navigate>
                             {{ __('Accounts Payable') }}
                         </flux:navlist.item>
+                        <flux:navlist.item icon="wallet" :href="route('petty-cash.index')" :current="request()->routeIs('petty-cash.*')" wire:navigate>
+                            {{ __('Petty Cash') }}
+                        </flux:navlist.item>
                         <flux:navlist.item icon="calculator" :href="route('ledger.batches.index')" :current="request()->routeIs('ledger.*')" wire:navigate>
                             {{ __('Ledger Batches') }}
                         </flux:navlist.item>

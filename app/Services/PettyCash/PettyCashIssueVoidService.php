@@ -4,6 +4,7 @@ namespace App\Services\PettyCash;
 
 use App\Models\PettyCashIssue;
 use App\Models\SubledgerEntry;
+use App\Services\Banking\BankTransactionService;
 use App\Services\Ledger\SubledgerService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -12,7 +13,8 @@ class PettyCashIssueVoidService
 {
     public function __construct(
         protected PettyCashBalanceService $balanceService,
-        protected SubledgerService $subledgerService
+        protected SubledgerService $subledgerService,
+        protected BankTransactionService $bankTransactionService
     ) {
     }
 
@@ -47,7 +49,9 @@ class PettyCashIssueVoidService
                 );
             }
 
-            return $issue->fresh(['wallet']);
+            $this->bankTransactionService->voidPettyCashIssue($issue, $userId);
+
+            return $issue->fresh(['wallet', 'bankAccount', 'voidedBy']);
         });
     }
 }

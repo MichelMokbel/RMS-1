@@ -4,6 +4,7 @@ namespace App\Services\Spend;
 
 use App\Models\ApInvoice;
 use App\Models\ExpenseProfile;
+use App\Models\User;
 use App\Services\AP\ApInvoicePostingService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -41,17 +42,31 @@ class ExpenseWorkflowService
             }
 
             $flags = $this->policyService->exceptionFlags($lockedInvoice, $profile);
-            $profile->approval_status = 'submitted';
+            $selfApproved = $this->canSelfApprove($actorId);
+            $profile->approval_status = $selfApproved ? 'approved' : 'submitted';
             $profile->submitted_by = $actorId;
             $profile->submitted_at = now();
             $profile->exception_flags = $flags;
             $profile->requires_finance_approval = $this->policyService->requiresFinanceApproval($flags);
+            $profile->manager_approved_by = $selfApproved ? $actorId : null;
+            $profile->manager_approved_at = $selfApproved ? now() : null;
+            $profile->finance_approved_by = $selfApproved ? $actorId : null;
+            $profile->finance_approved_at = $selfApproved ? now() : null;
             $profile->save();
 
             $this->eventService->log($lockedInvoice, 'submitted', $actorId, [
                 'exception_flags' => $flags,
                 'requires_finance_approval' => (bool) $profile->requires_finance_approval,
+                'approval_status' => $profile->approval_status,
+                'self_approved' => $selfApproved,
             ]);
+
+            if ($selfApproved) {
+                $this->eventService->log($lockedInvoice, 'auto_approved', $actorId, [
+                    'approval_status' => $profile->approval_status,
+                    'requires_finance_approval' => (bool) $profile->requires_finance_approval,
+                ]);
+            }
         });
 
         return $invoice->fresh(['expenseProfile']);
@@ -63,7 +78,7 @@ class ExpenseWorkflowService
             $lockedInvoice = ApInvoice::query()->lockForUpdate()->findOrFail($invoice->id);
             $profile = $this->findOrCreateDraftProfile($lockedInvoice);
 
-            if ((int) ($profile->submitted_by ?? 0) === $actorId) {
+            if ((int) ($profile->submitted_by ?? 0) === $actorId && ! $this->canSelfApprove($actorId)) {
                 throw ValidationException::withMessages(['approver' => __('Submitter cannot approve own expense.')]);
             }
 
@@ -190,6 +205,34 @@ class ExpenseWorkflowService
         return $result->fresh(['expenseProfile']);
     }
 
+    /**
+     * Auto-process admin petty cash expenses at creation time.
+     *
+     * By default the expense is approved, posted, and settled immediately.
+     * When $leaveUnsettled is true, it is approved and posted but left pending settlement.
+     *
+     * @param array<string, mixed> $settlementPayload
+     */
+    public function autoProcessPettyCashOnCreate(
+        ApInvoice $invoice,
+        int $actorId,
+        bool $leaveUnsettled = false,
+        array $settlementPayload = []
+    ): ApInvoice {
+        if (! $this->shouldAutoProcessPettyCash($invoice, $actorId)) {
+            return $invoice->fresh(['expenseProfile']);
+        }
+
+        $invoice = $this->submit($invoice, $actorId);
+        $invoice = $this->post($invoice, $actorId);
+
+        if ($leaveUnsettled) {
+            return $invoice->fresh(['expenseProfile']);
+        }
+
+        return $this->settle($invoice, $actorId, $settlementPayload);
+    }
+
     public function workflowState(ApInvoice $invoice): string
     {
         $profile = $invoice->expenseProfile;
@@ -238,5 +281,22 @@ class ExpenseWorkflowService
             'approval_status' => 'draft',
             'requires_finance_approval' => false,
         ]);
+    }
+
+    private function canSelfApprove(int $actorId): bool
+    {
+        $actor = User::query()->find($actorId);
+
+        return (bool) $actor?->hasRole('admin');
+    }
+
+    private function shouldAutoProcessPettyCash(ApInvoice $invoice, int $actorId): bool
+    {
+        $invoice->loadMissing('expenseProfile');
+
+        return $this->canSelfApprove($actorId)
+            && $invoice->is_expense
+            && $invoice->document_type === 'expense'
+            && $invoice->expenseProfile?->channel === 'petty_cash';
     }
 }

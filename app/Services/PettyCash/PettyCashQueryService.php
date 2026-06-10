@@ -35,7 +35,7 @@ class PettyCashQueryService
             return collect();
         }
 
-        return PettyCashIssue::with(['wallet', 'voidedBy'])
+        return PettyCashIssue::with(['wallet', 'bankAccount', 'issuer', 'voidedBy'])
             ->when($walletId, fn ($q) => $q->where('wallet_id', $walletId))
             ->when($method !== 'all', fn ($q) => $q->where('method', $method))
             ->when($from, fn ($q) => $q->whereDate('issue_date', '>=', $from))

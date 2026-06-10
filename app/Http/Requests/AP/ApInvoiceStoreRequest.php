@@ -34,6 +34,7 @@ class ApInvoiceStoreRequest extends FormRequest
             'category_id' => ['nullable', 'integer', Rule::exists('expense_categories', 'id')],
             'expense_channel' => ['nullable', 'in:vendor,petty_cash,reimbursement'],
             'wallet_id' => ['nullable', 'integer', 'exists:petty_cash_wallets,id'],
+            'not_settled' => ['nullable', 'boolean'],
             'document_type' => ['required', Rule::in(DocumentTypeMap::types())],
             'currency_code' => ['nullable', 'string', 'max:10'],
             'invoice_number' => [

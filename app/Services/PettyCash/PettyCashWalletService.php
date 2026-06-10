@@ -11,6 +11,7 @@ class PettyCashWalletService
     public function create(array $data, int $userId): PettyCashWallet
     {
         return DB::transaction(function () use ($data, $userId) {
+            // TODO: remove direct wallet balance writes from API callers after compatibility window closes.
             return PettyCashWallet::create([
                 'driver_id' => $data['driver_id'] ?? null,
                 'driver_name' => $data['driver_name'] ?? null,

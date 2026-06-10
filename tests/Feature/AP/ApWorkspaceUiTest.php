@@ -52,9 +52,23 @@ it('renders the type-first create page', function () {
     $this->actingAs($user)
         ->get('/payables/create')
         ->assertOk()
-        ->assertSee('Vendor Bill')
+        ->assertSee('Supplier Bill')
+        ->assertSee('Petty Cash Expense')
         ->assertSee('Employee Reimbursement')
+        ->assertSee('Advanced Documents')
+        ->assertSee('Open Advanced')
         ->assertSee('Recurring Bill');
+});
+
+it('shows the not settled control for admin petty cash creation', function () {
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+
+    $this->actingAs($user)
+        ->get('/payables/invoices/create?document_type=expense&expense_channel=petty_cash')
+        ->assertOk()
+        ->assertSee('Not settled')
+        ->assertSee('Create and Settle');
 });
 
 it('removes the is_expense checkbox from create and edit forms', function () {
@@ -256,6 +270,35 @@ it('allows a manager to approve a submitted expense from the AP workspace', func
     ]);
 });
 
+it('does not render settle for submitted expenses and lets admin review self-submitted rows', function () {
+    $admin = User::factory()->create();
+    $admin->assignRole('admin');
+
+    $supplier = Supplier::factory()->create();
+    $invoice = ApInvoice::factory()->create([
+        'supplier_id' => $supplier->id,
+        'document_type' => 'expense',
+        'is_expense' => true,
+        'status' => 'posted',
+        'total_amount' => 100,
+    ]);
+
+    ExpenseProfile::query()->create([
+        'invoice_id' => $invoice->id,
+        'channel' => 'vendor',
+        'approval_status' => 'submitted',
+        'submitted_by' => $admin->id,
+        'submitted_at' => now(),
+        'requires_finance_approval' => false,
+    ]);
+
+    $this->actingAs($admin)
+        ->get('/payables?tab=approvals')
+        ->assertOk()
+        ->assertSee('Manager Approve')
+        ->assertDontSee('wire:click="settleExpense('.$invoice->id.')"', false);
+});
+
 it('settles a posted expense from the AP workspace using the default bank account when needed', function () {
     $admin = User::factory()->create();
     $admin->assignRole('admin');
@@ -335,4 +378,105 @@ it('settles a posted expense from the AP workspace using the default bank accoun
     ]);
 
     expect($invoice->fresh()->status)->toBe('paid');
+});
+
+it('settles all visible settleable expenses from the AP workspace', function () {
+    $admin = User::factory()->create();
+    $admin->assignRole('admin');
+
+    $company = AccountingCompany::query()->create([
+        'name' => 'Main Company',
+        'code' => 'MAIN',
+        'base_currency' => 'QAR',
+        'is_active' => true,
+        'is_default' => true,
+    ]);
+
+    $bankLedger = LedgerAccount::query()->create([
+        'company_id' => $company->id,
+        'code' => 'BANK-LEDGER-02',
+        'name' => 'Operating Bank',
+        'type' => 'asset',
+        'account_class' => 'asset',
+        'is_active' => true,
+        'allow_direct_posting' => true,
+    ]);
+
+    BankAccount::query()->create([
+        'company_id' => $company->id,
+        'ledger_account_id' => $bankLedger->id,
+        'name' => 'Primary Bank',
+        'code' => 'BANK-02',
+        'account_type' => 'checking',
+        'bank_name' => 'Local Bank',
+        'account_number_last4' => '1234',
+        'currency_code' => 'QAR',
+        'is_default' => true,
+        'is_active' => true,
+    ]);
+
+    $supplier = Supplier::factory()->create();
+
+    $invoiceA = ApInvoice::factory()->create([
+        'company_id' => $company->id,
+        'supplier_id' => $supplier->id,
+        'document_type' => 'expense',
+        'is_expense' => true,
+        'status' => 'posted',
+        'subtotal' => 80,
+        'tax_amount' => 0,
+        'total_amount' => 80,
+    ]);
+
+    $invoiceB = ApInvoice::factory()->create([
+        'company_id' => $company->id,
+        'supplier_id' => $supplier->id,
+        'document_type' => 'expense',
+        'is_expense' => true,
+        'status' => 'partially_paid',
+        'subtotal' => 140,
+        'tax_amount' => 0,
+        'total_amount' => 140,
+    ]);
+
+    ExpenseProfile::query()->insert([
+        [
+            'invoice_id' => $invoiceA->id,
+            'channel' => 'vendor',
+            'approval_status' => 'approved',
+            'submitted_by' => $admin->id,
+            'submitted_at' => now(),
+            'manager_approved_by' => $admin->id,
+            'manager_approved_at' => now(),
+            'requires_finance_approval' => false,
+        ],
+        [
+            'invoice_id' => $invoiceB->id,
+            'channel' => 'vendor',
+            'approval_status' => 'approved',
+            'submitted_by' => $admin->id,
+            'submitted_at' => now(),
+            'manager_approved_by' => $admin->id,
+            'manager_approved_at' => now(),
+            'requires_finance_approval' => false,
+        ],
+    ]);
+
+    Volt::actingAs($admin);
+
+    Volt::test('payables.index')
+        ->set('tab', 'expenses')
+        ->call('settleAllExpenses');
+
+    expect($invoiceA->fresh()->status)->toBe('paid');
+    expect($invoiceB->fresh()->status)->toBe('paid');
+
+    $this->assertDatabaseHas('expense_profiles', [
+        'invoice_id' => $invoiceA->id,
+        'settlement_mode' => 'manual_ap_payment',
+    ]);
+    $this->assertDatabaseHas('expense_profiles', [
+        'invoice_id' => $invoiceB->id,
+        'settlement_mode' => 'manual_ap_payment',
+    ]);
 });

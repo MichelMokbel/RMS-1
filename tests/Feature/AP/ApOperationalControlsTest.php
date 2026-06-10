@@ -29,7 +29,7 @@ beforeEach(function () {
     $this->admin = User::factory()->create(['status' => 'active']);
     $this->admin->assignRole('admin');
 
-    Storage::fake('public');
+    Storage::fake('s3');
 });
 
 it('blocks draft AP document creation for blocked suppliers', function () {
@@ -152,7 +152,7 @@ it('allows AP attachment upload and deletion on paid documents while the period 
     $attachment = ApInvoiceAttachment::query()->where('invoice_id', $invoice->id)->first();
 
     expect($attachment)->not->toBeNull();
-    expect(Storage::disk('public')->exists($attachment->file_path))->toBeTrue();
+    expect(Storage::disk('s3')->exists($attachment->file_path))->toBeTrue();
 
     Livewire::test('payables.invoices.show', ['invoice' => $invoice->fresh()])
         ->call('deleteAttachment', $attachment->id)
@@ -184,7 +184,7 @@ it('blocks AP attachment changes once the invoice period is closed', function ()
         'uploaded_by' => $this->admin->id,
     ]);
 
-    Storage::disk('public')->put($attachment->file_path, 'stub');
+    Storage::disk('s3')->put($attachment->file_path, 'stub');
 
     $this->actingAs($this->admin);
 

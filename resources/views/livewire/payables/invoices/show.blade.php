@@ -193,7 +193,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="space-y-2">
                 @foreach($invoice->attachments as $attachment)
                     <div class="flex items-center justify-between gap-4 rounded-md border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700">
-                        <a href="{{ Storage::disk('public')->url($attachment->file_path) }}" target="_blank" class="truncate text-primary-700 hover:underline dark:text-primary-300">
+                        <a href="{{ $attachment->url }}" target="_blank" class="truncate text-primary-700 hover:underline dark:text-primary-300">
                             {{ $attachment->original_name }}
                         </a>
                         @if($this->canManageAttachments())

@@ -35,6 +35,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?int $category_id = null;
     public ?string $expense_channel = null;
     public ?int $wallet_id = null;
+    public bool $not_settled = false;
     public string $invoice_number = '';
     public ?string $invoice_date = null;
     public ?string $due_date = null;
@@ -73,6 +74,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! DocumentTypeMap::isExpense($this->document_type)) {
             $this->category_id = null;
             $this->wallet_id = null;
+            $this->not_settled = false;
         }
     }
 
@@ -82,6 +84,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         if ($this->expense_channel !== 'petty_cash') {
             $this->wallet_id = null;
+            $this->not_settled = false;
         } elseif (! $this->supplier_id && config('spend.petty_cash_internal_supplier_id')) {
             $this->supplier_id = (int) config('spend.petty_cash_internal_supplier_id');
         }
@@ -268,7 +271,16 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->storeAttachments($invoice, $attachmentService);
 
-        session()->flash('status', __('Document saved.'));
+        if ($this->shouldAutoProcessPettyCash()) {
+            $invoice = $expenseWorkflowService->autoProcessPettyCashOnCreate(
+                $invoice,
+                (int) auth()->id(),
+                (bool) $data['not_settled'],
+                ['payment_method' => 'petty_cash']
+            );
+        }
+
+        session()->flash('status', $this->successMessage((bool) $data['not_settled']));
         if ($redirect) {
             $this->redirectRoute('payables.invoices.show', $invoice, navigate: true);
         }
@@ -290,6 +302,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'document_type' => ['required', Rule::in(DocumentTypeMap::types())],
             'expense_channel' => ['nullable', 'in:vendor,petty_cash,reimbursement'],
             'wallet_id' => ['nullable', 'integer', 'exists:petty_cash_wallets,id'],
+            'not_settled' => ['boolean'],
             'invoice_number' => [
                 'required',
                 'string',
@@ -481,6 +494,24 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function supplierDraftWarning(): ?string
     {
         return app(SupplierAccountingPolicyService::class)->draftWarning($this->selectedSupplier());
+    }
+
+    public function shouldAutoProcessPettyCash(): bool
+    {
+        return auth()->user()?->hasRole('admin')
+            && $this->document_type === 'expense'
+            && $this->expense_channel === 'petty_cash';
+    }
+
+    public function successMessage(bool $leaveUnsettled): string
+    {
+        if (! $this->shouldAutoProcessPettyCash()) {
+            return __('Document saved.');
+        }
+
+        return $leaveUnsettled
+            ? __('Petty cash expense saved, approved, and posted. It is pending settlement.')
+            : __('Petty cash expense saved, approved, posted, and settled.');
     }
 
     private function storeAttachments(ApInvoice $invoice, ApInvoiceAttachmentService $attachmentService): void
@@ -685,6 +716,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
             @endif
 
+            @if($this->shouldAutoProcessPettyCash())
+                <div class="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-100 space-y-3">
+                    <p>{{ __('Admin petty cash expenses are approved and posted automatically. By default they also settle immediately against the selected wallet.') }}</p>
+                    <label class="flex items-start gap-3">
+                        <input type="checkbox" wire:model="not_settled" class="mt-1 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-500 dark:border-neutral-700 dark:bg-neutral-800" />
+                        <span>
+                            <span class="block font-medium">{{ __('Not settled') }}</span>
+                            <span class="block text-xs text-sky-800 dark:text-sky-200">{{ __('Leave this expense posted but pending settlement if it has not actually been paid from the petty cash wallet yet.') }}</span>
+                        </span>
+                    </label>
+                </div>
+            @endif
+
             <flux:textarea wire:model="notes" :label="__('Notes')" rows="2" />
 
             @if($this->supplierDraftWarning())
@@ -757,8 +801,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         <div class="flex justify-end gap-3">
             <flux:button :href="route('payables.index')" wire:navigate variant="ghost">{{ __('Cancel') }}</flux:button>
-            <flux:button type="submit" variant="ghost">{{ __('Save Draft') }}</flux:button>
-            <flux:button type="button" wire:click="saveAndPost">{{ __('Save and Post') }}</flux:button>
+            @if($this->shouldAutoProcessPettyCash())
+                <flux:button type="submit">{{ $not_settled ? __('Create Pending Settlement') : __('Create and Settle') }}</flux:button>
+            @else
+                <flux:button type="submit" variant="ghost">{{ __('Save Draft') }}</flux:button>
+                <flux:button type="button" wire:click="saveAndPost">{{ __('Save and Post') }}</flux:button>
+            @endif
         </div>
     </form>
 </div>

@@ -1,8 +1,10 @@
 <?php
 
 use App\Models\ApInvoice;
+use App\Services\Accounting\LedgerAccountMappingService;
 use App\Services\Spend\ExpenseWorkflowService;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -88,12 +90,47 @@ new #[Layout('components.layouts.app')] class extends Component {
         session()->flash('status', __('Expense posted.'));
     }
 
-    public function settleExpense(int $id, ExpenseWorkflowService $service): void
+    public function settleExpense(int $id, ExpenseWorkflowService $service, LedgerAccountMappingService $mappingService): void
     {
         abort_unless($this->canFinanceApprove(), 403);
-        $invoice = ApInvoice::findOrFail($id);
-        $service->settle($invoice, (int) auth()->id());
-        session()->flash('status', __('Expense settled.'));
+        $invoice = ApInvoice::query()->with(['expenseProfile.wallet', 'supplier'])->findOrFail($id);
+
+        try {
+            $service->settle($invoice, (int) auth()->id(), $this->settlementPayload($invoice, $mappingService));
+            session()->flash('status', __('Expense settled.'));
+        } catch (ValidationException $exception) {
+            $this->flashValidationError($exception);
+        }
+    }
+
+    public function settleAllExpenses(ExpenseWorkflowService $service, LedgerAccountMappingService $mappingService): void
+    {
+        abort_unless($this->canFinanceApprove(), 403);
+
+        $rows = $this->currentExpenseQuery()
+            ->where('is_expense', true)
+            ->whereIn('status', ['posted', 'partially_paid'])
+            ->whereHas('expenseProfile', fn ($q) => $q->where('approval_status', 'approved')->whereNull('settled_at'))
+            ->with(['expenseProfile.wallet', 'supplier'])
+            ->get();
+
+        if ($rows->isEmpty()) {
+            session()->flash('error', __('No settleable expenses are available in the current view.'));
+            return;
+        }
+
+        $settled = 0;
+        foreach ($rows as $invoice) {
+            try {
+                $service->settle($invoice, (int) auth()->id(), $this->settlementPayload($invoice, $mappingService));
+                $settled++;
+            } catch (ValidationException $exception) {
+                $this->flashValidationError($exception);
+                return;
+            }
+        }
+
+        session()->flash('status', __('Settled :count expenses.', ['count' => $settled]));
     }
 
     private function canManagerApprove(): bool
@@ -108,6 +145,50 @@ new #[Layout('components.layouts.app')] class extends Component {
         $user = auth()->user();
 
         return (bool) ($user?->hasRole('admin') || $user?->can('finance.access'));
+    }
+
+    private function settlementPayload(ApInvoice $invoice, LedgerAccountMappingService $mappingService): array
+    {
+        $paymentMethod = $mappingService->normalizePaymentMethod((string) (
+            $invoice->expenseProfile?->channel === 'petty_cash'
+                ? 'petty_cash'
+                : ($invoice->supplier?->preferred_payment_method ?: 'bank_transfer')
+        ));
+
+        $payload = ['payment_method' => $paymentMethod];
+        if ($paymentMethod === 'bank_transfer') {
+            $bankAccountId = $mappingService->resolveBankAccount(null, (int) $invoice->company_id)?->id;
+            if ($bankAccountId) {
+                $payload['bank_account_id'] = $bankAccountId;
+            }
+        }
+
+        return $payload;
+    }
+
+    private function currentExpenseQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        $query = ApInvoice::query()->where('is_expense', true);
+
+        if ($this->tab === 'petty') {
+            $query->whereHas('expenseProfile', fn ($q) => $q->where('channel', 'petty_cash'));
+        } else {
+            $query->where(function ($q) {
+                $q->whereHas('expenseProfile', fn ($sub) => $sub->whereIn('channel', ['vendor', 'reimbursement']))
+                    ->orDoesntHave('expenseProfile');
+            });
+        }
+
+        return $query->orderByDesc('invoice_date')->orderByDesc('id');
+    }
+
+    private function flashValidationError(ValidationException $exception): void
+    {
+        $message = collect($exception->errors())
+            ->flatten()
+            ->first();
+
+        session()->flash('error', $message ?: __('The action could not be completed.'));
     }
 }; ?>
 
@@ -133,6 +214,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     @endif
 
+    @if(session('error'))
+        <div class="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-100">
+            {{ session('error') }}
+        </div>
+    @endif
+
     <div class="flex gap-3">
         <button
             type="button"
@@ -155,6 +242,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     @endphp
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
+        @if((auth()->user()?->hasRole('admin') || auth()->user()?->can('finance.access')) && $rows->contains(fn ($inv) => in_array($inv->status, ['posted', 'partially_paid'], true) && ($inv->expenseProfile?->approval_status === 'approved') && ! $inv->expenseProfile?->settled_at))
+            <div class="flex justify-end">
+                <flux:button type="button" wire:click="settleAllExpenses" variant="ghost">{{ __('Settle All') }}</flux:button>
+            </div>
+        @endif
         <div class="app-table-shell">
             <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
                 <thead class="bg-neutral-50 dark:bg-neutral-800/90">
@@ -174,7 +266,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @php
                             $profile = $inv->expenseProfile;
                             $approval = $profile?->approval_status ?? 'draft';
-                            $canSettle = in_array($inv->status, ['posted', 'partially_paid'], true) && ! $profile?->settled_at;
+                            $canSettle = $approval === 'approved'
+                                && in_array($inv->status, ['posted', 'partially_paid'], true)
+                                && ! $profile?->settled_at;
                         @endphp
                         <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
                             <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $inv->invoice_date?->format('Y-m-d') }}</td>

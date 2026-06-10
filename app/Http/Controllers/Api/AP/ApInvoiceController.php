@@ -53,6 +53,7 @@ class ApInvoiceController extends Controller
     ): JsonResponse {
         $data = $request->validated();
         $document = DocumentTypeMap::derive((string) $data['document_type'], $data['expense_channel'] ?? null);
+        $leaveUnsettled = (bool) ($data['not_settled'] ?? false);
         $companyId = $accountingContext->resolveCompanyId($data['branch_id'] ?? null, $data['company_id'] ?? null);
         $periodId = $accountingContext->resolvePeriodId($data['invoice_date'] ?? null, $data['company_id'] ?? null);
         $periodGate->assertDateOpen((string) $data['invoice_date'], $companyId, $periodId, 'ap', 'invoice_date');
@@ -109,7 +110,18 @@ class ApInvoiceController extends Controller
             return $invoice;
         });
 
-        return response()->json($invoice->load(['items']), 201);
+        $invoice->load(['items', 'expenseProfile.wallet', 'supplier']);
+
+        if ($document['is_expense']) {
+            $invoice = $expenseWorkflowService->autoProcessPettyCashOnCreate(
+                $invoice,
+                (int) Auth::id(),
+                $leaveUnsettled,
+                ['payment_method' => 'petty_cash']
+            )->load(['items', 'expenseProfile.wallet', 'supplier']);
+        }
+
+        return response()->json($invoice, 201);
     }
 
     public function update(

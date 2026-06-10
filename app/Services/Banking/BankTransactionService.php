@@ -5,6 +5,7 @@ namespace App\Services\Banking;
 use App\Models\ApChequeClearance;
 use App\Models\ApPayment;
 use App\Models\ArClearingSettlement;
+use App\Models\PettyCashIssue;
 use App\Models\Payment;
 use App\Models\BankTransaction;
 use App\Services\Accounting\LedgerAccountMappingService;
@@ -236,6 +237,57 @@ class BankTransactionService
         return $transaction;
     }
 
+    public function recordPettyCashIssue(PettyCashIssue $issue, int $actorId): ?BankTransaction
+    {
+        if ($this->mappingService->normalizePaymentMethod($issue->method) !== 'bank_transfer') {
+            return null;
+        }
+
+        if (! Schema::hasTable('bank_transactions') || ! Schema::hasTable('bank_accounts')) {
+            return null;
+        }
+
+        $issue->loadMissing('bankAccount');
+        $bankAccountId = (int) ($issue->bank_account_id ?? 0);
+        $companyId = (int) ($issue->bankAccount?->company_id ?? 0);
+        if ($bankAccountId <= 0 || $companyId <= 0) {
+            return null;
+        }
+
+        $transaction = $this->firstOrCreateBySource([
+            'source_type' => PettyCashIssue::class,
+            'source_id' => $issue->id,
+            'transaction_type' => 'petty_cash_issue',
+        ], function () use ($issue, $bankAccountId, $companyId) {
+            return [
+                'company_id' => $companyId,
+                'bank_account_id' => $bankAccountId,
+                'period_id' => $this->context->resolvePeriodId(optional($issue->issue_date)->toDateString(), $companyId),
+                'reconciliation_run_id' => null,
+                'transaction_type' => 'petty_cash_issue',
+                'transaction_date' => optional($issue->issue_date)->toDateString() ?: now()->toDateString(),
+                'amount' => abs((float) $issue->amount),
+                'direction' => 'outflow',
+                'status' => $issue->voided_at ? 'void' : 'open',
+                'is_cleared' => false,
+                'cleared_date' => null,
+                'reference' => $issue->reference,
+                'memo' => 'Petty cash issue '.$issue->id,
+                'source_type' => PettyCashIssue::class,
+                'source_id' => $issue->id,
+                'statement_import_id' => null,
+            ];
+        });
+
+        $this->auditLog->log('bank_transaction.recorded', $actorId, $transaction, [
+            'source' => 'petty_cash_issue',
+            'issue_id' => (int) $issue->id,
+            'bank_account_id' => $bankAccountId,
+        ], $companyId);
+
+        return $transaction;
+    }
+
     public function voidApPayment(ApPayment $payment, int $actorId): void
     {
         if (! Schema::hasTable('bank_transactions')) {
@@ -315,6 +367,30 @@ class BankTransactionService
             'clearance_id' => (int) $clearance->id,
             'source' => 'ap_cheque_clearance',
         ], (int) ($clearance->company_id ?? 0) ?: null);
+    }
+
+    public function voidPettyCashIssue(PettyCashIssue $issue, int $actorId): void
+    {
+        if (! Schema::hasTable('bank_transactions')) {
+            return;
+        }
+
+        BankTransaction::query()
+            ->where('source_type', PettyCashIssue::class)
+            ->where('source_id', $issue->id)
+            ->where('transaction_type', 'petty_cash_issue')
+            ->update([
+                'status' => 'void',
+                'updated_at' => now(),
+            ]);
+
+        $issue->loadMissing('bankAccount');
+
+        $this->auditLog->log('bank_transaction.voided', $actorId, $issue, [
+            'issue_id' => (int) $issue->id,
+            'source' => 'petty_cash_issue',
+            'bank_account_id' => (int) ($issue->bank_account_id ?? 0),
+        ], (int) ($issue->bankAccount?->company_id ?? 0) ?: null);
     }
 
     /**

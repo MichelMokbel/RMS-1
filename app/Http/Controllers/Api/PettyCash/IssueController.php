@@ -11,7 +11,7 @@ class IssueController extends Controller
 {
     public function index(Request $request)
     {
-        $issues = PettyCashIssue::with('wallet')
+        $issues = PettyCashIssue::with(['wallet', 'bankAccount', 'issuer', 'voidedBy'])
             ->when($request->filled('wallet_id'), fn ($q) => $q->where('wallet_id', $request->integer('wallet_id')))
             ->when($request->filled('method'), fn ($q) => $q->where('method', $request->input('method')))
             ->when($request->filled('from'), fn ($q) => $q->whereDate('issue_date', '>=', $request->input('from')))
@@ -29,6 +29,7 @@ class IssueController extends Controller
             'issue_date' => ['required', 'date'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'method' => ['required', 'in:cash,card,bank_transfer,cheque,other'],
+            'bank_account_id' => ['nullable', 'integer', 'exists:bank_accounts,id'],
             'reference' => ['nullable', 'string', 'max:100'],
         ]);
 

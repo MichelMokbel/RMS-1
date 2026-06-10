@@ -78,6 +78,7 @@ class ExpenseController extends Controller
         $supplierId = $this->resolveSupplierId($data);
         $channel = (string) ($data['channel'] ?? 'vendor');
         $walletId = isset($data['wallet_id']) ? (int) $data['wallet_id'] : null;
+        $leaveUnsettled = (bool) ($data['not_settled'] ?? false);
         $companyId = $accountingContext->resolveCompanyId($data['branch_id'] ?? null, $data['company_id'] ?? null);
         $periodId = $accountingContext->resolvePeriodId($data['expense_date'] ?? null, $data['company_id'] ?? null);
         $periodGate->assertDateOpen((string) $data['expense_date'], $companyId, $periodId, 'ap', 'expense_date');
@@ -127,6 +128,15 @@ class ExpenseController extends Controller
             ->withCount('expenseEvents')
             ->withSum('allocations as paid_sum', 'allocated_amount')
             ->findOrFail($invoice->id);
+
+        $invoice = $workflowService->autoProcessPettyCashOnCreate(
+            $invoice,
+            $userId,
+            $leaveUnsettled,
+            ['payment_method' => 'petty_cash']
+        )->load(['supplier', 'category', 'items', 'allocations.payment', 'attachments', 'expenseProfile.wallet'])
+            ->loadCount('expenseEvents')
+            ->loadSum('allocations as paid_sum', 'allocated_amount');
 
         return response()->json($this->presentInvoice($invoice), Response::HTTP_CREATED);
     }

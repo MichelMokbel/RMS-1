@@ -149,26 +149,39 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless($this->canFinanceApprove(), 403);
         $invoice = ApInvoice::query()->with(['expenseProfile.wallet', 'supplier'])->findOrFail($invoiceId);
 
-        $paymentMethod = $mappingService->normalizePaymentMethod((string) (
-            $invoice->expenseProfile?->channel === 'petty_cash'
-                ? 'petty_cash'
-                : ($invoice->supplier?->preferred_payment_method ?: 'bank_transfer')
-        ));
-
-        $payload = ['payment_method' => $paymentMethod];
-        if ($paymentMethod === 'bank_transfer') {
-            $bankAccountId = $mappingService->resolveBankAccount(null, (int) $invoice->company_id)?->id;
-            if ($bankAccountId) {
-                $payload['bank_account_id'] = $bankAccountId;
-            }
-        }
-
         try {
-            $service->settle($invoice, (int) auth()->id(), $payload);
+            $service->settle($invoice, (int) auth()->id(), $this->settlementPayload($invoice, $mappingService));
             session()->flash('status', __('Expense settled.'));
         } catch (ValidationException $exception) {
             $this->flashValidationError($exception);
         }
+    }
+
+    public function settleAllExpenses(ExpenseWorkflowService $service, LedgerAccountMappingService $mappingService): void
+    {
+        abort_unless($this->canFinanceApprove(), 403);
+
+        $rows = $this->settleableExpenseQuery()
+            ->with(['expenseProfile.wallet', 'supplier'])
+            ->get();
+
+        if ($rows->isEmpty()) {
+            session()->flash('error', __('No settleable expenses are available in the current view.'));
+            return;
+        }
+
+        $settled = 0;
+        foreach ($rows as $invoice) {
+            try {
+                $service->settle($invoice, (int) auth()->id(), $this->settlementPayload($invoice, $mappingService));
+                $settled++;
+            } catch (ValidationException $exception) {
+                $this->flashValidationError($exception);
+                return;
+            }
+        }
+
+        session()->flash('status', __('Settled :count expenses.', ['count' => $settled]));
     }
 
     public function voidDocument(int $invoiceId, ApInvoiceVoidService $voidService): void
@@ -442,6 +455,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->orderByDesc('payment_date');
     }
 
+    private function settleableExpenseQuery(): Builder
+    {
+        return $this->documentQuery()
+            ->where('is_expense', true)
+            ->whereIn('status', ['posted', 'partially_paid'])
+            ->whereHas('expenseProfile', fn (Builder $profile) => $profile->where('approval_status', 'approved')->whereNull('settled_at'));
+    }
+
     private function availableTabs(): array
     {
         $tabs = [
@@ -484,6 +505,11 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function canReviewExpense(ApInvoice $invoice): bool
     {
+        $user = auth()->user();
+        if ($user?->hasRole('admin')) {
+            return true;
+        }
+
         return (int) ($invoice->expenseProfile?->submitted_by ?? 0) !== (int) auth()->id();
     }
 
@@ -494,6 +520,25 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->first();
 
         session()->flash('error', $message ?: __('The action could not be completed.'));
+    }
+
+    private function settlementPayload(ApInvoice $invoice, LedgerAccountMappingService $mappingService): array
+    {
+        $paymentMethod = $mappingService->normalizePaymentMethod((string) (
+            $invoice->expenseProfile?->channel === 'petty_cash'
+                ? 'petty_cash'
+                : ($invoice->supplier?->preferred_payment_method ?: 'bank_transfer')
+        ));
+
+        $payload = ['payment_method' => $paymentMethod];
+        if ($paymentMethod === 'bank_transfer') {
+            $bankAccountId = $mappingService->resolveBankAccount(null, (int) $invoice->company_id)?->id;
+            if ($bankAccountId) {
+                $payload['bank_account_id'] = $bankAccountId;
+            }
+        }
+
+        return $payload;
     }
 }; ?>
 
@@ -709,6 +754,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
 
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+            @if($this->canFinanceApprove() && $this->settleableExpenseQuery()->exists())
+                <div class="mb-4 flex justify-end">
+                    <flux:button type="button" wire:click="settleAllExpenses" variant="ghost">{{ __('Settle All') }}</flux:button>
+                </div>
+            @endif
             <div class="app-table-shell">
                 <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
                     <thead class="bg-neutral-50 dark:bg-neutral-800/90">
@@ -775,7 +825,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                                     <flux:button size="xs" type="button" wire:click="postDocument({{ $invoice->id }})">{{ __('Post') }}</flux:button>
                                                 @endif
 
-                                                @if(in_array($invoice->status, ['posted', 'partially_paid'], true) && ! $invoice->expenseProfile?->settled_at && $this->canFinanceApprove())
+                                                @if($invoice->approvalStatusLabel() === 'approved' && in_array($invoice->status, ['posted', 'partially_paid'], true) && ! $invoice->expenseProfile?->settled_at && $this->canFinanceApprove())
                                                     <flux:button size="xs" type="button" wire:click="settleExpense({{ $invoice->id }})">{{ __('Settle') }}</flux:button>
                                                 @endif
                                             @else

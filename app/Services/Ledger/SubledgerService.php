@@ -711,6 +711,15 @@ class SubledgerService
             return null;
         }
 
+        $issue->loadMissing('bankAccount');
+        $companyId = (int) ($issue->bankAccount?->company_id ?? $this->accountingContext->defaultCompanyId());
+        $creditAccountId = $this->mappingService->resolveSettlementAccountId(
+            (string) $issue->method,
+            $companyId,
+            (int) ($issue->bank_account_id ?? 0),
+            'ap'
+        );
+
         $lines = [
             [
                 'account' => 'petty_cash_asset',
@@ -719,10 +728,10 @@ class SubledgerService
                 'memo' => 'Petty cash issue',
             ],
             [
-                'account' => 'petty_cash_issue_cash',
+                'account_id' => $creditAccountId,
                 'debit' => 0,
                 'credit' => $amount,
-                'memo' => 'Cash funding',
+                'memo' => 'Funding source',
             ],
         ];
 
@@ -735,7 +744,8 @@ class SubledgerService
             entryDate: $date,
             description: 'Petty cash issue '.$issue->id,
             lines: $lines,
-            userId: $userId
+            userId: $userId,
+            companyId: $companyId
         );
     }
 

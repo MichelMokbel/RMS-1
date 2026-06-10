@@ -103,6 +103,47 @@ it('creates canonical expense drafts for vendor petty cash and reimbursement cha
     ]);
 });
 
+it('auto posts and settles admin petty cash expenses on create by default', function () {
+    $expense = createDraftExpense($this->admin, [
+        'channel' => 'petty_cash',
+        'wallet_id' => $this->wallet->id,
+    ]);
+
+    expect($expense['approval_status'])->toBe('approved')
+        ->and($expense['status'])->toBe('paid')
+        ->and((float) $expense['outstanding_amount'])->toBe(0.0);
+
+    $this->assertDatabaseHas('expense_profiles', [
+        'invoice_id' => $expense['id'],
+        'channel' => 'petty_cash',
+        'approval_status' => 'approved',
+        'settlement_mode' => 'petty_cash_wallet',
+    ]);
+
+    expect((float) $this->wallet->fresh()->balance)->toBe(400.0);
+});
+
+it('lets admin create petty cash expenses as posted but unsettled when requested', function () {
+    $expense = createDraftExpense($this->admin, [
+        'channel' => 'petty_cash',
+        'wallet_id' => $this->wallet->id,
+        'not_settled' => true,
+    ]);
+
+    expect($expense['approval_status'])->toBe('approved')
+        ->and($expense['status'])->toBe('posted')
+        ->and((float) $expense['outstanding_amount'])->toBe(100.0);
+
+    $this->assertDatabaseHas('expense_profiles', [
+        'invoice_id' => $expense['id'],
+        'channel' => 'petty_cash',
+        'approval_status' => 'approved',
+        'settlement_mode' => null,
+    ]);
+
+    expect((float) $this->wallet->fresh()->balance)->toBe(500.0);
+});
+
 it('submits draft to submitted state', function () {
     $draft = createDraftExpense($this->staff);
 
@@ -116,6 +157,44 @@ it('submits draft to submitted state', function () {
         'approval_status' => 'submitted',
         'submitted_by' => $this->staff->id,
     ]);
+});
+
+it('auto-approves admin submitted expenses', function () {
+    $draft = createDraftExpense($this->admin);
+
+    $this->actingAs($this->admin)
+        ->postJson(route('api.spend.expenses.submit', $draft['id']))
+        ->assertOk()
+        ->assertJsonPath('approval_status', 'approved');
+
+    $this->assertDatabaseHas('expense_profiles', [
+        'invoice_id' => $draft['id'],
+        'approval_status' => 'approved',
+        'submitted_by' => $this->admin->id,
+        'manager_approved_by' => $this->admin->id,
+        'finance_approved_by' => $this->admin->id,
+    ]);
+});
+
+it('allows admin to approve an already submitted self-created expense', function () {
+    $draft = createDraftExpense($this->admin);
+
+    \App\Models\ExpenseProfile::query()
+        ->where('invoice_id', $draft['id'])
+        ->update([
+            'approval_status' => 'submitted',
+            'submitted_by' => $this->admin->id,
+            'submitted_at' => now(),
+            'manager_approved_by' => null,
+            'manager_approved_at' => null,
+            'finance_approved_by' => null,
+            'finance_approved_at' => null,
+        ]);
+
+    $this->actingAs($this->admin)
+        ->postJson(route('api.spend.expenses.approve', $draft['id']), ['stage' => 'manager'])
+        ->assertOk()
+        ->assertJsonPath('approval_status', 'approved');
 });
 
 it('manager approval auto-approves when no exception flags', function () {
