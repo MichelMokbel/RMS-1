@@ -160,6 +160,22 @@ class SubscriptionPaymentLinkService
     }
 
     /**
+     * Remove the payment link from a subscription and disable invoice tracking.
+     * Keeps the current meals_used value unchanged until staff explicitly resyncs
+     * or relinks the subscription to another payment.
+     */
+    public function unlinkPaymentFromSubscription(MealSubscription $subscription): void
+    {
+        if ($subscription->source_payment_id === null && ! $subscription->uses_invoice_tracking) {
+            return;
+        }
+
+        $subscription->source_payment_id = null;
+        $subscription->uses_invoice_tracking = false;
+        $subscription->save();
+    }
+
+    /**
      * Detect subscription plan purchases in the invoices allocated to a payment.
      * Returns array of ['menu_item_id' => int, 'plan_meals_total' => int] for each detected plan item.
      */

@@ -88,6 +88,21 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
+    public function unlinkSubscription(int $subscriptionId, SubscriptionPaymentLinkService $service): void
+    {
+        abort_unless(Auth::user()?->can('finance.write'), 403);
+        $this->resetErrorBag();
+
+        if ($this->payment->voided_at) {
+            $this->addError('link_subscription', __('Voided payments cannot be changed.'));
+            return;
+        }
+
+        $sub = $this->payment->mealSubscriptions()->findOrFail($subscriptionId);
+        $service->unlinkPaymentFromSubscription($sub);
+        session()->flash('status', __('Subscription unlinked.'));
+    }
+
     public function formatMoney(?int $cents): string
     {
         return MinorUnits::format((int) ($cents ?? 0));
@@ -489,7 +504,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         @forelse ($linkedSubscriptions as $sub)
             <div class="flex items-center justify-between text-sm">
                 <span class="text-neutral-800 dark:text-neutral-100">{{ $sub->subscription_code }} · {{ $sub->customer?->name ?? '—' }} · {{ $sub->plan_meals_total ? $sub->plan_meals_total . ' ' . __('meals') : __('Unlimited') }}</span>
-                <flux:button :href="route('subscriptions.show', $sub)" wire:navigate size="sm" variant="ghost">{{ __('View') }}</flux:button>
+                <div class="flex items-center gap-2">
+                    <flux:button :href="route('subscriptions.show', $sub)" wire:navigate size="sm" variant="ghost">{{ __('View') }}</flux:button>
+                    @can('finance.write')
+                        @if($this->canMutatePayment())
+                            <flux:button wire:click="unlinkSubscription({{ $sub->id }})" size="sm" variant="ghost">{{ __('Unlink') }}</flux:button>
+                        @endif
+                    @endcan
+                </div>
             </div>
         @empty
             <p class="text-sm text-neutral-500 dark:text-neutral-400">{{ __('No subscriptions linked.') }}</p>

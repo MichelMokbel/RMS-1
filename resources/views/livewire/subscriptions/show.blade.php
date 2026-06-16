@@ -77,6 +77,20 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
+    public function unlinkPayment(SubscriptionPaymentLinkService $service): void
+    {
+        $this->resetErrorBag();
+
+        if (! $this->subscription->source_payment_id) {
+            return;
+        }
+
+        $service->unlinkPaymentFromSubscription($this->subscription);
+        $this->link_payment_id = null;
+        $this->subscription = $this->subscription->fresh(['days', 'pauses', 'customer', 'sourcePayment']);
+        session()->flash('status', __('Payment unlinked.'));
+    }
+
     public function resyncMeals(SubscriptionPaymentLinkService $service): void
     {
         if (! Auth::user()?->hasRole('admin')) {
@@ -285,7 +299,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     · {{ $sourcePayment->received_at?->format('Y-m-d') ?? '—' }}
                     · {{ strtoupper($sourcePayment->method ?? '—') }}
                 </span>
-                <flux:button :href="route('receivables.payments.show', $sourcePayment)" wire:navigate size="sm" variant="ghost">{{ __('View Payment') }}</flux:button>
+                <div class="flex items-center gap-2">
+                    <flux:button :href="route('receivables.payments.show', $sourcePayment)" wire:navigate size="sm" variant="ghost">{{ __('View Payment') }}</flux:button>
+                    <flux:button wire:click="unlinkPayment" size="sm" variant="ghost">{{ __('Unlink') }}</flux:button>
+                </div>
             </div>
         @else
             <p class="text-sm text-neutral-500 dark:text-neutral-400">{{ __('No payment linked.') }}</p>
