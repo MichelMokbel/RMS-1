@@ -181,7 +181,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $this->allocations = $query
-            ->orderByDesc('issue_date')
+            ->orderBy('issue_date')
+            ->orderBy('invoice_number')
             ->get()
             ->map(function (ArInvoice $invoice) {
                 $outstanding = (int) ($invoice->balance_cents ?? 0);
@@ -580,7 +581,26 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </tr>
             </thead>
             <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                @forelse ($payment->allocations as $alloc)
+                @forelse ($payment->allocations->sort(function ($left, $right): int {
+                    $leftInvoice = $left->allocatable;
+                    $rightInvoice = $right->allocatable;
+
+                    $leftTimestamp = optional($leftInvoice?->issue_date)->timestamp ?? PHP_INT_MAX;
+                    $rightTimestamp = optional($rightInvoice?->issue_date)->timestamp ?? PHP_INT_MAX;
+
+                    if ($leftTimestamp !== $rightTimestamp) {
+                        return $leftTimestamp <=> $rightTimestamp;
+                    }
+
+                    $leftInvoiceNumber = (string) ($leftInvoice?->invoice_number ?? '');
+                    $rightInvoiceNumber = (string) ($rightInvoice?->invoice_number ?? '');
+
+                    if ($leftInvoiceNumber !== $rightInvoiceNumber) {
+                        return $leftInvoiceNumber <=> $rightInvoiceNumber;
+                    }
+
+                    return (int) $left->id <=> (int) $right->id;
+                }) as $alloc)
                     @php
                         $invoice = $alloc->allocatable;
                     @endphp
