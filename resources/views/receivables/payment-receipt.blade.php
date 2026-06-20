@@ -85,11 +85,26 @@
     $allocatedCents = (int) $payment->allocations->sum('amount_cents');
     $unallocatedCents = (int) $payment->amount_cents - $allocatedCents;
     $sortedAllocations = $payment->allocations
-        ->sortBy([
-            fn ($alloc) => optional($alloc->allocatable?->issue_date)->timestamp ?? PHP_INT_MAX,
-            fn ($alloc) => (string) ($alloc->allocatable?->invoice_number ?? ''),
-            fn ($alloc) => (int) $alloc->id,
-        ])
+        ->sort(function ($left, $right): int {
+            $leftInvoice = $left->allocatable;
+            $rightInvoice = $right->allocatable;
+
+            $leftTimestamp = optional($leftInvoice?->issue_date)->timestamp ?? PHP_INT_MAX;
+            $rightTimestamp = optional($rightInvoice?->issue_date)->timestamp ?? PHP_INT_MAX;
+
+            if ($leftTimestamp !== $rightTimestamp) {
+                return $leftTimestamp <=> $rightTimestamp;
+            }
+
+            $leftInvoiceNumber = (string) ($leftInvoice?->invoice_number ?? '');
+            $rightInvoiceNumber = (string) ($rightInvoice?->invoice_number ?? '');
+
+            if ($leftInvoiceNumber !== $rightInvoiceNumber) {
+                return $leftInvoiceNumber <=> $rightInvoiceNumber;
+            }
+
+            return (int) $left->id <=> (int) $right->id;
+        })
         ->values();
 
     $numberToWords = function (int $number) use (&$numberToWords): string {
