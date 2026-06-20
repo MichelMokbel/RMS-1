@@ -88,6 +88,64 @@ it('shows invoice dates in the payment allocations table', function () {
         ->assertSeeText('2026-03-22');
 });
 
+it('shows payment receipt allocations sorted from oldest invoice date to newest', function () {
+    $manager = makeReceivablesManagerUser();
+    $customer = Customer::factory()->create();
+
+    $olderInvoice = ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'issued',
+        'invoice_number' => 'INV-OLD-001',
+        'issue_date' => '2026-03-10',
+        'due_date' => '2026-03-17',
+        'total_cents' => 15000,
+        'balance_cents' => 0,
+    ]);
+
+    $newerInvoice = ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'issued',
+        'invoice_number' => 'INV-NEW-001',
+        'issue_date' => '2026-03-22',
+        'due_date' => '2026-03-29',
+        'total_cents' => 15000,
+        'balance_cents' => 0,
+    ]);
+
+    $payment = Payment::factory()->create([
+        'customer_id' => $customer->id,
+        'source' => 'ar',
+        'amount_cents' => 30000,
+    ]);
+
+    // Create in reverse order to ensure the print view applies its own date sort.
+    PaymentAllocation::factory()->create([
+        'payment_id' => $payment->id,
+        'allocatable_type' => ArInvoice::class,
+        'allocatable_id' => $newerInvoice->id,
+        'amount_cents' => 15000,
+    ]);
+
+    PaymentAllocation::factory()->create([
+        'payment_id' => $payment->id,
+        'allocatable_type' => ArInvoice::class,
+        'allocatable_id' => $olderInvoice->id,
+        'amount_cents' => 15000,
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('receivables.payments.print', $payment))
+        ->assertOk()
+        ->assertSeeInOrder([
+            'INV-OLD-001',
+            '10-Mar-2026',
+            'INV-NEW-001',
+            '22-Mar-2026',
+        ]);
+});
+
 it('allows admins to delete customer payments and restore invoice balances', function () {
     $admin = makeReceivablesAdmin();
     $customer = Customer::factory()->create();

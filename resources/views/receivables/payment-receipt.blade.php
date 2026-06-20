@@ -84,6 +84,13 @@
 
     $allocatedCents = (int) $payment->allocations->sum('amount_cents');
     $unallocatedCents = (int) $payment->amount_cents - $allocatedCents;
+    $sortedAllocations = $payment->allocations
+        ->sortBy([
+            fn ($alloc) => optional($alloc->allocatable?->issue_date)->timestamp ?? PHP_INT_MAX,
+            fn ($alloc) => (string) ($alloc->allocatable?->invoice_number ?? ''),
+            fn ($alloc) => (int) $alloc->id,
+        ])
+        ->values();
 
     $numberToWords = function (int $number) use (&$numberToWords): string {
         $ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
@@ -232,7 +239,7 @@
         @endif
     </div>
 
-    @if ($payment->allocations->count() > 0)
+    @if ($sortedAllocations->count() > 0)
     <h4 style="margin-top: 6mm; margin-bottom: 2mm; font-size: 12px;">Allocation Details / تفاصيل التخصيص</h4>
     <table class="allocations">
         <thead>
@@ -245,7 +252,7 @@
             </tr>
         </thead>
         <tbody>
-            @foreach ($payment->allocations as $index => $alloc)
+            @foreach ($sortedAllocations as $index => $alloc)
                 @php
                     $invoice = $alloc->allocatable;
                 @endphp
