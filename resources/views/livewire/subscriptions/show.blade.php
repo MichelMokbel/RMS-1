@@ -252,7 +252,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Order Type') }}: {{ $subscription->default_order_type }}</span>
             <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Preferred') }}: {{ ucfirst($subscription->preferred_role) }}</span>
             <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Salad/Dessert') }}: {{ $subscription->include_salad ? __('Yes') : __('No') }}/{{ $subscription->include_dessert ? __('Yes') : __('No') }}</span>
-            @if ($subscription->plan_meals_total !== null)
+            @if ($subscription->status === 'cancelled')
+                <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Meals used') }}: {{ __('Cancelled') }}</span>
+            @elseif ($subscription->plan_meals_total !== null)
                 <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Plan') }}: {{ $subscription->plan_meals_total }} {{ __('meals') }}</span>
                 <span class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Meals used') }}: {{ $subscription->meals_used ?? 0 }} / {{ $subscription->plan_meals_total }}</span>
             @else

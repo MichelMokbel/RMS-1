@@ -76,7 +76,9 @@
                         @endif
                     </td>
                     <td>
-                        @if ($subscription->plan_meals_total)
+                        @if ($subscription->status === 'cancelled')
+                            Cancelled
+                        @elseif ($subscription->plan_meals_total)
                             {{ $subscription->meals_used ?? 0 }} / {{ $subscription->plan_meals_total }}
                         @else
                             {{ $subscription->meals_used ?? 0 }}

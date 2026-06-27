@@ -93,3 +93,28 @@ it('shows the renewal successor on the subscription show page', function () {
     $response->assertSee($renewal->subscription_code);
     $response->assertSee('View renewal');
 });
+
+it('does not show meal usage ratios for cancelled subscriptions on the index', function () {
+    $admin = User::factory()->create(['status' => 'active']);
+    $admin->assignRole('admin');
+
+    $customer = Customer::factory()->create();
+
+    MealSubscription::factory()->create([
+        'subscription_code' => 'SUB-CANCELLED-USAGE',
+        'customer_id' => $customer->id,
+        'branch_id' => 1,
+        'status' => 'cancelled',
+        'start_date' => '2025-06-01',
+        'end_date' => '2025-06-30',
+        'plan_meals_total' => 20,
+        'meals_used' => 85,
+    ]);
+
+    $response = $this->actingAs($admin)->get(route('subscriptions.index'));
+
+    $response->assertOk();
+    $response->assertSee('SUB-CANCELLED-USAGE');
+    $response->assertSee('Cancelled');
+    $response->assertDontSee('85 / 20');
+});

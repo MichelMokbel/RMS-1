@@ -246,7 +246,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 @endif
                             </td>
                             <td class="px-4 py-3 text-sm text-neutral-700 dark:text-neutral-200">
-                                @if ($subscription->plan_meals_total)
+                                @if ($subscription->status === 'cancelled')
+                                    {{ __('Cancelled') }}
+                                @elseif ($subscription->plan_meals_total)
                                     {{ $subscription->meals_used ?? 0 }} / {{ $subscription->plan_meals_total }}
                                 @else
                                     {{ $subscription->meals_used ?? 0 }}

@@ -134,7 +134,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                             {{ $sub->include_salad ? __('Yes') : __('No') }} / {{ $sub->include_dessert ? __('Yes') : __('No') }}
                         </td>
                         <td class="px-3 py-2 text-sm text-center text-neutral-700 dark:text-neutral-200">
-                            @if ($sub->plan_meals_total !== null)
+                            @if ($sub->status === 'cancelled')
+                                {{ __('Cancelled') }}
+                            @elseif ($sub->plan_meals_total !== null)
                                 {{ (int) $sub->meals_used }} / {{ (int) $sub->plan_meals_total }}
                             @else
                                 {{ (int) $sub->meals_used }}
