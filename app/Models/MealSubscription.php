@@ -112,7 +112,13 @@ class MealSubscription extends Model
         }
 
         if (array_key_exists('renewal_subscription_id', $this->attributes)) {
-            return $this->attributes['renewal_subscription_id'] !== null;
+            if ($this->attributes['renewal_subscription_id'] === null) {
+                return false;
+            }
+
+            $successor = $this->resolveRenewalSuccessor();
+
+            return $successor !== null && $successor->status !== 'cancelled';
         }
 
         return $this->singleRecordRenewalCandidateQuery()->exists();
@@ -136,10 +142,12 @@ class MealSubscription extends Model
         }
 
         if ($this->relationLoaded('renewalSuccessor') && (int) optional($this->renewalSuccessor)->getKey() === (int) $candidateId) {
-            return $this->renewalSuccessor;
+            return $this->renewalSuccessor->status === 'cancelled' ? null : $this->renewalSuccessor;
         }
 
-        return self::query()->with('customer:id,name')->find($candidateId);
+        $successor = self::query()->with('customer:id,name')->find($candidateId);
+
+        return $successor && $successor->status !== 'cancelled' ? $successor : null;
     }
 
     public function isActiveOn($date): bool
@@ -178,6 +186,7 @@ class MealSubscription extends Model
             ->select('renewal_candidates.id')
             ->whereColumn('renewal_candidates.customer_id', $table.'.customer_id')
             ->whereColumn('renewal_candidates.id', '!=', $table.'.id')
+            ->where('renewal_candidates.status', '!=', 'cancelled')
             ->where(function ($query) use ($table) {
                 $query
                     ->whereColumn('renewal_candidates.created_at', '>', $table.'.created_at')
@@ -200,6 +209,7 @@ class MealSubscription extends Model
             ->selectRaw('1')
             ->whereColumn('renewal_candidates.customer_id', $table.'.customer_id')
             ->whereColumn('renewal_candidates.id', '!=', $table.'.id')
+            ->where('renewal_candidates.status', '!=', 'cancelled')
             ->where(function ($query) use ($table) {
                 $query
                     ->whereColumn('renewal_candidates.created_at', '>', $table.'.created_at')
@@ -216,6 +226,7 @@ class MealSubscription extends Model
         return self::query()
             ->where('customer_id', $this->customer_id)
             ->whereKeyNot($this->id)
+            ->where('status', '!=', 'cancelled')
             ->where(function ($query) {
                 $query
                     ->where('created_at', '>', $this->created_at)

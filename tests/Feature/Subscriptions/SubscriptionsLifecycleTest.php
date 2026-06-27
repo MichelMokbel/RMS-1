@@ -207,3 +207,44 @@ it('uses the later-record fallback when an expired subscription has no end date'
     expect($resolved->is_renewed)->toBeTrue();
     expect($resolved->renewal_subscription_id)->toBe($renewal->id);
 });
+
+it('does not keep an old subscription marked as renewed after the renewal is cancelled', function () {
+    seedSubscriptionBranch();
+
+    $service = app(MealSubscriptionService::class);
+    $customer = Customer::factory()->create();
+    $user = User::factory()->create();
+
+    $expired = $service->save([
+        'customer_id' => $customer->id,
+        'branch_id' => 1,
+        'status' => 'expired',
+        'start_date' => '2025-01-01',
+        'end_date' => '2025-01-31',
+        'preferred_role' => 'main',
+        'default_order_type' => 'Delivery',
+        'weekdays' => [1, 2, 3, 4, 5],
+    ], null, $user->id);
+
+    $renewal = $service->save([
+        'customer_id' => $customer->id,
+        'branch_id' => 1,
+        'status' => 'active',
+        'start_date' => '2025-02-05',
+        'end_date' => null,
+        'preferred_role' => 'main',
+        'default_order_type' => 'Delivery',
+        'weekdays' => [1, 2, 3, 4, 5],
+    ], null, $user->id);
+
+    $resolved = MealSubscription::query()->withRenewalState()->findOrFail($expired->id);
+    expect($resolved->is_renewed)->toBeTrue();
+    expect($resolved->renewal_subscription_id)->toBe($renewal->id);
+
+    $service->cancel($renewal);
+
+    $resolvedAfterCancel = MealSubscription::query()->withRenewalState()->findOrFail($expired->id);
+    expect($resolvedAfterCancel->is_renewed)->toBeFalse();
+    expect($resolvedAfterCancel->is_expired_not_renewed)->toBeTrue();
+    expect($resolvedAfterCancel->resolveRenewalSuccessor())->toBeNull();
+});
