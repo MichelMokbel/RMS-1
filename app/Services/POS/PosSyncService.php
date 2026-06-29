@@ -1174,6 +1174,7 @@ class PosSyncService
             'customer.name' => ['required', 'string', 'max:255'],
             'customer.phone' => ['sometimes', 'nullable', 'string', 'max:50'],
             'customer.email' => ['sometimes', 'nullable', 'email', 'max:255'],
+            'customer.is_active' => ['sometimes', 'boolean'],
             'customer.updated_at' => ['sometimes', 'nullable', 'date'],
         ])->validate();
 
@@ -1190,6 +1191,7 @@ class PosSyncService
                 'name' => (string) $c['name'],
                 'phone' => $c['phone'] ?? null,
                 'email' => $c['email'] ?? null,
+                'is_active' => array_key_exists('is_active', $c) ? (bool) $c['is_active'] : $customer->is_active,
                 'updated_by' => (int) $user->id,
             ]);
 
@@ -1200,7 +1202,7 @@ class PosSyncService
             'name' => (string) $c['name'],
             'phone' => $c['phone'] ?? null,
             'email' => $c['email'] ?? null,
-            'is_active' => 1,
+            'is_active' => array_key_exists('is_active', $c) ? (bool) $c['is_active'] : true,
             'created_by' => (int) $user->id,
             'updated_by' => (int) $user->id,
         ]);

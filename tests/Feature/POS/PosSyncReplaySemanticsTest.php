@@ -208,6 +208,46 @@ test('test_duplicate_event_after_success_returns_ok_with_same_entity', function 
     expect(Customer::query()->count())->toBe(1);
 });
 
+test('customer upsert can deactivate an existing customer for sync clients', function () {
+    $user = User::factory()->create(['status' => 'active']);
+    seedPosTerminalForSync('DEV-A', 'T01', 1);
+    $token = posTokenForDevice($user, 'DEV-A');
+
+    $customer = Customer::factory()->create([
+        'name' => 'Sync Customer',
+        'phone' => '12345678',
+        'email' => 'sync@example.com',
+        'is_active' => true,
+    ]);
+
+    $resp = $this->withToken($token)->postJson('/api/pos/sync', [
+        'device_id' => 'DEV-A',
+        'terminal_code' => 'T01',
+        'branch_id' => 1,
+        'last_pulled_at' => null,
+        'events' => [
+            [
+                'event_id' => 'evt-cust-deactivate',
+                'type' => 'customer.upsert',
+                'client_uuid' => (string) Str::uuid(),
+                'payload' => [
+                    'customer' => [
+                        'id' => $customer->id,
+                        'name' => 'Sync Customer',
+                        'phone' => '12345678',
+                        'email' => 'sync@example.com',
+                        'is_active' => false,
+                        'updated_at' => now()->toISOString(),
+                    ],
+                ],
+            ],
+        ],
+    ])->assertOk()->json();
+
+    expect($resp['acks'][0]['ok'])->toBeTrue();
+    expect($customer->fresh()->is_active)->toBeFalse();
+});
+
 test('invoice replay ack includes invoice_no and ref_no', function () {
     $user = User::factory()->create(['status' => 'active']);
     seedPosTerminalForSync('DEV-A', 'T01', 1);

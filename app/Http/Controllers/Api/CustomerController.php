@@ -16,11 +16,10 @@ class CustomerController extends Controller
         $light = $request->boolean('light', true);
         $search = $request->input('search');
         $type = $request->input('customer_type');
-        $active = $request->has('active') ? $request->boolean('active') : true;
         $perPage = (int) $request->input('per_page', 20);
 
         $query = Customer::query()
-            ->when($active !== null, fn ($q) => $active ? $q->where('is_active', 1) : $q)
+            ->active()
             ->type($type)
             ->search($search)
             ->orderBy('name');

@@ -27,6 +27,22 @@ it('returns light customers list by default', function () {
     $response->assertOk();
     $data = $response->json();
     expect($data)->toBeArray();
+    expect(collect($data)->every(fn (array $row) => (bool) ($row['is_active'] ?? false) === true))->toBeTrue();
+});
+
+it('does not return inactive customers from the api list', function () {
+    $active = Customer::factory()->create(['name' => 'Active Customer', 'is_active' => true]);
+    $inactive = Customer::factory()->create(['name' => 'Inactive Customer', 'is_active' => false]);
+
+    $user = adminCustomerUser();
+
+    $response = actingAs($user)->getJson('/api/customers');
+    $response->assertOk();
+
+    $ids = collect($response->json())->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+    expect($ids)->toContain((int) $active->id);
+    expect($ids)->not->toContain((int) $inactive->id);
 });
 
 it('returns single customer', function () {
