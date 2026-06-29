@@ -110,7 +110,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $invoices = $query
-            ->orderByDesc('issue_date')
+            ->orderBy('issue_date')
+            ->orderBy('invoice_number')
             ->get()
             ->map(function (ArInvoice $invoice) {
                 $outstanding = (int) ($invoice->balance_cents ?? 0);

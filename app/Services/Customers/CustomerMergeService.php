@@ -46,7 +46,7 @@ class CustomerMergeService
             if ($targetHasUser) {
                 DB::table('users')
                     ->where('customer_id', $sourceId)
-                    ->update(['is_active' => false, 'customer_id' => null]);
+                    ->update(['status' => 'inactive', 'customer_id' => null]);
             } else {
                 DB::table('users')
                     ->where('customer_id', $sourceId)

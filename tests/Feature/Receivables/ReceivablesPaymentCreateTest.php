@@ -64,6 +64,40 @@ it('loads add payment allocations unselected and can select all', function () {
         ->assertSet('select_all_allocations', true);
 });
 
+it('loads payment create invoices from oldest to newest', function () {
+    $user = makeReceivablesManager();
+    $customer = Customer::factory()->create();
+
+    ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'issued',
+        'invoice_number' => 'INV-NEW-001',
+        'issue_date' => '2026-06-10',
+        'due_date' => '2026-06-17',
+        'total_cents' => 10000,
+        'balance_cents' => 10000,
+    ]);
+
+    ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'issued',
+        'invoice_number' => 'INV-OLD-001',
+        'issue_date' => '2026-05-10',
+        'due_date' => '2026-05-17',
+        'total_cents' => 10000,
+        'balance_cents' => 10000,
+    ]);
+
+    Volt::actingAs($user);
+
+    Volt::test('receivables.payments.create')
+        ->call('selectCustomer', $customer->id)
+        ->assertSet('allocations.0.invoice_number', 'INV-OLD-001')
+        ->assertSet('allocations.1.invoice_number', 'INV-NEW-001');
+});
+
 it('prefills customer invoices from query params on payment create', function () {
     $user = makeReceivablesManager();
     $customer = Customer::factory()->create([
@@ -87,6 +121,60 @@ it('prefills customer invoices from query params on payment create', function ()
         ->assertOk()
         ->assertSee('INV-PREFILL-001')
         ->assertSee('Create Credit Note');
+});
+
+it('loads payment view allocations from oldest to newest', function () {
+    $user = makeReceivablesManager();
+    $customer = Customer::factory()->create();
+
+    $newerInvoice = ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'issued',
+        'invoice_number' => 'INV-NEW-002',
+        'issue_date' => '2026-06-15',
+        'due_date' => '2026-06-22',
+        'total_cents' => 7000,
+        'balance_cents' => 7000,
+    ]);
+
+    $olderInvoice = ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'type' => 'invoice',
+        'status' => 'issued',
+        'invoice_number' => 'INV-OLD-002',
+        'issue_date' => '2026-05-15',
+        'due_date' => '2026-05-22',
+        'total_cents' => 9000,
+        'balance_cents' => 9000,
+    ]);
+
+    $payment = Payment::factory()->create([
+        'customer_id' => $customer->id,
+        'branch_id' => 1,
+        'source' => 'ar',
+        'currency' => 'QAR',
+        'amount_cents' => 16000,
+    ]);
+
+    // Insert allocations in reverse order to verify the view sorts by invoice date.
+    $payment->allocations()->create([
+        'allocatable_type' => ArInvoice::class,
+        'allocatable_id' => $newerInvoice->id,
+        'amount_cents' => 7000,
+    ]);
+
+    $payment->allocations()->create([
+        'allocatable_type' => ArInvoice::class,
+        'allocatable_id' => $olderInvoice->id,
+        'amount_cents' => 9000,
+    ]);
+
+    Volt::actingAs($user);
+
+    Volt::test('receivables.payments.show', ['payment' => $payment])
+        ->assertSet('allocations.0.invoice_number', 'INV-OLD-002')
+        ->assertSet('allocations.1.invoice_number', 'INV-NEW-002');
 });
 
 it('creates and applies a credit note from payment create', function () {
