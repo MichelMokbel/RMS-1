@@ -62,6 +62,48 @@ it('shows invoice and line-item notes on the invoice print page', function () {
         ->assertSee('Extra garlic sauce');
 });
 
+it('shows void details on the invoice show page', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $customer = Customer::factory()->create();
+    $invoice = ArInvoice::factory()->create([
+        'customer_id' => $customer->id,
+        'status' => 'void',
+        'voided_at' => '2026-06-15 13:45:00',
+        'void_reason' => 'Customer cancelled the event',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('invoices.show', $invoice))
+        ->assertOk()
+        ->assertSee('This invoice was voided')
+        ->assertSee('2026-06-15 13:45')
+        ->assertSee('Reason: Customer cancelled the event');
+});
+
+it('prints a voided watermark only for voided invoices', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $voidedInvoice = ArInvoice::factory()->create([
+        'status' => 'void',
+        'voided_at' => '2026-06-15 13:45:00',
+        'void_reason' => 'Duplicate invoice',
+    ]);
+    $issuedInvoice = ArInvoice::factory()->issued()->create();
+
+    $this->actingAs($user)
+        ->get(route('invoices.print', $voidedInvoice))
+        ->assertOk()
+        ->assertSee('<div class="void-watermark" aria-hidden="true">Voided</div>', false);
+
+    $this->actingAs($user)
+        ->get(route('invoices.print', $issuedInvoice))
+        ->assertOk()
+        ->assertDontSee('<div class="void-watermark" aria-hidden="true">Voided</div>', false);
+});
+
 it('uses a wider container on invoice create and show pages', function () {
     $user = User::factory()->create();
     $user->assignRole('manager');

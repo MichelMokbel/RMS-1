@@ -56,6 +56,31 @@
             page-break-after: auto;
             page-break-inside: avoid;
             break-inside: avoid-page;
+            position: relative;
+        }
+
+        .void-watermark {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            transform: rotate(-28deg);
+            color: rgba(190, 18, 60, 0.14);
+            font-size: 42mm;
+            font-weight: 800;
+            letter-spacing: 3mm;
+            text-transform: uppercase;
+        }
+
+        .invoice-content {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex: 1;
+            flex-direction: column;
         }
 
         .header {
@@ -360,6 +385,7 @@
     $subtotalCents = (int) ($invoice->subtotal_cents ?? 0);
     $grandTotalCents = (int) ($invoice->total_cents ?? 0);
     $invoiceNote = trim((string) ($invoice->notes ?? ''));
+    $isVoided = $invoice->voided_at !== null || $invoice->status === 'void';
 
     $numberToWords = function (int $number) use (&$numberToWords): string {
     $ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
@@ -416,6 +442,10 @@
         </div>
 
         <div class="invoice">
+            @if ($isVoided)
+                <div class="void-watermark" aria-hidden="true">Voided</div>
+            @endif
+            <div class="invoice-content">
             <div class="header">
                 <img class="logo" src="{{ asset('logo.png') }}" alt="Layla Kitchen Logo">
                 <div class="company">
@@ -629,6 +659,7 @@
             <div class="footer">
                 <div>Tel : 44413660</div>
                 <div>Page 1 of 1</div>
+            </div>
             </div>
         </div>
 </body>

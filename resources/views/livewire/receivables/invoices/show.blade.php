@@ -383,6 +383,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $creditLimit = $customer && $customer->credit_limit !== null
             ? number_format((float) $customer->credit_limit, $this->moneyScaleDigits(), '.', '')
             : null;
+        $isVoided = $invoice->voided_at !== null || $invoice->status === 'void';
     @endphp
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
         <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Customer Details') }}</h2>
@@ -472,6 +473,17 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="rounded-md p-3 text-sm">
                 <div class="text-neutral-500 dark:text-neutral-400">{{ __('Notes') }}</div>
                 <div class="mt-1 whitespace-pre-wrap font-medium text-neutral-900 dark:text-neutral-100">{{ $invoice->notes }}</div>
+            </div>
+        @endif
+
+        @if ($isVoided)
+            <div class="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-100">
+                <div class="font-semibold">
+                    {{ __('This invoice was voided') }}@if($invoice->voided_at) {{ __('on :date', ['date' => $invoice->voided_at->format('Y-m-d H:i')]) }}@endif.
+                </div>
+                @if (filled($invoice->void_reason))
+                    <div class="mt-1 whitespace-pre-wrap">{{ __('Reason') }}: {{ $invoice->void_reason }}</div>
+                @endif
             </div>
         @endif
 
