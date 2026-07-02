@@ -31,9 +31,8 @@
             <tr>
                 <th>Customer Code</th>
                 <th>Customer</th>
-                <th>Invoice #</th>
-                <th>Issue Date</th>
-                <th>Due Date</th>
+                <th class="right">Open Invoices</th>
+                <th>Oldest Due Date</th>
                 <th class="right">Invoice Total</th>
                 <th class="right">Paid As Of</th>
                 <th class="right">Balance As Of</th>
@@ -45,22 +44,23 @@
                 <tr>
                     <td>{{ $row['customer_code'] ?: '-' }}</td>
                     <td>{{ $row['customer_name'] }}</td>
-                    <td>{{ $row['invoice_number'] }}</td>
-                    <td>{{ $row['issue_date'] ?: '-' }}</td>
-                    <td>{{ $row['due_date'] ?: '-' }}</td>
+                    <td class="right">{{ $row['invoice_count'] }}</td>
+                    <td>{{ $row['oldest_due_date'] ?: '-' }}</td>
                     <td class="right">{{ $formatCents($row['total_cents']) }}</td>
                     <td class="right">{{ $formatCents($row['paid_as_of_cents']) }}</td>
                     <td class="right">{{ $formatCents($row['balance_as_of_cents']) }}</td>
                     <td>{{ $row['aging_label'] }}</td>
                 </tr>
             @empty
-                <tr><td colspan="9">No receivables found for this as-of date.</td></tr>
+                <tr><td colspan="8">No receivables found for this as-of date.</td></tr>
             @endforelse
         </tbody>
         @if ($rows->count() > 0)
             <tfoot>
                 <tr>
-                    <td colspan="5">Total</td>
+                    <td colspan="2">Total</td>
+                    <td class="right">{{ $rows->sum('invoice_count') }}</td>
+                    <td></td>
                     <td class="right">{{ $formatCents($rows->sum('total_cents')) }}</td>
                     <td class="right">{{ $formatCents($rows->sum('paid_as_of_cents')) }}</td>
                     <td class="right">{{ $formatCents($rows->sum('balance_as_of_cents')) }}</td>

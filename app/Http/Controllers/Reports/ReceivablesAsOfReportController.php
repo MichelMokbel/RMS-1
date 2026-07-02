@@ -48,9 +48,8 @@ class ReceivablesAsOfReportController extends Controller
         $headers = [
             __('Customer Code'),
             __('Customer'),
-            __('Invoice #'),
-            __('Issue Date'),
-            __('Due Date'),
+            __('Open Invoices'),
+            __('Oldest Due Date'),
             __('Invoice Total'),
             __('Paid As Of'),
             __('Balance As Of'),
@@ -60,9 +59,8 @@ class ReceivablesAsOfReportController extends Controller
         $rows = $this->report->rows($filters)->map(fn (array $row): array => [
             $row['customer_code'] ?? '',
             $row['customer_name'],
-            $row['invoice_number'],
-            $row['issue_date'],
-            $row['due_date'],
+            $row['invoice_count'],
+            $row['oldest_due_date'],
             $this->formatCents($row['total_cents']),
             $this->formatCents($row['paid_as_of_cents']),
             $this->formatCents($row['balance_as_of_cents']),

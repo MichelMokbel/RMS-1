@@ -5,6 +5,7 @@ use App\Models\Customer;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Models\User;
+use App\Services\Reports\ReceivablesAsOfReport;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 
@@ -72,7 +73,9 @@ it('shows receivables as of in the accounts reports list', function () {
 
 it('shows invoices paid after the as-of date as still unpaid at month end', function () {
     $user = makeReceivablesAsOfManager();
+    $customer = Customer::factory()->create(['name' => 'As Of Paid May Customer']);
     $invoice = createReceivablesAsOfInvoice([
+        'customer_id' => $customer->id,
         'invoice_number' => 'ASOF-PAID-MAY',
         'status' => 'paid',
         'paid_total_cents' => 100000,
@@ -85,13 +88,16 @@ it('shows invoices paid after the as-of date as still unpaid at month end', func
         ->get(route('reports.receivables-as-of', ['as_of_date' => '2026-04-30']))
         ->assertOk()
         ->assertSee('Receivables As Of')
-        ->assertSee('ASOF-PAID-MAY')
+        ->assertSee('As Of Paid May Customer')
+        ->assertDontSee('ASOF-PAID-MAY')
         ->assertSee('1000.00');
 });
 
 it('only counts payments received on or before the as-of date', function () {
     $user = makeReceivablesAsOfManager();
+    $customer = Customer::factory()->create(['name' => 'As Of Partial Customer']);
     $invoice = createReceivablesAsOfInvoice([
+        'customer_id' => $customer->id,
         'invoice_number' => 'ASOF-PARTIAL',
         'status' => 'paid',
         'total_cents' => 100000,
@@ -107,19 +113,24 @@ it('only counts payments received on or before the as-of date', function () {
         ->assertOk();
 
     $response
-        ->assertSee('ASOF-PARTIAL')
+        ->assertSee('As Of Partial Customer')
+        ->assertDontSee('ASOF-PARTIAL')
         ->assertSee('300.00')
         ->assertSee('700.00');
 });
 
 it('excludes invoices fully paid before the as-of date', function () {
     $user = makeReceivablesAsOfManager();
+    $openCustomer = Customer::factory()->create(['name' => 'As Of Open Customer']);
+    $paidCustomer = Customer::factory()->create(['name' => 'As Of Paid Before Customer']);
     $openAtCutoff = createReceivablesAsOfInvoice([
+        'customer_id' => $openCustomer->id,
         'invoice_number' => 'ASOF-OPEN',
         'total_cents' => 100000,
         'balance_cents' => 100000,
     ]);
     $paidBeforeCutoff = createReceivablesAsOfInvoice([
+        'customer_id' => $paidCustomer->id,
         'invoice_number' => 'ASOF-PAID-BEFORE',
         'status' => 'paid',
         'total_cents' => 50000,
@@ -132,13 +143,18 @@ it('excludes invoices fully paid before the as-of date', function () {
     $this->actingAs($user)
         ->get(route('reports.receivables-as-of', ['as_of_date' => '2026-04-30']))
         ->assertOk()
-        ->assertSee('ASOF-OPEN')
+        ->assertSee('As Of Open Customer')
+        ->assertDontSee('ASOF-OPEN')
+        ->assertDontSee('As Of Paid Before Customer')
         ->assertDontSee('ASOF-PAID-BEFORE');
 });
 
 it('excludes imported paid invoices with zero balance and no payment records', function () {
     $user = makeReceivablesAsOfManager();
+    $paidCustomer = Customer::factory()->create(['name' => 'As Of Import Paid Customer']);
+    $openCustomer = Customer::factory()->create(['name' => 'As Of Import Control Customer']);
     $paidImport = createReceivablesAsOfInvoice([
+        'customer_id' => $paidCustomer->id,
         'invoice_number' => 'ASOF-IMPORT-PAID',
         'source' => 'import',
         'status' => 'paid',
@@ -147,6 +163,7 @@ it('excludes imported paid invoices with zero balance and no payment records', f
         'balance_cents' => 0,
     ]);
     $openInvoice = createReceivablesAsOfInvoice([
+        'customer_id' => $openCustomer->id,
         'invoice_number' => 'ASOF-IMPORT-CONTROL',
         'total_cents' => 50000,
         'balance_cents' => 50000,
@@ -155,13 +172,17 @@ it('excludes imported paid invoices with zero balance and no payment records', f
     $this->actingAs($user)
         ->get(route('reports.receivables-as-of', ['as_of_date' => '2026-04-30']))
         ->assertOk()
-        ->assertSee($openInvoice->invoice_number)
+        ->assertSee('As Of Import Control Customer')
+        ->assertDontSee($openInvoice->invoice_number)
+        ->assertDontSee('As Of Import Paid Customer')
         ->assertDontSee($paidImport->invoice_number);
 });
 
 it('uses imported invoice balance when no payment records exist', function () {
     $user = makeReceivablesAsOfManager();
+    $customer = Customer::factory()->create(['name' => 'As Of Import Partial Customer']);
     $importedPartial = createReceivablesAsOfInvoice([
+        'customer_id' => $customer->id,
         'invoice_number' => 'ASOF-IMPORT-PARTIAL',
         'source' => 'import',
         'status' => 'partially_paid',
@@ -175,14 +196,17 @@ it('uses imported invoice balance when no payment records exist', function () {
         ->assertOk();
 
     $response
-        ->assertSee($importedPartial->invoice_number)
+        ->assertSee('As Of Import Partial Customer')
+        ->assertDontSee($importedPartial->invoice_number)
         ->assertSee('600.00')
         ->assertSee('400.00');
 });
 
 it('excludes manually settled imports when recorded allocations do not cover the full paid total', function () {
     $user = makeReceivablesAsOfManager();
+    $customer = Customer::factory()->create(['name' => 'As Of Manually Settled Customer']);
     $invoice = createReceivablesAsOfInvoice([
+        'customer_id' => $customer->id,
         'invoice_number' => '100708',
         'source' => 'import',
         'notes' => 'Imported from Sales Entry Daily Report',
@@ -199,7 +223,42 @@ it('excludes manually settled imports when recorded allocations do not cover the
     $this->actingAs($user)
         ->get(route('reports.receivables-as-of', ['as_of_date' => '2026-04-30']))
         ->assertOk()
+        ->assertDontSee('As Of Manually Settled Customer')
         ->assertDontSee('100708');
+});
+
+it('groups receivables as of by customer', function () {
+    $customer = Customer::factory()->create([
+        'name' => 'As Of Grouped Customer',
+        'customer_code' => 'AOG-001',
+    ]);
+
+    createReceivablesAsOfInvoice([
+        'customer_id' => $customer->id,
+        'invoice_number' => 'ASOF-GROUP-001',
+        'due_date' => '2026-04-10',
+        'total_cents' => 100000,
+        'balance_cents' => 100000,
+    ]);
+    createReceivablesAsOfInvoice([
+        'customer_id' => $customer->id,
+        'invoice_number' => 'ASOF-GROUP-002',
+        'due_date' => '2026-04-20',
+        'total_cents' => 50000,
+        'paid_total_cents' => 10000,
+        'balance_cents' => 40000,
+    ]);
+
+    $rows = app(ReceivablesAsOfReport::class)->rows(['as_of_date' => '2026-04-30']);
+
+    expect($rows)->toHaveCount(1)
+        ->and($rows->first()['customer_name'])->toBe('As Of Grouped Customer')
+        ->and($rows->first()['invoice_count'])->toBe(2)
+        ->and($rows->first()['oldest_due_date'])->toBe('2026-04-10')
+        ->and($rows->first()['total_cents'])->toBe(150000)
+        ->and($rows->first()['paid_as_of_cents'])->toBe(10000)
+        ->and($rows->first()['balance_as_of_cents'])->toBe(140000)
+        ->and($rows->first())->not->toHaveKey('invoice_number');
 });
 
 it('filters receivables as of by branch and customer', function () {
@@ -231,14 +290,27 @@ it('filters receivables as of by branch and customer', function () {
             'customer_id' => $visibleCustomer->id,
         ]))
         ->assertOk()
-        ->assertSee($visible->invoice_number)
+        ->assertSee('As Of Visible Customer')
+        ->assertDontSee($visible->invoice_number)
         ->assertDontSee($hiddenByCustomer->invoice_number)
         ->assertDontSee($hiddenByBranch->invoice_number);
+
+    $rows = app(ReceivablesAsOfReport::class)->rows([
+        'as_of_date' => '2026-04-30',
+        'branch_id' => 2,
+        'customer_id' => $visibleCustomer->id,
+    ]);
+
+    expect($rows)->toHaveCount(1)
+        ->and($rows->first()['customer_id'])->toBe($visibleCustomer->id)
+        ->and($rows->first()['invoice_count'])->toBe(1);
 });
 
 it('exports receivables as of data through csv and pdf routes', function () {
     $user = makeReceivablesAsOfManager();
+    $customer = Customer::factory()->create(['name' => 'As Of Export Customer']);
     $invoice = createReceivablesAsOfInvoice([
+        'customer_id' => $customer->id,
         'invoice_number' => 'ASOF-EXPORT',
     ]);
 
@@ -246,7 +318,9 @@ it('exports receivables as of data through csv and pdf routes', function () {
         ->get(route('reports.receivables-as-of.csv', ['as_of_date' => '2026-04-30']));
 
     $csv->assertOk();
-    expect($csv->streamedContent())->toContain('ASOF-EXPORT');
+    expect($csv->streamedContent())
+        ->toContain('As Of Export Customer')
+        ->not->toContain('ASOF-EXPORT');
 
     $this->actingAs($user)
         ->get(route('reports.receivables-as-of.pdf', ['as_of_date' => '2026-04-30']))

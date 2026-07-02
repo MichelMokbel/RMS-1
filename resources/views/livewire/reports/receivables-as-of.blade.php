@@ -111,7 +111,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div>
             <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Receivables As Of') }}</h1>
             <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-                {{ __('Invoice balances that were still open at the selected closing date.') }}
+                {{ __('Customer balances that were still open at the selected closing date.') }}
             </p>
         </div>
         <div class="flex gap-2">
@@ -161,9 +161,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <tr>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Customer Code') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Customer') }}</th>
-                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Invoice #') }}</th>
-                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Issue Date') }}</th>
-                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Due Date') }}</th>
+                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Open Invoices') }}</th>
+                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Oldest Due Date') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Invoice Total') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Paid As Of') }}</th>
                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase text-neutral-700 dark:text-neutral-100">{{ __('Balance As Of') }}</th>
@@ -175,9 +174,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['customer_code'] ?: '-' }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $row['customer_name'] }}</td>
-                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['invoice_number'] }}</td>
-                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['issue_date'] ?: '-' }}</td>
-                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['due_date'] ?: '-' }}</td>
+                        <td class="px-3 py-2 text-right text-sm text-neutral-700 dark:text-neutral-200">{{ $row['invoice_count'] }}</td>
+                        <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row['oldest_due_date'] ?: '-' }}</td>
                         <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">{{ $this->formatCents($row['total_cents']) }}</td>
                         <td class="px-3 py-2 text-right text-sm text-neutral-700 dark:text-neutral-200">{{ $this->formatCents($row['paid_as_of_cents']) }}</td>
                         <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">{{ $this->formatCents($row['balance_as_of_cents']) }}</td>
@@ -185,14 +183,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="9" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No receivables found for this as-of date.') }}</td>
+                        <td colspan="8" class="px-4 py-6 text-center text-sm text-neutral-600 dark:text-neutral-300">{{ __('No receivables found for this as-of date.') }}</td>
                     </tr>
                 @endforelse
             </tbody>
             @if ($receivables->count() > 0)
                 <tfoot class="bg-neutral-50 dark:bg-neutral-800/90">
                     <tr>
-                        <td colspan="5" class="px-3 py-2 text-right text-sm font-semibold text-neutral-700 dark:text-neutral-200">{{ __('Total') }}</td>
+                        <td colspan="2" class="px-3 py-2 text-right text-sm font-semibold text-neutral-700 dark:text-neutral-200">{{ __('Total') }}</td>
+                        <td class="px-3 py-2 text-right text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $receivables->getCollection()->sum('invoice_count') }}</td>
+                        <td></td>
                         <td class="px-3 py-2 text-right text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatCents($receivables->getCollection()->sum('total_cents')) }}</td>
                         <td class="px-3 py-2 text-right text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatCents($receivables->getCollection()->sum('paid_as_of_cents')) }}</td>
                         <td class="px-3 py-2 text-right text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatCents($receivables->getCollection()->sum('balance_as_of_cents')) }}</td>

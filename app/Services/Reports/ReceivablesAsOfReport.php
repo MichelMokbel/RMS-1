@@ -90,7 +90,7 @@ class ReceivablesAsOfReport
             ->selectRaw('pa.allocatable_id, COALESCE(SUM(pa.amount_cents), 0) as allocated_cents')
             ->pluck('allocated_cents', 'allocatable_id');
 
-        return $invoices
+        $invoiceRows = $invoices
             ->map(function (ArInvoice $invoice) use ($paidByInvoice, $invoicesWithAllocationHistory, $allocatedByInvoice, $asOf): array {
                 $totalCents = (int) ($invoice->total_cents ?? 0);
                 $hasAllocationHistory = $invoicesWithAllocationHistory->has($invoice->id);
@@ -115,20 +115,44 @@ class ReceivablesAsOfReport
                     'customer_id' => (int) $invoice->customer_id,
                     'customer_code' => $invoice->customer?->customer_code,
                     'customer_name' => $invoice->customer?->name ?? '-',
-                    'invoice_number' => $invoice->invoice_number ?: (string) $invoice->id,
                     'issue_date' => $invoice->issue_date?->format('Y-m-d'),
                     'due_date' => $invoice->due_date?->format('Y-m-d'),
                     'total_cents' => $totalCents,
                     'paid_as_of_cents' => $paidCents,
                     'balance_as_of_cents' => $balanceCents,
+                    'aging_days' => $days,
                     'aging_label' => $days <= 0 ? __('Not Due') : $days.' '.__('Days'),
                 ];
             })
-            ->filter(fn (array $row): bool => (int) $row['balance_as_of_cents'] > 0)
+            ->filter(fn (array $row): bool => (int) $row['balance_as_of_cents'] > 0);
+
+        return $invoiceRows
+            ->groupBy('customer_id')
+            ->map(function (Collection $customerRows): array {
+                $first = $customerRows->first();
+                $oldestDueDate = $customerRows
+                    ->pluck('due_date')
+                    ->filter()
+                    ->sort()
+                    ->first();
+                $maxAgingDays = (int) $customerRows->max('aging_days');
+
+                return [
+                    'customer_id' => (int) ($first['customer_id'] ?? 0),
+                    'customer_code' => $first['customer_code'] ?? null,
+                    'customer_name' => $first['customer_name'] ?? '-',
+                    'invoice_count' => $customerRows->count(),
+                    'oldest_due_date' => $oldestDueDate,
+                    'total_cents' => (int) $customerRows->sum('total_cents'),
+                    'paid_as_of_cents' => (int) $customerRows->sum('paid_as_of_cents'),
+                    'balance_as_of_cents' => (int) $customerRows->sum('balance_as_of_cents'),
+                    'aging_days' => $maxAgingDays,
+                    'aging_label' => $maxAgingDays <= 0 ? __('Not Due') : $maxAgingDays.' '.__('Days'),
+                ];
+            })
             ->sortBy([
                 ['customer_name', 'asc'],
-                ['issue_date', 'asc'],
-                ['invoice_id', 'asc'],
+                ['customer_id', 'asc'],
             ])
             ->values();
     }
