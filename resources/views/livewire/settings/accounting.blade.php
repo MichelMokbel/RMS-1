@@ -426,7 +426,11 @@ new class extends Component {
 <section class="w-full">
     @include('partials.settings-heading')
 
-    <x-settings.layout :heading="__('Accounting Setup')" :subheading="__('Manage the chart of accounts, posting mappings, and bank-linked settlement accounts.')">
+    <x-settings.layout
+        :heading="__('Accounting Setup')"
+        :subheading="__('Manage the chart of accounts, posting mappings, and bank-linked settlement accounts.')"
+        content-class="mt-5 w-full max-w-7xl"
+    >
         @if(session('status'))
             <div class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">
                 {{ session('status') }}
