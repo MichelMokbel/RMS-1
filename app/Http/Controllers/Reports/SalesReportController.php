@@ -51,21 +51,25 @@ class SalesReportController extends Controller
         return [$from, $to];
     }
 
-    private function query(Request $request, int $limit = 500)
+    private function query(Request $request)
     {
         [$from, $to] = $this->resolvedRange($request);
+        $status = (string) $request->input('status', 'all');
 
         return ArInvoice::query()
             ->with(['customer:id,name', 'paymentAllocations.payment'])
             ->where('type', 'invoice')
-            ->whereIn('status', ['issued', 'partially_paid', 'paid', 'voided'])
+            ->when($status === 'voided', function ($q) {
+                $q->where('status', 'voided');
+            }, function ($q) use ($status) {
+                $q->whereIn('status', ['issued', 'partially_paid', 'paid'])
+                    ->when($status !== 'all', fn ($qq) => $qq->where('status', $status));
+            })
             ->when($request->filled('branch_id') && $request->integer('branch_id') > 0, fn ($q) => $q->where('branch_id', $request->integer('branch_id')))
-            ->when($request->filled('status') && $request->status !== 'all', fn ($q) => $q->where('status', $request->status))
             ->whereDate('issue_date', '>=', $from->toDateString())
             ->whereDate('issue_date', '<=', $to->toDateString())
             ->orderByDesc('issue_date')
             ->orderByDesc('id')
-            ->limit($limit)
             ->get();
     }
 
@@ -136,7 +140,7 @@ class SalesReportController extends Controller
 
     public function csv(Request $request): StreamedResponse
     {
-        $sales = $this->query($request, 2000);
+        $sales = $this->query($request);
         $branchNames = $this->branchNames($sales);
         $headers = [__('S.I'), __('Date & Time'), __('Branch'), __('Invoice #'), __('POS REF'), __('Customer'), __('Status'), __('Payment Type'), __('Total')];
         $rows = $sales->values()->map(fn ($s, $index) => [

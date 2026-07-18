@@ -36,9 +36,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         $branches = Schema::hasTable('branches')
             ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
             : collect();
+        $query = $this->query();
 
         return [
-            'sales' => $this->query()->paginate(15),
+            'sales' => (clone $query)->paginate(15),
+            'salesTotalCents' => (int) (clone $query)->sum('total_cents'),
             'branches' => $branches,
             'branchNames' => $branches->pluck('name', 'id'),
             'exportParams' => $this->exportParams(),
@@ -50,9 +52,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         return ArInvoice::query()
             ->with(['customer:id,name', 'paymentAllocations.payment'])
             ->where('type', 'invoice')
-            ->whereIn('status', ['issued', 'partially_paid', 'paid', 'voided'])
+            ->when($this->status === 'voided', function ($q) {
+                $q->where('status', 'voided');
+            }, function ($q) {
+                $q->whereIn('status', ['issued', 'partially_paid', 'paid'])
+                    ->when($this->status !== 'all', fn ($qq) => $qq->where('status', $this->status));
+            })
             ->when($this->branch_id > 0, fn ($q) => $q->where('branch_id', $this->branch_id))
-            ->when($this->status !== 'all', fn ($q) => $q->where('status', $this->status))
             ->when($this->date_from, fn ($q) => $q->whereDate('issue_date', '>=', $this->date_from))
             ->when($this->date_to, fn ($q) => $q->whereDate('issue_date', '<=', $this->date_to))
             ->orderByDesc('issue_date')
@@ -181,7 +187,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <tfoot class="bg-neutral-50 dark:bg-neutral-800/90">
                     <tr>
                         <td colspan="8" class="px-3 py-2 text-right text-sm font-semibold text-neutral-700 dark:text-neutral-200">{{ __('Total') }}</td>
-                        <td class="px-3 py-2 text-right text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($sales->getCollection()->sum('total_cents')) }}</td>
+                        <td class="px-3 py-2 text-right text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $this->formatMoney($salesTotalCents) }}</td>
                     </tr>
                 </tfoot>
             @endif

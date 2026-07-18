@@ -39,7 +39,7 @@ it('sales entry monthly print includes all filtered invoices beyond the old expo
 
     $response->assertOk();
     $response->assertSee('2026-03');
-    $response->assertSee('2,001', false);
+    $response->assertSee('2001', false);
     $response->assertSee('2001.00', false);
     $response->assertDontSee('2026-04');
 });

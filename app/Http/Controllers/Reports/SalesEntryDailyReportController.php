@@ -51,7 +51,7 @@ class SalesEntryDailyReportController extends Controller
         return [$from, $to];
     }
 
-    private function query(Request $request, Carbon $from, Carbon $to, int $limit = 500): Collection
+    private function query(Request $request, Carbon $from, Carbon $to): Collection
     {
         return ArInvoice::query()
             ->with(['customer', 'salesPerson', 'creator', 'paymentAllocations.payment'])
@@ -63,7 +63,6 @@ class SalesEntryDailyReportController extends Controller
             ->whereDate('issue_date', '<=', $to->toDateString())
             ->orderByDesc('issue_date')
             ->orderByDesc('id')
-            ->limit($limit)
             ->get();
     }
 
@@ -206,7 +205,7 @@ class SalesEntryDailyReportController extends Controller
     public function csv(Request $request): StreamedResponse
     {
         [$from, $to] = $this->resolvedDailyRange($request);
-        $rows = $this->buildRows($this->query($request, $from, $to, 2000));
+        $rows = $this->buildRows($this->query($request, $from, $to));
         $headers = [
             __('S.I'),
             __('Date & Time'),
