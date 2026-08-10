@@ -1226,6 +1226,24 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|o
     })->name('sales.kot');
 });
 
+// Quotations and reusable quotation templates
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|quotations.access'])->group(function () {
+    Volt::route('quotations', 'quotations.index')->name('quotations.index');
+    Volt::route('quotations/create', 'quotations.create')->name('quotations.create');
+    Volt::route('quotations/{quotation}/edit', 'quotations.edit')->name('quotations.edit');
+    Route::get('quotations/{quotation}/preview/{version?}', \App\Http\Controllers\Quotations\QuotationPreviewController::class)
+        ->name('quotations.preview');
+    Volt::route('quotations/{quotation}', 'quotations.show')->name('quotations.show');
+    Route::get('quotation-artifacts/{artifact}/download', \App\Http\Controllers\Quotations\QuotationArtifactDownloadController::class)
+        ->name('quotations.artifacts.download');
+});
+
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|quotation-templates.manage'])->group(function () {
+    Volt::route('quotation-templates', 'quotation-templates.index')->name('quotation-templates.index');
+    Volt::route('quotation-templates/{template}/edit', 'quotation-templates.edit')->name('quotation-templates.edit');
+    Volt::route('quotation-branding/{company?}', 'quotation-templates.branding')->name('quotation-templates.branding');
+});
+
 // AR (receivables)
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|receivables.access'])->group(function () {
     Volt::route('receivables/payments', 'receivables.payments.index')->name('receivables.payments.index');

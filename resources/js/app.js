@@ -1,5 +1,6 @@
 import ApexCharts from 'apexcharts';
 import './help/bot';
+import './quotations/editor';
 
 const dashboardChartRegistry = new Map();
 let dashboardObserverInitialized = false;

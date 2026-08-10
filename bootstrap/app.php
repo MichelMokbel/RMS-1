@@ -2,6 +2,7 @@
 
 use App\Console\Commands\BackfillMenuItemBranches;
 use App\Console\Commands\ExportMenuItemsMissingArabic;
+use App\Console\Commands\ExpireQuotations;
 use App\Console\Commands\FinanceLockDate;
 use App\Console\Commands\GenerateRecurringBills;
 use App\Console\Commands\GenerateSubscriptionOrders;
@@ -50,6 +51,7 @@ return Application::configure(basePath: dirname(__DIR__))
         FinanceLockDate::class,
         BackfillMenuItemBranches::class,
         ExportMenuItemsMissingArabic::class,
+        ExpireQuotations::class,
         ImportMenuItemArabicNames::class,
         PrunePosPrintStreamEvents::class,
         HelpSeedDemoCommand::class,
@@ -85,6 +87,10 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $schedule->command('accounting:generate-recurring-bills')
             ->dailyAt('01:00')
+            ->withoutOverlapping();
+
+        $schedule->command('quotations:expire')
+            ->dailyAt((string) config('quotations.expiry_time', '00:30'))
             ->withoutOverlapping();
 
         // Marketing: sync campaign structure daily

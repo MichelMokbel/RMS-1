@@ -24,6 +24,8 @@ class ArInvoice extends Model
         'source_sale_id',
         'source_order_id',
         'source_pastry_order_id',
+        'source_quotation_id',
+        'source_quotation_version_id',
         'pos_reference',
         'source',
         'client_uuid',
@@ -67,6 +69,8 @@ class ArInvoice extends Model
         'pos_shift_id' => 'integer',
         'restaurant_table_id' => 'integer',
         'table_session_id' => 'integer',
+        'source_quotation_id' => 'integer',
+        'source_quotation_version_id' => 'integer',
         'payment_term_days' => 'integer',
         'payment_term_id' => 'integer',
         'subtotal_cents' => 'integer',
@@ -144,6 +148,16 @@ class ArInvoice extends Model
     public function pastryOrder(): BelongsTo
     {
         return $this->belongsTo(PastryOrder::class, 'source_pastry_order_id');
+    }
+
+    public function sourceQuotation(): BelongsTo
+    {
+        return $this->belongsTo(Quotation::class, 'source_quotation_id');
+    }
+
+    public function sourceQuotationVersion(): BelongsTo
+    {
+        return $this->belongsTo(QuotationVersion::class, 'source_quotation_version_id');
     }
 
     public function items(): HasMany

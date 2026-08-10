@@ -17,12 +17,16 @@
                 $isStaff = $user?->hasAnyRole(['admin','manager','staff']) ?? false;
                 $isPastryUser = $user?->hasRole('pastry-user') ?? false;
                 $canAccessMarketing = $user?->can('marketing.access') ?? false;
+                $canAccessQuotations = $user?->can('quotations.access') ?? false;
+                $canManageQuotationTemplates = $user?->can('quotation-templates.manage') ?? false;
                 $isAccounting = $user?->hasAnyRole(['admin', 'manager', 'accounting']) ?? false;
 
                 $inSales = request()->routeIs('orders.*')
                     || request()->routeIs('pastry-orders.*')
                     || request()->routeIs('order-sheet.*')
                     || request()->routeIs('invoices.*')
+                    || request()->routeIs('quotations.*')
+                    || request()->routeIs('quotation-templates.*')
                     || request()->routeIs('receivables.payments.*')
                     || request()->routeIs('receivables.orders-to-invoice');
                 $inPrograms = request()->routeIs('meal-plan-requests.*')
@@ -98,6 +102,16 @@
                         <flux:navlist.item icon="table-cells" :href="route('order-sheet.index')" :current="request()->routeIs('order-sheet.*')" wire:navigate>
                             {{ __('Order Sheet') }}
                         </flux:navlist.item>
+                        @if ($canAccessQuotations)
+                            <flux:navlist.item icon="document-plus" :href="route('quotations.index')" :current="request()->routeIs('quotations.*')" wire:navigate>
+                                {{ __('Quotations') }}
+                            </flux:navlist.item>
+                        @endif
+                        @if ($canManageQuotationTemplates)
+                            <flux:navlist.item icon="swatch" :href="route('quotation-templates.index')" :current="request()->routeIs('quotation-templates.*')" wire:navigate>
+                                {{ __('Quotation Templates') }}
+                            </flux:navlist.item>
+                        @endif
                         @if ($isManager)
                             <flux:navlist.item icon="clipboard-document-list" :href="route('receivables.orders-to-invoice')" :current="request()->routeIs('receivables.orders-to-invoice')" wire:navigate>
                                 {{ __('Orders to Invoice') }}
@@ -159,12 +173,35 @@
 
                 @if ($isAccounting && ! $isCashier)
                     <flux:navlist.group expandable :expanded="$inSales" :heading="__('Sales')">
+                        @if ($canAccessQuotations)
+                            <flux:navlist.item icon="document-plus" :href="route('quotations.index')" :current="request()->routeIs('quotations.*')" wire:navigate>
+                                {{ __('Quotations') }}
+                            </flux:navlist.item>
+                        @endif
+                        @if ($canManageQuotationTemplates)
+                            <flux:navlist.item icon="swatch" :href="route('quotation-templates.index')" :current="request()->routeIs('quotation-templates.*')" wire:navigate>
+                                {{ __('Quotation Templates') }}
+                            </flux:navlist.item>
+                        @endif
                         <flux:navlist.item icon="document-text" :href="route('invoices.index')" :current="request()->routeIs('invoices.*')" wire:navigate>
                             {{ __('Invoices (AR)') }}
                         </flux:navlist.item>
                         <flux:navlist.item icon="credit-card" :href="route('receivables.payments.index')" :current="request()->routeIs('receivables.payments.*')" wire:navigate>
                             {{ __('Customer Payments') }}
                         </flux:navlist.item>
+                    </flux:navlist.group>
+                @endif
+
+                @if ($canAccessQuotations && ! $isCashier && ! $isAccounting)
+                    <flux:navlist.group expandable :expanded="$inSales" :heading="__('Sales')">
+                        <flux:navlist.item icon="document-plus" :href="route('quotations.index')" :current="request()->routeIs('quotations.*')" wire:navigate>
+                            {{ __('Quotations') }}
+                        </flux:navlist.item>
+                        @if ($canManageQuotationTemplates)
+                            <flux:navlist.item icon="swatch" :href="route('quotation-templates.index')" :current="request()->routeIs('quotation-templates.*')" wire:navigate>
+                                {{ __('Quotation Templates') }}
+                            </flux:navlist.item>
+                        @endif
                     </flux:navlist.group>
                 @endif
 
