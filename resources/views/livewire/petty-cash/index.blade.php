@@ -211,9 +211,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Petty Cash') }}</h1>
             <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Manage wallets, funding issues, and reconciliations without editing balances directly.') }}</p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap gap-2">
             <flux:button :href="route('payables.index', ['tab' => 'expenses', 'expense_channel' => 'petty_cash'])" wire:navigate variant="ghost">
                 {{ __('Open Petty Cash Expenses') }}
+            </flux:button>
+            <flux:button :href="route('payables.invoices.create', ['document_type' => 'expense', 'expense_channel' => 'petty_cash'])" wire:navigate variant="primary">
+                {{ __('Create PC Expense') }}
             </flux:button>
             <flux:button :href="route('payables.index')" wire:navigate variant="ghost">{{ __('Back to Payables') }}</flux:button>
         </div>

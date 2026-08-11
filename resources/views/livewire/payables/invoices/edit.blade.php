@@ -48,8 +48,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->invoice = $invoice->load(['items', 'expenseProfile', 'attachments']);
 
-        if (in_array($invoice->status, ['partially_paid', 'paid', 'void'], true) || ($invoice->status === 'posted' && $invoice->allocations()->exists())) {
-            session()->flash('status', __('Cannot edit this document in its current state.'));
+        if ($invoice->status !== 'draft') {
+            session()->flash('status', __('Only draft documents can be edited. Create an editable version from the posted invoice instead.'));
             $this->redirectRoute('payables.invoices.show', $invoice, navigate: true);
             return;
         }
@@ -143,6 +143,11 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function save(ApInvoiceTotalsService $totalsService, ExpenseWorkflowService $expenseWorkflowService, ApInvoiceAttachmentService $attachmentService): void
     {
+        $this->invoice->refresh();
+        if ($this->invoice->status !== 'draft') {
+            throw ValidationException::withMessages(['status' => __('Only draft documents can be edited.')]);
+        }
+
         $this->recalc();
         $this->lines = collect($this->lines)
             ->filter(fn ($line) => ! empty($line['description']) && (float) ($line['quantity'] ?? 0) > 0)
@@ -634,10 +639,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             @if($invoice->attachments->isNotEmpty())
                 <div class="space-y-2">
                     @foreach($invoice->attachments as $attachment)
-                        <div class="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700">
-                            <span class="truncate text-neutral-800 dark:text-neutral-100">{{ $attachment->original_name }}</span>
-                            <flux:button type="button" wire:click="deleteAttachment({{ $attachment->id }})" variant="ghost" size="sm">{{ __('Delete') }}</flux:button>
-                        </div>
+                        <x-payables.attachment-preview :attachment="$attachment" :can-delete="true" />
                     @endforeach
                 </div>
             @else
@@ -653,7 +655,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             <div class="space-y-3">
                 @foreach ($lines as $index => $line)
-                    <div class="grid grid-cols-1 items-end gap-3 rounded-lg border border-neutral-200 p-3 md:grid-cols-12 dark:border-neutral-700">
+                    <div wire:key="ap-invoice-edit-line-{{ $index }}" class="grid grid-cols-1 items-end gap-3 rounded-lg border border-neutral-200 p-3 md:grid-cols-12 dark:border-neutral-700">
                         <div class="md:col-span-6">
                             <flux:input wire:model="lines.{{ $index }}.description" :label="__('Description')" />
                         </div>
@@ -661,7 +663,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <flux:input wire:model.live="lines.{{ $index }}.quantity" type="number" step="0.001" min="0.001" :label="__('Qty')" />
                         </div>
                         <div class="md:col-span-2">
-                            <flux:input wire:model.live="lines.{{ $index }}.unit_price" type="number" step="0.0001" min="0" :label="__('Unit Price')" />
+                            <flux:input wire:model.blur="lines.{{ $index }}.unit_price" type="number" step="0.0001" min="0" :label="__('Unit Price')" />
                         </div>
                         <div class="md:col-span-1">
                             <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Line Total') }}</label>

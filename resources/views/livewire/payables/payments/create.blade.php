@@ -165,7 +165,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
             <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Supplier') }}</label>
+                    <div class="flex items-center justify-between gap-3">
+                        <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Supplier') }}</label>
+                        @if(auth()->user()?->hasRole('admin'))
+                            <flux:button :href="route('suppliers.create')" target="_blank" rel="noopener noreferrer" variant="ghost" size="xs">
+                                {{ __('Create Supplier') }}
+                            </flux:button>
+                        @endif
+                    </div>
                     <div
                         class="relative"
                         x-data="{

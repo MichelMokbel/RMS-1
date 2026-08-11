@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\AP;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AP\ApInvoicePostRequest;
+use App\Http\Requests\AP\ApInvoiceReviseRequest;
 use App\Http\Requests\AP\ApInvoiceStoreRequest;
 use App\Http\Requests\AP\ApInvoiceUpdateRequest;
 use App\Http\Requests\AP\ApInvoiceVoidRequest;
@@ -218,8 +219,26 @@ class ApInvoiceController extends Controller
         ApInvoice $invoice,
         ApInvoiceVoidService $voidService
     ): JsonResponse {
-        $invoice = $voidService->void($invoice, Auth::id());
+        $invoice = $voidService->void(
+            $invoice,
+            (int) Auth::id(),
+            $request->validated('reason')
+        );
 
         return response()->json($invoice);
+    }
+
+    public function revise(
+        ApInvoiceReviseRequest $request,
+        ApInvoice $invoice,
+        ApInvoiceVoidService $voidService
+    ): JsonResponse {
+        $revision = $voidService->voidAndDuplicate(
+            $invoice,
+            (int) Auth::id(),
+            $request->validated('reason')
+        );
+
+        return response()->json($revision, 201);
     }
 }

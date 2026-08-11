@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AP\ApInvoiceAttachmentPreviewController;
 use App\Http\Controllers\Help\HelpBotController;
 use App\Http\Controllers\Reports\CustomerStatementReportController;
 use App\Models\Customer;
@@ -1050,7 +1051,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operation
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|catalog.access'])->group(function () {
     Volt::route('menu-items', 'menu-items.index')->name('menu-items.index');
     Route::get('menu-items/export/print', [\App\Http\Controllers\MenuItems\MenuItemsExportController::class, 'print'])->name('menu-items.print');
-    Route::get('menu-items/export/csv',   [\App\Http\Controllers\MenuItems\MenuItemsExportController::class, 'csv'])->name('menu-items.csv');
+    Route::get('menu-items/export/csv', [\App\Http\Controllers\MenuItems\MenuItemsExportController::class, 'csv'])->name('menu-items.csv');
 });
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|catalog.access|finance.access|operations.access'])->group(function () {
@@ -1161,6 +1162,8 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|fin
     Volt::route('payables/invoices/create', 'payables.invoices.create')->name('payables.invoices.create');
     Volt::route('payables/invoices/{invoice}', 'payables.invoices.show')->name('payables.invoices.show');
     Volt::route('payables/invoices/{invoice}/edit', 'payables.invoices.edit')->name('payables.invoices.edit');
+    Route::get('payables/invoices/{invoice}/attachments/{attachment}', ApInvoiceAttachmentPreviewController::class)
+        ->name('payables.invoices.attachments.preview');
     Route::get('spend', fn () => redirect()->route('payables.index', ['tab' => 'approvals']))->name('spend.index');
     Volt::route('petty-cash', 'petty-cash.index')->name('petty-cash.index');
     Route::get('expenses', fn () => redirect()->route('payables.index', ['tab' => 'expenses']))->name('expenses.index');

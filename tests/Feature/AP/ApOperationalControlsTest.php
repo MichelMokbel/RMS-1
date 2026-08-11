@@ -204,6 +204,69 @@ it('blocks AP attachment changes once the invoice period is closed', function ()
     ]);
 });
 
+it('renders authenticated inline previews for AP image and PDF attachments', function () {
+    $supplier = Supplier::factory()->create();
+    $invoice = ApInvoice::factory()->create([
+        'supplier_id' => $supplier->id,
+        'status' => 'draft',
+        'document_type' => 'vendor_bill',
+    ]);
+
+    $image = ApInvoiceAttachment::query()->create([
+        'invoice_id' => $invoice->id,
+        'file_path' => 'ap-invoices/'.$invoice->id.'/receipt.png',
+        'original_name' => 'receipt.png',
+        'uploaded_by' => $this->admin->id,
+    ]);
+    $pdf = ApInvoiceAttachment::query()->create([
+        'invoice_id' => $invoice->id,
+        'file_path' => 'ap-invoices/'.$invoice->id.'/supplier-invoice.pdf',
+        'original_name' => 'supplier-invoice.pdf',
+        'uploaded_by' => $this->admin->id,
+    ]);
+
+    Storage::disk('s3')->put($image->file_path, 'image-bytes');
+    Storage::disk('s3')->put($pdf->file_path, '%PDF-stub');
+
+    $imageUrl = route('payables.invoices.attachments.preview', [$invoice, $image]);
+    $pdfUrl = route('payables.invoices.attachments.preview', [$invoice, $pdf]);
+
+    $this->actingAs($this->admin)
+        ->get(route('payables.invoices.show', $invoice))
+        ->assertOk()
+        ->assertSee('receipt.png')
+        ->assertSee('supplier-invoice.pdf')
+        ->assertSee('<img', false)
+        ->assertSee('<iframe', false)
+        ->assertSee($imageUrl, false)
+        ->assertSee($pdfUrl, false);
+
+    $this->get($imageUrl)
+        ->assertOk()
+        ->assertHeader('content-type', 'image/png')
+        ->assertHeader('cache-control', 'no-store, private');
+
+    $this->get($pdfUrl)
+        ->assertOk()
+        ->assertHeader('content-type', 'application/pdf');
+});
+
+it('does not expose an AP attachment through another invoice preview URL', function () {
+    $attachmentInvoice = ApInvoice::factory()->create();
+    $otherInvoice = ApInvoice::factory()->create();
+    $attachment = ApInvoiceAttachment::query()->create([
+        'invoice_id' => $attachmentInvoice->id,
+        'file_path' => 'ap-invoices/'.$attachmentInvoice->id.'/receipt.pdf',
+        'original_name' => 'receipt.pdf',
+        'uploaded_by' => $this->admin->id,
+    ]);
+    Storage::disk('s3')->put($attachment->file_path, '%PDF-stub');
+
+    $this->actingAs($this->admin)
+        ->get(route('payables.invoices.attachments.preview', [$otherInvoice, $attachment]))
+        ->assertNotFound();
+});
+
 it('persists job, phase, and cost code assignments when creating and updating AP draft invoices', function () {
     $supplier = Supplier::factory()->create();
     $company = AccountingCompany::query()->create([

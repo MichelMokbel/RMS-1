@@ -7,10 +7,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use App\Models\Supplier;
-use App\Models\ExpenseCategory;
-use App\Models\PurchaseOrder;
-use App\Models\User;
 use Illuminate\Validation\ValidationException;
 
 class ApInvoice extends Model
@@ -36,6 +32,9 @@ class ApInvoice extends Model
         'source_document_type',
         'source_document_id',
         'recurring_template_id',
+        'revision_root_id',
+        'revision_source_id',
+        'revision_number',
         'invoice_number',
         'invoice_date',
         'due_date',
@@ -47,6 +46,7 @@ class ApInvoice extends Model
         'posted_by',
         'voided_at',
         'voided_by',
+        'void_reason',
         'notes',
         'created_by',
     ];
@@ -59,6 +59,9 @@ class ApInvoice extends Model
         'job_phase_id' => 'integer',
         'job_cost_code_id' => 'integer',
         'period_id' => 'integer',
+        'revision_root_id' => 'integer',
+        'revision_source_id' => 'integer',
+        'revision_number' => 'integer',
         'is_expense' => 'boolean',
         'invoice_date' => 'date',
         'due_date' => 'date',
@@ -92,7 +95,7 @@ class ApInvoice extends Model
                 'updated_at',
             ];
 
-            $allowedWhenVoiding = array_merge($allowed, ['notes']);
+            $allowedWhenVoiding = array_merge($allowed, ['void_reason', 'notes']);
 
             $isVoiding = ($invoice->status === 'void') || $invoice->isDirty('voided_at') || $invoice->isDirty('voided_by');
 
@@ -126,6 +129,38 @@ class ApInvoice extends Model
     public function recurringTemplate(): BelongsTo
     {
         return $this->belongsTo(RecurringBillTemplate::class, 'recurring_template_id');
+    }
+
+    /**
+     * The original AP invoice at the root of this revision chain.
+     */
+    public function revisionRoot(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'revision_root_id');
+    }
+
+    /**
+     * The immediately preceding AP invoice that this revision replaces.
+     */
+    public function revisionSource(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'revision_source_id');
+    }
+
+    /**
+     * All replacements belonging to this original invoice, in revision order.
+     */
+    public function revisions(): HasMany
+    {
+        return $this->hasMany(self::class, 'revision_root_id')->orderBy('revision_number');
+    }
+
+    /**
+     * Revisions created directly from this invoice.
+     */
+    public function directRevisions(): HasMany
+    {
+        return $this->hasMany(self::class, 'revision_source_id')->orderBy('revision_number');
     }
 
     public function items(): HasMany
@@ -209,11 +244,42 @@ class ApInvoice extends Model
         return (float) $this->total_amount - $this->paidAmount();
     }
 
-    public function isDraft(): bool { return $this->status === 'draft'; }
-    public function isPosted(): bool { return $this->status === 'posted'; }
-    public function isPartiallyPaid(): bool { return $this->status === 'partially_paid'; }
-    public function isPaid(): bool { return $this->status === 'paid'; }
-    public function isVoid(): bool { return $this->status === 'void'; }
+    public function isDraft(): bool
+    {
+        return $this->status === 'draft';
+    }
+
+    public function isPosted(): bool
+    {
+        return $this->status === 'posted';
+    }
+
+    public function isPartiallyPaid(): bool
+    {
+        return $this->status === 'partially_paid';
+    }
+
+    public function isPaid(): bool
+    {
+        return $this->status === 'paid';
+    }
+
+    public function isVoid(): bool
+    {
+        return $this->status === 'void';
+    }
+
+    public function isRevision(): bool
+    {
+        return $this->revision_root_id !== null && (int) $this->revision_number > 0;
+    }
+
+    public function rootInvoiceId(): ?int
+    {
+        $rootId = $this->revision_root_id ?? $this->getKey();
+
+        return $rootId === null ? null : (int) $rootId;
+    }
 
     public function canPost(): bool
     {

@@ -7,6 +7,7 @@ use App\Models\JobBudget;
 use App\Models\JobCostCode;
 use App\Models\JobPhase;
 use App\Models\JobTransaction;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -15,8 +16,7 @@ class JobCostingService
     public function __construct(
         protected AccountingContextService $context,
         protected AccountingAuditLogService $auditLog
-    ) {
-    }
+    ) {}
 
     public function createJob(array $data, int $actorId): Job
     {
@@ -73,7 +73,7 @@ class JobCostingService
 
     public function savePhase(Job $job, array $data, int $actorId, ?JobPhase $phase = null): JobPhase
     {
-        $phase = $phase ?: new JobPhase();
+        $phase = $phase ?: new JobPhase;
         $phase->fill([
             'job_id' => $job->id,
             'name' => $data['name'],
@@ -99,7 +99,7 @@ class JobCostingService
 
     public function saveCostCode(int $companyId, array $data, int $actorId, ?JobCostCode $costCode = null): JobCostCode
     {
-        $costCode = $costCode ?: new JobCostCode();
+        $costCode = $costCode ?: new JobCostCode;
         $costCode->fill([
             'company_id' => $companyId,
             'name' => $data['name'],
@@ -132,7 +132,7 @@ class JobCostingService
             ]);
         }
 
-        $budget = $budget ?: new JobBudget();
+        $budget = $budget ?: new JobBudget;
         $budget->fill([
             'job_id' => $job->id,
             'job_phase_id' => $data['job_phase_id'] ?? null,
@@ -165,6 +165,59 @@ class JobCostingService
         int $actorId
     ): JobTransaction {
         return $this->recordTransactionForJob($job, $data, $actorId, $sourceType, $sourceId, true);
+    }
+
+    /**
+     * Offset every job transaction created by a source document.
+     *
+     * The reversal is keyed to the original job transaction id so retries do
+     * not create duplicate offsets. Callers are still expected to serialize
+     * source-document state transitions with a row lock.
+     *
+     * @return Collection<int, JobTransaction>
+     */
+    public function reverseSourceTransactions(
+        string $sourceType,
+        int $sourceId,
+        int $actorId,
+        string $transactionDate,
+    ): Collection {
+        $reversalSourceType = $sourceType.'#void';
+
+        return JobTransaction::query()
+            ->where('source_type', $sourceType)
+            ->where('source_id', $sourceId)
+            ->lockForUpdate()
+            ->get()
+            ->map(function (JobTransaction $original) use ($reversalSourceType, $actorId, $transactionDate): JobTransaction {
+                $reversal = JobTransaction::query()->firstOrCreate(
+                    [
+                        'source_type' => $reversalSourceType,
+                        'source_id' => (int) $original->id,
+                    ],
+                    [
+                        'job_id' => $original->job_id,
+                        'job_phase_id' => $original->job_phase_id,
+                        'job_cost_code_id' => $original->job_cost_code_id,
+                        'company_id' => $original->company_id,
+                        'transaction_date' => $transactionDate,
+                        'amount' => round(-1 * (float) $original->amount, 2),
+                        'transaction_type' => $original->transaction_type,
+                        'memo' => __('Reversal: :memo', ['memo' => $original->memo ?: __('source transaction')]),
+                    ]
+                );
+
+                if ($reversal->wasRecentlyCreated) {
+                    $this->auditLog->log('job_transaction.source_reversed', $actorId, $reversal, [
+                        'original_job_transaction_id' => (int) $original->id,
+                        'source_type' => $original->source_type,
+                        'source_id' => (int) $original->source_id,
+                        'amount' => (float) $reversal->amount,
+                    ], (int) $original->company_id);
+                }
+
+                return $reversal;
+            });
     }
 
     private function recordTransactionForJob(

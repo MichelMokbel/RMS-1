@@ -563,7 +563,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                    <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Supplier') }}</label>
+                    <div class="flex items-center justify-between gap-3">
+                        <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Supplier') }}</label>
+                        @if(auth()->user()?->hasRole('admin'))
+                            <flux:button :href="route('suppliers.create')" target="_blank" rel="noopener noreferrer" variant="ghost" size="xs">
+                                {{ __('Create Supplier') }}
+                            </flux:button>
+                        @endif
+                    </div>
                     <div
                         class="relative"
                         x-data="{
@@ -760,7 +767,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             <div class="space-y-3">
                 @foreach ($lines as $index => $line)
-                    <div class="grid grid-cols-1 items-end gap-3 rounded-lg border border-neutral-200 p-3 md:grid-cols-12 dark:border-neutral-700">
+                    <div wire:key="ap-invoice-create-line-{{ $index }}" class="grid grid-cols-1 items-end gap-3 rounded-lg border border-neutral-200 p-3 md:grid-cols-12 dark:border-neutral-700">
                         <div class="md:col-span-6">
                             <flux:input wire:model="lines.{{ $index }}.description" :label="__('Description')" />
                             @error("lines.$index.description") <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
@@ -769,7 +776,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <flux:input wire:model.live="lines.{{ $index }}.quantity" type="number" step="0.001" min="0.001" :label="__('Qty')" />
                         </div>
                         <div class="md:col-span-2">
-                            <flux:input wire:model.live="lines.{{ $index }}.unit_price" type="number" step="0.0001" min="0" :label="__('Unit Price')" />
+                            <flux:input wire:model.blur="lines.{{ $index }}.unit_price" type="number" step="0.0001" min="0" :label="__('Unit Price')" />
                         </div>
                         <div class="md:col-span-1">
                             <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Line Total') }}</label>

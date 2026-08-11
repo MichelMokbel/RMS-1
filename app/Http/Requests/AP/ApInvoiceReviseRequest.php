@@ -4,11 +4,11 @@ namespace App\Http\Requests\AP;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class ApInvoiceVoidRequest extends FormRequest
+class ApInvoiceReviseRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->hasAnyRole(['admin', 'manager']) ?? false;
     }
 
     public function rules(): array

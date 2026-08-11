@@ -1,23 +1,19 @@
 <?php
 
-use App\Http\Controllers\Api\AP\ApInvoiceController;
-use App\Http\Controllers\Api\AP\ApPaymentController;
-use App\Http\Controllers\Api\AP\ApReportsController;
 use App\Http\Controllers\Api\Accounting\BankingController as AccountingBankingController;
 use App\Http\Controllers\Api\Accounting\BudgetController as AccountingBudgetController;
 use App\Http\Controllers\Api\Accounting\JobController as AccountingJobController;
 use App\Http\Controllers\Api\Accounting\PeriodCloseController as AccountingPeriodCloseController;
 use App\Http\Controllers\Api\Accounting\ReportController as AccountingReportController;
+use App\Http\Controllers\Api\AP\ApInvoiceController;
+use App\Http\Controllers\Api\AP\ApPaymentController;
+use App\Http\Controllers\Api\AP\ApReportsController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\CustomerPortalAuthController;
 use App\Http\Controllers\Api\CustomerPortalDashboardController;
 use App\Http\Controllers\Api\CustomerPortalProfileController;
 use App\Http\Controllers\Api\DailyDishMenuController;
-use App\Http\Controllers\Api\PublicCompanyFoodController;
-use App\Http\Controllers\Api\PublicCompanyFoodOrderController;
-use App\Http\Controllers\Api\PublicDailyDishController;
-use App\Http\Controllers\Api\PublicDailyDishOrderController;
 use App\Http\Controllers\Api\Expenses\ExpenseCategoryController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\InventoryTransactionController;
@@ -27,15 +23,19 @@ use App\Http\Controllers\Api\MenuItemController;
 use App\Http\Controllers\Api\PettyCash\IssueController as PettyCashIssueController;
 use App\Http\Controllers\Api\PettyCash\ReconciliationController as PettyCashReconciliationController;
 use App\Http\Controllers\Api\PettyCash\WalletController as PettyCashWalletController;
-use App\Http\Controllers\Api\PurchaseOrderController;
-use App\Http\Controllers\Api\SupplierController;
 use App\Http\Controllers\Api\Pos\AuthController as PosAuthController;
 use App\Http\Controllers\Api\Pos\BootstrapController as PosBootstrapController;
 use App\Http\Controllers\Api\Pos\PrintJobController as PosPrintJobController;
 use App\Http\Controllers\Api\Pos\PrintTerminalStatusController as PosPrintTerminalStatusController;
 use App\Http\Controllers\Api\Pos\SequenceController as PosSequenceController;
 use App\Http\Controllers\Api\Pos\SyncController as PosSyncController;
+use App\Http\Controllers\Api\PublicCompanyFoodController;
+use App\Http\Controllers\Api\PublicCompanyFoodOrderController;
+use App\Http\Controllers\Api\PublicDailyDishController;
+use App\Http\Controllers\Api\PublicDailyDishOrderController;
+use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\Spend\ExpenseController as SpendExpenseController;
+use App\Http\Controllers\Api\SupplierController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum'])->group(function () {
@@ -105,7 +105,7 @@ Route::middleware('api')->prefix('public')->group(function () {
     });
 });
 
-$apiAuthMiddleware =  'auth';
+$apiAuthMiddleware = 'auth';
 
 Route::middleware(['api', $apiAuthMiddleware, 'reject.customer.backoffice'])->group(function () {
     Route::get('categories', [CategoryController::class, 'index'])->name('api.categories.index');
@@ -154,6 +154,7 @@ Route::middleware(['api', $apiAuthMiddleware, 'reject.customer.backoffice'])->gr
         Route::put('ap/invoices/{invoice}', [ApInvoiceController::class, 'update'])->name('api.ap.invoices.update');
         Route::post('ap/invoices/{invoice}/post', [ApInvoiceController::class, 'post'])->name('api.ap.invoices.post');
         Route::post('ap/invoices/{invoice}/void', [ApInvoiceController::class, 'void'])->name('api.ap.invoices.void');
+        Route::post('ap/invoices/{invoice}/revise', [ApInvoiceController::class, 'revise'])->name('api.ap.invoices.revise');
 
         Route::post('ap/payments', [ApPaymentController::class, 'store'])->name('api.ap.payments.store');
     });

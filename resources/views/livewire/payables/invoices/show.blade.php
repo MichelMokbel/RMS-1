@@ -18,22 +18,53 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public ApInvoice $invoice;
     public array $new_attachments = [];
+    public string $revision_reason = '';
 
     public function mount(ApInvoice $invoice): void
     {
-        $this->invoice = $invoice->load(['items', 'allocations.payment', 'supplier', 'job', 'jobPhase', 'jobCostCode', 'expenseProfile.wallet', 'attachments', 'period']);
+        $this->invoice = $invoice->load(['items', 'allocations.payment', 'supplier', 'job', 'jobPhase', 'jobCostCode', 'expenseProfile.wallet', 'attachments', 'period', 'revisionRoot', 'revisionSource']);
     }
 
     public function post(ApInvoicePostingService $postingService): void
     {
+        abort_unless($this->canManageInvoice(), 403);
         $this->invoice = $postingService->post($this->invoice, Illuminate\Support\Facades\Auth::id());
         session()->flash('status', __('Invoice posted.'));
     }
 
     public function void(ApInvoiceVoidService $voidService): void
     {
+        abort_unless($this->canManageInvoice(), 403);
         $this->invoice = $voidService->void($this->invoice, Illuminate\Support\Facades\Auth::id());
         session()->flash('status', __('Invoice voided.'));
+    }
+
+    public function revise(ApInvoiceVoidService $voidService): void
+    {
+        abort_unless($this->canManageInvoice(), 403);
+        $this->resetErrorBag();
+        $data = $this->validate([
+            'revision_reason' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        try {
+            $revision = $voidService->voidAndDuplicate(
+                $this->invoice,
+                (int) auth()->id(),
+                $data['revision_reason'] ?? null
+            );
+        } catch (ValidationException $exception) {
+            foreach ($exception->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $this->addError($field, $message);
+                }
+            }
+
+            return;
+        }
+
+        session()->flash('status', __('Invoice voided and revision draft created.'));
+        $this->redirectRoute('payables.invoices.edit', $revision, navigate: true);
     }
 
     public function uploadAttachments(ApInvoiceAttachmentService $attachmentService): void
@@ -73,6 +104,34 @@ new #[Layout('components.layouts.app')] class extends Component {
         return $this->invoice->canMutateAttachments();
     }
 
+    public function canManageInvoice(): bool
+    {
+        return (bool) auth()->user()?->hasAnyRole(['admin', 'manager']);
+    }
+
+    public function canCreateRevision(): bool
+    {
+        return $this->canManageInvoice()
+            && $this->invoice->status === 'posted'
+            && $this->invoice->allocations->isEmpty()
+            && $this->invoice->document_type !== 'landed_cost_adjustment';
+    }
+
+    public function revisionHistory()
+    {
+        $rootId = $this->invoice->rootInvoiceId();
+        if (! $rootId) {
+            return collect();
+        }
+
+        return ApInvoice::query()
+            ->whereKey($rootId)
+            ->orWhere('revision_root_id', $rootId)
+            ->orderBy('revision_number')
+            ->orderBy('id')
+            ->get();
+    }
+
     public function supplierControlMessage(): ?string
     {
         return app(SupplierAccountingPolicyService::class)->draftWarning($this->invoice->supplier);
@@ -94,14 +153,22 @@ new #[Layout('components.layouts.app')] class extends Component {
             <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ $invoice->invoice_number }}</h1>
             <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ $invoice->documentTypeLabel() }} · {{ Str::headline(str_replace('_', ' ', $invoice->workflowStateLabel())) }}</p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap gap-2">
             <flux:button :href="route('payables.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
-            @if($invoice->status === 'draft')
-                <flux:button type="button" wire:click="post">{{ __('Post') }}</flux:button>
-                <flux:button :href="route('payables.invoices.edit', $invoice)" wire:navigate>{{ __('Edit') }}</flux:button>
-            @endif
-            @if(in_array($invoice->status, ['draft','posted']) && $invoice->allocations->count() === 0)
-                <flux:button type="button" wire:click="void" variant="ghost">{{ __('Void') }}</flux:button>
+            @if($this->canManageInvoice())
+                @if($invoice->status === 'draft')
+                    <flux:button type="button" wire:click="post">{{ __('Post') }}</flux:button>
+                    <flux:button :href="route('payables.invoices.edit', $invoice)" wire:navigate>{{ __('Edit') }}</flux:button>
+                @elseif($this->canCreateRevision())
+                    <flux:modal.trigger name="revise-ap-invoice-modal">
+                        <flux:button type="button" x-data="" x-on:click.prevent="$dispatch('open-modal', 'revise-ap-invoice-modal')">
+                            {{ __('Create Editable Version') }}
+                        </flux:button>
+                    </flux:modal.trigger>
+                @endif
+                @if(in_array($invoice->status, ['draft','posted']) && $invoice->allocations->count() === 0)
+                    <flux:button type="button" wire:click="void" wire:confirm="{{ __('Void this invoice? Posted accounting entries will be reversed.') }}" variant="ghost">{{ __('Void') }}</flux:button>
+                @endif
             @endif
         </div>
     </div>
@@ -158,6 +225,30 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     @endif
 
+    @php($revisionHistory = $this->revisionHistory())
+    @if($revisionHistory->count() > 1 || $invoice->isRevision())
+        <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
+            <div>
+                <h3 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Version History') }}</h3>
+                <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Posted versions remain immutable; corrections continue as linked drafts.') }}</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                @foreach($revisionHistory as $version)
+                    <flux:button
+                        :href="route('payables.invoices.show', $version)"
+                        wire:navigate
+                        size="sm"
+                        :variant="$version->is($invoice) ? 'primary' : 'ghost'"
+                    >
+                        {{ $version->revision_number > 0 ? __('Version V:version', ['version' => $version->revision_number]) : __('Original') }}
+                        · {{ $version->invoice_number }}
+                        · {{ Str::headline($version->status) }}
+                    </flux:button>
+                @endforeach
+            </div>
+        </div>
+    @endif
+
     @if($invoice->is_expense && $invoice->attachments->isEmpty())
         <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
             {{ __('No supporting attachments have been added yet. Expense approvals may escalate until receipts are uploaded.') }}
@@ -192,14 +283,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         @if($invoice->attachments->isNotEmpty())
             <div class="space-y-2">
                 @foreach($invoice->attachments as $attachment)
-                    <div class="flex items-center justify-between gap-4 rounded-md border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700">
-                        <a href="{{ $attachment->url }}" target="_blank" class="truncate text-primary-700 hover:underline dark:text-primary-300">
-                            {{ $attachment->original_name }}
-                        </a>
-                        @if($this->canManageAttachments())
-                            <flux:button type="button" wire:click="deleteAttachment({{ $attachment->id }})" variant="ghost" size="sm">{{ __('Delete') }}</flux:button>
-                        @endif
-                    </div>
+                    <x-payables.attachment-preview :attachment="$attachment" :can-delete="$this->canManageAttachments()" />
                 @endforeach
             </div>
         @else
@@ -266,4 +350,31 @@ new #[Layout('components.layouts.app')] class extends Component {
             </tbody>
         </table>
     </div>
+
+    @if($this->canManageInvoice())
+        <flux:modal name="revise-ap-invoice-modal" :show="$errors->has('status') || $errors->has('document_type') || $errors->has('ledger') || $errors->has('invoice_number') || $errors->has('attachment')" focusable class="max-w-lg">
+            <div class="space-y-6">
+                <div>
+                    <flux:heading size="lg">{{ __('Create Editable Invoice Version') }}</flux:heading>
+                    <flux:subheading>
+                        {{ __('The posted invoice will be voided and reversed. A linked draft version will open for editing, with independent copies of the existing attachments.') }}
+                    </flux:subheading>
+                </div>
+
+                <flux:input wire:model="revision_reason" :label="__('Correction reason (optional)')" />
+                @foreach(['status', 'document_type', 'ledger', 'invoice_number', 'attachment'] as $revisionError)
+                    @error($revisionError) <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
+                @endforeach
+
+                <div class="flex justify-end gap-2">
+                    <flux:modal.close>
+                        <flux:button variant="filled">{{ __('Cancel') }}</flux:button>
+                    </flux:modal.close>
+                    <flux:button type="button" wire:click="revise" variant="primary">
+                        {{ __('Void & Create Draft') }}
+                    </flux:button>
+                </div>
+            </div>
+        </flux:modal>
+    @endif
 </div>

@@ -14,6 +14,10 @@ it('allows admin role to view petty cash index', function () {
     $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
     $user = User::factory()->create();
     $user->assignRole($role);
+    $createExpenseUrl = route('payables.invoices.create', [
+        'document_type' => 'expense',
+        'expense_channel' => 'petty_cash',
+    ]);
 
     $this->actingAs($user)
         ->get('/petty-cash')
@@ -21,5 +25,11 @@ it('allows admin role to view petty cash index', function () {
         ->assertSee('Petty Cash')
         ->assertSee('Wallets')
         ->assertSee('Funding')
-        ->assertSee('Reconciliations');
+        ->assertSee('Reconciliations')
+        ->assertSee('Create PC Expense')
+        ->assertSee($createExpenseUrl)
+        ->assertSeeInOrder([
+            'Create PC Expense',
+            'Back to Payables',
+        ]);
 });

@@ -3,6 +3,7 @@
 use App\Models\AccountingCompany;
 use App\Models\AccountingPeriod;
 use App\Models\ApInvoice;
+use App\Models\ApInvoiceItem;
 use App\Models\ApPayment;
 use App\Models\ApPaymentAllocation;
 use App\Models\BankAccount;
@@ -71,6 +72,74 @@ it('shows the not settled control for admin petty cash creation', function () {
         ->assertSee('Create and Settle');
 });
 
+it('shows supplier creation quick links to admins on AP creation pages', function () {
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+
+    $invoiceResponse = $this->actingAs($user)
+        ->get('/payables/invoices/create?document_type=vendor_bill');
+
+    $invoiceResponse
+        ->assertOk()
+        ->assertSee('Create Supplier')
+        ->assertSee(route('suppliers.create'), false)
+        ->assertSee('target="_blank"', false);
+
+    $paymentResponse = $this->actingAs($user)
+        ->get('/payables/payments/create');
+
+    $paymentResponse
+        ->assertOk()
+        ->assertSee('Create Supplier')
+        ->assertSee(route('suppliers.create'), false)
+        ->assertSee('target="_blank"', false);
+});
+
+it('does not show the admin supplier creation link to AP staff', function () {
+    $user = User::factory()->create();
+    $user->assignRole('staff');
+
+    $this->actingAs($user)
+        ->get('/payables/invoices/create?document_type=vendor_bill')
+        ->assertOk()
+        ->assertDontSee('Create Supplier')
+        ->assertDontSee(route('suppliers.create'), false);
+});
+
+it('updates AP unit prices on blur and uses stable line keys', function () {
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+    $supplier = Supplier::factory()->create();
+    $invoice = ApInvoice::factory()->create([
+        'supplier_id' => $supplier->id,
+        'status' => 'draft',
+        'document_type' => 'vendor_bill',
+        'is_expense' => false,
+    ]);
+
+    ApInvoiceItem::query()->create([
+        'invoice_id' => $invoice->id,
+        'description' => 'Test line',
+        'quantity' => 1,
+        'unit_price' => 12.5,
+        'line_total' => 12.5,
+    ]);
+
+    $this->actingAs($user)
+        ->get('/payables/invoices/create?document_type=vendor_bill')
+        ->assertOk()
+        ->assertSee('wire:model.blur="lines.0.unit_price"', false)
+        ->assertDontSee('wire:model.live="lines.0.unit_price"', false)
+        ->assertSee('wire:key="ap-invoice-create-line-0"', false);
+
+    $this->actingAs($user)
+        ->get("/payables/invoices/{$invoice->id}/edit")
+        ->assertOk()
+        ->assertSee('wire:model.blur="lines.0.unit_price"', false)
+        ->assertDontSee('wire:model.live="lines.0.unit_price"', false)
+        ->assertSee('wire:key="ap-invoice-edit-line-0"', false);
+});
+
 it('removes the is_expense checkbox from create and edit forms', function () {
     $user = User::factory()->create();
     $user->assignRole('admin');
@@ -91,6 +160,58 @@ it('removes the is_expense checkbox from create and edit forms', function () {
         ->get("/payables/invoices/{$invoice->id}/edit")
         ->assertOk()
         ->assertDontSee('is_expense', false);
+});
+
+it('offers posted AP correction as an editable version and blocks direct posted editing', function () {
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+    $invoice = ApInvoice::factory()->create([
+        'status' => 'posted',
+        'document_type' => 'vendor_bill',
+        'invoice_number' => 'AP-UI-REV-100',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('payables.invoices.show', $invoice))
+        ->assertOk()
+        ->assertSee('Create Editable Version')
+        ->assertSee('Void &amp; Create Draft', false);
+
+    $this->actingAs($user)
+        ->get(route('payables.invoices.edit', $invoice))
+        ->assertRedirect(route('payables.invoices.show', $invoice));
+});
+
+it('shows AP revision lineage while keeping correction actions away from staff', function () {
+    $admin = User::factory()->create();
+    $admin->assignRole('admin');
+    $staff = User::factory()->create();
+    $staff->assignRole('staff');
+
+    $original = ApInvoice::factory()->create([
+        'status' => 'void',
+        'invoice_number' => 'AP-HISTORY-100',
+    ]);
+    $revision = ApInvoice::factory()->create([
+        'status' => 'draft',
+        'invoice_number' => 'AP-HISTORY-100V1',
+        'revision_root_id' => $original->id,
+        'revision_source_id' => $original->id,
+        'revision_number' => 1,
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('payables.invoices.show', $revision))
+        ->assertOk()
+        ->assertSee('Version History')
+        ->assertSee('Original')
+        ->assertSee('Version V1');
+
+    $this->actingAs($staff)
+        ->get(route('payables.invoices.show', $revision))
+        ->assertOk()
+        ->assertDontSee('Create Editable Version')
+        ->assertDontSee('Void &amp; Create Draft', false);
 });
 
 it('shows the job, phase, and cost code fields on AP create and edit pages and the assigned values on the show page', function () {
