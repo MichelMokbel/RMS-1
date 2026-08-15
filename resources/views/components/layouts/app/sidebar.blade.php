@@ -17,6 +17,7 @@
                 $isStaff = $user?->hasAnyRole(['admin','manager','staff']) ?? false;
                 $isPastryUser = $user?->hasRole('pastry-user') ?? false;
                 $canAccessMarketing = $user?->can('marketing.access') ?? false;
+                $canAccessHr = $isAdmin || ($user?->can('hr.access') ?? false);
                 $canAccessQuotations = $user?->can('quotations.access') ?? false;
                 $canManageQuotationTemplates = $user?->can('quotation-templates.manage') ?? false;
                 $isAccounting = $user?->hasAnyRole(['admin', 'manager', 'accounting']) ?? false;
@@ -50,6 +51,7 @@
                     || request()->routeIs('users.*');
                 $inSupport = request()->routeIs('help.*');
                 $inMarketing = request()->routeIs('marketing.*');
+                $inHr = request()->routeIs('hr.*');
             @endphp
 
             <a href="{{ $isAdmin ? route('dashboard') : route('home') }}" class="me-5 flex items-center space-x-2 rtl:space-x-reverse" wire:navigate>
@@ -244,6 +246,23 @@
                         <flux:navlist.item icon="document-text" :href="route('marketing.briefs.index')" :current="request()->routeIs('marketing.briefs.*')" wire:navigate>
                             {{ __('Briefs') }}
                         </flux:navlist.item>
+                    </flux:navlist.group>
+                @endif
+
+                @if($canAccessHr)
+                    <flux:navlist.group expandable :expanded="$inHr" :heading="__('Human Resources')">
+                        <flux:navlist.item icon="user-group" :href="route('hr.dashboard')" :current="request()->routeIs('hr.dashboard')" wire:navigate>
+                            {{ __('HR Dashboard') }}
+                        </flux:navlist.item>
+                        @if($isAdmin || $user?->can('hr.employees.view'))
+                            <flux:navlist.item icon="identification" :href="route('hr.employees.index')" :current="request()->routeIs('hr.employees.*')" wire:navigate>{{ __('Employees') }}</flux:navlist.item>
+                        @endif
+                        @if($isAdmin || $user?->can('hr.leave.view'))
+                            <flux:navlist.item icon="calendar-days" :href="route('hr.leave.index')" :current="request()->routeIs('hr.leave.*')" wire:navigate>{{ __('Leave') }}</flux:navlist.item>
+                        @endif
+                        @if($isAdmin || $user?->can('hr.payroll.view'))
+                            <flux:navlist.item icon="banknotes" :href="route('hr.payroll.index')" :current="request()->routeIs('hr.payroll.*')" wire:navigate>{{ __('Payroll') }}</flux:navlist.item>
+                        @endif
                     </flux:navlist.group>
                 @endif
 

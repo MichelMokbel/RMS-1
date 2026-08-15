@@ -1578,3 +1578,5 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|marketing.manage'
         Route::post('sync/trigger', [\App\Http\Controllers\Marketing\MarketingAssetController::class, 'triggerSync'])
             ->name('sync.trigger');
     });
+
+require __DIR__.'/hr.php';

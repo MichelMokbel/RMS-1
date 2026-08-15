@@ -1,13 +1,14 @@
 <?php
 
 use App\Console\Commands\BackfillMenuItemBranches;
-use App\Console\Commands\ExportMenuItemsMissingArabic;
 use App\Console\Commands\ExpireQuotations;
+use App\Console\Commands\ExportMenuItemsMissingArabic;
 use App\Console\Commands\FinanceLockDate;
 use App\Console\Commands\GenerateRecurringBills;
 use App\Console\Commands\GenerateSubscriptionOrders;
 use App\Console\Commands\HelpCaptureScreenshotsCommand;
 use App\Console\Commands\HelpSeedDemoCommand;
+use App\Console\Commands\HrRefreshAlerts;
 use App\Console\Commands\ImportDailyDishMenuFromForm;
 use App\Console\Commands\ImportMenuItemArabicNames;
 use App\Console\Commands\IntegrityAudit;
@@ -56,6 +57,7 @@ return Application::configure(basePath: dirname(__DIR__))
         PrunePosPrintStreamEvents::class,
         HelpSeedDemoCommand::class,
         HelpCaptureScreenshotsCommand::class,
+        HrRefreshAlerts::class,
         GenerateRecurringBills::class,
         RepairArCrossCompanyAllocations::class,
     ])
@@ -92,6 +94,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('quotations:expire')
             ->dailyAt((string) config('quotations.expiry_time', '00:30'))
             ->withoutOverlapping();
+
+        $schedule->command('hr:refresh-alerts')->dailyAt('01:30')->withoutOverlapping();
 
         // Marketing: sync campaign structure daily
         $schedule->call(function () {

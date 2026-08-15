@@ -38,16 +38,58 @@ class LedgerAccountMappingService
             'cheque_clearing' => ['label' => 'Cheque clearing', 'description' => 'Tracks cheque settlements until fully cleared.', 'required' => true, 'fallback' => 'cheque_clearing'],
             'other_clearing' => ['label' => 'Other clearing', 'description' => 'Fallback settlement account for unsupported payment instruments.', 'required' => true, 'fallback' => 'other_clearing'],
             'ar_cheque_clearing' => [
-                'label'       => 'AR cheque clearing',
+                'label' => 'AR cheque clearing',
                 'description' => 'AR customer cheques received, not yet deposited.',
-                'required'    => true,
-                'fallback'    => 'cheque_clearing',
+                'required' => true,
+                'fallback' => 'cheque_clearing',
             ],
             'issued_cheques_clearing' => [
-                'label'       => 'Issued cheques clearing',
+                'label' => 'Issued cheques clearing',
                 'description' => 'Supplier cheques issued but not yet presented to bank.',
-                'required'    => true,
-                'fallback'    => 'cheque_clearing',
+                'required' => true,
+                'fallback' => 'cheque_clearing',
+            ],
+            'payroll_basic_expense' => [
+                'label' => 'Basic salary expense',
+                'description' => 'Recognizes employee basic salary expense when payroll is posted.',
+                'required' => true,
+                'fallback' => 'payroll_basic_expense',
+            ],
+            'payroll_allowance_expense' => [
+                'label' => 'Payroll allowance expense',
+                'description' => 'Recognizes housing, transport, food, and other employee allowances.',
+                'required' => false,
+                'fallback' => 'payroll_allowance_expense',
+            ],
+            'payroll_overtime_expense' => [
+                'label' => 'Payroll overtime expense',
+                'description' => 'Recognizes approved overtime included in a payroll run.',
+                'required' => false,
+                'fallback' => 'payroll_overtime_expense',
+            ],
+            'payroll_bonus_expense' => [
+                'label' => 'Payroll bonus expense',
+                'description' => 'Recognizes bonuses and other variable earnings.',
+                'required' => false,
+                'fallback' => 'payroll_bonus_expense',
+            ],
+            'payroll_payable' => [
+                'label' => 'Payroll payable',
+                'description' => 'Control liability for approved net employee payroll.',
+                'required' => true,
+                'fallback' => 'payroll_payable',
+            ],
+            'payroll_deductions_payable' => [
+                'label' => 'Payroll deductions payable',
+                'description' => 'Control liability for employee deductions owed to third parties.',
+                'required' => false,
+                'fallback' => 'payroll_deductions_payable',
+            ],
+            'employee_advances_receivable' => [
+                'label' => 'Employee advances receivable',
+                'description' => 'Tracks employee advances and payroll recoveries.',
+                'required' => false,
+                'fallback' => 'employee_advances_receivable',
             ],
         ];
     }
@@ -87,6 +129,19 @@ class LedgerAccountMappingService
             'ar_payment_cheque' => 'ar_cheque_clearing',
             'ap_payment_other' => 'other_clearing',
             'ar_payment_other' => 'other_clearing',
+            'payroll_salary_expense' => 'payroll_basic_expense',
+            'payroll_allowances_expense' => 'payroll_allowance_expense',
+            'payroll_liability' => 'payroll_payable',
+            'payroll_deduction_liability' => 'payroll_deductions_payable',
+            'payroll_advance_receivable' => 'employee_advances_receivable',
+            'payroll.salary_expense' => 'payroll_basic_expense',
+            'payroll.allowance_expense' => 'payroll_allowance_expense',
+            'payroll.overtime_expense' => 'payroll_overtime_expense',
+            'payroll.bonus_expense' => 'payroll_bonus_expense',
+            'payroll.payable' => 'payroll_payable',
+            'payroll.deduction_liability' => 'payroll_deductions_payable',
+            'payroll.employee_advance' => 'employee_advances_receivable',
+            'payroll.bank_clearing' => 'other_clearing',
         ];
     }
 
@@ -233,7 +288,7 @@ class LedgerAccountMappingService
     public function mappingsForCompany(?int $companyId): Collection
     {
         if (! $companyId || ! Schema::hasTable('accounting_account_mappings')) {
-            return new Collection();
+            return new Collection;
         }
 
         $this->bootstrapCompanyMappings($companyId);
