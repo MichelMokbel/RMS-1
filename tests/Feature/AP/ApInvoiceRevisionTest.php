@@ -126,7 +126,10 @@ function revisionTestCreatePostEntry(ApInvoice $invoice): SubledgerEntry
 
 it('creates V1 and V2 drafts with normalized revision lineage and audit records', function () {
     $service = app(ApInvoiceVoidService::class);
-    $original = revisionTestPostedInvoice(['invoice_number' => 'SUP-BILL-100']);
+    $original = revisionTestPostedInvoice([
+        'invoice_number' => 'SUP-BILL-100',
+        'reference_number' => 'SUP-REF-100',
+    ]);
 
     $revision1 = $service->voidAndDuplicate($original, $this->user->id, 'Correct quantity');
 
@@ -134,6 +137,7 @@ it('creates V1 and V2 drafts with normalized revision lineage and audit records'
         ->and($original->fresh()->void_reason)->toBe('Correct quantity')
         ->and($revision1->status)->toBe('draft')
         ->and($revision1->invoice_number)->toBe('SUP-BILL-100V1')
+        ->and($revision1->reference_number)->toBe('SUP-REF-100')
         ->and($revision1->revision_root_id)->toBe($original->id)
         ->and($revision1->revision_source_id)->toBe($original->id)
         ->and($revision1->revision_number)->toBe(1)

@@ -17,6 +17,7 @@ class SpendExpenseSettleRequest extends FormRequest
             'payment_date' => ['nullable', 'date'],
             'payment_method' => ['nullable', 'in:cash,bank_transfer,card,cheque,other,petty_cash'],
             'bank_account_id' => ['nullable', 'integer', 'exists:bank_accounts,id'],
+            'client_uuid' => ['nullable', 'uuid'],
             'reference' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string'],
         ];

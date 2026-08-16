@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AP\ApInvoiceAttachmentPreviewController;
 use App\Http\Controllers\Help\HelpBotController;
+use App\Http\Controllers\PettyCash\PettyCashImportTemplateController;
 use App\Http\Controllers\Reports\CustomerStatementReportController;
 use App\Models\Customer;
 use App\Models\InventoryItem;
@@ -1166,6 +1167,11 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|fin
         ->name('payables.invoices.attachments.preview');
     Route::get('spend', fn () => redirect()->route('payables.index', ['tab' => 'approvals']))->name('spend.index');
     Volt::route('petty-cash', 'petty-cash.index')->name('petty-cash.index');
+    Volt::route('petty-cash/imports', 'petty-cash.imports.index')->name('petty-cash.imports.index')->middleware(['role:admin', 'can:petty_cash.import']);
+    Route::get('petty-cash/imports/template/download', PettyCashImportTemplateController::class)
+        ->name('petty-cash.imports.template')
+        ->middleware(['role:admin', 'can:petty_cash.import']);
+    Volt::route('petty-cash/imports/{batch}', 'petty-cash.imports.show')->name('petty-cash.imports.show')->middleware(['role:admin', 'can:petty_cash.import']);
     Route::get('expenses', fn () => redirect()->route('payables.index', ['tab' => 'expenses']))->name('expenses.index');
     Route::get('expenses/create', fn () => redirect()->route('payables.create'))->name('expenses.create');
     Route::get('expenses/categories', fn () => redirect()->route('payables.index', ['tab' => 'expenses']))->name('expenses.categories');

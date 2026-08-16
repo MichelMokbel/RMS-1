@@ -114,7 +114,7 @@ class SubledgerService
         );
     }
 
-    public function recordApInvoice(ApInvoice $invoice, int $userId): ?SubledgerEntry
+    public function recordApInvoice(ApInvoice $invoice, int $userId, ?string $recognitionDate = null): ?SubledgerEntry
     {
         if (! $this->canPost()) {
             return null;
@@ -205,7 +205,8 @@ class SubledgerService
             'memo' => 'Accounts payable',
         ];
 
-        $date = optional($invoice->posted_at)->toDateString()
+        $date = $recognitionDate
+            ?? optional($invoice->posted_at)->toDateString()
             ?? optional($invoice->invoice_date)->toDateString()
             ?? now()->toDateString();
 

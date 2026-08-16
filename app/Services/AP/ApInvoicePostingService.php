@@ -28,9 +28,15 @@ class ApInvoicePostingService
     ) {
     }
 
-    public function post(ApInvoice $invoice, int $userId, bool $matchingOverride = false, ?string $matchingOverrideReason = null): ApInvoice
+    public function post(
+        ApInvoice $invoice,
+        int $userId,
+        bool $matchingOverride = false,
+        ?string $matchingOverrideReason = null,
+        ?string $recognitionDate = null
+    ): ApInvoice
     {
-        return DB::transaction(function () use ($invoice, $userId, $matchingOverride, $matchingOverrideReason) {
+        return DB::transaction(function () use ($invoice, $userId, $matchingOverride, $matchingOverrideReason, $recognitionDate) {
             $invoice = ApInvoice::where('id', $invoice->id)->lockForUpdate()->firstOrFail();
 
             if (! $invoice->isDraft()) {
@@ -76,7 +82,7 @@ class ApInvoicePostingService
             if ($invoice->document_type === 'landed_cost_adjustment') {
                 $this->landedCostAllocationService->allocate($invoice, $userId);
             }
-            $this->subledgerService->recordApInvoice($invoice, $userId);
+            $this->subledgerService->recordApInvoice($invoice, $userId, $recognitionDate);
             $this->recordJobCost($invoice, $userId);
             $this->auditLog->log('ap_invoice.posted', $userId, $invoice, [
                 'document_type' => $invoice->document_type,

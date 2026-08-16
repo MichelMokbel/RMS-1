@@ -37,6 +37,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?int $wallet_id = null;
     public bool $not_settled = false;
     public string $invoice_number = '';
+    public ?string $reference_number = null;
     public ?string $invoice_date = null;
     public ?string $due_date = null;
     public float $tax_amount = 0.0;
@@ -234,6 +235,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'document_type' => $data['document_type'],
                 'currency_code' => config('pos.currency', 'QAR'),
                 'invoice_number' => $data['invoice_number'],
+                'reference_number' => $data['reference_number'] ?? null,
                 'invoice_date' => $data['invoice_date'],
                 'due_date' => $data['due_date'],
                 'subtotal' => 0,
@@ -309,6 +311,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'max:100',
                 Rule::unique('ap_invoices', 'invoice_number')->where(fn ($q) => $q->where('supplier_id', $supplierId)),
             ],
+            'reference_number' => ['nullable', 'string', 'max:100'],
             'invoice_date' => ['required', 'date'],
             'due_date' => ['required', 'date', 'after_or_equal:invoice_date'],
             'tax_amount' => ['required', 'numeric', 'min:0'],
@@ -557,6 +560,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                 @endif
                 <flux:input wire:model="invoice_number" :label="__('Document #')" />
+                <flux:input wire:model="reference_number" :label="__('Reference #')" />
                 <flux:input wire:model="invoice_date" type="date" :label="__('Document Date')" />
                 <flux:input wire:model="due_date" type="date" :label="__('Due Date')" />
             </div>

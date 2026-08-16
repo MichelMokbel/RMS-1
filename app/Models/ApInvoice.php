@@ -36,6 +36,7 @@ class ApInvoice extends Model
         'revision_source_id',
         'revision_number',
         'invoice_number',
+        'reference_number',
         'invoice_date',
         'due_date',
         'subtotal',

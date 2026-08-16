@@ -379,6 +379,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $search = '%'.trim((string) $this->search).'%';
                 $q->where(function (Builder $sub) use ($search) {
                     $sub->where('invoice_number', 'like', $search)
+                        ->orWhere('reference_number', 'like', $search)
                         ->orWhere('notes', 'like', $search)
                         ->orWhereHas('supplier', fn (Builder $supplier) => $supplier->where('name', 'like', $search));
                 });
@@ -581,7 +582,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     @if ($tab !== 'payments' && $tab !== 'aging' && $tab !== 'recurring')
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
             <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <flux:input wire:model.live.debounce.300ms="search" :label="__('Search')" :placeholder="__('Document #, supplier, notes')" />
+                <flux:input wire:model.live.debounce.300ms="search" :label="__('Search')" :placeholder="__('Document #, reference, supplier, notes')" />
                 <div>
                     <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Supplier') }}</label>
                     <div
@@ -785,6 +786,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
                                 <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">
                                     <div class="font-semibold">{{ $invoice->invoice_number }}</div>
+                                    @if($invoice->reference_number)
+                                        <div class="text-xs text-neutral-500">{{ __('Ref') }}: {{ $invoice->reference_number }}</div>
+                                    @endif
                                     <div class="text-xs text-neutral-500">{{ $invoice->invoice_date?->format('Y-m-d') }}</div>
                                 </td>
                                 <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $invoice->documentTypeLabel() }}</td>

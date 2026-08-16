@@ -92,6 +92,7 @@ class ApInvoiceVoidService
                     'source_document_id' => $invoice->source_document_id,
                     'recurring_template_id' => $invoice->recurring_template_id,
                     'invoice_number' => $revisionNumber,
+                    'reference_number' => $invoice->reference_number,
                     'invoice_date' => $invoice->invoice_date?->toDateString(),
                     'due_date' => $invoice->due_date?->toDateString(),
                     'subtotal' => $invoice->subtotal,

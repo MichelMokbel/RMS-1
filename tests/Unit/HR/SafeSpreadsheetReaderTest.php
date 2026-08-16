@@ -102,6 +102,23 @@ it('rejects formula cells', function (): void {
     }
 });
 
+it('rejects macro and active content embedded in XLSX archives', function (): void {
+    $path = hrReaderWorkbook([['name' => 'Employees', 'xml' => hrReaderSheet(
+        '<row r="1"><c r="A1" t="inlineStr"><is><t>employee_ref</t></is></c></row>'
+    )]]);
+    $zip = new \ZipArchive;
+    $zip->open($path);
+    $zip->addFromString('xl/vbaProject.bin', 'not-a-real-macro');
+    $zip->close();
+
+    try {
+        expect(fn () => (new SafeSpreadsheetReader)->sheets($path))
+            ->toThrow(\RuntimeException::class, 'Macros and active content are not allowed');
+    } finally {
+        @unlink($path);
+    }
+});
+
 it('rejects external worksheet relationships', function (): void {
     $external = '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.test/leak" TargetMode="External"/></Relationships>';
     $path = hrReaderWorkbook([['name' => 'Employees', 'xml' => hrReaderSheet('<row r="1"><c r="A1" t="inlineStr"><is><t>employee_ref</t></is></c></row>')]], $external);

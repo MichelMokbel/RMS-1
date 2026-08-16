@@ -157,9 +157,9 @@ class ExpenseWorkflowService
         return $invoice->fresh(['expenseProfile']);
     }
 
-    public function post(ApInvoice $invoice, int $actorId): ApInvoice
+    public function post(ApInvoice $invoice, int $actorId, ?string $recognitionDate = null): ApInvoice
     {
-        $result = DB::transaction(function () use ($invoice, $actorId) {
+        $result = DB::transaction(function () use ($invoice, $actorId, $recognitionDate) {
             $lockedInvoice = ApInvoice::query()->lockForUpdate()->findOrFail($invoice->id);
             $profile = $this->findOrCreateDraftProfile($lockedInvoice);
 
@@ -175,7 +175,7 @@ class ExpenseWorkflowService
                 return $lockedInvoice;
             }
 
-            return $this->postingService->post($lockedInvoice, $actorId);
+            return $this->postingService->post($lockedInvoice, $actorId, recognitionDate: $recognitionDate);
         });
 
         $this->eventService->log($result, 'posted', $actorId, ['status' => $result->status]);
@@ -224,7 +224,7 @@ class ExpenseWorkflowService
         }
 
         $invoice = $this->submit($invoice, $actorId);
-        $invoice = $this->post($invoice, $actorId);
+        $invoice = $this->post($invoice, $actorId, $settlementPayload['recognition_date'] ?? null);
 
         if ($leaveUnsettled) {
             return $invoice->fresh(['expenseProfile']);

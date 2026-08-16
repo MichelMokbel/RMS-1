@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ApInvoice;
+use App\Models\ApPayment;
 use App\Models\ExpenseCategory;
 use App\Models\PettyCashWallet;
 use App\Models\Supplier;
@@ -107,11 +108,15 @@ it('auto posts and settles admin petty cash expenses on create by default', func
     $expense = createDraftExpense($this->admin, [
         'channel' => 'petty_cash',
         'wallet_id' => $this->wallet->id,
+        'reference' => 'PC-EXPENSE-REF-100',
     ]);
 
     expect($expense['approval_status'])->toBe('approved')
         ->and($expense['status'])->toBe('paid')
+        ->and($expense['reference_number'])->toBe('PC-EXPENSE-REF-100')
         ->and((float) $expense['outstanding_amount'])->toBe(0.0);
+
+    expect(ApPayment::query()->where('reference', 'PC-EXPENSE-REF-100')->exists())->toBeTrue();
 
     $this->assertDatabaseHas('expense_profiles', [
         'invoice_id' => $expense['id'],
@@ -370,6 +375,7 @@ it('settles petty cash channel via AP payment allocation and wallet deduction', 
     $this->actingAs($this->finance)
         ->postJson(route('api.spend.expenses.settle', $draft['id']), [
             'payment_method' => 'petty_cash',
+            'client_uuid' => 'fd90c43d-85d8-41c2-a5fb-97f463d3226f',
         ])
         ->assertOk()
         ->assertJsonPath('status', 'paid');
@@ -378,6 +384,7 @@ it('settles petty cash channel via AP payment allocation and wallet deduction', 
 
     $this->assertDatabaseHas('ap_payments', [
         'supplier_id' => $this->supplier->id,
+        'client_uuid' => 'fd90c43d-85d8-41c2-a5fb-97f463d3226f',
         'payment_method' => 'petty_cash',
         'amount' => 100.00,
     ]);

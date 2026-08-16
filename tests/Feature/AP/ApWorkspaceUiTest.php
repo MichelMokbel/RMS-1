@@ -72,6 +72,57 @@ it('shows the not settled control for admin petty cash creation', function () {
         ->assertSee('Create and Settle');
 });
 
+it('shows and searches AP invoice reference numbers in the workspace', function () {
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+    $invoice = ApInvoice::factory()->create([
+        'status' => 'draft',
+        'document_type' => 'vendor_bill',
+        'invoice_number' => 'AP-REFERENCE-100',
+        'reference_number' => 'EXT-REFERENCE-900',
+    ]);
+    ApInvoiceItem::query()->create([
+        'invoice_id' => $invoice->id,
+        'description' => 'Reference test line',
+        'quantity' => 1,
+        'unit_price' => 10,
+        'line_total' => 10,
+    ]);
+
+    $this->actingAs($user)
+        ->get('/payables/invoices/create?document_type=vendor_bill')
+        ->assertOk()
+        ->assertSee('Reference #');
+
+    $this->actingAs($user)
+        ->get(route('payables.invoices.edit', $invoice))
+        ->assertOk()
+        ->assertSee('Reference #')
+        ->assertSee('EXT-REFERENCE-900');
+
+    Volt::actingAs($user);
+    Volt::test('payables.invoices.edit', ['invoice' => $invoice])
+        ->set('reference_number', 'EXT-REFERENCE-901')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('ap_invoices', [
+        'id' => $invoice->id,
+        'reference_number' => 'EXT-REFERENCE-901',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('payables.invoices.show', $invoice))
+        ->assertOk()
+        ->assertSee('Reference')
+        ->assertSee('EXT-REFERENCE-901');
+
+    Volt::test('payables.index')
+        ->set('search', 'EXT-REFERENCE-901')
+        ->assertSee('AP-REFERENCE-100')
+        ->assertSee('EXT-REFERENCE-901');
+});
+
 it('shows supplier creation quick links to admins on AP creation pages', function () {
     $user = User::factory()->create();
     $user->assignRole('admin');

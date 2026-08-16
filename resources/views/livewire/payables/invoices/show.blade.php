@@ -208,6 +208,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             @if($invoice->expenseProfile?->wallet)
                 <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Wallet') }}: {{ $invoice->expenseProfile->wallet->driver_name ?: $invoice->expenseProfile->wallet->driver_id }}</p>
             @endif
+            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Reference') }}: {{ $invoice->reference_number ?: '—' }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Notes') }}: {{ $invoice->notes ?? '—' }}</p>
         </div>
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-2">

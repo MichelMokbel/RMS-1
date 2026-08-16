@@ -4,8 +4,8 @@ namespace App\Services\Spend;
 
 use App\Models\ApInvoice;
 use App\Models\ExpenseProfile;
-use App\Services\AP\ApAllocationService;
 use App\Services\Accounting\LedgerAccountMappingService;
+use App\Services\AP\ApAllocationService;
 use App\Services\PettyCash\PettyCashBalanceService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -16,11 +16,10 @@ class ExpenseSettlementService
         protected ApAllocationService $allocationService,
         protected LedgerAccountMappingService $mappingService,
         protected PettyCashBalanceService $pettyCashBalanceService
-    ) {
-    }
+    ) {}
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      * @return array{invoice: ApInvoice, payment_id: int|null, settlement_mode: string}
      */
     public function settle(ApInvoice $invoice, ExpenseProfile $profile, int $actorId, array $payload = []): array
@@ -59,7 +58,9 @@ class ExpenseSettlementService
                     : ($invoice->supplier?->preferred_payment_method ?: 'bank_transfer'))
             ));
             $bankAccountId = $payload['bank_account_id'] ?? null;
-            $reference = $payload['reference'] ?? null;
+            $reference = filled($payload['reference'] ?? null)
+                ? trim((string) $payload['reference'])
+                : $invoice->reference_number;
             $notes = $payload['notes'] ?? null;
 
             if ($profile->channel === 'petty_cash') {
@@ -78,6 +79,7 @@ class ExpenseSettlementService
 
             $payment = $this->allocationService->createPaymentWithAllocations([
                 'supplier_id' => (int) $invoice->supplier_id,
+                'client_uuid' => $payload['client_uuid'] ?? null,
                 'company_id' => $invoice->company_id,
                 'branch_id' => $invoice->branch_id,
                 'department_id' => $invoice->department_id,
@@ -85,6 +87,7 @@ class ExpenseSettlementService
                 'payment_date' => $paymentDate,
                 'amount' => $outstanding,
                 'payment_method' => $paymentMethod,
+                'currency_code' => $invoice->currency_code,
                 'bank_account_id' => $bankAccountId,
                 'reference' => $reference,
                 'notes' => $notes,

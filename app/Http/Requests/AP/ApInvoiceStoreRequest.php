@@ -2,13 +2,13 @@
 
 namespace App\Http\Requests\AP;
 
+use App\Models\Job;
+use App\Models\JobCostCode;
+use App\Models\JobPhase;
 use App\Models\Supplier;
 use App\Support\AP\DocumentTypeMap;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Schema;
-use App\Models\Job;
-use App\Models\JobCostCode;
-use App\Models\JobPhase;
 use Illuminate\Validation\Rule;
 
 class ApInvoiceStoreRequest extends FormRequest
@@ -43,6 +43,7 @@ class ApInvoiceStoreRequest extends FormRequest
                 'max:100',
                 Rule::unique('ap_invoices', 'invoice_number')->where(fn ($q) => $q->where('supplier_id', $supplierId)),
             ],
+            'reference_number' => ['nullable', 'string', 'max:100'],
             'invoice_date' => ['required', 'date'],
             'due_date' => ['required', 'date', 'after_or_equal:invoice_date'],
             'tax_amount' => ['required', 'numeric', 'min:0'],

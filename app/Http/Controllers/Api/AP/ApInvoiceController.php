@@ -34,6 +34,16 @@ class ApInvoiceController extends Controller
             ->when($request->filled('supplier_id'), fn ($q) => $q->where('supplier_id', $request->integer('supplier_id')))
             ->when($request->filled('status') && $request->status !== 'all', fn ($q) => $q->where('status', $request->status))
             ->when($request->filled('invoice_number'), fn ($q) => $q->where('invoice_number', 'like', '%'.$request->invoice_number.'%'))
+            ->when($request->filled('reference_number'), fn ($q) => $q->where('reference_number', 'like', '%'.$request->reference_number.'%'))
+            ->when($request->filled('search'), function ($q) use ($request) {
+                $search = '%'.trim((string) $request->input('search')).'%';
+                $q->where(function ($sub) use ($search) {
+                    $sub->where('invoice_number', 'like', $search)
+                        ->orWhere('reference_number', 'like', $search)
+                        ->orWhere('notes', 'like', $search)
+                        ->orWhereHas('supplier', fn ($supplier) => $supplier->where('name', 'like', $search));
+                });
+            })
             ->orderByDesc('invoice_date');
 
         return response()->json($query->paginate($request->integer('per_page', 15)));
@@ -76,6 +86,7 @@ class ApInvoiceController extends Controller
                 'document_type' => $data['document_type'],
                 'currency_code' => $data['currency_code'] ?? config('pos.currency', 'QAR'),
                 'invoice_number' => $data['invoice_number'],
+                'reference_number' => $data['reference_number'] ?? null,
                 'invoice_date' => $data['invoice_date'],
                 'due_date' => $data['due_date'],
                 'subtotal' => 0,
@@ -162,6 +173,7 @@ class ApInvoiceController extends Controller
                 'document_type' => $data['document_type'],
                 'currency_code' => $data['currency_code'] ?? $invoice->currency_code ?? config('pos.currency', 'QAR'),
                 'invoice_number' => $data['invoice_number'],
+                'reference_number' => $data['reference_number'] ?? null,
                 'invoice_date' => $data['invoice_date'],
                 'due_date' => $data['due_date'],
                 'tax_amount' => $data['tax_amount'],

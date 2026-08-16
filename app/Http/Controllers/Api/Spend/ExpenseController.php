@@ -43,6 +43,7 @@ class ExpenseController extends Controller
             ->when($request->filled('search'), fn ($q) => $q->where(function ($sub) use ($request) {
                 $search = (string) $request->input('search');
                 $sub->where('invoice_number', 'like', '%'.$search.'%')
+                    ->orWhere('reference_number', 'like', '%'.$search.'%')
                     ->orWhere('notes', 'like', '%'.$search.'%');
             }))
             ->orderByDesc('invoice_date');
@@ -97,6 +98,7 @@ class ExpenseController extends Controller
                 'document_type' => $channel === 'reimbursement' ? 'reimbursement' : 'expense',
                 'currency_code' => $data['currency_code'] ?? config('pos.currency', 'QAR'),
                 'invoice_number' => $this->generateExpenseInvoiceNumber($supplierId),
+                'reference_number' => $data['reference'] ?? null,
                 'invoice_date' => $data['expense_date'],
                 'due_date' => $data['due_date'] ?? $data['expense_date'],
                 'subtotal' => 0,
@@ -248,7 +250,7 @@ class ExpenseController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     private function resolveSupplierId(array $data): int
     {
@@ -305,6 +307,7 @@ class ExpenseController extends Controller
             'supplier_id' => $invoice->supplier_id,
             'category_id' => $invoice->category_id,
             'invoice_number' => $invoice->invoice_number,
+            'reference_number' => $invoice->reference_number,
             'expense_date' => optional($invoice->invoice_date)->toDateString(),
             'due_date' => optional($invoice->due_date)->toDateString(),
             'subtotal' => (float) $invoice->subtotal,

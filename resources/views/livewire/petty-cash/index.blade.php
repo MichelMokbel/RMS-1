@@ -212,6 +212,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Manage wallets, funding issues, and reconciliations without editing balances directly.') }}</p>
         </div>
         <div class="flex flex-wrap gap-2">
+            @if(auth()->user()?->hasRole('admin') && auth()->user()?->can('petty_cash.import'))
+                <flux:button :href="route('petty-cash.imports.index')" wire:navigate variant="ghost" icon="arrow-up-tray">
+                    {{ __('Import Expenses') }}
+                </flux:button>
+            @endif
             <flux:button :href="route('payables.index', ['tab' => 'expenses', 'expense_channel' => 'petty_cash'])" wire:navigate variant="ghost">
                 {{ __('Open Petty Cash Expenses') }}
             </flux:button>

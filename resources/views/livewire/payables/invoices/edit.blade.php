@@ -37,6 +37,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?string $expense_channel = null;
     public ?int $wallet_id = null;
     public string $invoice_number = '';
+    public ?string $reference_number = null;
     public ?string $invoice_date = null;
     public ?string $due_date = null;
     public float $tax_amount = 0.0;
@@ -64,6 +65,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->expense_channel = DocumentTypeMap::normalizeExpenseChannel($this->document_type, $invoice->expenseProfile?->channel);
         $this->wallet_id = $invoice->expenseProfile?->wallet_id;
         $this->invoice_number = $invoice->invoice_number;
+        $this->reference_number = $invoice->reference_number;
         $this->invoice_date = optional($invoice->invoice_date)?->format('Y-m-d');
         $this->due_date = optional($invoice->due_date)?->format('Y-m-d');
         $this->tax_amount = (float) $invoice->tax_amount;
@@ -174,6 +176,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'is_expense' => $document['is_expense'],
                 'document_type' => $data['document_type'],
                 'invoice_number' => $data['invoice_number'],
+                'reference_number' => $data['reference_number'] ?? null,
                 'invoice_date' => $data['invoice_date'],
                 'due_date' => $data['due_date'],
                 'tax_amount' => $data['tax_amount'],
@@ -234,6 +237,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     ->where(fn ($query) => $query->where('supplier_id', $supplierId))
                     ->ignore($this->invoice->id),
             ],
+            'reference_number' => ['nullable', 'string', 'max:100'],
             'invoice_date' => ['required', 'date'],
             'due_date' => ['required', 'date', 'after_or_equal:invoice_date'],
             'tax_amount' => ['required', 'numeric', 'min:0'],
@@ -465,6 +469,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                 @endif
                 <flux:input wire:model="invoice_number" :label="__('Document #')" />
+                <flux:input wire:model="reference_number" :label="__('Reference #')" />
                 <flux:input wire:model="invoice_date" type="date" :label="__('Document Date')" />
                 <flux:input wire:model="due_date" type="date" :label="__('Due Date')" />
             </div>
