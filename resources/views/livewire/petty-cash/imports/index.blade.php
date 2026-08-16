@@ -131,7 +131,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <section class="rounded-lg border border-violet-200 bg-violet-50 p-5 dark:border-violet-900 dark:bg-violet-950/30">
         <h2 class="font-semibold text-violet-950 dark:text-violet-100">{{ __('Import one business day') }}</h2>
-        <p class="mt-1 text-sm text-violet-800 dark:text-violet-200">{{ __('Download the controlled template, enter one line item per row, then upload it here. Nothing posts until the staged review is committed.') }}</p>
+        <p class="mt-1 text-sm text-violet-800 dark:text-violet-200">{{ __('Use one color-coded four-line block per invoice. Enter supplier, category, wallet, and payment details once on the first row, then fill only the line-item columns below it.') }}</p>
         <ol class="mt-4 grid gap-3 text-sm sm:grid-cols-4">
             <li class="rounded-md bg-white/70 px-3 py-2 dark:bg-neutral-900/40"><strong>1.</strong> {{ __('Download template') }}</li>
             <li class="rounded-md bg-white/70 px-3 py-2 dark:bg-neutral-900/40"><strong>2.</strong> {{ __('Enter daily expenses') }}</li>

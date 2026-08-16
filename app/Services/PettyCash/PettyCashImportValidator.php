@@ -24,7 +24,8 @@ class PettyCashImportValidator
     private array $wallets = [];
 
     public function __construct(
-        protected SupplierAccountingPolicyService $supplierPolicy
+        protected SupplierAccountingPolicyService $supplierPolicy,
+        protected PettyCashImportRowPreparer $rowPreparer,
     ) {}
 
     /**
@@ -50,7 +51,7 @@ class PettyCashImportValidator
         $this->assertDefaultWallet($defaultWalletId);
 
         $rows = [];
-        foreach ($sourceRows as $offset => $source) {
+        foreach ($this->rowPreparer->prepare($sourceRows) as $offset => $source) {
             $rows[] = $this->normalizeRow(
                 $source,
                 $offset + 2,

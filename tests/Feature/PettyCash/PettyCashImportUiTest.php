@@ -9,6 +9,7 @@ use App\Models\PettyCashWallet;
 use App\Models\Supplier;
 use App\Models\User;
 use App\Services\PettyCash\PettyCashImportTemplateBuilder;
+use App\Support\Imports\SafeSpreadsheetReader;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -85,12 +86,14 @@ it('downloads a controlled petty cash workbook with exact headers and lookup val
     $response->assertOk()->assertDownload('petty-cash-daily-import-template.xlsx');
 
     $path = $response->baseResponse->getFile()->getPathname();
+    $parsed = app(SafeSpreadsheetReader::class)->workbook($path);
     $zip = new ZipArchive;
     expect($zip->open($path))->toBeTrue();
 
     try {
         $workbook = (string) $zip->getFromName('xl/workbook.xml');
         $expenses = (string) $zip->getFromName('xl/worksheets/sheet2.xml');
+        $styles = (string) $zip->getFromName('xl/styles.xml');
         $suppliers = (string) $zip->getFromName('xl/worksheets/sheet3.xml');
         $categories = (string) $zip->getFromName('xl/worksheets/sheet4.xml');
         $wallets = (string) $zip->getFromName('xl/worksheets/sheet5.xml');
@@ -99,15 +102,25 @@ it('downloads a controlled petty cash workbook with exact headers and lookup val
         $headers = array_map(fn (string $value): string => html_entity_decode($value, ENT_QUOTES | ENT_XML1, 'UTF-8'), $matches[1]);
 
         expect($headers)->toBe(PettyCashImportTemplateBuilder::HEADERS)
+            ->and($parsed['sheets']['petty_cash_expenses'])->toHaveCount(200)
+            ->and(array_column(array_slice($parsed['sheets']['petty_cash_expenses'], 0, 4), 'entry_id'))->toBe(array_fill(0, 4, 'ENTRY-001'))
+            ->and(array_column(array_slice($parsed['sheets']['petty_cash_expenses'], 4, 4), 'entry_id'))->toBe(array_fill(0, 4, 'ENTRY-002'))
             ->and($workbook)->toContain('<sheet name="Suppliers" sheetId="3" state="veryHidden"')
             ->and($workbook)->toContain('<sheet name="Categories" sheetId="4" state="veryHidden"')
             ->and($workbook)->toContain('<sheet name="Wallets" sheetId="5" state="veryHidden"')
-            ->and($expenses)->toContain('sqref="B2:B5001"')
+            ->and($expenses)->toContain('sqref="A2:A201"')
+            ->and($expenses)->toContain('dxfId="0" priority="1" stopIfTrue="1"')
+            ->and($styles)->toContain('<dxfs count="6">')
+            ->and($styles)->toContain('<fgColor rgb="FFD1D5DB"/>')
+            ->and($expenses)->toContain('sqref="B2:G201 K2:L201"')
+            ->and($expenses)->toContain('sqref="H2:J201"')
+            ->and($expenses)->toContain('sqref="B2 B6 B10')
+            ->and($expenses)->toContain('B202:B5001"')
             ->and($expenses)->toContain('<formula1>SupplierValues</formula1>')
-            ->and($expenses)->toContain('sqref="G2:G5001"')
+            ->and($expenses)->toContain('sqref="G2 G6 G10')
             ->and($expenses)->toContain('sqref="I2:I5001"')
-            ->and($expenses)->toMatch('/type="list" allowBlank="0"[^>]+sqref="B2:B5001"/')
-            ->and($expenses)->toMatch('/type="list" allowBlank="0"[^>]+sqref="G2:G5001"/')
+            ->and($expenses)->toMatch('/type="list" allowBlank="1"[^>]+sqref="B2 B6 B10/')
+            ->and($expenses)->toMatch('/type="list" allowBlank="1"[^>]+sqref="G2 G6 G10/')
             ->and($expenses)->toMatch('/type="decimal" operator="greaterThan" allowBlank="1"[^>]+sqref="I2:I5001"/')
             ->and($suppliers)->toContain($supplier->id.' | Daily Supplier')
             ->and($suppliers)->not->toContain($heldSupplier->id.' | Held Supplier')

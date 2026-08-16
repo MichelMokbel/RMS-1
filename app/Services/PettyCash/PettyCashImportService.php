@@ -105,6 +105,9 @@ class PettyCashImportService
             $defaultWalletId,
             $businessDate,
         );
+        if ((int) $validated['stats']['rows'] === 0) {
+            throw ValidationException::withMessages(['workbook' => __('The workbook must contain at least one expense line.')]);
+        }
         $this->assertAccountingPreflight($validated, $companyId);
 
         $disk = (string) config('petty_cash.imports.disk', config('filesystems.default', 'local'));

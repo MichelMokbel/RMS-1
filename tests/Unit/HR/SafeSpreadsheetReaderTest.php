@@ -88,6 +88,32 @@ it('reads Excel workbooks that prefix the spreadsheet namespace', function (): v
     }
 });
 
+it('reads every indexed value from a shared strings table', function (): void {
+    $path = hrReaderWorkbook([['name' => 'Expenses', 'xml' => hrReaderSheet(
+        '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row>'
+        .'<row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2" t="s"><v>3</v></c></row>'
+    )]]);
+    $zip = new \ZipArchive;
+    $zip->open($path);
+    $zip->addFromString(
+        'xl/sharedStrings.xml',
+        '<?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="4" uniqueCount="4">'
+        .'<si><t>Entry ID</t></si><si><t>Description</t></si><si><t>ENTRY-001</t></si><si><t>Kitchen supplies</t></si></sst>'
+    );
+    $zip->close();
+
+    try {
+        $workbook = (new SafeSpreadsheetReader)->workbook($path);
+
+        expect($workbook['headers']['expenses'])->toBe(['entry_id', 'description'])
+            ->and($workbook['sheets']['expenses'])->toBe([
+                ['entry_id' => 'ENTRY-001', 'description' => 'Kitchen supplies'],
+            ]);
+    } finally {
+        @unlink($path);
+    }
+});
+
 it('rejects formula cells', function (): void {
     $path = hrReaderWorkbook([['name' => 'Employees', 'xml' => hrReaderSheet(
         '<row r="1"><c r="A1" t="inlineStr"><is><t>employee_ref</t></is></c></row>'

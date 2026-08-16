@@ -210,7 +210,7 @@ class SafeSpreadsheetReader
 
         $xml = $this->spreadsheetChildren($this->xml($content));
 
-        return array_map(fn (SimpleXMLElement $item): string => $this->richText($item), iterator_to_array($xml->si));
+        return array_map(fn (SimpleXMLElement $item): string => $this->richText($item), iterator_to_array($xml->si, false));
     }
 
     private function richText(SimpleXMLElement $item): string

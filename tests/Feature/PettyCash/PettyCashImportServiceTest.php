@@ -157,6 +157,52 @@ it('stages grouped lines with defaults and atomically commits paid and unpaid ex
         ->and(ApPayment::query()->count())->toBe(1);
 });
 
+it('inherits invoice fields across compact line rows and ignores unused entry slots', function () {
+    $lineCategory = ExpenseCategory::factory()->create(['name' => 'Fresh Food', 'active' => true]);
+    $workbook = pettyCashImportWorkbook([
+        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'COMPACT-001', '', $lineCategory->id.' | Fresh Food', $this->wallet->id.' | Main Wallet', 'TRUE', 'Rice', '1', '10.00', '2.00', 'Morning run'],
+        ['', '', '', '', '', '', '', 'Oil', '2', '5.00', '', ''],
+        ['ENTRY-002'],
+    ]);
+
+    $batch = app(PettyCashImportService::class)->stage(
+        $workbook,
+        '2026-08-15',
+        $this->category->id,
+        $this->wallet->id,
+        $this->company->id,
+        $this->actor
+    );
+
+    expect($batch->status->value)->toBe('ready')
+        ->and($batch->invoices)->toHaveCount(1)
+        ->and($batch->rows)->toHaveCount(2)
+        ->and($batch->invoices->first()->entry_id)->toBe('ENTRY-001')
+        ->and($batch->invoices->first()->header['category_id'])->toBe($lineCategory->id)
+        ->and((float) $batch->invoices->first()->header['tax_amount'])->toBe(2.0)
+        ->and($batch->rows->last()->payload['supplier_id'])->toBe($this->supplier->id)
+        ->and($batch->rows->last()->payload['category_id'])->toBe($lineCategory->id)
+        ->and($batch->rows->last()->payload['paid'])->toBeTrue()
+        ->and($batch->rows->last()->payload['notes'])->toBe('Morning run');
+});
+
+it('rejects a workbook containing only prefilled entry slots', function () {
+    $workbook = pettyCashImportWorkbook([
+        ['ENTRY-001'],
+        ['ENTRY-001'],
+        ['ENTRY-002'],
+    ]);
+
+    expect(fn () => app(PettyCashImportService::class)->stage(
+        $workbook,
+        '2026-08-15',
+        $this->category->id,
+        $this->wallet->id,
+        $this->company->id,
+        $this->actor
+    ))->toThrow(ValidationException::class, 'The workbook must contain at least one expense line.');
+});
+
 it('persists duplicate and conflicting grouped entries as a failed validation batch', function () {
     $workbook = pettyCashImportWorkbook([
         ['ENTRY-001', $this->supplier->id.' | Daily Market', 'SAME-REF', '', '', '', 'TRUE', 'Rice', '1', '10', '0', ''],
@@ -411,7 +457,14 @@ function pettyCashImportWorkbook(array $rows): UploadedFile
             }
             $xmlRows .= '<row r="'.$rowNumber.'">'.$cells.'</row>';
         }
-        $sheet = str_replace('</sheetData>', $xmlRows.'</sheetData>', $sheet);
+        preg_match('/<row r="1".*?<\/row>/s', $sheet, $headerMatch);
+        $headerRow = $headerMatch[0] ?? throw new RuntimeException('The generated workbook header row is missing.');
+        $sheet = preg_replace(
+            '/<sheetData>.*?<\/sheetData>/s',
+            '<sheetData>'.$headerRow.$xmlRows.'</sheetData>',
+            $sheet,
+            1
+        ) ?? throw new RuntimeException('Unable to replace generated petty cash import rows.');
         $zip->addFromString('xl/worksheets/sheet2.xml', $sheet);
     } finally {
         $zip->close();
