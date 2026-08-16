@@ -16,6 +16,7 @@ use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -35,6 +36,28 @@ it('renders the unified accounts payable workspace for staff', function () {
         ->assertSee('Accounts Payable')
         ->assertSee('Reimbursements')
         ->assertDontSee('Spend');
+});
+
+it('shows the petty cash expense import entry point on accounts payable only to authorized admins', function () {
+    Permission::findOrCreate('petty_cash.import');
+    $importer = User::factory()->create();
+    $importer->assignRole('admin');
+    $importer->givePermissionTo('petty_cash.import');
+    $manager = User::factory()->create();
+    $manager->assignRole('staff');
+    $manager->givePermissionTo('petty_cash.import');
+
+    $this->actingAs($importer)
+        ->get(route('payables.index'))
+        ->assertOk()
+        ->assertSee('Import Expenses')
+        ->assertSee(route('petty-cash.imports.index'), false);
+
+    $this->actingAs($manager)
+        ->get(route('payables.index'))
+        ->assertOk()
+        ->assertDontSee('Import Expenses')
+        ->assertDontSee(route('petty-cash.imports.index'), false);
 });
 
 it('redirects legacy spend route into approvals tab', function () {

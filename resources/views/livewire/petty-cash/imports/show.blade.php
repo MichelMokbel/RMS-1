@@ -1,7 +1,7 @@
 <?php
 
-use App\Models\PettyCashImportBatch;
 use App\Models\ExpenseCategory;
+use App\Models\PettyCashImportBatch;
 use App\Models\PettyCashWallet;
 use App\Models\Supplier;
 use App\Services\Accounting\AccountingContextService;
@@ -12,7 +12,8 @@ use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
 
-new #[Layout('components.layouts.app')] class extends Component {
+new #[Layout('components.layouts.app')] class extends Component
+{
     use WithPagination;
 
     public int $batchId;
@@ -24,7 +25,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->batch();
     }
 
-    public function commit(PettyCashImportService $service): void
+    public function commitImport(PettyCashImportService $service): void
     {
         abort_unless(auth()->user()?->hasRole('admin') && auth()->user()?->can('petty_cash.import'), 403);
         $batch = $this->batch();
@@ -43,6 +44,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
         session()->flash('status', __('Petty cash import committed. The invoices and settlement results are now available in Accounts Payable.'));
+        $this->redirectRoute('petty-cash.imports.show', ['batch' => $batch->id], navigate: true);
     }
 
     public function with(): array
@@ -130,18 +132,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             <flux:button :href="route('petty-cash.imports.index')" wire:navigate variant="ghost" icon="arrow-left">{{ __('All Imports') }}</flux:button>
             <flux:button :href="route('petty-cash.imports.index')" wire:navigate variant="ghost" icon="arrow-up-tray">{{ __('Upload Another') }}</flux:button>
             @if($statusValue === 'ready')
-                <flux:button
+                <button
                     type="button"
-                    wire:click="commit"
-                    wire:confirm="{{ __('Commit this import? This creates and posts every validated invoice, then settles entries marked as paid.') }}"
+                    wire:click="commitImport"
                     wire:loading.attr="disabled"
-                    wire:target="commit"
-                    variant="primary"
-                    icon="check-circle"
+                    wire:target="commitImport"
+                    class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-black/10 bg-[var(--color-accent)] px-4 text-sm font-medium text-[var(--color-accent-foreground)] shadow-sm hover:opacity-90 disabled:pointer-events-none disabled:opacity-60"
                 >
-                    <span wire:loading.remove wire:target="commit">{{ __('Confirm and Commit') }}</span>
-                    <span wire:loading wire:target="commit">{{ __('Committing…') }}</span>
-                </flux:button>
+                    <svg wire:loading.remove wire:target="commitImport" class="size-4 shrink-0" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                        <path fill-rule="evenodd" d="M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14Zm3.844-8.791a.75.75 0 0 0-1.188-.918l-3.7 4.79-1.649-1.833a.75.75 0 1 0-1.114 1.004l2.25 2.5a.75.75 0 0 0 1.15-.043l4.25-5.5Z" clip-rule="evenodd" />
+                    </svg>
+                    <span wire:loading.remove wire:target="commitImport">{{ __('Confirm and Commit') }}</span>
+                    <span wire:loading wire:target="commitImport">{{ __('Committing…') }}</span>
+                </button>
             @endif
         </div>
     </div>

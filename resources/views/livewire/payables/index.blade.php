@@ -8,57 +8,86 @@ use App\Models\Department;
 use App\Models\Job;
 use App\Models\RecurringBillTemplate;
 use App\Models\Supplier;
+use App\Services\Accounting\LedgerAccountMappingService;
 use App\Services\AP\ApInvoicePostingService;
 use App\Services\AP\ApInvoiceVoidService;
 use App\Services\AP\ApReportsService;
 use App\Services\AP\RecurringBillService;
-use App\Services\Accounting\LedgerAccountMappingService;
 use App\Services\Spend\ExpenseWorkflowService;
 use App\Support\AP\DocumentTypeMap;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
 
-new #[Layout('components.layouts.app')] class extends Component {
+new #[Layout('components.layouts.app')] class extends Component
+{
     use WithPagination;
 
     public string $tab = 'all';
+
     public string $document_type = 'all';
+
     public string $approval_status = 'all';
+
     public string $workflow_state = 'all';
+
     public string $payment_state = 'all';
+
     public string $expense_channel = 'all';
+
     public ?int $supplier_id = null;
+
     public ?int $branch_id = null;
+
     public ?int $department_id = null;
+
     public ?int $job_id = null;
+
     public ?string $date_from = null;
+
     public ?string $date_to = null;
+
     public ?string $search = null;
 
     public ?int $payment_supplier_id = null;
+
     public ?string $payment_method = null;
+
     public ?string $payment_date_from = null;
+
     public ?string $payment_date_to = null;
 
     public ?int $editing_recurring_template_id = null;
+
     public ?int $recurring_company_id = null;
+
     public string $recurring_name = '';
+
     public ?int $recurring_supplier_id = null;
+
     public ?int $recurring_branch_id = null;
+
     public ?int $recurring_department_id = null;
+
     public ?int $recurring_job_id = null;
+
     public string $recurring_frequency = 'monthly';
+
     public ?string $recurring_start_date = null;
+
     public ?string $recurring_end_date = null;
+
     public ?string $recurring_next_run_date = null;
+
     public string $recurring_due_day_offset = '30';
+
     public bool $recurring_is_active = true;
+
     public ?string $recurring_notes = null;
+
     public array $recurring_lines = [];
 
     protected $paginationTheme = 'tailwind';
@@ -167,6 +196,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         if ($rows->isEmpty()) {
             session()->flash('error', __('No settleable expenses are available in the current view.'));
+
             return;
         }
 
@@ -177,6 +207,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $settled++;
             } catch (ValidationException $exception) {
                 $this->flashValidationError($exception);
+
                 return;
             }
         }
@@ -550,6 +581,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Bills, expenses, reimbursements, approvals, payments, and aging in one finance workspace.') }}</p>
         </div>
         <div class="flex flex-wrap gap-2">
+            @if(auth()->user()?->hasRole('admin') && auth()->user()?->can('petty_cash.import'))
+                <flux:button :href="route('petty-cash.imports.index')" wire:navigate variant="ghost" icon="arrow-up-tray">
+                    {{ __('Import Expenses') }}
+                </flux:button>
+            @endif
             @can('finance.write')
                 <flux:button :href="route('payables.create')" wire:navigate>{{ __('New Document') }}</flux:button>
                 @if ($this->canManageAp())

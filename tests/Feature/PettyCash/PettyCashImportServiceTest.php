@@ -20,6 +20,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Livewire\Volt\Volt;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -154,6 +155,39 @@ it('stages grouped lines with defaults and atomically commits paid and unpaid ex
     $service->commit($committed, $this->actor);
     expect(ApInvoice::query()->where('source_document_type', 'petty_cash_expense_import')->count())->toBe(2)
         ->and(ApPayment::query()->count())->toBe(1);
+});
+
+it('commits a ready batch through the review page action and redirects to created invoice links', function () {
+    $workbook = pettyCashImportWorkbook([
+        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'UI-COMMIT-001', '', '', '', 'FALSE', 'Direct UI commit', '1', '15.00', ''],
+    ]);
+    $batch = app(PettyCashImportService::class)->stage(
+        $workbook,
+        '2026-08-15',
+        $this->category->id,
+        $this->wallet->id,
+        $this->company->id,
+        $this->actor
+    );
+
+    $this->actingAs($this->actor);
+    Volt::test('petty-cash.imports.show', ['batch' => $batch->id])
+        ->call('commitImport')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('petty-cash.imports.show', ['batch' => $batch->id]));
+
+    $invoice = ApInvoice::query()->where('reference_number', 'UI-COMMIT-001')->firstOrFail();
+
+    expect($batch->fresh()->status->value)->toBe('completed')
+        ->and($invoice->status)->toBe('posted')
+        ->and($invoice->items)->toHaveCount(1)
+        ->and($batch->invoices()->firstOrFail()->target_invoice_id)->toBe($invoice->id);
+
+    $this->get(route('petty-cash.imports.show', ['batch' => $batch->id]))
+        ->assertOk()
+        ->assertSee('This import has been committed.')
+        ->assertSee('Open AP Invoice')
+        ->assertSee(route('payables.invoices.show', $invoice), false);
 });
 
 it('inherits invoice fields across compact line rows and ignores unused entry slots', function () {

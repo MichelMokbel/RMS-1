@@ -218,7 +218,8 @@ it('reviews staged invoice groups with totals and line-level errors before commi
         ->assertSee('1 invoice was changed to pending because its wallet balance was insufficient.')
         ->assertSee('The wallet balance is insufficient, so this invoice will be imported as unpaid.')
         ->assertSee('Confirm and Commit')
-        ->assertSee('wire:click="commit"', false)
+        ->assertSee('wire:click="commitImport"', false)
+        ->assertDontSee('wire:confirm=', false)
         ->assertDontSee('commit-petty-cash-import')
         ->assertSee('No accounting or wallet records have changed yet.');
 
@@ -230,6 +231,6 @@ it('reviews staged invoice groups with totals and line-level errors before commi
     app()->instance(PettyCashImportService::class, $service);
 
     Volt::test('petty-cash.imports.show', ['batch' => $batch->id])
-        ->call('commit')
+        ->call('commitImport')
         ->assertHasNoErrors();
 });
