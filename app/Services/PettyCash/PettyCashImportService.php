@@ -30,7 +30,7 @@ class PettyCashImportService
 
     public const HEADERS = [
         'entry_id', 'supplier', 'reference_number', 'due_date', 'category', 'wallet',
-        'paid', 'description', 'quantity', 'unit_price', 'tax_amount', 'notes',
+        'paid', 'description', 'quantity', 'unit_price', 'notes',
     ];
 
     private const ALLOWED_SHEETS = [
@@ -193,6 +193,7 @@ class PettyCashImportService
                         'sha256' => $sha256,
                         'rows' => $validated['stats']['rows'],
                         'invoices' => $validated['stats']['invoices'],
+                        'unpaid_for_insufficient_balance' => $validated['stats']['unpaid_for_insufficient_balance'],
                         'invalid_rows' => $validated['stats']['invalid_rows'],
                         'invalid_invoices' => $validated['stats']['invalid_invoices'],
                     ],
@@ -232,9 +233,6 @@ class PettyCashImportService
         }
 
         $required = ['ap_control'];
-        if ($invoices->contains(fn (array $invoice): bool => (float) ($invoice['header']['tax_amount'] ?? 0) > 0)) {
-            $required[] = 'tax_input';
-        }
         if ($invoices->contains(fn (array $invoice): bool => (bool) ($invoice['header']['paid'] ?? false))) {
             $required[] = 'petty_cash_asset';
         }

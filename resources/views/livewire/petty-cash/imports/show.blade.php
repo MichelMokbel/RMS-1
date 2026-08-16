@@ -42,7 +42,6 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             return;
         }
-        $this->modal('commit-petty-cash-import')->close();
         session()->flash('status', __('Petty cash import committed. The invoices and settlement results are now available in Accounts Payable.'));
     }
 
@@ -62,7 +61,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                 (float) ($row->payload['quantity'] ?? 0) * (float) ($row->payload['unit_price'] ?? 0),
                 2
             )), 2);
-            $tax = round((float) ($header['tax_amount'] ?? 0), 2);
             $wallet = $wallets->get((int) ($header['wallet_id'] ?? 0));
 
             return [
@@ -72,8 +70,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'wallet' => $wallet?->driver_name ?: ($wallet ? __('Custodian :id', ['id' => $wallet->driver_id]) : __('Unknown wallet')),
                 'line_count' => $invoice->rows->count(),
                 'subtotal' => $subtotal,
-                'tax' => $tax,
-                'total' => round($subtotal + $tax, 2),
+                'total' => $subtotal,
             ];
         });
 
@@ -106,7 +103,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $order = [
             'supplier', 'reference_number', 'due_date', 'category', 'wallet', 'paid',
-            'description', 'quantity', 'unit_price', 'tax_amount', 'notes',
+            'description', 'quantity', 'unit_price', 'notes',
         ];
 
         return collect($order)
@@ -133,9 +130,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             <flux:button :href="route('petty-cash.imports.index')" wire:navigate variant="ghost" icon="arrow-left">{{ __('All Imports') }}</flux:button>
             <flux:button :href="route('petty-cash.imports.index')" wire:navigate variant="ghost" icon="arrow-up-tray">{{ __('Upload Another') }}</flux:button>
             @if($statusValue === 'ready')
-                <flux:modal.trigger name="commit-petty-cash-import">
-                    <flux:button type="button" variant="primary" icon="check-circle">{{ __('Confirm and Commit') }}</flux:button>
-                </flux:modal.trigger>
+                <flux:button
+                    type="button"
+                    wire:click="commit"
+                    wire:confirm="{{ __('Commit this import? This creates and posts every validated invoice, then settles entries marked as paid.') }}"
+                    wire:loading.attr="disabled"
+                    wire:target="commit"
+                    variant="primary"
+                    icon="check-circle"
+                >
+                    <span wire:loading.remove wire:target="commit">{{ __('Confirm and Commit') }}</span>
+                    <span wire:loading wire:target="commit">{{ __('Committing…') }}</span>
+                </flux:button>
             @endif
         </div>
     </div>
@@ -160,6 +166,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     @if($statusValue === 'ready' && filled($batch->failure_reason))
         <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
             {{ $batch->failure_reason }}
+        </div>
+    @endif
+
+    @if((int) ($stats['unpaid_for_insufficient_balance'] ?? 0) > 0)
+        <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+            {{ trans_choice(':count invoice was changed to pending because its wallet balance was insufficient.|:count invoices were changed to pending because their wallet balances were insufficient.', (int) $stats['unpaid_for_insufficient_balance'], ['count' => (int) $stats['unpaid_for_insufficient_balance']]) }}
         </div>
     @endif
 
@@ -230,9 +242,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <div><dt class="text-xs text-neutral-500">{{ __('Settlement') }}</dt><dd>{{ ($header['paid'] ?? false) ? __('Paid') : __('Pending') }}</dd></div>
                         <div><dt class="text-xs text-neutral-500">{{ __('Lines') }}</dt><dd>{{ $entry['line_count'] }}</dd></div>
                         <div><dt class="text-xs text-neutral-500">{{ __('Subtotal') }}</dt><dd>{{ number_format($entry['subtotal'], 2) }}</dd></div>
-                        <div><dt class="text-xs text-neutral-500">{{ __('Tax') }}</dt><dd>{{ number_format($entry['tax'], 2) }}</dd></div>
                         <div><dt class="text-xs text-neutral-500">{{ __('Total') }}</dt><dd class="font-medium">{{ number_format($entry['total'], 2) }}</dd></div>
                     </dl>
+                    @if(filled($header['settlement_warning'] ?? null))
+                        <p class="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+                            {{ $header['settlement_warning'] }}
+                        </p>
+                    @endif
                     @if($importInvoice->targetInvoice)
                         <flux:button class="mt-3" :href="route('payables.invoices.show', $importInvoice->targetInvoice)" wire:navigate size="sm" variant="ghost">{{ __('Open AP Invoice') }}</flux:button>
                     @endif
@@ -304,20 +320,4 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div>{{ $reviewRows->links() }}</div>
     </section>
 
-    <flux:modal name="commit-petty-cash-import" focusable class="max-w-xl">
-        <div class="space-y-5">
-            <div>
-                <flux:heading size="lg">{{ __('Commit this petty cash import?') }}</flux:heading>
-                <flux:subheading>{{ __('This creates the validated invoices, posts them, and settles every group marked as paid.') }}</flux:subheading>
-            </div>
-            <div class="rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
-                {{ __('The commit is atomic. If any invoice, ledger entry, payment, or wallet deduction fails, the entire batch is rolled back.') }}
-            </div>
-            @error('commit') <p class="text-sm text-red-700 dark:text-red-300">{{ $message }}</p> @enderror
-            <div class="flex justify-end gap-2">
-                <flux:modal.close><flux:button type="button" variant="filled">{{ __('Cancel') }}</flux:button></flux:modal.close>
-                <flux:button type="button" wire:click="commit" wire:loading.attr="disabled" variant="primary">{{ __('Commit Import') }}</flux:button>
-            </div>
-        </div>
-    </flux:modal>
 </div>

@@ -85,7 +85,7 @@ class PettyCashImportValidator
             $first = $rows[$indexes[0]]['payload'];
             $headerFields = [
                 'supplier_id', 'reference_number', 'due_date', 'category_id',
-                'wallet_id', 'paid', 'tax_amount', 'notes',
+                'wallet_id', 'paid', 'notes',
             ];
             $groupErrors = [];
             foreach ($headerFields as $field) {
@@ -113,7 +113,7 @@ class PettyCashImportValidator
                     (float) ($rows[$index]['payload']['quantity'] ?? 0)
                         * (float) ($rows[$index]['payload']['unit_price'] ?? 0),
                     2
-                )) + (float) ($first['tax_amount'] ?? 0),
+                )),
                 2
             );
             if ($invoiceTotal <= 0) {
@@ -139,7 +139,8 @@ class PettyCashImportValidator
                 }
             }
             $header = collect($first)->only($headerFields)->all();
-            $header['subtotal'] = round($invoiceTotal - (float) ($first['tax_amount'] ?? 0), 2);
+            $header['tax_amount'] = 0.0;
+            $header['subtotal'] = $invoiceTotal;
             $header['total_amount'] = $invoiceTotal;
             $invoices[] = [
                 'entry_id' => $entryId,
@@ -172,38 +173,37 @@ class PettyCashImportValidator
                 }
             });
 
-        $paidByWallet = collect($invoices)
-            ->filter(fn (array $invoice): bool => (bool) ($invoice['header']['paid'] ?? false)
-                && (int) ($invoice['header']['wallet_id'] ?? 0) > 0)
-            ->groupBy(fn (array $invoice): int => (int) $invoice['header']['wallet_id']);
-        if (! config('petty_cash.allow_negative_wallet_balance', false)) {
-            foreach ($paidByWallet as $walletId => $walletInvoices) {
-                $required = round($walletInvoices->sum(function (array $invoice) use ($rows, $groupIndexes): float {
-                    $subtotal = collect($groupIndexes[$invoice['entry_id']] ?? [])->sum(fn (int $index): float => round(
-                        (float) ($rows[$index]['payload']['quantity'] ?? 0)
-                            * (float) ($rows[$index]['payload']['unit_price'] ?? 0),
-                        2
-                    ));
+        $remainingByWallet = [];
+        foreach ($invoices as &$invoice) {
+            if (($invoice['errors'] ?? []) !== [] || ! (bool) ($invoice['header']['paid'] ?? false)) {
+                continue;
+            }
+            $walletId = (int) ($invoice['header']['wallet_id'] ?? 0);
+            $wallet = $walletId > 0
+                ? ($this->wallets[$walletId] ??= PettyCashWallet::query()->find($walletId))
+                : null;
+            if (! $wallet || ! $wallet->isActive()) {
+                continue;
+            }
+            $remainingByWallet[$walletId] ??= round((float) $wallet->balance, 2);
+            $total = round((float) ($invoice['header']['total_amount'] ?? 0), 2);
+            if (round($remainingByWallet[$walletId] - $total, 2) >= 0) {
+                $remainingByWallet[$walletId] = round($remainingByWallet[$walletId] - $total, 2);
 
-                    return round($subtotal + (float) ($invoice['header']['tax_amount'] ?? 0), 2);
-                }), 2);
-                $wallet = PettyCashWallet::query()->find((int) $walletId);
-                if ($wallet && round((float) $wallet->balance - $required, 2) < 0) {
-                    foreach ($invoices as &$invoice) {
-                        if ((int) ($invoice['header']['wallet_id'] ?? 0) !== (int) $walletId
-                            || ! (bool) ($invoice['header']['paid'] ?? false)) {
-                            continue;
-                        }
-                        $message = __('The wallet balance is insufficient for all paid entries in this workbook.');
-                        $invoice['errors']['balance'] = $message;
-                        foreach ($groupIndexes[$invoice['entry_id']] ?? [] as $index) {
-                            $rows[$index]['errors']['balance'] = $message;
-                        }
-                    }
-                    unset($invoice);
-                }
+                continue;
+            }
+
+            $message = __('The wallet balance is insufficient, so this invoice will be imported as unpaid.');
+            $invoice['header']['paid_requested'] = true;
+            $invoice['header']['paid'] = false;
+            $invoice['header']['settlement_warning'] = $message;
+            foreach ($groupIndexes[$invoice['entry_id']] ?? [] as $index) {
+                $rows[$index]['payload']['paid_requested'] = true;
+                $rows[$index]['payload']['paid'] = false;
+                $rows[$index]['payload']['settlement_warning'] = $message;
             }
         }
+        unset($invoice);
 
         foreach ($rows as &$row) {
             $row['status'] = $row['errors'] === [] ? 'valid' : 'invalid';
@@ -233,8 +233,11 @@ class PettyCashImportValidator
                 'valid_invoices' => count($invoices) - $invalidInvoices,
                 'invalid_invoices' => $invalidInvoices,
                 'paid_invoices' => count(array_filter($invoices, fn (array $invoice): bool => (bool) ($invoice['header']['paid'] ?? false))),
+                'unpaid_for_insufficient_balance' => count(array_filter(
+                    $invoices,
+                    fn (array $invoice): bool => isset($invoice['header']['settlement_warning'])
+                )),
                 'subtotal' => round(array_sum(array_map(fn (array $invoice): float => (float) ($invoice['header']['subtotal'] ?? 0), $invoices)), 2),
-                'tax_amount' => round(array_sum(array_map(fn (array $invoice): float => (float) ($invoice['header']['tax_amount'] ?? 0), $invoices)), 2),
                 'total_amount' => round(array_sum(array_map(fn (array $invoice): float => (float) ($invoice['header']['total_amount'] ?? 0), $invoices)), 2),
             ],
         ];
@@ -288,11 +291,6 @@ class PettyCashImportValidator
         if ($unitPrice === null) {
             $errors['unit_price'] = __('Unit price must be non-negative with at most four decimal places.');
         }
-        $taxAmount = $this->decimal($source['tax_amount'] ?? 0, 2, true);
-        if ($taxAmount === null) {
-            $errors['tax_amount'] = __('Tax amount must be non-negative with at most two decimal places.');
-        }
-
         $payload = [
             'entry_id' => $entryId,
             'supplier' => is_scalar($source['supplier'] ?? null) ? trim((string) $source['supplier']) : null,
@@ -307,7 +305,6 @@ class PettyCashImportValidator
             'description' => $description,
             'quantity' => $quantity,
             'unit_price' => $unitPrice,
-            'tax_amount' => $taxAmount,
             'notes' => $notes,
             '_sheet_row' => $rowNumber,
         ];

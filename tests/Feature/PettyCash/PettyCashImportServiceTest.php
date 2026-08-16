@@ -43,7 +43,6 @@ beforeEach(function () {
     $this->expenseAccount = pettyCashImportMapping($this->company, 'expense_default', '6900', 'expense');
     pettyCashImportMapping($this->company, 'ap_control', '2100', 'liability');
     pettyCashImportMapping($this->company, 'petty_cash_asset', '1015', 'asset');
-    pettyCashImportMapping($this->company, 'tax_input', '1305', 'asset');
 
     $this->supplier = Supplier::factory()->create([
         'company_id' => $this->company->id,
@@ -61,9 +60,9 @@ beforeEach(function () {
 
 it('stages grouped lines with defaults and atomically commits paid and unpaid expenses', function () {
     $workbook = pettyCashImportWorkbook([
-        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'RCPT-001', '', '', '', 'TRUE', 'Rice', '', '10.00', '2.00', 'Morning run'],
-        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'RCPT-001', '', '', '', 'TRUE', 'Oil', '2', '5.00', '2.00', 'Morning run'],
-        ['ENTRY-002', $this->supplier->id.' | Daily Market', 'RCPT-002', '2026-08-18', $this->category->id.' | Kitchen Supplies', $this->wallet->id.' | Main Wallet', 'FALSE', 'Napkins', '3', '4.00', '0', ''],
+        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'RCPT-001', '', '', '', 'TRUE', 'Rice', '', '10.00', 'Morning run'],
+        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'RCPT-001', '', '', '', 'TRUE', 'Oil', '2', '5.00', 'Morning run'],
+        ['ENTRY-002', $this->supplier->id.' | Daily Market', 'RCPT-002', '2026-08-18', $this->category->id.' | Kitchen Supplies', $this->wallet->id.' | Main Wallet', 'FALSE', 'Napkins', '3', '4.00', ''],
     ]);
 
     $service = app(PettyCashImportService::class);
@@ -81,8 +80,8 @@ it('stages grouped lines with defaults and atomically commits paid and unpaid ex
         ->and($batch->invoices)->toHaveCount(2)
         ->and($batch->stats['paid_invoices'])->toBe(1)
         ->and((float) $batch->stats['subtotal'])->toBe(32.0)
-        ->and((float) $batch->stats['tax_amount'])->toBe(2.0)
-        ->and((float) $batch->stats['total_amount'])->toBe(34.0);
+        ->and($batch->stats)->not->toHaveKey('tax_amount')
+        ->and((float) $batch->stats['total_amount'])->toBe(32.0);
 
     $first = $batch->invoices->firstWhere('entry_id', 'ENTRY-001');
     expect($first->rows)->toHaveCount(2)
@@ -122,7 +121,7 @@ it('stages grouped lines with defaults and atomically commits paid and unpaid ex
         ->and(ApPayment::query()->firstOrFail()->payment_date->format('Y-m-d'))->toBe('2026-08-15')
         ->and(ApPayment::query()->firstOrFail()->currency_code)->toBe('KWD')
         ->and(ApPayment::query()->firstOrFail()->client_uuid)->toBe($first->client_uuid)
-        ->and((float) $this->wallet->fresh()->balance)->toBe(978.0);
+        ->and((float) $this->wallet->fresh()->balance)->toBe(980.0);
 
     expect(SubledgerEntry::query()
         ->where('source_type', 'ap_invoice')
@@ -136,7 +135,7 @@ it('stages grouped lines with defaults and atomically commits paid and unpaid ex
         'date_to' => '2026-08-15',
     ]);
     expect($report)->toHaveCount(2)
-        ->and(round($report->sum('amount'), 2))->toBe(34.0);
+        ->and(round($report->sum('amount'), 2))->toBe(32.0);
 
     $aging = app(ApReportsService::class)->agingSummary($this->supplier->id, '2026-08-15');
     expect(round(array_sum($aging), 2))->toBe(12.0)
@@ -160,8 +159,8 @@ it('stages grouped lines with defaults and atomically commits paid and unpaid ex
 it('inherits invoice fields across compact line rows and ignores unused entry slots', function () {
     $lineCategory = ExpenseCategory::factory()->create(['name' => 'Fresh Food', 'active' => true]);
     $workbook = pettyCashImportWorkbook([
-        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'COMPACT-001', '', $lineCategory->id.' | Fresh Food', $this->wallet->id.' | Main Wallet', 'TRUE', 'Rice', '1', '10.00', '2.00', 'Morning run'],
-        ['', '', '', '', '', '', '', 'Oil', '2', '5.00', '', ''],
+        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'COMPACT-001', '', $lineCategory->id.' | Fresh Food', $this->wallet->id.' | Main Wallet', 'TRUE', 'Rice', '1', '10.00', 'Morning run'],
+        ['', '', '', '', '', '', '', 'Oil', '2', '5.00', ''],
         ['ENTRY-002'],
     ]);
 
@@ -179,7 +178,7 @@ it('inherits invoice fields across compact line rows and ignores unused entry sl
         ->and($batch->rows)->toHaveCount(2)
         ->and($batch->invoices->first()->entry_id)->toBe('ENTRY-001')
         ->and($batch->invoices->first()->header['category_id'])->toBe($lineCategory->id)
-        ->and((float) $batch->invoices->first()->header['tax_amount'])->toBe(2.0)
+        ->and((float) $batch->invoices->first()->header['tax_amount'])->toBe(0.0)
         ->and($batch->rows->last()->payload['supplier_id'])->toBe($this->supplier->id)
         ->and($batch->rows->last()->payload['category_id'])->toBe($lineCategory->id)
         ->and($batch->rows->last()->payload['paid'])->toBeTrue()
@@ -205,10 +204,10 @@ it('rejects a workbook containing only prefilled entry slots', function () {
 
 it('persists duplicate and conflicting grouped entries as a failed validation batch', function () {
     $workbook = pettyCashImportWorkbook([
-        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'SAME-REF', '', '', '', 'TRUE', 'Rice', '1', '10', '0', ''],
-        ['ENTRY-002', $this->supplier->id.' | Daily Market', 'SAME-REF', '', '', '', 'FALSE', 'Oil', '1', '5', '0', ''],
-        ['ENTRY-003', $this->supplier->id.' | Daily Market', 'THIRD', '', '', '', 'TRUE', 'Line one', '1', '4', '0', ''],
-        ['ENTRY-003', $this->supplier->id.' | Daily Market', 'THIRD', '', '', '', 'FALSE', 'Line two', '1', '3', '0', ''],
+        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'SAME-REF', '', '', '', 'TRUE', 'Rice', '1', '10', ''],
+        ['ENTRY-002', $this->supplier->id.' | Daily Market', 'SAME-REF', '', '', '', 'FALSE', 'Oil', '1', '5', ''],
+        ['ENTRY-003', $this->supplier->id.' | Daily Market', 'THIRD', '', '', '', 'TRUE', 'Line one', '1', '4', ''],
+        ['ENTRY-003', $this->supplier->id.' | Daily Market', 'THIRD', '', '', '', 'FALSE', 'Line two', '1', '3', ''],
     ]);
 
     $batch = app(PettyCashImportService::class)->stage(
@@ -243,7 +242,7 @@ it('rejects an existing supplier reference on the same business date at stage', 
         'created_by' => $this->actor->id,
     ]);
     $workbook = pettyCashImportWorkbook([
-        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'ALREADY-USED', '', '', '', 'FALSE', 'Rice', '1', '10', '0', ''],
+        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'ALREADY-USED', '', '', '', 'FALSE', 'Rice', '1', '10', ''],
     ]);
 
     $batch = app(PettyCashImportService::class)->stage(
@@ -259,10 +258,11 @@ it('rejects an existing supplier reference on the same business date at stage', 
         ->and($batch->stats['invalid_invoices'])->toBe(1);
 });
 
-it('rolls back every document when commit-time wallet state is no longer valid', function () {
+it('imports paid entries as unpaid when wallet capacity is insufficient at stage or commit', function () {
+    $this->wallet->forceFill(['balance' => 25])->save();
     $workbook = pettyCashImportWorkbook([
-        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'ROLL-1', '', '', '', 'TRUE', 'Rice', '1', '20', '0', ''],
-        ['ENTRY-002', $this->supplier->id.' | Daily Market', 'ROLL-2', '', '', '', 'TRUE', 'Oil', '1', '10', '0', ''],
+        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'ROLL-1', '', '', '', 'TRUE', 'Rice', '1', '20', ''],
+        ['ENTRY-002', $this->supplier->id.' | Daily Market', 'ROLL-2', '', '', '', 'TRUE', 'Oil', '1', '10', ''],
     ]);
     $service = app(PettyCashImportService::class);
     $batch = $service->stage(
@@ -273,19 +273,27 @@ it('rolls back every document when commit-time wallet state is no longer valid',
         $this->company->id,
         $this->actor
     );
-    expect($batch->status->value)->toBe('ready');
+    expect($batch->status->value)->toBe('ready')
+        ->and($batch->stats['unpaid_for_insufficient_balance'])->toBe(1)
+        ->and($batch->invoices->firstWhere('entry_id', 'ENTRY-001')->header['paid'])->toBeTrue()
+        ->and($batch->invoices->firstWhere('entry_id', 'ENTRY-002')->header['paid'])->toBeFalse()
+        ->and($batch->invoices->firstWhere('entry_id', 'ENTRY-002')->header['paid_requested'])->toBeTrue()
+        ->and($batch->invoices->firstWhere('entry_id', 'ENTRY-002')->errors)->toBeEmpty();
 
-    $this->wallet->forceFill(['balance' => 25])->save();
+    $this->wallet->forceFill(['balance' => 15])->save();
+    $committed = $service->commit($batch, $this->actor);
 
-    expect(fn () => $service->commit($batch, $this->actor))
-        ->toThrow(ValidationException::class);
+    $first = ApInvoice::query()->where('reference_number', 'ROLL-1')->firstOrFail();
+    $second = ApInvoice::query()->where('reference_number', 'ROLL-2')->firstOrFail();
 
-    expect(ApInvoice::query()->where('source_document_type', 'petty_cash_expense_import')->exists())->toBeFalse()
+    expect($committed->status->value)->toBe('completed')
+        ->and($committed->stats['unpaid_for_insufficient_balance'])->toBe(2)
+        ->and($first->status)->toBe('posted')
+        ->and($second->status)->toBe('posted')
         ->and(ApPayment::query()->exists())->toBeFalse()
-        ->and((float) $this->wallet->fresh()->balance)->toBe(25.0)
-        ->and(PettyCashImportBatch::query()->findOrFail($batch->id)->status->value)->toBe('ready')
-        ->and(PettyCashImportBatch::query()->findOrFail($batch->id)->failure_reason)
-        ->toBe('The import could not be committed. No documents were changed.');
+        ->and((float) $this->wallet->fresh()->balance)->toBe(15.0)
+        ->and($committed->invoices->every(fn ($invoice): bool => $invoice->header['paid'] === false))->toBeTrue()
+        ->and($committed->invoices->every(fn ($invoice): bool => filled($invoice->header['settlement_warning'] ?? null)))->toBeTrue();
 });
 
 it('rolls back work already performed when a later staged supplier becomes blocked', function () {
@@ -297,8 +305,8 @@ it('rolls back work already performed when a later staged supplier becomes block
         'hold_status' => 'open',
     ]);
     $workbook = pettyCashImportWorkbook([
-        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'LATER-1', '', '', '', 'TRUE', 'Rice', '1', '20', '0', ''],
-        ['ENTRY-002', $secondSupplier->id.' | Second Market', 'LATER-2', '', '', '', 'TRUE', 'Oil', '1', '10', '0', ''],
+        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'LATER-1', '', '', '', 'TRUE', 'Rice', '1', '20', ''],
+        ['ENTRY-002', $secondSupplier->id.' | Second Market', 'LATER-2', '', '', '', 'TRUE', 'Oil', '1', '10', ''],
     ]);
     $service = app(PettyCashImportService::class);
     $batch = $service->stage(
@@ -324,7 +332,7 @@ it('rolls back work already performed when a later staged supplier becomes block
 
 it('returns a workbook validation error for formula-bearing spreadsheets', function () {
     $workbook = pettyCashImportWorkbook([
-        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'FORMULA-1', '', '', '', 'FALSE', 'Rice', '1', '10', '0', ''],
+        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'FORMULA-1', '', '', '', 'FALSE', 'Rice', '1', '10', ''],
     ]);
     $zip = new ZipArchive;
     expect($zip->open($workbook->getRealPath()))->toBeTrue();
@@ -358,8 +366,8 @@ it('returns a workbook validation error for formula-bearing spreadsheets', funct
 
 it('normalizes entry ids and accepts four-decimal unit prices', function () {
     $workbook = pettyCashImportWorkbook([
-        ['daily-001', $this->supplier->id.' | Daily Market', 'PRECISION-1', '', '', '', 'FALSE', 'Measured item', '3', '0.3333', '0', ''],
-        ['DAILY-001', $this->supplier->id.' | Daily Market', 'PRECISION-1', '', '', '', 'FALSE', 'Second item', '1', '1.0001', '0', ''],
+        ['daily-001', $this->supplier->id.' | Daily Market', 'PRECISION-1', '', '', '', 'FALSE', 'Measured item', '3', '0.3333', ''],
+        ['DAILY-001', $this->supplier->id.' | Daily Market', 'PRECISION-1', '', '', '', 'FALSE', 'Second item', '1', '1.0001', ''],
     ]);
 
     $batch = app(PettyCashImportService::class)->stage(
@@ -381,7 +389,7 @@ it('normalizes entry ids and accepts four-decimal unit prices', function () {
 it('revalidates supplier references after another ready batch commits', function () {
     $alternateCategory = ExpenseCategory::factory()->create(['name' => 'Alternate Supplies', 'active' => true]);
     $workbook = pettyCashImportWorkbook([
-        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'SERIALIZED-1', '', '', '', 'FALSE', 'Rice', '1', '10', '0', ''],
+        ['ENTRY-001', $this->supplier->id.' | Daily Market', 'SERIALIZED-1', '', '', '', 'FALSE', 'Rice', '1', '10', ''],
     ]);
     $service = app(PettyCashImportService::class);
     $first = $service->stage(

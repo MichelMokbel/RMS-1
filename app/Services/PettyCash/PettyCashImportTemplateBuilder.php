@@ -23,7 +23,6 @@ class PettyCashImportTemplateBuilder
         'description',
         'quantity',
         'unit_price',
-        'tax_amount',
         'notes',
     ];
 
@@ -82,7 +81,7 @@ class PettyCashImportTemplateBuilder
             [],
             ['How invoice grouping works'],
             ['Prepared invoice blocks', 'The sheet contains 50 entry IDs with four line slots each. Use one colored block for each supplier invoice.'],
-            ['Invoice fields', 'On the first row of a block, choose supplier, category, wallet, and paid status; enter reference, due date, tax, and notes there too.'],
+            ['Invoice fields', 'On the first row of a block, choose supplier, category, wallet, and paid status; enter reference, due date, and notes there too.'],
             ['Continuation lines', 'On rows two to four, enter only description, quantity, and unit price. Blank invoice fields inherit from the first row.'],
             ['Unused lines', 'Leave unused line slots and invoice blocks empty. Prefilled entry IDs by themselves are ignored during import.'],
             ['supplier', 'Choose the supplier token from the dropdown. Tokens use “ID | Display Name”; do not change the numeric ID.'],
@@ -171,20 +170,12 @@ class PettyCashImportTemplateBuilder
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
  <numFmts count="3"><numFmt numFmtId="164" formatCode="yyyy-mm-dd"/><numFmt numFmtId="165" formatCode="#,#0.00"/><numFmt numFmtId="166" formatCode="#,#0.0000"/></numFmts>
- <fonts count="4"><font><sz val="11"/><name val="Aptos"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Aptos"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="18"/><name val="Aptos Display"/></font><font><b/><color rgb="FF0F172A"/><sz val="12"/><name val="Aptos"/></font></fonts>
- <fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF7C3AED"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0F172A"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEDE9FE"/></patternFill></fill></fills>
- <borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FFCBD5E1"/></bottom><diagonal/></border></borders>
+ <fonts count="8"><font><sz val="11"/><name val="Aptos"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Aptos"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="18"/><name val="Aptos Display"/></font><font><b/><color rgb="FF0F172A"/><sz val="12"/><name val="Aptos"/></font><font><b/><color rgb="FF111827"/><sz val="11"/><name val="Aptos"/></font><font><color rgb="FF64748B"/><sz val="11"/><name val="Aptos"/></font><font><b/><color rgb="FF4C1D95"/><sz val="11"/><name val="Aptos"/></font><font><b/><color rgb="FF075985"/><sz val="11"/><name val="Aptos"/></font></fonts>
+ <fills count="10"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF7C3AED"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0F172A"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEDE9FE"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD1D5DB"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF0FDF4"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEDE9FE"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE0F2FE"/></patternFill></fill></fills>
+ <borders count="3"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FFCBD5E1"/></bottom><diagonal/></border><border><left/><right/><top style="medium"><color rgb="FF64748B"/></top><bottom style="thin"><color rgb="FF94A3B8"/></bottom><diagonal/></border></borders>
  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
- <cellXfs count="8"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="3" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf><xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>
+ <cellXfs count="19"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="3" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf><xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="4" fillId="5" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="164" fontId="4" fillId="5" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="165" fontId="4" fillId="5" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="166" fontId="4" fillId="5" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="0" fontId="5" fillId="6" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="164" fontId="5" fillId="6" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="0" fillId="7" borderId="0" xfId="0" applyFill="1"/><xf numFmtId="165" fontId="0" fillId="7" borderId="0" xfId="0" applyNumberFormat="1" applyFill="1"/><xf numFmtId="166" fontId="0" fillId="7" borderId="0" xfId="0" applyNumberFormat="1" applyFill="1"/><xf numFmtId="0" fontId="6" fillId="8" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="7" fillId="9" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs>
  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
- <dxfs count="6">
-  <dxf><fill><patternFill patternType="solid"><fgColor rgb="FFD1D5DB"/><bgColor indexed="64"/></patternFill></fill><font><b/><color rgb="FF111827"/></font><border><top style="medium"><color rgb="FF64748B"/></top><bottom style="thin"><color rgb="FF94A3B8"/></bottom></border></dxf>
-  <dxf><fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/><bgColor indexed="64"/></patternFill></fill><font><color rgb="FF64748B"/></font></dxf>
-  <dxf><fill><patternFill patternType="solid"><fgColor rgb="FFF0FDF4"/><bgColor indexed="64"/></patternFill></fill></dxf>
-  <dxf><fill><patternFill patternType="solid"><fgColor rgb="FFEDE9FE"/><bgColor indexed="64"/></patternFill></fill><font><b/><color rgb="FF4C1D95"/></font></dxf>
-  <dxf><fill><patternFill patternType="solid"><fgColor rgb="FFE0F2FE"/><bgColor indexed="64"/></patternFill></fill><font><b/><color rgb="FF075985"/></font></dxf>
-  <dxf><border><bottom style="medium"><color rgb="FF94A3B8"/></bottom></border></dxf>
- </dxfs>
 </styleSheet>
 XML;
     }
@@ -222,7 +213,7 @@ XML;
             $style = match ($header) {
                 'due_date' => 4,
                 'unit_price' => 7,
-                'quantity', 'tax_amount' => 5,
+                'quantity' => 5,
                 default => 0,
             };
             $columns .= '<col min="'.($index + 1).'" max="'.($index + 1).'" width="'.$width.'" customWidth="1"'.($style ? ' style="'.$style.'"' : '').'/>';
@@ -236,18 +227,39 @@ XML;
         foreach ($rows as $rowIndex => $row) {
             $cells = '';
             foreach ($row as $column => $value) {
-                $cells .= $this->stringCell($this->column($column + 1).($rowIndex + 2), (string) $value, 0);
+                $style = $kind === 'data' ? $this->starterCellStyle($rowIndex, $column) : 0;
+                $cells .= $this->stringCell($this->column($column + 1).($rowIndex + 2), (string) $value, $style);
             }
             $rowXml .= '<row r="'.($rowIndex + 2).'">'.$cells.'</row>';
         }
 
         $lastColumn = $this->column(count($headers));
         $validations = $kind === 'data' ? $this->validationsXml() : '';
-        $blockFormatting = $kind === 'data' ? $this->blockFormattingXml() : '';
 
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
             .'<sheetPr><tabColor rgb="'.($kind === 'lookup' ? 'FF64748B' : 'FF7C3AED').'"/></sheetPr><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
-            .'<cols>'.$columns.'</cols><sheetData>'.$rowXml.'</sheetData><autoFilter ref="A1:'.$lastColumn.'1"/>'.$blockFormatting.$validations.'</worksheet>';
+            .'<cols>'.$columns.'</cols><sheetData>'.$rowXml.'</sheetData><autoFilter ref="A1:'.$lastColumn.'1"/>'.$validations.'</worksheet>';
+    }
+
+    private function starterCellStyle(int $rowIndex, int $columnIndex): int
+    {
+        if ($rowIndex % self::LINES_PER_ENTRY === 0) {
+            return match ($columnIndex) {
+                3 => 9,
+                8 => 10,
+                9 => 11,
+                default => 8,
+            };
+        }
+
+        return match ($columnIndex) {
+            0 => intdiv($rowIndex, self::LINES_PER_ENTRY) % 2 === 0 ? 17 : 18,
+            3 => 13,
+            8 => 15,
+            9 => 16,
+            7 => 14,
+            default => 12,
+        };
     }
 
     private function validationsXml(): string
@@ -263,7 +275,6 @@ XML;
             $this->listValidation($paidRows, '&quot;TRUE,FALSE&quot;', true),
             '<dataValidation type="decimal" operator="greaterThan" allowBlank="1" showErrorMessage="1" errorTitle="Invalid quantity" error="Quantity must be greater than zero when supplied." sqref="I2:I5001"><formula1>0</formula1></dataValidation>',
             '<dataValidation type="decimal" operator="greaterThanOrEqual" allowBlank="1" showErrorMessage="1" errorTitle="Invalid amount" error="Unit price cannot be negative." sqref="J2:J5001"><formula1>0</formula1></dataValidation>',
-            '<dataValidation type="decimal" operator="greaterThanOrEqual" allowBlank="1" showErrorMessage="1" errorTitle="Invalid tax" error="Tax cannot be negative." sqref="K2:K5001"><formula1>0</formula1></dataValidation>',
         ];
 
         return '<dataValidations count="'.count($rules).'">'.implode('', $rules).'</dataValidations>';
@@ -278,26 +289,6 @@ XML;
         $references[] = $column.(2 + (self::STARTER_ENTRY_COUNT * self::LINES_PER_ENTRY)).':'.$column.'5001';
 
         return implode(' ', $references);
-    }
-
-    private function blockFormattingXml(): string
-    {
-        $lastRow = 1 + (self::STARTER_ENTRY_COUNT * self::LINES_PER_ENTRY);
-
-        return '<conditionalFormatting sqref="A2:L'.$lastRow.'">'
-            .'<cfRule type="expression" dxfId="0" priority="1" stopIfTrue="1"><formula>MOD(ROW()-2,4)=0</formula></cfRule>'
-            .'</conditionalFormatting>'
-            .'<conditionalFormatting sqref="A2:A'.$lastRow.'">'
-            .'<cfRule type="expression" dxfId="3" priority="2"><formula>MOD(INT((ROW()-2)/4),2)=0</formula></cfRule>'
-            .'<cfRule type="expression" dxfId="4" priority="3"><formula>MOD(INT((ROW()-2)/4),2)=1</formula></cfRule>'
-            .'</conditionalFormatting>'
-            .'<conditionalFormatting sqref="B2:G'.$lastRow.' K2:L'.$lastRow.'">'
-            .'<cfRule type="expression" dxfId="1" priority="4"><formula>MOD(ROW()-2,4)&lt;&gt;0</formula></cfRule>'
-            .'</conditionalFormatting>'
-            .'<conditionalFormatting sqref="H2:J'.$lastRow.'"><cfRule type="expression" dxfId="2" priority="5"><formula>1=1</formula></cfRule></conditionalFormatting>'
-            .'<conditionalFormatting sqref="A2:L'.$lastRow.'">'
-            .'<cfRule type="expression" dxfId="5" priority="6"><formula>MOD(ROW()-2,4)=3</formula></cfRule>'
-            .'</conditionalFormatting>';
     }
 
     private function listValidation(string $range, string $formula, bool $allowBlank): string

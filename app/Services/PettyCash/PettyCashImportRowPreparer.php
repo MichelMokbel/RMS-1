@@ -9,7 +9,7 @@ class PettyCashImportRowPreparer
     /** @var array<int, string> */
     private const INVOICE_FIELDS = [
         'supplier', 'reference_number', 'due_date', 'category',
-        'wallet', 'paid', 'tax_amount', 'notes',
+        'wallet', 'paid', 'notes',
     ];
 
     /** @var array<int, string> */

@@ -8,9 +8,11 @@ use App\Models\PettyCashImportRow;
 use App\Models\PettyCashWallet;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Services\PettyCash\PettyCashImportService;
 use App\Services\PettyCash\PettyCashImportTemplateBuilder;
 use App\Support\Imports\SafeSpreadsheetReader;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Volt\Volt;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -98,7 +100,7 @@ it('downloads a controlled petty cash workbook with exact headers and lookup val
         $categories = (string) $zip->getFromName('xl/worksheets/sheet4.xml');
         $wallets = (string) $zip->getFromName('xl/worksheets/sheet5.xml');
 
-        preg_match_all('/<c r="[A-L]1"[^>]*><is><t[^>]*>([^<]+)<\/t><\/is><\/c>/', $expenses, $matches);
+        preg_match_all('/<c r="[A-K]1"[^>]*><is><t[^>]*>([^<]+)<\/t><\/is><\/c>/', $expenses, $matches);
         $headers = array_map(fn (string $value): string => html_entity_decode($value, ENT_QUOTES | ENT_XML1, 'UTF-8'), $matches[1]);
 
         expect($headers)->toBe(PettyCashImportTemplateBuilder::HEADERS)
@@ -108,17 +110,24 @@ it('downloads a controlled petty cash workbook with exact headers and lookup val
             ->and($workbook)->toContain('<sheet name="Suppliers" sheetId="3" state="veryHidden"')
             ->and($workbook)->toContain('<sheet name="Categories" sheetId="4" state="veryHidden"')
             ->and($workbook)->toContain('<sheet name="Wallets" sheetId="5" state="veryHidden"')
-            ->and($expenses)->toContain('sqref="A2:A201"')
-            ->and($expenses)->toContain('dxfId="0" priority="1" stopIfTrue="1"')
-            ->and($styles)->toContain('<dxfs count="6">')
+            ->and($expenses)->not->toContain('<conditionalFormatting')
+            ->and($styles)->not->toContain('<dxfs')
+            ->and($styles)->toContain('<fills count="10">')
+            ->and($styles)->toContain('<cellXfs count="19">')
             ->and($styles)->toContain('<fgColor rgb="FFD1D5DB"/>')
-            ->and($expenses)->toContain('sqref="B2:G201 K2:L201"')
-            ->and($expenses)->toContain('sqref="H2:J201"')
+            ->and($expenses)->toContain('<c r="A2" t="inlineStr" s="8">')
+            ->and($expenses)->toContain('<c r="D2" t="inlineStr" s="9">')
+            ->and($expenses)->toContain('<c r="J2" t="inlineStr" s="11">')
+            ->and($expenses)->toContain('<c r="A3" t="inlineStr" s="17">')
+            ->and($expenses)->toContain('<c r="B3" t="inlineStr" s="12">')
+            ->and($expenses)->toContain('<c r="H3" t="inlineStr" s="14">')
+            ->and($expenses)->toContain('<c r="A7" t="inlineStr" s="18">')
             ->and($expenses)->toContain('sqref="B2 B6 B10')
             ->and($expenses)->toContain('B202:B5001"')
             ->and($expenses)->toContain('<formula1>SupplierValues</formula1>')
             ->and($expenses)->toContain('sqref="G2 G6 G10')
             ->and($expenses)->toContain('sqref="I2:I5001"')
+            ->and($expenses)->not->toContain('sqref="K2:K5001"')
             ->and($expenses)->toMatch('/type="list" allowBlank="1"[^>]+sqref="B2 B6 B10/')
             ->and($expenses)->toMatch('/type="list" allowBlank="1"[^>]+sqref="G2 G6 G10/')
             ->and($expenses)->toMatch('/type="decimal" operator="greaterThan" allowBlank="1"[^>]+sqref="I2:I5001"/')
@@ -148,7 +157,7 @@ it('reviews staged invoice groups with totals and line-level errors before commi
         'object_key' => 'petty-cash/imports/daily-expenses.xlsx',
         'sha256' => str_repeat('a', 64),
         'idempotency_key' => str_repeat('b', 64),
-        'stats' => ['rows' => 1, 'invoices' => 1, 'valid_invoices' => 1, 'invalid_invoices' => 0],
+        'stats' => ['rows' => 1, 'invoices' => 1, 'valid_invoices' => 1, 'invalid_invoices' => 0, 'unpaid_for_insufficient_balance' => 1],
         'initiated_by' => $user->id,
         'initiated_at' => now(),
     ]);
@@ -163,8 +172,10 @@ it('reviews staged invoice groups with totals and line-level errors before commi
             'due_date' => '2026-08-15',
             'category_id' => $category->id,
             'wallet_id' => $wallet->id,
-            'paid' => true,
-            'tax_amount' => 3,
+            'paid' => false,
+            'paid_requested' => true,
+            'settlement_warning' => 'The wallet balance is insufficient, so this invoice will be imported as unpaid.',
+            'tax_amount' => 0,
         ],
         'errors' => [],
         'client_uuid' => fake()->uuid(),
@@ -182,11 +193,12 @@ it('reviews staged invoice groups with totals and line-level errors before commi
             'due_date' => '2026-08-15',
             'category' => $category->id.' | '.$category->name,
             'wallet' => $wallet->id.' | '.$wallet->driver_name,
-            'paid' => true,
+            'paid' => false,
+            'paid_requested' => true,
+            'settlement_warning' => 'The wallet balance is insufficient, so this invoice will be imported as unpaid.',
             'description' => 'Daily supplies',
             'quantity' => 2,
             'unit_price' => 10,
-            'tax_amount' => 3,
             '_sheet_row' => 2,
         ],
         'errors' => [],
@@ -201,7 +213,23 @@ it('reviews staged invoice groups with totals and line-level errors before commi
         ->assertSee('Review Category')
         ->assertSee('Review Wallet')
         ->assertSee('SUP-REF-100')
-        ->assertSee('23.00')
+        ->assertSee('20.00')
+        ->assertDontSee('Tax')
+        ->assertSee('1 invoice was changed to pending because its wallet balance was insufficient.')
+        ->assertSee('The wallet balance is insufficient, so this invoice will be imported as unpaid.')
         ->assertSee('Confirm and Commit')
+        ->assertSee('wire:click="commit"', false)
+        ->assertDontSee('commit-petty-cash-import')
         ->assertSee('No accounting or wallet records have changed yet.');
+
+    $service = Mockery::mock(PettyCashImportService::class);
+    $service->shouldReceive('commit')
+        ->once()
+        ->withArgs(fn (PettyCashImportBatch $received, User $actor): bool => $received->is($batch) && $actor->is($user))
+        ->andReturn($batch);
+    app()->instance(PettyCashImportService::class, $service);
+
+    Volt::test('petty-cash.imports.show', ['batch' => $batch->id])
+        ->call('commit')
+        ->assertHasNoErrors();
 });

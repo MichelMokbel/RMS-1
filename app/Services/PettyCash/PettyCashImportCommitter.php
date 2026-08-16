@@ -77,13 +77,17 @@ class PettyCashImportCommitter
                 }
 
                 $this->lockSuppliers($stagedInvoices);
-                $this->lockAndValidateWalletCapacity($stagedInvoices);
+                $downgradedAtCommit = $this->lockAndApplyWalletCapacity($stagedInvoices);
                 foreach ($stagedInvoices as $stagedInvoice) {
                     $this->commitInvoice($locked, $stagedInvoice, $actor, $businessDate, (string) $company->base_currency);
                 }
 
+                $stats = $locked->stats ?? [];
+                $stats['unpaid_for_insufficient_balance'] = (int) ($stats['unpaid_for_insufficient_balance'] ?? 0)
+                    + $downgradedAtCommit;
                 $locked->forceFill([
                     'status' => 'completed',
+                    'stats' => $stats,
                     'committed_by' => $actor->id,
                     'committed_at' => now(),
                     'failure_reason' => null,
@@ -93,6 +97,7 @@ class PettyCashImportCommitter
                     'business_date' => $businessDate,
                     'invoices' => $stagedInvoices->count(),
                     'rows' => $stagedInvoices->sum(fn ($invoice) => $invoice->rows->count()),
+                    'unpaid_for_insufficient_balance' => $stats['unpaid_for_insufficient_balance'],
                     'target_invoice_ids' => $stagedInvoices->pluck('target_invoice_id')->filter()->values()->all(),
                 ], (int) $locked->company_id);
 
@@ -136,7 +141,7 @@ class PettyCashImportCommitter
             'reference_number' => $header['reference_number'] ?? null,
             'invoice_date' => $businessDate,
             'due_date' => $header['due_date'],
-            'tax_amount' => $header['tax_amount'],
+            'tax_amount' => (float) ($header['tax_amount'] ?? 0),
             'currency_code' => $currencyCode,
             'notes' => $header['notes'] ?? null,
             'source_document_type' => 'petty_cash_expense_import',
@@ -188,37 +193,60 @@ class PettyCashImportCommitter
         Supplier::query()->whereIn('id', $supplierIds)->orderBy('id')->lockForUpdate()->get();
     }
 
-    private function lockAndValidateWalletCapacity($stagedInvoices): void
+    private function lockAndApplyWalletCapacity($stagedInvoices): int
     {
-        $paidByWallet = [];
+        $walletIds = $stagedInvoices
+            ->filter(fn (PettyCashImportInvoice $invoice): bool => (bool) ($invoice->header['paid'] ?? false))
+            ->map(fn (PettyCashImportInvoice $invoice): int => (int) ($invoice->header['wallet_id'] ?? 0))
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values();
+        $wallets = PettyCashWallet::query()
+            ->whereIn('id', $walletIds)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
+        $remainingByWallet = $wallets->map(fn (PettyCashWallet $wallet): float => round((float) $wallet->balance, 2))->all();
+        $downgraded = 0;
+
         foreach ($stagedInvoices as $invoice) {
             $header = $invoice->header;
             if (! (bool) ($header['paid'] ?? false)) {
                 continue;
             }
-            $total = $invoice->rows->sum(fn (PettyCashImportRow $row): float => round(
-                (float) $row->payload['quantity'] * (float) $row->payload['unit_price'],
-                2
-            ));
-            $walletId = (int) $header['wallet_id'];
-            $paidByWallet[$walletId] = round(($paidByWallet[$walletId] ?? 0) + $total + (float) $header['tax_amount'], 2);
-        }
-
-        ksort($paidByWallet);
-        foreach ($paidByWallet as $walletId => $required) {
-            $wallet = PettyCashWallet::query()->whereKey($walletId)->lockForUpdate()->first();
+            $walletId = (int) ($header['wallet_id'] ?? 0);
+            $wallet = $wallets->get($walletId);
             if (! $wallet || ! $wallet->isActive()) {
                 throw ValidationException::withMessages(['wallet_id' => __('A settlement wallet is inactive or missing.')]);
             }
-            if (! config('petty_cash.allow_negative_wallet_balance', false)
-                && round((float) $wallet->balance - $required, 2) < 0) {
-                throw ValidationException::withMessages([
-                    'balance' => __('Wallet :wallet does not have enough balance for this import.', [
-                        'wallet' => $wallet->driver_name,
-                    ]),
-                ]);
+            $total = round($invoice->rows->sum(fn (PettyCashImportRow $row): float => round(
+                (float) $row->payload['quantity'] * (float) $row->payload['unit_price'],
+                2
+            )) + (float) ($header['tax_amount'] ?? 0), 2);
+            if (round($remainingByWallet[$walletId] - $total, 2) >= 0) {
+                $remainingByWallet[$walletId] = round($remainingByWallet[$walletId] - $total, 2);
+
+                continue;
             }
+
+            $message = __('The wallet balance is insufficient, so this invoice was imported as unpaid.');
+            $header['paid_requested'] = true;
+            $header['paid'] = false;
+            $header['settlement_warning'] = $message;
+            $invoice->forceFill(['header' => $header])->save();
+            foreach ($invoice->rows as $row) {
+                $payload = $row->payload;
+                $payload['paid_requested'] = true;
+                $payload['paid'] = false;
+                $payload['settlement_warning'] = $message;
+                $row->forceFill(['payload' => $payload])->save();
+            }
+            $downgraded++;
         }
+
+        return $downgraded;
     }
 
     /** @param array<string, mixed> $header */
