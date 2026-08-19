@@ -80,11 +80,11 @@ it('renders a printable immutable voucher for an AP payment', function () {
         ->assertSee('Received By');
 });
 
-it('links the voucher from both the paid invoice and AP payment pages', function () {
+it('links the voucher from the payments tab and payment detail pages', function () {
     $voucherUrl = route('payables.payments.voucher', $this->payment);
 
     $this->actingAs($this->user)
-        ->get(route('payables.index'))
+        ->get(route('payables.index', ['tab' => 'payments']))
         ->assertOk()
         ->assertSee('Print PV')
         ->assertSee($voucherUrl, false)
