@@ -2,7 +2,6 @@
 
 use App\Models\AccountingCompany;
 use App\Models\ApInvoice;
-use App\Models\ApPayment;
 use App\Models\Branch;
 use App\Models\Department;
 use App\Models\Job;
@@ -12,6 +11,7 @@ use App\Services\Accounting\LedgerAccountMappingService;
 use App\Services\AP\ApInvoicePostingService;
 use App\Services\AP\ApInvoiceVoidService;
 use App\Services\AP\ApReportsService;
+use App\Services\AP\ApWorkspaceQueryService;
 use App\Services\AP\RecurringBillService;
 use App\Services\Spend\ExpenseWorkflowService;
 use App\Support\AP\DocumentTypeMap;
@@ -375,8 +375,10 @@ new #[Layout('components.layouts.app')] class extends Component
                 ? null
                 : $this->documentQuery()->paginate(12, pageName: 'docPage'),
             'paymentPage' => $this->tab === 'payments'
-                ? $this->paymentQuery()->paginate(10, pageName: 'payPage')
+                ? $this->paymentQuery()->paginate(25, pageName: 'payPage')
                 : null,
+            'documentPrintUrl' => route('payables.filtered.print', ['type' => 'documents', ...$this->documentFilters()]),
+            'paymentPrintUrl' => route('payables.filtered.print', ['type' => 'payments', ...$this->paymentFilters()]),
             'recurringTemplates' => $this->tab === 'recurring' && $this->canManageAp()
                 ? RecurringBillTemplate::query()->with(['company', 'supplier', 'lines', 'generatedInvoices'])->latest('updated_at')->get()
                 : collect(),
@@ -395,96 +397,41 @@ new #[Layout('components.layouts.app')] class extends Component
 
     private function documentQuery(): Builder
     {
-        $query = ApInvoice::query()
-            ->with(['supplier', 'category', 'expenseProfile.wallet', 'period', 'allocations.payment'])
-            ->withSum('allocations as paid_sum', 'allocated_amount');
-
-        $query
-            ->when($this->supplier_id, fn (Builder $q) => $q->where('supplier_id', $this->supplier_id))
-            ->when($this->branch_id, fn (Builder $q) => $q->where('branch_id', $this->branch_id))
-            ->when($this->department_id, fn (Builder $q) => $q->where('department_id', $this->department_id))
-            ->when($this->job_id, fn (Builder $q) => $q->where('job_id', $this->job_id))
-            ->when($this->date_from, fn (Builder $q) => $q->whereDate('invoice_date', '>=', $this->date_from))
-            ->when($this->date_to, fn (Builder $q) => $q->whereDate('invoice_date', '<=', $this->date_to))
-            ->when($this->search, function (Builder $q) {
-                $search = '%'.trim((string) $this->search).'%';
-                $q->where(function (Builder $sub) use ($search) {
-                    $sub->where('invoice_number', 'like', $search)
-                        ->orWhere('reference_number', 'like', $search)
-                        ->orWhere('notes', 'like', $search)
-                        ->orWhereHas('supplier', fn (Builder $supplier) => $supplier->where('name', 'like', $search));
-                });
-            })
-            ->when($this->document_type !== 'all', fn (Builder $q) => $q->where('document_type', $this->document_type))
-            ->when($this->approval_status !== 'all', fn (Builder $q) => $q->whereHas('expenseProfile', fn (Builder $profile) => $profile->where('approval_status', $this->approval_status)))
-            ->when($this->expense_channel !== 'all', fn (Builder $q) => $q->whereHas('expenseProfile', fn (Builder $profile) => $profile->where('channel', $this->expense_channel)));
-
-        $this->applyTabFilter($query);
-        $this->applyWorkflowStateFilter($query);
-        $this->applyPaymentStateFilter($query);
-
-        return $query->orderByDesc('invoice_date')->orderByDesc('id');
+        return app(ApWorkspaceQueryService::class)->documents($this->documentFilters());
     }
 
-    private function applyTabFilter(Builder $query): void
+    private function documentFilters(): array
     {
-        match ($this->tab) {
-            'bills' => $query->where('is_expense', false),
-            'expenses' => $query->where('document_type', 'expense'),
-            'reimbursements' => $query->where('document_type', 'reimbursement'),
-            'approvals' => $query->where('is_expense', true)
-                ->whereHas('expenseProfile', fn (Builder $profile) => $profile->whereIn('approval_status', ['draft', 'submitted', 'manager_approved', 'approved'])),
-            default => null,
-        };
-    }
-
-    private function applyWorkflowStateFilter(Builder $query): void
-    {
-        match ($this->workflow_state) {
-            'draft' => $query->where('status', 'draft')->where(function (Builder $sub) {
-                $sub->where('is_expense', false)
-                    ->orWhereHas('expenseProfile', fn (Builder $profile) => $profile->where('approval_status', 'draft'));
-            }),
-            'submitted' => $query->whereHas('expenseProfile', fn (Builder $profile) => $profile->where('approval_status', 'submitted')),
-            'manager_approved' => $query->whereHas('expenseProfile', fn (Builder $profile) => $profile->where('approval_status', 'manager_approved')),
-            'approved_pending_post' => $query->where('is_expense', true)->where('status', 'draft')
-                ->whereHas('expenseProfile', fn (Builder $profile) => $profile->where('approval_status', 'approved')),
-            'posted' => $query->where('status', 'posted'),
-            'posted_pending_settlement' => $query->where('is_expense', true)
-                ->whereIn('status', ['posted', 'partially_paid'])
-                ->whereHas('expenseProfile', fn (Builder $profile) => $profile->whereNull('settled_at')),
-            'partially_paid' => $query->where('status', 'partially_paid'),
-            'closed' => $query->where('status', 'paid'),
-            'rejected' => $query->whereHas('expenseProfile', fn (Builder $profile) => $profile->where('approval_status', 'rejected')),
-            'void' => $query->where('status', 'void'),
-            default => null,
-        };
-    }
-
-    private function applyPaymentStateFilter(Builder $query): void
-    {
-        match ($this->payment_state) {
-            'pending' => $query->where('status', 'draft'),
-            'open' => $query->where('status', 'posted'),
-            'partially_paid' => $query->where('status', 'partially_paid'),
-            'paid' => $query->where('status', 'paid'),
-            'settled' => $query->where('is_expense', true)
-                ->whereHas('expenseProfile', fn (Builder $profile) => $profile->whereNotNull('settled_at')),
-            'void' => $query->where('status', 'void'),
-            default => null,
-        };
+        return [
+            'tab' => $this->tab,
+            'document_type' => $this->document_type,
+            'approval_status' => $this->approval_status,
+            'workflow_state' => $this->workflow_state,
+            'payment_state' => $this->payment_state,
+            'expense_channel' => $this->expense_channel,
+            'supplier_id' => $this->supplier_id,
+            'branch_id' => $this->branch_id,
+            'department_id' => $this->department_id,
+            'job_id' => $this->job_id,
+            'date_from' => $this->date_from,
+            'date_to' => $this->date_to,
+            'search' => $this->search,
+        ];
     }
 
     private function paymentQuery(): Builder
     {
-        return ApPayment::query()
-            ->with(['supplier'])
-            ->withSum('allocations as alloc_sum', 'allocated_amount')
-            ->when($this->payment_supplier_id, fn (Builder $q) => $q->where('supplier_id', $this->payment_supplier_id))
-            ->when($this->payment_method, fn (Builder $q) => $q->where('payment_method', $this->payment_method))
-            ->when($this->payment_date_from, fn (Builder $q) => $q->whereDate('payment_date', '>=', $this->payment_date_from))
-            ->when($this->payment_date_to, fn (Builder $q) => $q->whereDate('payment_date', '<=', $this->payment_date_to))
-            ->orderByDesc('payment_date');
+        return app(ApWorkspaceQueryService::class)->payments($this->paymentFilters());
+    }
+
+    private function paymentFilters(): array
+    {
+        return [
+            'payment_supplier_id' => $this->payment_supplier_id,
+            'payment_method' => $this->payment_method,
+            'payment_date_from' => $this->payment_date_from,
+            'payment_date_to' => $this->payment_date_to,
+        ];
     }
 
     private function settleableExpenseQuery(): Builder
@@ -791,11 +738,14 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
 
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
-            @if($this->canFinanceApprove() && $this->settleableExpenseQuery()->exists())
-                <div class="mb-4 flex justify-end">
+            <div class="mb-4 flex flex-wrap justify-end gap-2">
+                <flux:button :href="$documentPrintUrl" target="_blank" variant="ghost" icon="printer">
+                    {{ __('Print All') }}
+                </flux:button>
+                @if($this->canFinanceApprove() && $this->settleableExpenseQuery()->exists())
                     <flux:button type="button" wire:click="settleAllExpenses" variant="ghost">{{ __('Settle All') }}</flux:button>
-                </div>
-            @endif
+                @endif
+            </div>
             <div class="app-table-shell">
                 <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
                     <thead class="bg-neutral-50 dark:bg-neutral-800/90">
@@ -840,6 +790,7 @@ new #[Layout('components.layouts.app')] class extends Component
                                 <td class="px-3 py-2 text-sm">
                                     <div class="flex flex-wrap justify-end gap-2">
                                         <flux:button size="xs" :href="route('payables.invoices.show', $invoice)" wire:navigate>{{ __('View') }}</flux:button>
+                                        <flux:button size="xs" :href="route('payables.invoices.print', $invoice)" target="_blank" variant="ghost" icon="printer">{{ __('Print') }}</flux:button>
 
                                         @if($this->canManageAp())
                                             @php($voucherPayments = $invoice->allocations->pluck('payment')->filter()->unique('id')->values())
@@ -1223,6 +1174,12 @@ new #[Layout('components.layouts.app')] class extends Component
                 </div>
             </div>
 
+            <div class="flex justify-end">
+                <flux:button :href="$paymentPrintUrl" target="_blank" variant="ghost" icon="printer">
+                    {{ __('Print All') }}
+                </flux:button>
+            </div>
+
             <div class="app-table-shell">
                 <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
                     <thead class="bg-neutral-50 dark:bg-neutral-800/90">
@@ -1244,7 +1201,10 @@ new #[Layout('components.layouts.app')] class extends Component
                                 <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">{{ number_format((float) $payment->amount, 2) }}</td>
                                 <td class="px-3 py-2 text-right text-sm text-neutral-900 dark:text-neutral-100">{{ number_format((float) $payment->alloc_sum, 2) }}</td>
                                 <td class="px-3 py-2 text-right text-sm">
-                                    <flux:button size="xs" :href="route('payables.payments.show', $payment)" wire:navigate>{{ __('View') }}</flux:button>
+                                    <div class="flex flex-wrap justify-end gap-2">
+                                        <flux:button size="xs" :href="route('payables.payments.show', $payment)" wire:navigate>{{ __('View') }}</flux:button>
+                                        <flux:button size="xs" :href="route('payables.payments.voucher', $payment)" target="_blank" variant="ghost" icon="printer">{{ __('Print PV') }}</flux:button>
+                                    </div>
                                 </td>
                             </tr>
                         @empty

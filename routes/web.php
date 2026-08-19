@@ -1,7 +1,9 @@
 <?php
 
 use App\Http\Controllers\AP\ApInvoiceAttachmentPreviewController;
+use App\Http\Controllers\AP\ApInvoicePrintController;
 use App\Http\Controllers\AP\ApPaymentVoucherController;
+use App\Http\Controllers\AP\ApWorkspacePrintController;
 use App\Http\Controllers\Help\HelpBotController;
 use App\Http\Controllers\PettyCash\PettyCashImportTemplateController;
 use App\Http\Controllers\Reports\CustomerStatementReportController;
@@ -1160,8 +1162,10 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|catalog.a
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|finance.access'])->group(function () {
     Volt::route('payables', 'payables.index')->name('payables.index');
+    Route::get('payables/print-all', ApWorkspacePrintController::class)->name('payables.filtered.print');
     Volt::route('payables/create', 'payables.create')->name('payables.create');
     Volt::route('payables/invoices/create', 'payables.invoices.create')->name('payables.invoices.create');
+    Route::get('payables/invoices/{invoice}/print', ApInvoicePrintController::class)->name('payables.invoices.print');
     Volt::route('payables/invoices/{invoice}', 'payables.invoices.show')->name('payables.invoices.show');
     Volt::route('payables/invoices/{invoice}/edit', 'payables.invoices.edit')->name('payables.invoices.edit');
     Route::get('payables/invoices/{invoice}/attachments/{attachment}', ApInvoiceAttachmentPreviewController::class)
