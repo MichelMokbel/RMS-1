@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AP\ApInvoiceAttachmentPreviewController;
+use App\Http\Controllers\AP\ApPaymentVoucherController;
 use App\Http\Controllers\Help\HelpBotController;
 use App\Http\Controllers\PettyCash\PettyCashImportTemplateController;
 use App\Http\Controllers\Reports\CustomerStatementReportController;
@@ -1195,6 +1196,8 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|fin
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|finance.access'])->group(function () {
     Volt::route('payables/payments/create', 'payables.payments.create')->name('payables.payments.create');
+    Route::get('payables/payments/{payment}/voucher', ApPaymentVoucherController::class)
+        ->name('payables.payments.voucher');
     Volt::route('payables/payments/{payment}', 'payables.payments.show')->name('payables.payments.show');
 });
 

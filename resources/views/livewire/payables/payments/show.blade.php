@@ -5,8 +5,10 @@ use App\Services\AP\ApPaymentVoidService;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
-new #[Layout('components.layouts.app')] class extends Component {
+new #[Layout('components.layouts.app')] class extends Component
+{
     public ApPayment $payment;
+
     public ?object $activeClearance = null;
 
     public function mount(ApPayment $payment): void
@@ -36,6 +38,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ $payment->payment_date?->format('Y-m-d') }}</p>
         </div>
         <div class="flex items-center gap-2">
+            <flux:button :href="route('payables.payments.voucher', $payment)" target="_blank" variant="primary" icon="printer">{{ __('Print Voucher') }}</flux:button>
             @if(! $payment->voided_at)
                 <flux:button type="button" wire:click="voidPayment" variant="ghost">{{ __('Void') }}</flux:button>
             @endif

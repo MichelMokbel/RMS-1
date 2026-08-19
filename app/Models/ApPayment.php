@@ -6,8 +6,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use App\Models\Supplier;
-use App\Models\User;
 use Illuminate\Validation\ValidationException;
 
 class ApPayment extends Model
@@ -15,6 +13,7 @@ class ApPayment extends Model
     use HasFactory;
 
     protected $table = 'ap_payments';
+
     public $timestamps = false;
 
     protected $fillable = [
@@ -115,6 +114,11 @@ class ApPayment extends Model
         return $this->belongsTo(BankAccount::class, 'bank_account_id');
     }
 
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class, 'branch_id');
+    }
+
     public function department(): BelongsTo
     {
         return $this->belongsTo(Department::class, 'department_id');
@@ -133,5 +137,12 @@ class ApPayment extends Model
     public function unallocatedAmount(): float
     {
         return (float) $this->amount - $this->allocatedAmount();
+    }
+
+    public function voucherNumber(): string
+    {
+        $year = $this->payment_date?->format('Y') ?? '0000';
+
+        return 'PV-'.$year.'-'.str_pad((string) $this->getKey(), 6, '0', STR_PAD_LEFT);
     }
 }

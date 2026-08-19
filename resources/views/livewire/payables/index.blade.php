@@ -396,7 +396,7 @@ new #[Layout('components.layouts.app')] class extends Component
     private function documentQuery(): Builder
     {
         $query = ApInvoice::query()
-            ->with(['supplier', 'category', 'expenseProfile.wallet', 'period'])
+            ->with(['supplier', 'category', 'expenseProfile.wallet', 'period', 'allocations.payment'])
             ->withSum('allocations as paid_sum', 'allocated_amount');
 
         $query
@@ -840,6 +840,21 @@ new #[Layout('components.layouts.app')] class extends Component
                                 <td class="px-3 py-2 text-sm">
                                     <div class="flex flex-wrap justify-end gap-2">
                                         <flux:button size="xs" :href="route('payables.invoices.show', $invoice)" wire:navigate>{{ __('View') }}</flux:button>
+
+                                        @if($this->canManageAp())
+                                            @php($voucherPayments = $invoice->allocations->pluck('payment')->filter()->unique('id')->values())
+                                            @foreach($voucherPayments as $voucherPayment)
+                                                <flux:button
+                                                    size="xs"
+                                                    :href="route('payables.payments.voucher', $voucherPayment)"
+                                                    target="_blank"
+                                                    variant="ghost"
+                                                    icon="printer"
+                                                >
+                                                    {{ $voucherPayments->count() > 1 ? __('Print PV :number', ['number' => $loop->iteration]) : __('Print PV') }}
+                                                </flux:button>
+                                            @endforeach
+                                        @endif
 
                                         @can('finance.write')
                                             @if($invoice->status === 'draft')

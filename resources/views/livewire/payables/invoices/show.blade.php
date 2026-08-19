@@ -3,21 +3,22 @@
 use App\Models\ApInvoice;
 use App\Services\AP\ApInvoiceAttachmentService;
 use App\Services\AP\ApInvoicePostingService;
+use App\Services\AP\ApInvoiceVoidService;
 use App\Services\AP\PurchaseOrderInvoiceMatchingService;
 use App\Services\AP\SupplierAccountingPolicyService;
-use App\Services\AP\ApInvoiceVoidService;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithFileUploads;
 
-new #[Layout('components.layouts.app')] class extends Component {
+new #[Layout('components.layouts.app')] class extends Component
+{
     use WithFileUploads;
 
     public ApInvoice $invoice;
+
     public array $new_attachments = [];
+
     public string $revision_reason = '';
 
     public function mount(ApInvoice $invoice): void
@@ -335,6 +336,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Amount') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Method') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Reference') }}</th>
+                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Voucher') }}</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -344,9 +346,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ number_format((float)$alloc->allocated_amount, 2) }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $alloc->payment->payment_method }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $alloc->payment->reference ?: '—' }}</td>
+                        <td class="px-3 py-2 text-right text-sm">
+                            @if(auth()->user()?->hasAnyRole(['admin', 'manager']) || auth()->user()?->can('finance.access'))
+                                <flux:button :href="route('payables.payments.voucher', $alloc->payment)" target="_blank" size="xs" variant="ghost" icon="printer">
+                                    {{ __('Payment Voucher') }}
+                                </flux:button>
+                            @else
+                                <span class="text-neutral-400">—</span>
+                            @endif
+                        </td>
                     </tr>
                 @empty
-                    <tr><td colspan="4" class="px-3 py-3 text-sm text-neutral-600 dark:text-neutral-300 text-center">{{ __('No allocations yet.') }}</td></tr>
+                    <tr><td colspan="5" class="px-3 py-3 text-sm text-neutral-600 dark:text-neutral-300 text-center">{{ __('No allocations yet.') }}</td></tr>
                 @endforelse
             </tbody>
         </table>
