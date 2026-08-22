@@ -264,6 +264,10 @@ it('always keeps one empty trailing line on AP creation', function () {
     $component = Volt::test('payables.invoices.create', ['requestedDocumentType' => 'vendor_bill'])
         ->assertCount('lines', 1)
         ->assertSet('lines.0.description', '')
+        ->call('addLine')
+        ->assertCount('lines', 2)
+        ->call('removeLine', 1)
+        ->assertCount('lines', 1)
         ->set('lines.0.description', 'First item')
         ->assertCount('lines', 2)
         ->assertSet('lines.1.description', '')
@@ -281,7 +285,8 @@ it('always keeps one empty trailing line on AP creation', function () {
         ->assertHasNoErrors(['lines.1.description'])
         ->assertCount('lines', 2)
         ->assertSee('A new blank line appears automatically as you enter each item.')
-        ->assertDontSee('Add Line');
+        ->assertSee('Add Line')
+        ->assertSee('wire:model.live.debounce.300ms="lines.1.description"', false);
 
     $component
         ->set('supplier_id', $supplier->id)
@@ -317,10 +322,16 @@ it('always keeps one empty trailing line while editing a draft', function () {
     Volt::test('payables.invoices.edit', ['invoice' => $invoice])
         ->assertCount('lines', 2)
         ->assertSet('lines.1.description', '')
+        ->call('addLine')
+        ->assertCount('lines', 3)
+        ->call('removeLine', 2)
+        ->assertCount('lines', 2)
         ->set('lines.1.description', 'Added item')
         ->assertCount('lines', 3)
         ->assertSet('lines.2.description', '')
         ->set('lines.1.unit_price', 8.5)
+        ->assertSee('Add Line')
+        ->assertSee('wire:model.live.debounce.300ms="lines.2.description"', false)
         ->call('save')
         ->assertHasNoErrors();
 

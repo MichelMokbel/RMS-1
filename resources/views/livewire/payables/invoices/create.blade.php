@@ -124,7 +124,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function addLine(): void
     {
-        $this->ensureTrailingEmptyLine();
+        $this->lines[] = $this->emptyLine();
     }
 
     public function removeLine(int $idx): void
@@ -823,14 +823,17 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
             <div class="flex items-center justify-between">
                 <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Line Items') }}</h2>
-                <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('A new blank line appears automatically as you enter each item.') }}</p>
+                <div class="flex items-center gap-3">
+                    <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('A new blank line appears automatically as you enter each item.') }}</p>
+                    <flux:button type="button" wire:click="addLine">{{ __('Add Line') }}</flux:button>
+                </div>
             </div>
 
             <div class="space-y-3">
                 @foreach ($lines as $index => $line)
                     <div wire:key="ap-invoice-create-line-{{ $index }}" class="grid grid-cols-1 items-end gap-3 rounded-lg border border-neutral-200 p-3 md:grid-cols-12 dark:border-neutral-700">
                         <div class="md:col-span-6">
-                            <flux:input wire:model.blur="lines.{{ $index }}.description" :label="__('Description')" />
+                            <flux:input wire:model.live.debounce.300ms="lines.{{ $index }}.description" :label="__('Description')" />
                             @error("lines.$index.description") <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
                         </div>
                         <div class="md:col-span-2">
