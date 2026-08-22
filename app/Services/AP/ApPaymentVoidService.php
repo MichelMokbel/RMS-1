@@ -4,10 +4,12 @@ namespace App\Services\AP;
 
 use App\Models\ApPayment;
 use App\Models\ApPaymentAllocation;
+use App\Models\ExpenseProfile;
 use App\Models\SubledgerEntry;
 use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\Banking\BankTransactionService;
 use App\Services\Ledger\SubledgerService;
+use App\Services\PettyCash\PettyCashBalanceService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -17,9 +19,9 @@ class ApPaymentVoidService
         protected SubledgerService $subledgerService,
         protected ApInvoiceStatusService $statusService,
         protected BankTransactionService $bankTransactionService,
-        protected AccountingAuditLogService $auditLog
-    ) {
-    }
+        protected AccountingAuditLogService $auditLog,
+        protected PettyCashBalanceService $pettyCashBalanceService,
+    ) {}
 
     public function void(ApPayment $payment, int $userId): ApPayment
     {
@@ -94,11 +96,56 @@ class ApPaymentVoidService
                 'allocation_count' => $allocations->count(),
             ], (int) ($payment->company_id ?? 0) ?: null);
 
+            $restoredWalletAmount = 0.0;
+
             foreach ($invoiceIds as $invoiceId) {
                 $invoice = \App\Models\ApInvoice::whereKey($invoiceId)->lockForUpdate()->first();
                 if ($invoice) {
-                    $this->statusService->recalcStatus($invoice);
+                    $profile = ExpenseProfile::query()
+                        ->whereKey($invoiceId)
+                        ->lockForUpdate()
+                        ->first();
+                    $allocatedAmount = round((float) $allocations
+                        ->where('invoice_id', $invoiceId)
+                        ->sum('allocated_amount'), 2);
+                    $hasOtherActiveAllocations = $invoice->allocations()->exists();
+                    $isRecordedSettlement = $profile
+                        && (int) $profile->settlement_payment_id === (int) $payment->id;
+                    $isLegacySingleSettlement = $profile
+                        && ! $profile->settlement_payment_id
+                        && $profile->settled_at
+                        && ! $hasOtherActiveAllocations;
+
+                    if ($profile
+                        && $payment->payment_method === 'petty_cash'
+                        && $profile->settlement_mode === 'petty_cash_wallet'
+                        && $profile->wallet_id
+                        && ($isRecordedSettlement || $isLegacySingleSettlement)
+                        && $allocatedAmount > 0) {
+                        $this->pettyCashBalanceService->restoreApprovedExpenseAmount(
+                            $profile->wallet()->firstOrFail(),
+                            $allocatedAmount,
+                        );
+                        $restoredWalletAmount = round($restoredWalletAmount + $allocatedAmount, 2);
+                    }
+
+                    $invoice = $this->statusService->recalcStatus($invoice);
+
+                    if ($profile
+                        && ($isRecordedSettlement || $isLegacySingleSettlement)
+                        && $invoice->status !== 'paid') {
+                        $profile->settled_at = null;
+                        $profile->settlement_mode = null;
+                        $profile->settlement_payment_id = null;
+                        $profile->save();
+                    }
                 }
+            }
+
+            if ($restoredWalletAmount > 0) {
+                $this->auditLog->log('ap_payment.petty_cash_restored', $userId, $payment, [
+                    'amount' => $restoredWalletAmount,
+                ], (int) ($payment->company_id ?? 0) ?: null);
             }
 
             return $payment->fresh(['allocations']);

@@ -539,7 +539,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
-    <form wire:submit="saveDraft" class="space-y-6">
+    <form x-on:submit.prevent class="space-y-6">
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
             <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <div>
@@ -813,10 +813,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="flex justify-end gap-3">
             <flux:button :href="route('payables.index')" wire:navigate variant="ghost">{{ __('Cancel') }}</flux:button>
             @if($this->shouldAutoProcessPettyCash())
-                <flux:button type="submit">{{ $not_settled ? __('Create Pending Settlement') : __('Create and Settle') }}</flux:button>
+                <flux:button type="button" wire:click="saveDraft" wire:loading.attr="disabled" wire:target="saveDraft">
+                    {{ $not_settled ? __('Create Pending Settlement') : __('Create and Settle') }}
+                </flux:button>
             @else
-                <flux:button type="submit" variant="ghost">{{ __('Save Draft') }}</flux:button>
-                <flux:button type="button" wire:click="saveAndPost">{{ __('Save and Post') }}</flux:button>
+                <flux:button type="button" wire:click="saveDraft" wire:loading.attr="disabled" wire:target="saveDraft" variant="ghost">{{ __('Save Draft') }}</flux:button>
+                <flux:button type="button" wire:click="saveAndPost" wire:loading.attr="disabled" wire:target="saveAndPost">{{ __('Save and Post') }}</flux:button>
             @endif
         </div>
     </form>

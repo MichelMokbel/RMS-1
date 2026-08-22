@@ -59,6 +59,19 @@ class PettyCashBalanceService
         $lockedWallet->save();
     }
 
+    public function restoreApprovedExpenseAmount(PettyCashWallet $wallet, float $amount): void
+    {
+        $lockedWallet = $this->lockWallet($wallet->id);
+
+        if ($amount <= 0) {
+            throw ValidationException::withMessages(['amount' => __('Amount must be greater than zero.')]);
+        }
+
+        // Reversing a historical payment must remain possible after a wallet is deactivated.
+        $lockedWallet->balance = round((float) $lockedWallet->balance + $amount, 2);
+        $lockedWallet->save();
+    }
+
     public function applyReconciliation(PettyCashWallet $wallet, PettyCashReconciliation $recon): void
     {
         if (! config('petty_cash.apply_reconciliation_to_wallet_balance', true)) {

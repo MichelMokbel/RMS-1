@@ -11,7 +11,9 @@ class ExpenseProfile extends Model
     use HasFactory;
 
     protected $table = 'expense_profiles';
+
     protected $primaryKey = 'invoice_id';
+
     public $incrementing = false;
 
     protected $fillable = [
@@ -32,6 +34,7 @@ class ExpenseProfile extends Model
         'rejection_reason',
         'settled_at',
         'settlement_mode',
+        'settlement_payment_id',
     ];
 
     protected $casts = [
@@ -42,6 +45,7 @@ class ExpenseProfile extends Model
         'finance_approved_at' => 'datetime',
         'rejected_at' => 'datetime',
         'settled_at' => 'datetime',
+        'settlement_payment_id' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -54,6 +58,11 @@ class ExpenseProfile extends Model
     public function wallet(): BelongsTo
     {
         return $this->belongsTo(PettyCashWallet::class, 'wallet_id');
+    }
+
+    public function settlementPayment(): BelongsTo
+    {
+        return $this->belongsTo(ApPayment::class, 'settlement_payment_id');
     }
 
     public function submitter(): BelongsTo

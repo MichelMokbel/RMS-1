@@ -4,6 +4,7 @@ use App\Models\ApInvoice;
 use App\Services\AP\ApInvoiceAttachmentService;
 use App\Services\AP\ApInvoicePostingService;
 use App\Services\AP\ApInvoiceVoidService;
+use App\Services\AP\PaidExpenseCorrectionService;
 use App\Services\AP\PurchaseOrderInvoiceMatchingService;
 use App\Services\AP\SupplierAccountingPolicyService;
 use Illuminate\Validation\ValidationException;
@@ -40,8 +41,10 @@ new #[Layout('components.layouts.app')] class extends Component
         session()->flash('status', __('Invoice voided.'));
     }
 
-    public function revise(ApInvoiceVoidService $voidService): void
-    {
+    public function revise(
+        ApInvoiceVoidService $voidService,
+        PaidExpenseCorrectionService $correctionService,
+    ): void {
         abort_unless($this->canManageInvoice(), 403);
         $this->resetErrorBag();
         $data = $this->validate([
@@ -49,23 +52,48 @@ new #[Layout('components.layouts.app')] class extends Component
         ]);
 
         try {
-            $revision = $voidService->voidAndDuplicate(
-                $this->invoice,
-                (int) auth()->id(),
-                $data['revision_reason'] ?? null
-            );
+            $revision = $this->canCorrectClosedExpense()
+                ? $correctionService->createEditableVersion(
+                    $this->invoice,
+                    (int) auth()->id(),
+                    $data['revision_reason'] ?? null,
+                )
+                : $voidService->voidAndDuplicate(
+                    $this->invoice,
+                    (int) auth()->id(),
+                    $data['revision_reason'] ?? null,
+                );
         } catch (ValidationException $exception) {
-            foreach ($exception->errors() as $field => $messages) {
-                foreach ($messages as $message) {
-                    $this->addError($field, $message);
-                }
-            }
+            $this->addValidationErrors($exception);
 
             return;
         }
 
         session()->flash('status', __('Invoice voided and revision draft created.'));
         $this->redirectRoute('payables.invoices.edit', $revision, navigate: true);
+    }
+
+    public function voidClosedExpense(PaidExpenseCorrectionService $correctionService): void
+    {
+        abort_unless($this->canCorrectClosedExpense(), 403);
+        $this->resetErrorBag();
+        $data = $this->validate([
+            'revision_reason' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        try {
+            $this->invoice = $correctionService->voidExpense(
+                $this->invoice,
+                (int) auth()->id(),
+                $data['revision_reason'] ?? null,
+            );
+        } catch (ValidationException $exception) {
+            $this->addValidationErrors($exception);
+
+            return;
+        }
+
+        session()->flash('status', __('Expense settlement reversed and expense voided.'));
     }
 
     public function uploadAttachments(ApInvoiceAttachmentService $attachmentService): void
@@ -118,6 +146,24 @@ new #[Layout('components.layouts.app')] class extends Component
             && $this->invoice->document_type !== 'landed_cost_adjustment';
     }
 
+    public function canCorrectClosedExpense(): bool
+    {
+        return $this->canManageInvoice()
+            && $this->invoice->is_expense
+            && in_array($this->invoice->status, ['paid', 'partially_paid'], true)
+            && $this->invoice->allocations->isNotEmpty()
+            && $this->invoice->document_type !== 'landed_cost_adjustment';
+    }
+
+    private function addValidationErrors(ValidationException $exception): void
+    {
+        foreach ($exception->errors() as $field => $messages) {
+            foreach ($messages as $message) {
+                $this->addError($field, $message);
+            }
+        }
+    }
+
     public function revisionHistory()
     {
         $rootId = $this->invoice->rootInvoiceId();
@@ -160,10 +206,10 @@ new #[Layout('components.layouts.app')] class extends Component
                 @if($invoice->status === 'draft')
                     <flux:button type="button" wire:click="post">{{ __('Post') }}</flux:button>
                     <flux:button :href="route('payables.invoices.edit', $invoice)" wire:navigate>{{ __('Edit') }}</flux:button>
-                @elseif($this->canCreateRevision())
+                @elseif($this->canCreateRevision() || $this->canCorrectClosedExpense())
                     <flux:modal.trigger name="revise-ap-invoice-modal">
                         <flux:button type="button" x-data="" x-on:click.prevent="$dispatch('open-modal', 'revise-ap-invoice-modal')">
-                            {{ __('Create Editable Version') }}
+                            {{ $this->canCorrectClosedExpense() ? __('Correct Expense') : __('Create Editable Version') }}
                         </flux:button>
                     </flux:modal.trigger>
                 @endif
@@ -364,17 +410,23 @@ new #[Layout('components.layouts.app')] class extends Component
     </div>
 
     @if($this->canManageInvoice())
-        <flux:modal name="revise-ap-invoice-modal" :show="$errors->has('status') || $errors->has('document_type') || $errors->has('ledger') || $errors->has('invoice_number') || $errors->has('attachment')" focusable class="max-w-lg">
+        <flux:modal name="revise-ap-invoice-modal" :show="$errors->has('status') || $errors->has('document_type') || $errors->has('ledger') || $errors->has('invoice_number') || $errors->has('attachment') || $errors->has('payment') || $errors->has('wallet_id') || $errors->has('period')" focusable class="max-w-lg">
             <div class="space-y-6">
                 <div>
-                    <flux:heading size="lg">{{ __('Create Editable Invoice Version') }}</flux:heading>
+                    <flux:heading size="lg">
+                        {{ $this->canCorrectClosedExpense() ? __('Correct Closed Expense') : __('Create Editable Invoice Version') }}
+                    </flux:heading>
                     <flux:subheading>
-                        {{ __('The posted invoice will be voided and reversed. A linked draft version will open for editing, with independent copies of the existing attachments.') }}
+                        @if($this->canCorrectClosedExpense())
+                            {{ __('The linked payment will be reversed first. Petty cash funds, when applicable, will be returned to the wallet. The original expense will remain as void audit history, and a linked draft can be opened for correction.') }}
+                        @else
+                            {{ __('The posted invoice will be voided and reversed. A linked draft version will open for editing, with independent copies of the existing attachments.') }}
+                        @endif
                     </flux:subheading>
                 </div>
 
                 <flux:input wire:model="revision_reason" :label="__('Correction reason (optional)')" />
-                @foreach(['status', 'document_type', 'ledger', 'invoice_number', 'attachment'] as $revisionError)
+                @foreach(['status', 'document_type', 'ledger', 'invoice_number', 'attachment', 'payment', 'wallet_id', 'period'] as $revisionError)
                     @error($revisionError) <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
                 @endforeach
 
@@ -382,9 +434,23 @@ new #[Layout('components.layouts.app')] class extends Component
                     <flux:modal.close>
                         <flux:button variant="filled">{{ __('Cancel') }}</flux:button>
                     </flux:modal.close>
-                    <flux:button type="button" wire:click="revise" variant="primary">
-                        {{ __('Void & Create Draft') }}
-                    </flux:button>
+                    @if($this->canCorrectClosedExpense())
+                        <flux:button
+                            type="button"
+                            wire:click="voidClosedExpense"
+                            wire:confirm="{{ __('Reverse the settlement and permanently void this expense without creating a replacement draft?') }}"
+                            variant="danger"
+                        >
+                            {{ __('Void Expense') }}
+                        </flux:button>
+                        <flux:button type="button" wire:click="revise" variant="primary">
+                            {{ __('Reverse & Create Draft') }}
+                        </flux:button>
+                    @else
+                        <flux:button type="button" wire:click="revise" variant="primary">
+                            {{ __('Void & Create Draft') }}
+                        </flux:button>
+                    @endif
                 </div>
             </div>
         </flux:modal>

@@ -92,7 +92,48 @@ it('shows the not settled control for admin petty cash creation', function () {
         ->get('/payables/invoices/create?document_type=expense&expense_channel=petty_cash')
         ->assertOk()
         ->assertSee('Not settled')
-        ->assertSee('Create and Settle');
+        ->assertSee('Create and Settle')
+        ->assertSee('x-on:submit.prevent', false)
+        ->assertDontSee('wire:submit="saveDraft"', false)
+        ->assertSee('wire:click="saveDraft"', false);
+});
+
+it('offers an accounting-safe correction flow for closed expenses', function () {
+    $admin = User::factory()->create();
+    $admin->assignRole('admin');
+    $invoice = ApInvoice::factory()->create([
+        'status' => 'paid',
+        'document_type' => 'expense',
+        'is_expense' => true,
+        'invoice_number' => 'PC-CLOSED-100',
+        'total_amount' => 75,
+    ]);
+    ExpenseProfile::query()->create([
+        'invoice_id' => $invoice->id,
+        'channel' => 'petty_cash',
+        'approval_status' => 'approved',
+        'settled_at' => now(),
+        'settlement_mode' => 'petty_cash_wallet',
+    ]);
+    $payment = ApPayment::factory()->create([
+        'supplier_id' => $invoice->supplier_id,
+        'amount' => 75,
+        'payment_method' => 'petty_cash',
+    ]);
+    ApPaymentAllocation::factory()->create([
+        'payment_id' => $payment->id,
+        'invoice_id' => $invoice->id,
+        'allocated_amount' => 75,
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('payables.invoices.show', $invoice))
+        ->assertOk()
+        ->assertSee('Correct Expense')
+        ->assertSee('Correct Closed Expense')
+        ->assertSee('Void Expense')
+        ->assertSee('Reverse &amp; Create Draft', false)
+        ->assertDontSee('href="'.route('payables.invoices.edit', $invoice).'"', false);
 });
 
 it('shows and searches AP invoice reference numbers in the workspace', function () {

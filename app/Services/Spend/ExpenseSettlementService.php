@@ -103,6 +103,7 @@ class ExpenseSettlementService
             $profile->settlement_mode = $profile->channel === 'petty_cash'
                 ? 'petty_cash_wallet'
                 : 'manual_ap_payment';
+            $profile->settlement_payment_id = $payment->id;
             $profile->save();
 
             return [

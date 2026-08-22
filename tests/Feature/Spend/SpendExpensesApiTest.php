@@ -2,10 +2,13 @@
 
 use App\Models\ApInvoice;
 use App\Models\ApPayment;
+use App\Models\ApPaymentAllocation;
 use App\Models\ExpenseCategory;
 use App\Models\PettyCashWallet;
+use App\Models\SubledgerEntry;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Services\AP\PaidExpenseCorrectionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -126,6 +129,115 @@ it('auto posts and settles admin petty cash expenses on create by default', func
     ]);
 
     expect((float) $this->wallet->fresh()->balance)->toBe(400.0);
+});
+
+it('reverses a closed petty cash expense and creates an editable audited version', function () {
+    $expense = createDraftExpense($this->admin, [
+        'channel' => 'petty_cash',
+        'wallet_id' => $this->wallet->id,
+        'amount' => 100,
+        'reference' => 'PC-CORRECTION-100',
+    ]);
+    $source = ApInvoice::query()->findOrFail((int) $expense['id']);
+    $allocation = ApPaymentAllocation::query()
+        ->where('invoice_id', $source->id)
+        ->whereNull('voided_at')
+        ->firstOrFail();
+    $payment = $allocation->payment;
+
+    expect((float) $this->wallet->fresh()->balance)->toBe(400.0)
+        ->and($source->expenseProfile->settlement_payment_id)->toBe($payment->id);
+
+    // Deactivation must not trap historical wallet funds during a correction.
+    $this->wallet->forceFill(['active' => false])->save();
+    $revision = app(PaidExpenseCorrectionService::class)->createEditableVersion(
+        $source,
+        $this->admin->id,
+        'Correct amount',
+    );
+
+    expect($source->fresh()->status)->toBe('void')
+        ->and($source->fresh()->void_reason)->toBe('Correct amount')
+        ->and($payment->fresh()->voided_at)->not->toBeNull()
+        ->and($allocation->fresh()->voided_at)->not->toBeNull()
+        ->and((float) $this->wallet->fresh()->balance)->toBe(500.0)
+        ->and($source->expenseProfile()->firstOrFail()->settled_at)->toBeNull()
+        ->and($source->expenseProfile()->firstOrFail()->settlement_mode)->toBeNull()
+        ->and($source->expenseProfile()->firstOrFail()->settlement_payment_id)->toBeNull()
+        ->and($revision->status)->toBe('draft')
+        ->and($revision->revision_source_id)->toBe($source->id)
+        ->and($revision->reference_number)->toBe('PC-CORRECTION-100')
+        ->and($revision->expenseProfile->approval_status)->toBe('draft')
+        ->and($revision->expenseProfile->wallet_id)->toBe($this->wallet->id);
+
+    expect(SubledgerEntry::query()
+        ->where('source_type', 'ap_payment')
+        ->where('source_id', $payment->id)
+        ->where('event', 'void')
+        ->exists())->toBeTrue()
+        ->and(SubledgerEntry::query()
+            ->where('source_type', 'ap_invoice')
+            ->where('source_id', $source->id)
+            ->where('event', 'void')
+            ->exists())->toBeTrue();
+});
+
+it('blocks closed expense correction when its payment is shared with another invoice', function () {
+    $expense = createDraftExpense($this->admin, [
+        'channel' => 'petty_cash',
+        'wallet_id' => $this->wallet->id,
+        'amount' => 100,
+    ]);
+    $source = ApInvoice::query()->findOrFail((int) $expense['id']);
+    $allocation = ApPaymentAllocation::query()
+        ->where('invoice_id', $source->id)
+        ->whereNull('voided_at')
+        ->firstOrFail();
+    $otherInvoice = ApInvoice::factory()->create([
+        'company_id' => $source->company_id,
+        'supplier_id' => $source->supplier_id,
+        'status' => 'partially_paid',
+        'total_amount' => 25,
+    ]);
+    ApPaymentAllocation::factory()->create([
+        'payment_id' => $allocation->payment_id,
+        'invoice_id' => $otherInvoice->id,
+        'allocated_amount' => 5,
+    ]);
+
+    expect(fn () => app(PaidExpenseCorrectionService::class)->createEditableVersion(
+        $source,
+        $this->admin->id,
+        'Must not touch shared payment',
+    ))->toThrow(\Illuminate\Validation\ValidationException::class, 'shared with another invoice');
+
+    expect($source->fresh()->status)->toBe('paid')
+        ->and($allocation->payment->fresh()->voided_at)->toBeNull()
+        ->and($allocation->fresh()->voided_at)->toBeNull()
+        ->and((float) $this->wallet->fresh()->balance)->toBe(400.0)
+        ->and(ApInvoice::query()->where('revision_source_id', $source->id)->exists())->toBeFalse();
+});
+
+it('can reverse and void a closed expense without creating a replacement', function () {
+    $expense = createDraftExpense($this->admin, [
+        'channel' => 'petty_cash',
+        'wallet_id' => $this->wallet->id,
+        'amount' => 60,
+    ]);
+    $source = ApInvoice::query()->findOrFail((int) $expense['id']);
+    $payment = $source->allocations()->firstOrFail()->payment;
+
+    $voided = app(PaidExpenseCorrectionService::class)->voidExpense(
+        $source,
+        $this->admin->id,
+        'Duplicate receipt',
+    );
+
+    expect($voided->status)->toBe('void')
+        ->and($voided->void_reason)->toBe('Duplicate receipt')
+        ->and($payment->fresh()->voided_at)->not->toBeNull()
+        ->and((float) $this->wallet->fresh()->balance)->toBe(500.0)
+        ->and(ApInvoice::query()->where('revision_source_id', $source->id)->exists())->toBeFalse();
 });
 
 it('lets admin create petty cash expenses as posted but unsettled when requested', function () {
