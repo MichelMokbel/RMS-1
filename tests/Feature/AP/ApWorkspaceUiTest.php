@@ -294,6 +294,41 @@ it('always keeps one empty trailing line on AP creation', function () {
         ->and($invoice->items()->firstOrFail()->description)->toBe('First item');
 });
 
+it('always keeps one empty trailing line while editing a draft', function () {
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+    $supplier = Supplier::factory()->create();
+    $invoice = ApInvoice::factory()->create([
+        'supplier_id' => $supplier->id,
+        'status' => 'draft',
+        'document_type' => 'vendor_bill',
+        'is_expense' => false,
+        'invoice_number' => 'AP-EDIT-AUTO-LINE-100',
+    ]);
+    ApInvoiceItem::query()->create([
+        'invoice_id' => $invoice->id,
+        'description' => 'Existing item',
+        'quantity' => 1,
+        'unit_price' => 12,
+        'line_total' => 12,
+    ]);
+
+    Volt::actingAs($user);
+    Volt::test('payables.invoices.edit', ['invoice' => $invoice])
+        ->assertCount('lines', 2)
+        ->assertSet('lines.1.description', '')
+        ->set('lines.1.description', 'Added item')
+        ->assertCount('lines', 3)
+        ->assertSet('lines.2.description', '')
+        ->set('lines.1.unit_price', 8.5)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($invoice->items()->count())->toBe(2)
+        ->and($invoice->items()->orderBy('id')->pluck('description')->all())
+        ->toBe(['Existing item', 'Added item']);
+});
+
 it('removes the is_expense checkbox from create and edit forms', function () {
     $user = User::factory()->create();
     $user->assignRole('admin');

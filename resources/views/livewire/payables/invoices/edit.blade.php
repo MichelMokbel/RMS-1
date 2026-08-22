@@ -77,6 +77,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'unit_price' => $line->unit_price,
             'line_total' => $line->line_total,
         ])->toArray();
+        $this->ensureTrailingEmptyLine();
     }
 
     public function updatedDocumentType(): void
@@ -129,18 +130,20 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function addLine(): void
     {
-        $this->lines[] = ['purchase_order_item_id' => null, 'description' => '', 'quantity' => 1, 'unit_price' => 0, 'line_total' => 0];
+        $this->ensureTrailingEmptyLine();
     }
 
     public function removeLine(int $idx): void
     {
         unset($this->lines[$idx]);
         $this->lines = array_values($this->lines);
+        $this->ensureTrailingEmptyLine();
     }
 
     public function updatedLines(): void
     {
         $this->recalc();
+        $this->ensureTrailingEmptyLine();
     }
 
     public function save(ApInvoiceTotalsService $totalsService, ExpenseWorkflowService $expenseWorkflowService, ApInvoiceAttachmentService $attachmentService): void
@@ -152,11 +155,17 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->recalc();
         $this->lines = collect($this->lines)
-            ->filter(fn ($line) => ! empty($line['description']) && (float) ($line['quantity'] ?? 0) > 0)
+            ->reject(fn (array $line) => $this->isLineEmpty($line))
             ->values()
             ->toArray();
 
-        $data = $this->validate($this->rules());
+        try {
+            $data = $this->validate($this->rules());
+        } catch (ValidationException $exception) {
+            $this->ensureTrailingEmptyLine();
+
+            throw $exception;
+        }
         $document = DocumentTypeMap::derive($data['document_type'], $data['expense_channel'] ?? null);
         $supplierId = $this->resolveSupplierId($data, $document['expense_channel']);
         app(SupplierAccountingPolicyService::class)->assertCanCreateDraft(Supplier::query()->find($supplierId));
@@ -296,6 +305,48 @@ new #[Layout('components.layouts.app')] class extends Component {
             $unit = (float) ($line['unit_price'] ?? 0);
             $this->lines[$index]['line_total'] = round($qty * $unit, 2);
         }
+    }
+
+    private function ensureTrailingEmptyLine(): void
+    {
+        $this->lines = array_values($this->lines);
+
+        while (count($this->lines) > 1
+            && $this->isLineEmpty($this->lines[array_key_last($this->lines)])
+            && $this->isLineEmpty($this->lines[array_key_last($this->lines) - 1])) {
+            array_pop($this->lines);
+        }
+
+        if ($this->lines === [] || ! $this->isLineEmpty($this->lines[array_key_last($this->lines)])) {
+            $this->lines[] = $this->emptyLine();
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $line
+     */
+    private function isLineEmpty(array $line): bool
+    {
+        $quantity = $line['quantity'] ?? 1;
+
+        return empty($line['purchase_order_item_id'])
+            && trim((string) ($line['description'] ?? '')) === ''
+            && ($quantity === null || $quantity === '' || (float) $quantity === 1.0)
+            && (float) ($line['unit_price'] ?? 0) === 0.0;
+    }
+
+    /**
+     * @return array{purchase_order_item_id: null, description: string, quantity: int, unit_price: int, line_total: int}
+     */
+    private function emptyLine(): array
+    {
+        return [
+            'purchase_order_item_id' => null,
+            'description' => '',
+            'quantity' => 1,
+            'unit_price' => 0,
+            'line_total' => 0,
+        ];
     }
 
     private function shouldRequireSupplier(string $documentType, ?string $expenseChannel): bool
@@ -655,14 +706,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
             <div class="flex items-center justify-between">
                 <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Line Items') }}</h2>
-                <flux:button type="button" wire:click="addLine">{{ __('Add Line') }}</flux:button>
+                <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ __('A new blank line appears automatically as you enter each item.') }}</p>
             </div>
 
             <div class="space-y-3">
                 @foreach ($lines as $index => $line)
                     <div wire:key="ap-invoice-edit-line-{{ $index }}" class="grid grid-cols-1 items-end gap-3 rounded-lg border border-neutral-200 p-3 md:grid-cols-12 dark:border-neutral-700">
                         <div class="md:col-span-6">
-                            <flux:input wire:model="lines.{{ $index }}.description" :label="__('Description')" />
+                            <flux:input wire:model.blur="lines.{{ $index }}.description" :label="__('Description')" />
                         </div>
                         <div class="md:col-span-2">
                             <flux:input wire:model.live="lines.{{ $index }}.quantity" type="number" step="0.001" min="0.001" :label="__('Qty')" />
