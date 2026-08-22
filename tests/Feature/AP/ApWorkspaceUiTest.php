@@ -243,15 +243,17 @@ it('updates AP unit prices on blur and uses stable line keys', function () {
     $this->actingAs($user)
         ->get('/payables/invoices/create?document_type=vendor_bill')
         ->assertOk()
-        ->assertSee('wire:model.blur="lines.0.unit_price"', false)
+        ->assertSee('wire:model="lines.0.unit_price" wire:blur="refreshLines"', false)
         ->assertDontSee('wire:model.live="lines.0.unit_price"', false)
+        ->assertDontSee('wire:model.blur="lines.0.unit_price"', false)
         ->assertSee('wire:key="ap-invoice-create-line-0"', false);
 
     $this->actingAs($user)
         ->get("/payables/invoices/{$invoice->id}/edit")
         ->assertOk()
-        ->assertSee('wire:model.blur="lines.0.unit_price"', false)
+        ->assertSee('wire:model="lines.0.unit_price" wire:blur="refreshLines"', false)
         ->assertDontSee('wire:model.live="lines.0.unit_price"', false)
+        ->assertDontSee('wire:model.blur="lines.0.unit_price"', false)
         ->assertSee('wire:key="ap-invoice-edit-line-0"', false);
 });
 
@@ -272,6 +274,8 @@ it('always keeps one empty trailing line on AP creation', function () {
         ->assertCount('lines', 2)
         ->assertSet('lines.1.description', '')
         ->set('lines.0.unit_price', 15.25)
+        ->call('refreshLines')
+        ->assertSet('lines.0.line_total', 15.25)
         ->assertCount('lines', 2)
         ->set('lines.1.description', 'Second item')
         ->assertCount('lines', 3)
@@ -286,7 +290,7 @@ it('always keeps one empty trailing line on AP creation', function () {
         ->assertCount('lines', 2)
         ->assertSee('A new blank line appears automatically as you enter each item.')
         ->assertSee('Add Line')
-        ->assertSee('wire:model.live.debounce.300ms="lines.1.description"', false);
+        ->assertSee('wire:model="lines.1.description" wire:blur="refreshLines"', false);
 
     $component
         ->set('supplier_id', $supplier->id)
@@ -330,8 +334,10 @@ it('always keeps one empty trailing line while editing a draft', function () {
         ->assertCount('lines', 3)
         ->assertSet('lines.2.description', '')
         ->set('lines.1.unit_price', 8.5)
+        ->call('refreshLines')
+        ->assertSet('lines.1.line_total', 8.5)
         ->assertSee('Add Line')
-        ->assertSee('wire:model.live.debounce.300ms="lines.2.description"', false)
+        ->assertSee('wire:model="lines.2.description" wire:blur="refreshLines"', false)
         ->call('save')
         ->assertHasNoErrors();
 

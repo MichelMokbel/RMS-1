@@ -146,6 +146,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->ensureTrailingEmptyLine();
     }
 
+    public function refreshLines(): void
+    {
+        $this->recalc();
+        $this->ensureTrailingEmptyLine();
+    }
+
     public function save(ApInvoiceTotalsService $totalsService, ExpenseWorkflowService $expenseWorkflowService, ApInvoiceAttachmentService $attachmentService): void
     {
         $this->invoice->refresh();
@@ -716,13 +722,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @foreach ($lines as $index => $line)
                     <div wire:key="ap-invoice-edit-line-{{ $index }}" class="grid grid-cols-1 items-end gap-3 rounded-lg border border-neutral-200 p-3 md:grid-cols-12 dark:border-neutral-700">
                         <div class="md:col-span-6">
-                            <flux:input wire:model.live.debounce.300ms="lines.{{ $index }}.description" :label="__('Description')" />
+                            <flux:input wire:model="lines.{{ $index }}.description" wire:blur="refreshLines" :label="__('Description')" />
                         </div>
                         <div class="md:col-span-2">
                             <flux:input wire:model.live="lines.{{ $index }}.quantity" type="number" step="0.001" min="0.001" :label="__('Qty')" />
                         </div>
                         <div class="md:col-span-2">
-                            <flux:input wire:model.blur="lines.{{ $index }}.unit_price" type="number" step="0.0001" min="0" :label="__('Unit Price')" />
+                            <flux:input wire:model="lines.{{ $index }}.unit_price" wire:blur="refreshLines" type="number" step="0.0001" min="0" :label="__('Unit Price')" />
                         </div>
                         <div class="md:col-span-1">
                             <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Line Total') }}</label>
