@@ -255,6 +255,45 @@ it('updates AP unit prices on blur and uses stable line keys', function () {
         ->assertSee('wire:key="ap-invoice-edit-line-0"', false);
 });
 
+it('always keeps one empty trailing line on AP creation', function () {
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+    $supplier = Supplier::factory()->create();
+
+    Volt::actingAs($user);
+    $component = Volt::test('payables.invoices.create', ['requestedDocumentType' => 'vendor_bill'])
+        ->assertCount('lines', 1)
+        ->assertSet('lines.0.description', '')
+        ->set('lines.0.description', 'First item')
+        ->assertCount('lines', 2)
+        ->assertSet('lines.1.description', '')
+        ->set('lines.0.unit_price', 15.25)
+        ->assertCount('lines', 2)
+        ->set('lines.1.description', 'Second item')
+        ->assertCount('lines', 3)
+        ->assertSet('lines.2.description', '');
+
+    $component
+        ->set('lines.1.description', '')
+        ->assertCount('lines', 2)
+        ->call('saveDraft')
+        ->assertHasErrors(['invoice_number'])
+        ->assertHasNoErrors(['lines.1.description'])
+        ->assertCount('lines', 2)
+        ->assertSee('A new blank line appears automatically as you enter each item.')
+        ->assertDontSee('Add Line');
+
+    $component
+        ->set('supplier_id', $supplier->id)
+        ->set('invoice_number', 'AP-AUTO-LINE-100')
+        ->call('saveDraft')
+        ->assertHasNoErrors();
+
+    $invoice = ApInvoice::query()->where('invoice_number', 'AP-AUTO-LINE-100')->firstOrFail();
+    expect($invoice->items()->count())->toBe(1)
+        ->and($invoice->items()->firstOrFail()->description)->toBe('First item');
+});
+
 it('removes the is_expense checkbox from create and edit forms', function () {
     $user = User::factory()->create();
     $user->assignRole('admin');
