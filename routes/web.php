@@ -1161,6 +1161,9 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|catalog.a
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|finance.access'])->group(function () {
     Volt::route('payables', 'payables.index')->name('payables.index');
+    Volt::route('payables/categories', 'payables.categories.index')
+        ->name('payables.categories.index')
+        ->middleware('can:finance.write');
     Volt::route('payables/create', 'payables.create')->name('payables.create');
     Volt::route('payables/invoices/create', 'payables.invoices.create')->name('payables.invoices.create');
     Volt::route('payables/invoices/{invoice}', 'payables.invoices.show')->name('payables.invoices.show');
@@ -1176,7 +1179,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|fin
     Volt::route('petty-cash/imports/{batch}', 'petty-cash.imports.show')->name('petty-cash.imports.show')->middleware(['role:admin', 'can:petty_cash.import']);
     Route::get('expenses', fn () => redirect()->route('payables.index', ['tab' => 'expenses']))->name('expenses.index');
     Route::get('expenses/create', fn () => redirect()->route('payables.create'))->name('expenses.create');
-    Route::get('expenses/categories', fn () => redirect()->route('payables.index', ['tab' => 'expenses']))->name('expenses.categories');
+    Route::get('expenses/categories', fn () => redirect()->route('payables.categories.index'))->name('expenses.categories');
     Route::get('expenses/{expense}', fn ($expense) => redirect()->route('payables.invoices.show', $expense))->name('expenses.show');
     Route::get('expenses/{expense}/edit', fn ($expense) => redirect()->route('payables.invoices.edit', $expense))->name('expenses.edit');
     Volt::route('accounting', 'accounting.dashboard')->name('accounting.dashboard');

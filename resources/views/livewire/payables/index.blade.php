@@ -585,6 +585,11 @@ new #[Layout('components.layouts.app')] class extends Component
             <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Bills, expenses, reimbursements, approvals, payments, and aging in one finance workspace.') }}</p>
         </div>
         <div class="flex flex-wrap gap-2">
+            @can('finance.write')
+                <flux:button :href="route('payables.categories.index')" wire:navigate variant="ghost" icon="tag">
+                    {{ __('Expense Categories') }}
+                </flux:button>
+            @endcan
             @if(auth()->user()?->hasRole('admin') && auth()->user()?->can('petty_cash.import'))
                 <flux:button :href="route('petty-cash.imports.index')" wire:navigate variant="ghost" icon="arrow-up-tray">
                     {{ __('Import Expenses') }}

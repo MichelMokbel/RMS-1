@@ -318,7 +318,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             'job_id' => ['nullable', 'integer', 'exists:accounting_jobs,id'],
             'job_phase_id' => ['nullable', 'integer', 'exists:accounting_job_phases,id'],
             'job_cost_code_id' => ['nullable', 'integer', 'exists:accounting_job_cost_codes,id'],
-            'category_id' => ['nullable', 'integer', 'exists:expense_categories,id'],
+            'category_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('expense_categories', 'id')->where(fn ($query) => $query->where('active', true)),
+            ],
             'document_type' => ['required', Rule::in(DocumentTypeMap::types())],
             'expense_channel' => ['nullable', 'in:vendor,petty_cash,reimbursement'],
             'wallet_id' => ['nullable', 'integer', 'exists:petty_cash_wallets,id'],
@@ -496,7 +500,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function categories()
     {
-        return Schema::hasTable('expense_categories') ? ExpenseCategory::query()->orderBy('name')->get() : collect();
+        return Schema::hasTable('expense_categories')
+            ? ExpenseCategory::query()->where('active', true)->orderBy('name')->get()
+            : collect();
     }
 
     public function jobs()

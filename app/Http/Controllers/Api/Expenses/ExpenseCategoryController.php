@@ -6,8 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Expenses\ExpenseCategoryStoreRequest;
 use App\Http\Requests\Expenses\ExpenseCategoryUpdateRequest;
 use App\Models\ExpenseCategory;
+use App\Services\AP\ExpenseCategoryService;
 use Illuminate\Http\Response;
-use Illuminate\Validation\ValidationException;
 
 class ExpenseCategoryController extends Controller
 {
@@ -16,24 +16,22 @@ class ExpenseCategoryController extends Controller
         return ExpenseCategory::orderBy('name')->get();
     }
 
-    public function store(ExpenseCategoryStoreRequest $request)
+    public function store(ExpenseCategoryStoreRequest $request, ExpenseCategoryService $service)
     {
-        $cat = ExpenseCategory::create($request->validated());
+        $cat = $service->save($request->validated(), (int) $request->user()->id);
+
         return response()->json($cat, Response::HTTP_CREATED);
     }
 
-    public function update(ExpenseCategoryUpdateRequest $request, ExpenseCategory $category)
+    public function update(ExpenseCategoryUpdateRequest $request, ExpenseCategory $category, ExpenseCategoryService $service)
     {
-        $category->update($request->validated());
-        return $category;
+        return $service->save($request->validated(), (int) $request->user()->id, $category);
     }
 
-    public function destroy(ExpenseCategory $category)
+    public function destroy(ExpenseCategory $category, ExpenseCategoryService $service)
     {
-        if ($category->isInUse()) {
-            throw ValidationException::withMessages(['category' => __('Category in use and cannot be deleted.')]);
-        }
-        $category->delete();
+        $service->setActive($category, false, (int) request()->user()->id);
+
         return response()->noContent();
     }
 }

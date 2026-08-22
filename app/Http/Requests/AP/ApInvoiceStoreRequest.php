@@ -31,7 +31,11 @@ class ApInvoiceStoreRequest extends FormRequest
             'job_phase_id' => ['nullable', 'integer', 'exists:accounting_job_phases,id'],
             'job_cost_code_id' => ['nullable', 'integer', 'exists:accounting_job_cost_codes,id'],
             'purchase_order_id' => ['nullable', 'integer', Rule::exists('purchase_orders', 'id')],
-            'category_id' => ['nullable', 'integer', Rule::exists('expense_categories', 'id')],
+            'category_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('expense_categories', 'id')->where(fn ($query) => $query->where('active', true)),
+            ],
             'expense_channel' => ['nullable', 'in:vendor,petty_cash,reimbursement'],
             'wallet_id' => ['nullable', 'integer', 'exists:petty_cash_wallets,id'],
             'not_settled' => ['nullable', 'boolean'],

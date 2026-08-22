@@ -42,7 +42,11 @@ class ApExpenseCreationService
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'department_id' => ['nullable', 'integer', 'exists:departments,id'],
             'supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
-            'category_id' => ['required', 'integer', 'exists:expense_categories,id'],
+            'category_id' => [
+                'required',
+                'integer',
+                Rule::exists('expense_categories', 'id')->where(fn ($query) => $query->where('active', true)),
+            ],
             'wallet_id' => ['required', 'integer', 'exists:petty_cash_wallets,id'],
             'invoice_number' => [
                 'required',

@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Spend;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class SpendExpenseStoreRequest extends FormRequest
 {
@@ -21,7 +22,11 @@ class SpendExpenseStoreRequest extends FormRequest
             'job_id' => ['nullable', 'integer', 'exists:accounting_jobs,id'],
             'supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
             'wallet_id' => ['nullable', 'integer', 'exists:petty_cash_wallets,id'],
-            'category_id' => ['required', 'integer', 'exists:expense_categories,id'],
+            'category_id' => [
+                'required',
+                'integer',
+                Rule::exists('expense_categories', 'id')->where(fn ($query) => $query->where('active', true)),
+            ],
             'expense_date' => ['required', 'date'],
             'due_date' => ['nullable', 'date', 'after_or_equal:expense_date'],
             'description' => ['required', 'string', 'max:255'],
