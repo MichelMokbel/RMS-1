@@ -8,8 +8,7 @@ use App\Models\BudgetVersion;
 use App\Models\JournalEntry;
 use App\Models\Job;
 use App\Models\Payment;
-use App\Services\Accounting\AccountingReportService;
-use Carbon\Carbon;
+use App\Services\Accounting\DashboardCashActivityService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -17,7 +16,7 @@ use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
-    public function with(AccountingReportService $reportService): array
+    public function with(DashboardCashActivityService $cashActivityService): array
     {
         $today = now()->startOfDay();
         $openInvoiceStatuses = ['draft', 'posted', 'partially_paid'];
@@ -59,26 +58,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
         }
 
-        $monthStart = $today->copy()->startOfMonth();
-        $monthEnd = $today->copy()->endOfMonth();
-
-        if ($activeCompanyIds !== []) {
-            foreach ($activeCompanyIds as $companyId) {
-                $monthCash = $reportService->cashFlowForRange(
-                    $companyId,
-                    $monthStart->toDateString(),
-                    $monthEnd->toDateString()
-                );
-
-                $stats['month_inflow'] += (float) $monthCash['inflow_total'];
-                $stats['month_outflow'] += (float) $monthCash['outflow_total'];
-            }
-        }
-
-        $stats['month_inflow'] = round($stats['month_inflow'], 2);
-        $stats['month_outflow'] = round($stats['month_outflow'], 2);
-        $stats['month_net'] = round($stats['month_inflow'] - $stats['month_outflow'], 2);
-
         if (Schema::hasTable('bank_transactions')) {
             $stats['open_bank_items'] = (int) BankTransaction::query()->where('status', 'open')->count();
             $stats['bank_exceptions'] = (int) BankTransaction::query()->where('status', 'exception')->count();
@@ -102,20 +81,17 @@ new #[Layout('components.layouts.app')] class extends Component {
         for ($i = 5; $i >= 0; $i--) {
             $month = $today->copy()->startOfMonth()->subMonths($i);
             $start = $month->toDateString();
-            $end = $month->copy()->endOfMonth()->toDateString();
+            $end = $i === 0 ? $today->toDateString() : $month->copy()->endOfMonth()->toDateString();
+            $cashActivity = $cashActivityService->forRange($activeCompanyIds, $start, $end);
+            $inflow = $cashActivity['inflow_total'];
+            $outflow = $cashActivity['outflow_total'];
+            $net = $cashActivity['net_cash_flow'];
 
-            $inflow = 0.0;
-            $outflow = 0.0;
-
-            foreach ($activeCompanyIds as $companyId) {
-                $cashFlow = $reportService->cashFlowForRange($companyId, $start, $end);
-                $inflow += (float) $cashFlow['inflow_total'];
-                $outflow += (float) $cashFlow['outflow_total'];
+            if ($i === 0) {
+                $stats['month_inflow'] = $inflow;
+                $stats['month_outflow'] = $outflow;
+                $stats['month_net'] = $net;
             }
-
-            $inflow = round($inflow, 2);
-            $outflow = round($outflow, 2);
-            $net = round($inflow - $outflow, 2);
             $maxTrendAmount = max($maxTrendAmount, $inflow, $outflow, abs($net));
 
             $trend->push([
@@ -287,8 +263,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 xl:col-span-2">
             <div class="mb-4 flex items-center justify-between">
                 <h2 class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ __('6-Month Cash Trend') }}</h2>
-                <span class="text-xs text-neutral-500">{{ __('AR inflow vs AP outflow') }}</span>
+                <span class="text-xs text-neutral-500">{{ __('Customer receipts vs payments made') }}</span>
             </div>
+            <p class="mb-4 text-xs text-neutral-500">{{ __('Based on receipt and payment dates. Includes supplier, expense, and payroll payments; excludes internal transfers. Current month is through today.') }}</p>
             <div class="space-y-3">
                 @foreach($trend as $row)
                     <div>
