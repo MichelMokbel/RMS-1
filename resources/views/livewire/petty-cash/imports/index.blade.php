@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ExpenseCategory;
+use App\Models\BankAccount;
 use App\Models\PettyCashImportBatch;
 use App\Models\PettyCashWallet;
 use App\Models\Supplier;
@@ -30,15 +31,28 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $default_paid = '';
 
-    public function mount(): void
+    public string $funding_source = 'bank_account';
+
+    public ?int $default_bank_account_id = null;
+
+    public function mount(AccountingContextService $context): void
     {
         abort_unless(auth()->user()?->hasRole('admin') && auth()->user()?->can('petty_cash.import'), 403);
         $this->business_date = now()->toDateString();
+        $companyId = $context->resolveCompanyId();
+        $this->default_bank_account_id = $companyId ? $context->defaultBankAccountId((int) $companyId) : null;
     }
 
     public function stage(PettyCashImportService $service, AccountingContextService $context): void
     {
         abort_unless(auth()->user()?->hasRole('admin') && auth()->user()?->can('petty_cash.import'), 403);
+
+        $companyId = $context->resolveCompanyId();
+        if (! $companyId) {
+            throw ValidationException::withMessages([
+                'workbook' => __('A default accounting company must be configured before importing expenses.'),
+            ]);
+        }
 
         $data = $this->validate([
             'import_mode' => ['required', Rule::in(['daily', 'bulk'])],
@@ -57,21 +71,24 @@ new #[Layout('components.layouts.app')] class extends Component {
                 Rule::exists('expense_categories', 'id')->where(fn ($query) => $query->where('active', true)),
             ],
             'default_wallet_id' => [
-                Rule::requiredIf($this->import_mode === 'bulk'),
+                Rule::requiredIf($this->import_mode === 'bulk' && $this->funding_source === 'petty_cash'),
                 'nullable',
                 'integer',
                 Rule::exists('petty_cash_wallets', 'id')->where(fn ($query) => $query->where('active', true)),
             ],
             'default_paid' => [Rule::requiredIf($this->import_mode === 'bulk'), Rule::in(['', '1', '0'])],
+            'funding_source' => ['required', Rule::in(['bank_account', 'petty_cash'])],
+            'default_bank_account_id' => [
+                Rule::requiredIf($this->funding_source === 'bank_account'),
+                'nullable',
+                'integer',
+                Rule::exists('bank_accounts', 'id')->where(fn ($query) => $query
+                    ->where('company_id', $companyId)
+                    ->where('is_active', true)
+                    ->whereNotNull('ledger_account_id')),
+            ],
             'workbook' => ['required', 'file', 'mimes:xlsx', 'max:'.(int) config('petty_cash.imports.max_upload_kb', 10_240)],
         ]);
-
-        $companyId = $context->resolveCompanyId();
-        if (! $companyId) {
-            throw ValidationException::withMessages([
-                'workbook' => __('A default accounting company must be configured before importing petty cash expenses.'),
-            ]);
-        }
 
         $batch = $data['import_mode'] === 'bulk'
             ? $service->stageBulk(
@@ -82,6 +99,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $data['default_paid'] === '1',
                 (int) $companyId,
                 auth()->user(),
+                (string) $data['funding_source'],
+                isset($data['default_bank_account_id']) ? (int) $data['default_bank_account_id'] : null,
             )
             : $service->stage(
                 $this->workbook,
@@ -90,6 +109,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 isset($data['default_wallet_id']) ? (int) $data['default_wallet_id'] : null,
                 (int) $companyId,
                 auth()->user(),
+                (string) $data['funding_source'],
+                isset($data['default_bank_account_id']) ? (int) $data['default_bank_account_id'] : null,
             );
 
         $this->reset('workbook');
@@ -112,6 +133,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->get(),
             'categories' => ExpenseCategory::query()->where('active', true)->orderBy('name')->get(),
             'wallets' => PettyCashWallet::query()->where('active', true)->orderBy('driver_name')->get(),
+            'bankAccounts' => BankAccount::query()
+                ->where('company_id', $companyId)
+                ->where('is_active', true)
+                ->whereNotNull('ledger_account_id')
+                ->orderByDesc('is_default')
+                ->orderBy('name')
+                ->get(),
             'batches' => PettyCashImportBatch::query()
                 ->where('company_id', $companyId)
                 ->withCount([
@@ -239,20 +267,45 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                 @endif
                 <div>
-                    <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Default Wallet') }}</label>
-                    <select wire:model="default_wallet_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                        <option value="">{{ $import_mode === 'bulk' ? __('Choose default wallet') : __('No default') }}</option>
-                        @foreach($wallets as $wallet)
-                            <option value="{{ $wallet->id }}">{{ $wallet->driver_name ?: __('Custodian :id', ['id' => $wallet->driver_id]) }}</option>
-                        @endforeach
+                    <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Pay From') }}</label>
+                    <select wire:model.live="funding_source" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                        <option value="bank_account">{{ __('Bank Account') }}</option>
+                        <option value="petty_cash">{{ __('Petty Cash Wallet') }}</option>
                     </select>
-                    @error('default_wallet_id') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                    @error('funding_source') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
                 </div>
+
+                @if($funding_source === 'bank_account')
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Bank Account') }}</label>
+                        <select wire:model="default_bank_account_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                            <option value="">{{ __('Choose bank account') }}</option>
+                            @foreach($bankAccounts as $bankAccount)
+                                <option value="{{ $bankAccount->id }}">{{ $bankAccount->name }}{{ $bankAccount->is_default ? ' · '.__('Default') : '' }}</option>
+                            @endforeach
+                        </select>
+                        <p class="mt-1 text-xs text-neutral-500">{{ __('Paid expenses will create bank-transfer payments and dated bank outflows. The workbook wallet column is ignored.') }}</p>
+                        @error('default_bank_account_id') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                    </div>
+                @else
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Default Wallet') }}</label>
+                        <select wire:model="default_wallet_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                            <option value="">{{ $import_mode === 'bulk' ? __('Choose default wallet') : __('No default') }}</option>
+                            @foreach($wallets as $wallet)
+                                <option value="{{ $wallet->id }}">{{ $wallet->driver_name ?: __('Custodian :id', ['id' => $wallet->driver_id]) }}</option>
+                            @endforeach
+                        </select>
+                        @error('default_wallet_id') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                    </div>
+                @endif
             </div>
 
             @if($import_mode === 'bulk')
                 <p class="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-                    {{ __('The workbook supplies each business date and category. Supplier, wallet, and paid status can be changed per invoice on the review dashboard.') }}
+                    {{ $funding_source === 'bank_account'
+                        ? __('The workbook supplies each business date and category. Supplier and paid status can be changed per invoice; paid entries use the selected bank account.')
+                        : __('The workbook supplies each business date and category. Supplier, wallet, and paid status can be changed per invoice on the review dashboard.') }}
                 </p>
             @endif
 
@@ -296,6 +349,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 'valid' => $stats['valid_invoices'] ?? 0,
                                 'errors' => $stats['invalid_invoices'] ?? $batch->invalid_rows_count,
                             ]) }}
+                        </p>
+                        <p class="mt-1 text-xs text-neutral-500">
+                            {{ ($batch->funding_source ?? 'petty_cash') === 'bank_account'
+                                ? __('Payment source: bank account')
+                                : __('Payment source: petty cash wallet') }}
                         </p>
                     </div>
                     <div class="flex items-center gap-2">

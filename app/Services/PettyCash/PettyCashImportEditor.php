@@ -3,6 +3,7 @@
 namespace App\Services\PettyCash;
 
 use App\Enums\PettyCash\PettyCashImportStatus;
+use App\Models\BankAccount;
 use App\Models\ExpenseCategory;
 use App\Models\PettyCashImportBatch;
 use App\Models\PettyCashImportCategoryProposal;
@@ -228,6 +229,7 @@ class PettyCashImportEditor
             $batch->default_supplier_id,
             $batch->default_paid,
             $batch->import_mode,
+            (string) ($batch->funding_source ?: 'petty_cash'),
         );
         $this->applyPeriodErrors($validated, $batch);
         $this->applyMappingErrors($validated, $batch);
@@ -313,7 +315,9 @@ class PettyCashImportEditor
             return;
         }
         $required = ['ap_control'];
-        if ($invoices->contains(fn (array $invoice): bool => (bool) ($invoice['header']['paid'] ?? false))) {
+        $usesBank = ($batch->funding_source ?? 'petty_cash') === 'bank_account';
+        if (! $usesBank
+            && $invoices->contains(fn (array $invoice): bool => (bool) ($invoice['header']['paid'] ?? false))) {
             $required[] = 'petty_cash_asset';
         }
         $supplierIds = $invoices->pluck('header.supplier_id')->filter()->unique();
@@ -322,6 +326,17 @@ class PettyCashImportEditor
         }
         try {
             $this->mappings->assertRequiredMappings((int) $batch->company_id, array_unique($required));
+            if ($usesBank && $invoices->contains(fn (array $invoice): bool => (bool) ($invoice['header']['paid'] ?? false))) {
+                $bank = $this->mappings->resolveBankAccount(
+                    (int) ($batch->default_bank_account_id ?? 0),
+                    (int) $batch->company_id
+                );
+                if (! $bank instanceof BankAccount || ! $bank->ledger_account_id) {
+                    throw ValidationException::withMessages([
+                        'default_bank_account_id' => __('The selected bank account is inactive, missing, or not linked to a ledger account.'),
+                    ]);
+                }
+            }
         } catch (ValidationException $exception) {
             $message = collect($exception->errors())->flatten()->first()
                 ?? __('Required accounting mappings are missing.');

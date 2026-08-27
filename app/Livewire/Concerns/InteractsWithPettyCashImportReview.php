@@ -41,13 +41,16 @@ trait InteractsWithPettyCashImportReview
     public function saveInvoice(int $invoiceId, PettyCashImportEditor $editor): void
     {
         $invoice = $this->editableInvoice($invoiceId);
+        $walletRules = $this->usesBankFunding()
+            ? ['nullable']
+            : ['required', 'integer', 'exists:petty_cash_wallets,id'];
         $data = $this->validate([
             "invoiceForms.$invoiceId.business_date" => ['required', 'date'],
             "invoiceForms.$invoiceId.supplier_id" => ['required', 'integer', 'exists:suppliers,id'],
             "invoiceForms.$invoiceId.reference_number" => ['nullable', 'string', 'max:100'],
             "invoiceForms.$invoiceId.due_date" => ['nullable', 'date'],
             "invoiceForms.$invoiceId.category" => ['required', 'string', 'max:100'],
-            "invoiceForms.$invoiceId.wallet_id" => ['required', 'integer', 'exists:petty_cash_wallets,id'],
+            "invoiceForms.$invoiceId.wallet_id" => $walletRules,
             "invoiceForms.$invoiceId.paid" => ['required', 'boolean'],
             "invoiceForms.$invoiceId.notes" => ['nullable', 'string', 'max:2000'],
         ])['invoiceForms'][$invoiceId];
@@ -80,6 +83,9 @@ trait InteractsWithPettyCashImportReview
     public function addInvoice(PettyCashImportEditor $editor): void
     {
         $batch = $this->editableBatch();
+        $walletRules = $this->usesBankFunding()
+            ? ['nullable']
+            : ['required', 'integer', 'exists:petty_cash_wallets,id'];
         $data = $this->validate([
             'newInvoice.entry_id' => ['required', 'string', 'max:191'],
             'newInvoice.business_date' => ['required', 'date'],
@@ -87,7 +93,7 @@ trait InteractsWithPettyCashImportReview
             'newInvoice.reference_number' => ['nullable', 'string', 'max:100'],
             'newInvoice.due_date' => ['nullable', 'date'],
             'newInvoice.category' => ['required', 'string', 'max:100'],
-            'newInvoice.wallet_id' => ['required', 'integer', 'exists:petty_cash_wallets,id'],
+            'newInvoice.wallet_id' => $walletRules,
             'newInvoice.paid' => ['required', 'boolean'],
             'newInvoice.notes' => ['nullable', 'string', 'max:2000'],
             'newInvoice.description' => ['required', 'string', 'max:255'],
@@ -99,7 +105,7 @@ trait InteractsWithPettyCashImportReview
             'entry_id' => $data['entry_id'], 'business_date' => $data['business_date'],
             'supplier_id' => (int) $data['supplier_id'], 'reference_number' => $data['reference_number'] ?: null,
             'due_date' => $data['due_date'] ?: null, 'category' => $data['category'],
-            'wallet_id' => (int) $data['wallet_id'],
+            'wallet_id' => filled($data['wallet_id'] ?? null) ? (int) $data['wallet_id'] : null,
             'paid' => $data['paid'] === '1' || $data['paid'] === 1 || $data['paid'] === true,
             'notes' => $data['notes'] ?: null,
             'row' => ['description' => $data['description'], 'quantity' => $data['quantity'], 'unit_price' => $data['unit_price']],
@@ -192,6 +198,11 @@ trait InteractsWithPettyCashImportReview
     private function revision(): int
     {
         return (int) ($this->batch()->revision ?? 0);
+    }
+
+    private function usesBankFunding(): bool
+    {
+        return ($this->batch()->funding_source ?? 'petty_cash') === 'bank_account';
     }
 
     private function editableBatch(): PettyCashImportBatch

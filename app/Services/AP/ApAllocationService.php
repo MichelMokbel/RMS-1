@@ -279,6 +279,14 @@ class ApAllocationService
      */
     private function assertReplayMatches(ApPayment $payment, array $payload): void
     {
+        $requestedMethod = $this->mappingService->normalizePaymentMethod((string) ($payload['payment_method'] ?? 'bank_transfer'));
+        $requestedBankAccountId = null;
+        if ($requestedMethod === 'bank_transfer') {
+            $requestedBankAccountId = $this->mappingService->resolveBankAccount(
+                (int) ($payload['bank_account_id'] ?? 0),
+                (int) ($payload['company_id'] ?? $payment->company_id ?? 0)
+            )?->id;
+        }
         $requestedAllocations = collect((array) ($payload['allocations'] ?? []))
             ->map(fn (array $row) => [
                 'invoice_id' => (int) ($row['invoice_id'] ?? 0),
@@ -302,7 +310,8 @@ class ApAllocationService
 
         $matches = (int) $payment->supplier_id === (int) ($payload['supplier_id'] ?? 0)
             && round((float) $payment->amount, 2) === round((float) ($payload['amount'] ?? 0), 2)
-            && strtolower((string) $payment->payment_method) === $this->mappingService->normalizePaymentMethod((string) ($payload['payment_method'] ?? 'bank_transfer'))
+            && strtolower((string) $payment->payment_method) === $requestedMethod
+            && (int) ($payment->bank_account_id ?? 0) === (int) ($requestedBankAccountId ?? 0)
             && optional($payment->payment_date)->toDateString() === (string) ($payload['payment_date'] ?? '')
             && (string) ($payment->currency_code ?? config('pos.currency', 'QAR')) === (string) ($payload['currency_code'] ?? ($payment->currency_code ?? config('pos.currency', 'QAR')))
             && json_encode($existingAllocations, JSON_THROW_ON_ERROR) === json_encode($requestedAllocations, JSON_THROW_ON_ERROR);

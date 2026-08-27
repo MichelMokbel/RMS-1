@@ -44,6 +44,7 @@ class PettyCashImportValidator
         ?int $defaultSupplierId = null,
         ?bool $defaultPaid = null,
         string $importMode = 'daily',
+        string $fundingSource = 'petty_cash',
     ): array {
         $maxRows = (int) config('petty_cash.imports.max_rows', 5000);
         if (count($sourceRows) > $maxRows) {
@@ -57,7 +58,9 @@ class PettyCashImportValidator
             fn (ExpenseCategory $category): string => $this->normalizeCategoryName($category->name)
         )->all();
         $this->assertDefaultCategory($defaultCategoryId);
-        $this->assertDefaultWallet($defaultWalletId);
+        if ($fundingSource === 'petty_cash') {
+            $this->assertDefaultWallet($defaultWalletId);
+        }
         $this->assertDefaultSupplier($defaultSupplierId, $companyId);
 
         $rows = [];
@@ -72,6 +75,7 @@ class PettyCashImportValidator
                 $defaultSupplierId,
                 $defaultPaid,
                 $importMode,
+                $fundingSource,
             );
         }
 
@@ -190,42 +194,44 @@ class PettyCashImportValidator
                 }
             });
 
-        $remainingByWallet = [];
-        usort($invoices, fn (array $left, array $right): int => [
-            $left['business_date'], min($groupIndexes[$left['business_date'].'|'.$left['entry_id']] ?? [PHP_INT_MAX]),
-        ] <=> [
-            $right['business_date'], min($groupIndexes[$right['business_date'].'|'.$right['entry_id']] ?? [PHP_INT_MAX]),
-        ]);
-        foreach ($invoices as &$invoice) {
-            if (($invoice['errors'] ?? []) !== [] || ! (bool) ($invoice['header']['paid'] ?? false)) {
-                continue;
-            }
-            $walletId = (int) ($invoice['header']['wallet_id'] ?? 0);
-            $wallet = $walletId > 0
-                ? ($this->wallets[$walletId] ??= PettyCashWallet::query()->find($walletId))
-                : null;
-            if (! $wallet || ! $wallet->isActive()) {
-                continue;
-            }
-            $remainingByWallet[$walletId] ??= round((float) $wallet->balance, 2);
-            $total = round((float) ($invoice['header']['total_amount'] ?? 0), 2);
-            if (round($remainingByWallet[$walletId] - $total, 2) >= 0) {
-                $remainingByWallet[$walletId] = round($remainingByWallet[$walletId] - $total, 2);
+        if ($fundingSource === 'petty_cash') {
+            $remainingByWallet = [];
+            usort($invoices, fn (array $left, array $right): int => [
+                $left['business_date'], min($groupIndexes[$left['business_date'].'|'.$left['entry_id']] ?? [PHP_INT_MAX]),
+            ] <=> [
+                $right['business_date'], min($groupIndexes[$right['business_date'].'|'.$right['entry_id']] ?? [PHP_INT_MAX]),
+            ]);
+            foreach ($invoices as &$invoice) {
+                if (($invoice['errors'] ?? []) !== [] || ! (bool) ($invoice['header']['paid'] ?? false)) {
+                    continue;
+                }
+                $walletId = (int) ($invoice['header']['wallet_id'] ?? 0);
+                $wallet = $walletId > 0
+                    ? ($this->wallets[$walletId] ??= PettyCashWallet::query()->find($walletId))
+                    : null;
+                if (! $wallet || ! $wallet->isActive()) {
+                    continue;
+                }
+                $remainingByWallet[$walletId] ??= round((float) $wallet->balance, 2);
+                $total = round((float) ($invoice['header']['total_amount'] ?? 0), 2);
+                if (round($remainingByWallet[$walletId] - $total, 2) >= 0) {
+                    $remainingByWallet[$walletId] = round($remainingByWallet[$walletId] - $total, 2);
 
-                continue;
-            }
+                    continue;
+                }
 
-            $message = __('The wallet balance is insufficient, so this invoice will be imported as unpaid.');
-            $invoice['header']['paid_requested'] = true;
-            $invoice['header']['paid'] = false;
-            $invoice['header']['settlement_warning'] = $message;
-            foreach ($groupIndexes[$invoice['business_date'].'|'.$invoice['entry_id']] ?? [] as $index) {
-                $rows[$index]['payload']['paid_requested'] = true;
-                $rows[$index]['payload']['paid'] = false;
-                $rows[$index]['payload']['settlement_warning'] = $message;
+                $message = __('The wallet balance is insufficient, so this invoice will be imported as unpaid.');
+                $invoice['header']['paid_requested'] = true;
+                $invoice['header']['paid'] = false;
+                $invoice['header']['settlement_warning'] = $message;
+                foreach ($groupIndexes[$invoice['business_date'].'|'.$invoice['entry_id']] ?? [] as $index) {
+                    $rows[$index]['payload']['paid_requested'] = true;
+                    $rows[$index]['payload']['paid'] = false;
+                    $rows[$index]['payload']['settlement_warning'] = $message;
+                }
             }
+            unset($invoice);
         }
-        unset($invoice);
 
         foreach ($rows as &$row) {
             $row['status'] = $row['errors'] === [] ? 'valid' : 'invalid';
@@ -280,6 +286,7 @@ class PettyCashImportValidator
         ?int $defaultSupplierId,
         ?bool $defaultPaid,
         string $importMode,
+        string $fundingSource,
     ): array {
         $errors = [];
         $entryId = Str::upper(trim((string) ($source['entry_id'] ?? '')));
@@ -307,7 +314,9 @@ class PettyCashImportValidator
             $categoryName,
             $categoryNormalized,
         );
-        $walletId = $this->resolveWallet($source['wallet'] ?? null, $defaultWalletId, $errors);
+        $walletId = $fundingSource === 'petty_cash'
+            ? $this->resolveWallet($source['wallet'] ?? null, $defaultWalletId, $errors)
+            : null;
 
         $reference = $this->values->optionalText($source['reference_number'] ?? null, 100, 'reference_number', $errors);
         $notes = $this->values->optionalText($source['notes'] ?? null, 5000, 'notes', $errors);

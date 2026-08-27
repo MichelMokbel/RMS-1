@@ -32,7 +32,7 @@
                 <flux:input wire:model="invoiceForms.{{ $importInvoice->id }}.reference_number" :label="__('Reference')" />
                 <flux:input wire:model="invoiceForms.{{ $importInvoice->id }}.due_date" type="date" :label="__('Due Date')" />
                 <flux:input wire:model="invoiceForms.{{ $importInvoice->id }}.category" :label="__('Category')" list="expense-category-names" />
-                <div><label class="mb-1 block text-sm font-medium">{{ __('Wallet') }}</label><select wire:model="invoiceForms.{{ $importInvoice->id }}.wallet_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"><option value="">{{ __('Choose wallet') }}</option>@foreach($allWallets as $wallet)<option value="{{ $wallet->id }}">{{ $wallet->driver_name ?: __('Custodian :id', ['id' => $wallet->driver_id]) }}</option>@endforeach</select></div>
+                @unless($usesBank)<div><label class="mb-1 block text-sm font-medium">{{ __('Wallet') }}</label><select wire:model="invoiceForms.{{ $importInvoice->id }}.wallet_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"><option value="">{{ __('Choose wallet') }}</option>@foreach($allWallets as $wallet)<option value="{{ $wallet->id }}">{{ $wallet->driver_name ?: __('Custodian :id', ['id' => $wallet->driver_id]) }}</option>@endforeach</select></div>@endunless
                 <div><label class="mb-1 block text-sm font-medium">{{ __('Paid') }}</label><select wire:model="invoiceForms.{{ $importInvoice->id }}.paid" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"><option value="0">{{ __('Unpaid') }}</option><option value="1">{{ __('Paid') }}</option></select></div>
                 <flux:input wire:model="invoiceForms.{{ $importInvoice->id }}.notes" :label="__('Notes')" />
             </div>
@@ -57,7 +57,7 @@
         <dl class="mt-3 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
             <div><dt class="text-xs text-neutral-500">{{ __('Supplier') }}</dt><dd>{{ $entry['supplier'] }}</dd></div>
             <div><dt class="text-xs text-neutral-500">{{ __('Category') }}</dt><dd>{{ $entry['category'] }}</dd></div>
-            <div><dt class="text-xs text-neutral-500">{{ __('Wallet') }}</dt><dd>{{ $entry['wallet'] }}</dd></div>
+            <div><dt class="text-xs text-neutral-500">{{ $usesBank ? __('Bank Account') : __('Wallet') }}</dt><dd>{{ $entry['payment_source'] }}</dd></div>
             <div><dt class="text-xs text-neutral-500">{{ __('Settlement') }}</dt><dd>{{ ($header['paid'] ?? false) ? __('Paid') : __('Pending') }}</dd></div>
         </dl>
     @endif

@@ -19,6 +19,8 @@ class PettyCashImportBatch extends Model
         'default_supplier_id',
         'default_wallet_id',
         'default_paid',
+        'funding_source',
+        'default_bank_account_id',
         'status',
         'revision',
         'parser_version',
@@ -45,6 +47,7 @@ class PettyCashImportBatch extends Model
         'default_supplier_id' => 'integer',
         'default_wallet_id' => 'integer',
         'default_paid' => 'boolean',
+        'default_bank_account_id' => 'integer',
         'status' => PettyCashImportStatus::class,
         'revision' => 'integer',
         'stats' => 'array',
@@ -103,5 +106,10 @@ class PettyCashImportBatch extends Model
     public function defaultSupplier(): BelongsTo
     {
         return $this->belongsTo(Supplier::class, 'default_supplier_id');
+    }
+
+    public function defaultBankAccount(): BelongsTo
+    {
+        return $this->belongsTo(BankAccount::class, 'default_bank_account_id');
     }
 }

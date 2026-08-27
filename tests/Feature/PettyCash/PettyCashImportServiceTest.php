@@ -5,14 +5,18 @@ use App\Models\AccountingCompany;
 use App\Models\AccountingPeriod;
 use App\Models\ApInvoice;
 use App\Models\ApPayment;
+use App\Models\BankAccount;
+use App\Models\BankTransaction;
 use App\Models\ExpenseCategory;
 use App\Models\LedgerAccount;
 use App\Models\PettyCashImportBatch;
 use App\Models\PettyCashImportEditEvent;
 use App\Models\PettyCashWallet;
 use App\Models\SubledgerEntry;
+use App\Models\SubledgerLine;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Services\Accounting\DashboardCashActivityService;
 use App\Services\AP\ApReportsService;
 use App\Services\PettyCash\PettyCashImportEditor;
 use App\Services\PettyCash\PettyCashImportService;
@@ -158,6 +162,115 @@ it('stages grouped lines with defaults and atomically commits paid and unpaid ex
     $service->commit($committed, $this->actor);
     expect(ApInvoice::query()->where('source_document_type', 'petty_cash_expense_import')->count())->toBe(2)
         ->and(ApPayment::query()->count())->toBe(1);
+});
+
+it('settles paid imports from the selected bank on their historical business dates without touching wallets', function () {
+    $bankLedger = LedgerAccount::query()->create([
+        'company_id' => $this->company->id,
+        'code' => '1100-BANK-IMPORT',
+        'name' => 'Main Bank Import Account',
+        'type' => 'asset',
+        'account_class' => 'asset',
+        'allow_direct_posting' => true,
+        'is_active' => true,
+    ]);
+    $bank = BankAccount::query()->create([
+        'company_id' => $this->company->id,
+        'ledger_account_id' => $bankLedger->id,
+        'name' => 'Main Bank Account',
+        'code' => 'MAIN-BANK-IMPORT',
+        'account_type' => 'checking',
+        'currency_code' => 'KWD',
+        'is_default' => true,
+        'is_active' => true,
+        'opening_balance' => 5000,
+        'opening_balance_date' => '2026-01-01',
+    ]);
+    $startingWalletBalance = (float) $this->wallet->balance;
+    $workbook = pettyCashBulkImportWorkbook([
+        ['2026-07-31', 'BANK-001', '', 'BANK-JULY-1', '', 'Kitchen Supplies', '999999 | Ignored Wallet', 'TRUE', 'July bank expense', '1', '21', ''],
+        ['2026-08-01', 'BANK-002', '', 'BANK-AUG-1', '', 'Kitchen Supplies', '', 'TRUE', 'August bank expense', '1', '10', ''],
+        ['2026-08-02', 'BANK-003', '', 'BANK-AUG-2', '', 'Kitchen Supplies', '', 'FALSE', 'Unpaid August expense', '1', '5', ''],
+    ]);
+
+    $service = app(PettyCashImportService::class);
+    $batch = $service->stageBulk(
+        $workbook,
+        $this->supplier->id,
+        $this->category->id,
+        null,
+        true,
+        $this->company->id,
+        $this->actor,
+        'bank_account',
+        $bank->id,
+    );
+
+    expect($batch->status->value)->toBe('ready')
+        ->and($batch->funding_source)->toBe('bank_account')
+        ->and($batch->default_bank_account_id)->toBe($bank->id)
+        ->and($batch->default_wallet_id)->toBeNull()
+        ->and($batch->stats['unpaid_for_insufficient_balance'])->toBe(0)
+        ->and($batch->invoices->every(fn ($invoice): bool => ($invoice->header['wallet_id'] ?? null) === null))->toBeTrue();
+
+    $julyRow = $batch->rows->first(fn ($row): bool => $row->payload['description'] === 'July bank expense');
+    $batch = app(PettyCashImportEditor::class)->updateRow(
+        $julyRow,
+        $batch->revision,
+        ['unit_price' => '22'],
+        $this->actor,
+    );
+    expect($batch->status->value)->toBe('ready')
+        ->and($batch->funding_source)->toBe('bank_account')
+        ->and($batch->stats['unpaid_for_insufficient_balance'])->toBe(0);
+
+    $service->commit($batch, $this->actor);
+
+    $payments = ApPayment::query()->orderBy('payment_date')->get();
+    $transactions = BankTransaction::query()->where('transaction_type', 'ap_payment')->orderBy('transaction_date')->get();
+    $unpaid = ApInvoice::query()->where('reference_number', 'BANK-AUG-2')->firstOrFail();
+    expect($payments)->toHaveCount(2)
+        ->and($payments->pluck('payment_method')->unique()->all())->toBe(['bank_transfer'])
+        ->and($payments->pluck('bank_account_id')->unique()->all())->toBe([$bank->id])
+        ->and($payments->map(fn ($payment) => $payment->payment_date->format('Y-m-d'))->all())->toBe(['2026-07-31', '2026-08-01'])
+        ->and($transactions)->toHaveCount(2)
+        ->and($transactions->pluck('direction')->unique()->all())->toBe(['outflow'])
+        ->and($transactions->map(fn ($transaction) => $transaction->transaction_date->format('Y-m-d'))->all())->toBe(['2026-07-31', '2026-08-01'])
+        ->and($unpaid->status)->toBe('posted')
+        ->and($unpaid->expenseProfile->channel)->toBe('vendor')
+        ->and($unpaid->expenseProfile->wallet_id)->toBeNull()
+        ->and((float) $this->wallet->fresh()->balance)->toBe($startingWalletBalance);
+
+    $paymentEntryIds = SubledgerEntry::query()
+        ->where('source_type', 'ap_payment')
+        ->where('event', 'payment')
+        ->pluck('id');
+    expect((float) SubledgerLine::query()
+        ->whereIn('entry_id', $paymentEntryIds)
+        ->where('account_id', $bankLedger->id)
+        ->sum('credit'))->toBe(32.0);
+
+    $cashActivity = app(DashboardCashActivityService::class);
+    expect($cashActivity->forRange([$this->company->id], '2026-07-01', '2026-07-31')['outflow_total'])->toBe(22.0)
+        ->and($cashActivity->forRange([$this->company->id], '2026-08-01', '2026-08-31')['outflow_total'])->toBe(10.0);
+});
+
+it('rejects bank-funded staging when the company has no active linked bank account', function () {
+    BankAccount::query()->where('company_id', $this->company->id)->update(['is_active' => false]);
+    $workbook = pettyCashImportWorkbook([
+        ['BANK-MISSING-1', $this->supplier->id.' | Daily Market', 'BANK-MISSING-REF', '', '', '', 'TRUE', 'Bank expense', '1', '10', ''],
+    ]);
+
+    expect(fn () => app(PettyCashImportService::class)->stage(
+        $workbook,
+        '2026-08-15',
+        $this->category->id,
+        null,
+        $this->company->id,
+        $this->actor,
+        'bank_account',
+        null,
+    ))->toThrow(ValidationException::class, 'Choose an active bank account for this company.');
 });
 
 it('commits a ready batch through the review page action and redirects to created invoice links', function () {

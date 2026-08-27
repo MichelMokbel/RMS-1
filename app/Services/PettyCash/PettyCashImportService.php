@@ -3,6 +3,7 @@
 namespace App\Services\PettyCash;
 
 use App\Models\AccountingCompany;
+use App\Models\BankAccount;
 use App\Models\PettyCashImportBatch;
 use App\Models\PettyCashImportInvoice;
 use App\Models\PettyCashImportRow;
@@ -41,7 +42,7 @@ class PettyCashImportService
 
     public const CATEGORY_DEFINITION_HEADERS = ['code', 'name'];
 
-    private const PARSER_VERSION = '2';
+    private const PARSER_VERSION = '3';
 
     private const ALLOWED_SHEETS = [
         self::DATA_SHEET, 'instructions', 'suppliers', 'categories', 'wallets',
@@ -65,7 +66,9 @@ class PettyCashImportService
         ?int $defaultCategoryId,
         ?int $defaultWalletId,
         int $companyId,
-        User $actor
+        User $actor,
+        string $fundingSource = 'petty_cash',
+        ?int $defaultBankAccountId = null,
     ): PettyCashImportBatch {
         $businessDate = $this->businessDate($businessDate);
 
@@ -79,6 +82,8 @@ class PettyCashImportService
             null,
             $companyId,
             $actor,
+            $fundingSource,
+            $defaultBankAccountId,
         );
     }
 
@@ -90,6 +95,8 @@ class PettyCashImportService
         bool $defaultPaid,
         int $companyId,
         User $actor,
+        string $fundingSource = 'petty_cash',
+        ?int $defaultBankAccountId = null,
     ): PettyCashImportBatch {
         return $this->stageWorkbook(
             $workbook,
@@ -101,6 +108,8 @@ class PettyCashImportService
             $defaultPaid,
             $companyId,
             $actor,
+            $fundingSource,
+            $defaultBankAccountId,
         );
     }
 
@@ -114,6 +123,8 @@ class PettyCashImportService
         ?bool $defaultPaid,
         int $companyId,
         User $actor,
+        string $fundingSource,
+        ?int $defaultBankAccountId,
     ): PettyCashImportBatch {
         $this->assertAccess($actor);
         $company = AccountingCompany::query()->findOrFail($companyId);
@@ -121,6 +132,13 @@ class PettyCashImportService
             throw ValidationException::withMessages([
                 'company_id' => __('The selected accounting company is inactive.'),
             ]);
+        }
+        $fundingSource = $this->fundingSource($fundingSource);
+        $defaultBankAccountId = $fundingSource === 'bank_account'
+            ? $this->resolveBankAccountId($defaultBankAccountId, $companyId, (string) $company->base_currency)
+            : null;
+        if ($fundingSource === 'bank_account') {
+            $defaultWalletId = null;
         }
         $this->assertUpload($workbook);
 
@@ -137,6 +155,8 @@ class PettyCashImportService
             'default_supplier_id' => $defaultSupplierId,
             'default_wallet_id' => $defaultWalletId,
             'default_paid' => $defaultPaid,
+            'funding_source' => $fundingSource,
+            'default_bank_account_id' => $defaultBankAccountId,
             'parser_version' => self::PARSER_VERSION,
         ], JSON_THROW_ON_ERROR));
         $existing = $this->existingBatch($companyId, $idempotencyKey);
@@ -168,14 +188,15 @@ class PettyCashImportService
             $defaultSupplierId,
             $defaultPaid,
             $importMode,
+            $fundingSource,
         );
         if ((int) $validated['stats']['rows'] === 0) {
             throw ValidationException::withMessages(['workbook' => __('The workbook must contain at least one expense line.')]);
         }
         if ($importMode === 'bulk') {
-            $this->applyBulkAccountingErrors($validated, $companyId);
+            $this->applyBulkAccountingErrors($validated, $companyId, $fundingSource);
         } else {
-            $this->assertAccountingPreflight($validated, $companyId);
+            $this->assertAccountingPreflight($validated, $companyId, $fundingSource);
         }
         $dateFrom = $validated['stats']['date_from'] ?: null;
         $dateTo = $validated['stats']['date_to'] ?: null;
@@ -213,6 +234,8 @@ class PettyCashImportService
                 $defaultCategoryId,
                 $defaultWalletId,
                 $defaultPaid,
+                $fundingSource,
+                $defaultBankAccountId,
                 $companyId,
                 $actor,
                 $sha256,
@@ -236,6 +259,8 @@ class PettyCashImportService
                     'default_supplier_id' => $defaultSupplierId,
                     'default_wallet_id' => $defaultWalletId,
                     'default_paid' => $defaultPaid,
+                    'funding_source' => $fundingSource,
+                    'default_bank_account_id' => $defaultBankAccountId,
                     'status' => $invalid === 0 ? 'ready' : ($importMode === 'bulk' ? 'needs_review' : 'failed'),
                     'revision' => 0,
                     'parser_version' => self::PARSER_VERSION,
@@ -292,6 +317,8 @@ class PettyCashImportService
                     $batch,
                     [
                         'import_mode' => $importMode,
+                        'funding_source' => $fundingSource,
+                        'default_bank_account_id' => $defaultBankAccountId,
                         'date_from' => $dateFrom,
                         'date_to' => $dateTo,
                         'sha256' => $sha256,
@@ -328,7 +355,7 @@ class PettyCashImportService
     }
 
     /** @param array{invoices:array<int,array<string,mixed>>} $validated */
-    private function assertAccountingPreflight(array $validated, int $companyId): void
+    private function assertAccountingPreflight(array $validated, int $companyId, string $fundingSource): void
     {
         $invoices = collect($validated['invoices'])
             ->filter(fn (array $invoice): bool => ($invoice['errors'] ?? []) === []);
@@ -337,7 +364,8 @@ class PettyCashImportService
         }
 
         $required = ['ap_control'];
-        if ($invoices->contains(fn (array $invoice): bool => (bool) ($invoice['header']['paid'] ?? false))) {
+        if ($fundingSource === 'petty_cash'
+            && $invoices->contains(fn (array $invoice): bool => (bool) ($invoice['header']['paid'] ?? false))) {
             $required[] = 'petty_cash_asset';
         }
         $supplierIds = $invoices->pluck('header.supplier_id')->filter()->map(fn ($id): int => (int) $id)->unique();
@@ -348,11 +376,11 @@ class PettyCashImportService
         $this->mappings->assertRequiredMappings($companyId, array_values(array_unique($required)));
     }
 
-    private function applyBulkAccountingErrors(array &$validated, int $companyId): void
+    private function applyBulkAccountingErrors(array &$validated, int $companyId, string $fundingSource): void
     {
         $mappingMessage = null;
         try {
-            $this->assertAccountingPreflight($validated, $companyId);
+            $this->assertAccountingPreflight($validated, $companyId, $fundingSource);
         } catch (ValidationException $exception) {
             $mappingMessage = collect($exception->errors())->flatten()->first()
                 ?? __('Required accounting mappings are missing.');
@@ -433,6 +461,39 @@ class PettyCashImportService
         }
 
         return $value;
+    }
+
+    private function fundingSource(string $value): string
+    {
+        if (! in_array($value, ['petty_cash', 'bank_account'], true)) {
+            throw ValidationException::withMessages([
+                'funding_source' => __('Choose a valid payment source.'),
+            ]);
+        }
+
+        return $value;
+    }
+
+    private function resolveBankAccountId(?int $bankAccountId, int $companyId, string $currencyCode): int
+    {
+        $bank = $this->mappings->resolveBankAccount($bankAccountId, $companyId);
+        if (! $bank instanceof BankAccount) {
+            throw ValidationException::withMessages([
+                'default_bank_account_id' => __('Choose an active bank account for this company.'),
+            ]);
+        }
+        if ((int) $bank->company_id !== $companyId || ! $bank->ledger_account_id) {
+            throw ValidationException::withMessages([
+                'default_bank_account_id' => __('The selected bank account must belong to the company and be linked to a ledger account.'),
+            ]);
+        }
+        if (filled($bank->currency_code) && strtoupper((string) $bank->currency_code) !== strtoupper($currencyCode)) {
+            throw ValidationException::withMessages([
+                'default_bank_account_id' => __('The bank account currency must match the accounting company currency.'),
+            ]);
+        }
+
+        return (int) $bank->id;
     }
 
     private function nullableBusinessDate(mixed $value): ?string

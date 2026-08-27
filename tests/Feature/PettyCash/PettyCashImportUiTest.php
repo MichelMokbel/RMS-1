@@ -1,7 +1,9 @@
 <?php
 
 use App\Models\AccountingCompany;
+use App\Models\BankAccount;
 use App\Models\ExpenseCategory;
+use App\Models\LedgerAccount;
 use App\Models\PettyCashImportBatch;
 use App\Models\PettyCashImportCategoryProposal;
 use App\Models\PettyCashImportInvoice;
@@ -47,7 +49,8 @@ it('shows the petty cash import entry point only to users with import permission
         ->assertSee('Multiple Dates')
         ->assertSee('Business Date')
         ->assertSee('Default Category')
-        ->assertSee('Default Wallet')
+        ->assertSee('Pay From')
+        ->assertSee('Bank Account')
         ->assertSee('Validate and Stage');
 
     $this->actingAs($manager)
@@ -64,6 +67,25 @@ it('shows required multiple-date defaults and downloads the bulk template', func
     $user->givePermissionTo('petty_cash.import');
     Supplier::factory()->create(['company_id' => $company->id, 'name' => 'Bulk Supplier', 'status' => 'active']);
     PettyCashWallet::factory()->create(['driver_name' => 'Bulk Wallet', 'active' => true]);
+    $bankLedger = LedgerAccount::query()->create([
+        'company_id' => $company->id,
+        'code' => 'UI-IMPORT-BANK',
+        'name' => 'UI Import Bank Ledger',
+        'type' => 'asset',
+        'account_class' => 'asset',
+        'allow_direct_posting' => true,
+        'is_active' => true,
+    ]);
+    BankAccount::query()->create([
+        'company_id' => $company->id,
+        'ledger_account_id' => $bankLedger->id,
+        'name' => 'Main Bank',
+        'code' => 'MAIN-BANK',
+        'account_type' => 'checking',
+        'currency_code' => $company->base_currency,
+        'is_default' => true,
+        'is_active' => true,
+    ]);
 
     $this->actingAs($user);
 
@@ -72,13 +94,16 @@ it('shows required multiple-date defaults and downloads the bulk template', func
         ->assertSee('Upload multiple-date workbook')
         ->assertSee('Default Supplier')
         ->assertSee('Default Paid Status')
-        ->assertSee('Choose default wallet')
+        ->assertSee('Main Bank')
+        ->assertSee('Paid expenses will create bank-transfer payments')
+        ->assertDontSee('Choose default wallet')
         ->assertDontSee('Default Category');
 
     Volt::test('petty-cash.imports.index')
         ->set('import_mode', 'bulk')
         ->call('stage')
-        ->assertHasErrors(['default_supplier_id', 'default_wallet_id', 'default_paid', 'workbook']);
+        ->assertHasErrors(['default_supplier_id', 'default_paid', 'workbook'])
+        ->assertHasNoErrors(['default_wallet_id', 'default_bank_account_id']);
 
     $response = $this->get(route('petty-cash.imports.template', ['mode' => 'bulk']));
     $response->assertOk()->assertDownload('petty-cash-multiple-date-import-template.xlsx');

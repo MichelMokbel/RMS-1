@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ExpenseCategory;
+use App\Models\BankAccount;
 use App\Models\PettyCashImportBatch;
 use App\Models\PettyCashWallet;
 use App\Models\Supplier;
@@ -45,13 +46,17 @@ new #[Layout('components.layouts.app')] class extends Component
 
             return;
         }
-        session()->flash('status', __('Petty cash import committed. The invoices and settlement results are now available in Accounts Payable.'));
+        session()->flash('status', __('Expense import committed. The invoices and settlement results are now available in Accounts Payable.'));
         $this->redirectRoute('petty-cash.imports.show', ['batch' => $batch->id], navigate: true);
     }
 
     public function with(): array
     {
         $batch = $this->batch();
+        $usesBank = ($batch->funding_source ?? 'petty_cash') === 'bank_account';
+        $bankAccount = $usesBank
+            ? BankAccount::query()->find($batch->default_bank_account_id)
+            : null;
         $rows = $batch->rows()->orderBy('row_number')->paginate(30);
 
         $stagedInvoices = $batch->invoices()->with(['targetInvoice', 'rows'])->orderBy('business_date')->orderBy('id')->get();
@@ -59,7 +64,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $suppliers = Supplier::query()->whereIn('id', $headers->pluck('supplier_id')->filter()->unique())->pluck('name', 'id');
         $categories = ExpenseCategory::query()->whereIn('id', $headers->pluck('category_id')->filter()->unique())->pluck('name', 'id');
         $wallets = PettyCashWallet::query()->whereIn('id', $headers->pluck('wallet_id')->filter()->unique())->get()->keyBy('id');
-        $importInvoices = $stagedInvoices->map(function ($invoice) use ($suppliers, $categories, $wallets): array {
+        $importInvoices = $stagedInvoices->map(function ($invoice) use ($suppliers, $categories, $wallets, $usesBank, $bankAccount): array {
             $header = $invoice->header ?? [];
             $subtotal = round((float) $invoice->rows->where('excluded', false)->sum(fn ($row): float => round(
                 (float) ($row->payload['quantity'] ?? 0) * (float) ($row->payload['unit_price'] ?? 0),
@@ -72,6 +77,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 'supplier' => $suppliers->get((int) ($header['supplier_id'] ?? 0), __('Unknown supplier')),
                 'category' => $categories->get((int) ($header['category_id'] ?? 0), $header['category'] ?? $header['category_name'] ?? __('Unknown category')),
                 'wallet' => $wallet?->driver_name ?: ($wallet ? __('Custodian :id', ['id' => $wallet->driver_id]) : __('Unknown wallet')),
+                'payment_source' => $usesBank ? ($bankAccount?->name ?? __('Unknown bank account')) : ($wallet?->driver_name ?: __('Petty cash wallet')),
                 'line_count' => $invoice->rows->where('excluded', false)->count(),
                 'subtotal' => $subtotal,
                 'total' => $subtotal,
@@ -87,7 +93,7 @@ new #[Layout('components.layouts.app')] class extends Component
             return ($this->filter_date === '' || $date === $this->filter_date)
                 && ($this->filter_category === '' || str_contains(Str::lower($entry['category']), Str::lower($this->filter_category)))
                 && ($this->filter_supplier === '' || (int) ($header['supplier_id'] ?? 0) === (int) $this->filter_supplier)
-                && ($this->filter_wallet === '' || (int) ($header['wallet_id'] ?? 0) === (int) $this->filter_wallet)
+                && ($this->usesBankFunding() || $this->filter_wallet === '' || (int) ($header['wallet_id'] ?? 0) === (int) $this->filter_wallet)
                 && ($this->filter_paid === '' || (bool) ($header['paid_requested'] ?? $header['paid'] ?? false) === ($this->filter_paid === '1'))
                 && ($this->filter_status === '' || $status === $this->filter_status);
         })->values();
@@ -111,6 +117,8 @@ new #[Layout('components.layouts.app')] class extends Component
             'allSuppliers' => $allSuppliers,
             'allCategories' => $allCategories,
             'allWallets' => $allWallets,
+            'bankAccount' => $bankAccount,
+            'usesBank' => $usesBank,
             'categoryProposals' => $categoryProposals,
             'editable' => ($batch->import_mode ?? 'daily') === 'bulk' && in_array($this->statusValue($batch), ['needs_review', 'ready'], true),
         ];
@@ -135,7 +143,7 @@ new #[Layout('components.layouts.app')] class extends Component
     public function reviewFields(array $payload): array
     {
         $order = [
-            'supplier', 'reference_number', 'due_date', 'category', 'wallet', 'paid',
+            'supplier', 'reference_number', 'due_date', 'category', ...($this->usesBankFunding() ? [] : ['wallet']), 'paid',
             'description', 'quantity', 'unit_price', 'notes',
         ];
 
@@ -155,7 +163,7 @@ new #[Layout('components.layouts.app')] class extends Component
 <div class="w-full max-w-7xl mx-auto px-4 space-y-6">
     <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
-            <p class="text-sm text-neutral-500">{{ __('Petty cash import review') }}</p>
+            <p class="text-sm text-neutral-500">{{ __('Expense import review') }}</p>
             <h1 class="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{{ $batch->source_name ?: __('Import #:id', ['id' => $batch->id]) }}</h1>
             @if(($batch->import_mode ?? 'daily') === 'bulk')
                 <p class="text-sm text-neutral-500">
@@ -167,6 +175,11 @@ new #[Layout('components.layouts.app')] class extends Component
             @else
                 <p class="text-sm text-neutral-500">{{ __('Business date: :date', ['date' => optional($batch->business_date)->format('d M Y') ?: $batch->business_date]) }}</p>
             @endif
+            <p class="text-sm text-neutral-500">
+                {{ $usesBank
+                    ? __('Paid from bank account: :account', ['account' => $bankAccount?->name ?? __('Unavailable')])
+                    : __('Paid from petty cash wallets') }}
+            </p>
         </div>
         <div class="flex flex-wrap gap-2">
             <flux:button :href="route('petty-cash.imports.index')" wire:navigate variant="ghost" icon="arrow-left">{{ __('All Imports') }}</flux:button>
@@ -215,7 +228,7 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
     @endif
 
-    @if((int) ($stats['unpaid_for_insufficient_balance'] ?? 0) > 0)
+    @if(! $usesBank && (int) ($stats['unpaid_for_insufficient_balance'] ?? 0) > 0)
         <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
             {{ trans_choice(':count invoice was changed to pending because its wallet balance was insufficient.|:count invoices were changed to pending because their wallet balances were insufficient.', (int) $stats['unpaid_for_insufficient_balance'], ['count' => (int) $stats['unpaid_for_insufficient_balance']]) }}
         </div>
@@ -223,7 +236,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
     @if($statusValue === 'ready')
         <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100">
-            <p class="font-medium">{{ __('Validation passed. No accounting or wallet records have changed yet.') }}</p>
+            <p class="font-medium">{{ $usesBank ? __('Validation passed. No accounting or bank records have changed yet.') : __('Validation passed. No accounting or wallet records have changed yet.') }}</p>
             <p class="mt-1">{{ __('Review the staged rows below. Committing creates every invoice and applies only the settlements marked as paid.') }}</p>
         </div>
     @elseif($statusValue === 'needs_review')
@@ -281,13 +294,15 @@ new #[Layout('components.layouts.app')] class extends Component
                         @foreach($allSuppliers as $supplier)<option value="{{ $supplier->id }}">{{ $supplier->name }}</option>@endforeach
                     </select>
                 </div>
-                <div>
-                    <label class="mb-1 block text-sm font-medium">{{ __('Wallet') }}</label>
-                    <select wire:model.live="filter_wallet" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800">
-                        <option value="">{{ __('All wallets') }}</option>
-                        @foreach($allWallets as $wallet)<option value="{{ $wallet->id }}">{{ $wallet->driver_name ?: __('Custodian :id', ['id' => $wallet->driver_id]) }}</option>@endforeach
-                    </select>
-                </div>
+                @unless($usesBank)
+                    <div>
+                        <label class="mb-1 block text-sm font-medium">{{ __('Wallet') }}</label>
+                        <select wire:model.live="filter_wallet" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800">
+                            <option value="">{{ __('All wallets') }}</option>
+                            @foreach($allWallets as $wallet)<option value="{{ $wallet->id }}">{{ $wallet->driver_name ?: __('Custodian :id', ['id' => $wallet->driver_id]) }}</option>@endforeach
+                        </select>
+                    </div>
+                @endunless
                 <div>
                     <label class="mb-1 block text-sm font-medium">{{ __('Paid State') }}</label>
                     <select wire:model.live="filter_paid" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800">
@@ -309,9 +324,11 @@ new #[Layout('components.layouts.app')] class extends Component
                         <select wire:model="bulk_supplier_id" aria-label="{{ __('Override supplier') }}" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800">
                             <option value="">{{ __('Keep supplier') }}</option>@foreach($allSuppliers as $supplier)<option value="{{ $supplier->id }}">{{ $supplier->name }}</option>@endforeach
                         </select>
-                        <select wire:model="bulk_wallet_id" aria-label="{{ __('Override wallet') }}" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800">
-                            <option value="">{{ __('Keep wallet') }}</option>@foreach($allWallets as $wallet)<option value="{{ $wallet->id }}">{{ $wallet->driver_name ?: __('Custodian :id', ['id' => $wallet->driver_id]) }}</option>@endforeach
-                        </select>
+                        @unless($usesBank)
+                            <select wire:model="bulk_wallet_id" aria-label="{{ __('Override wallet') }}" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800">
+                                <option value="">{{ __('Keep wallet') }}</option>@foreach($allWallets as $wallet)<option value="{{ $wallet->id }}">{{ $wallet->driver_name ?: __('Custodian :id', ['id' => $wallet->driver_id]) }}</option>@endforeach
+                            </select>
+                        @endunless
                         <select wire:model="bulk_paid" aria-label="{{ __('Override paid state') }}" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800">
                             <option value="">{{ __('Keep paid state') }}</option><option value="1">{{ __('Set paid') }}</option><option value="0">{{ __('Set unpaid') }}</option>
                         </select>
@@ -328,7 +345,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             <flux:input wire:model="newInvoice.business_date" type="date" :label="__('Business Date')" />
                             <div><label class="mb-1 block text-sm font-medium">{{ __('Supplier') }}</label><select wire:model="newInvoice.supplier_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"><option value="">{{ __('Choose supplier') }}</option>@foreach($allSuppliers as $supplier)<option value="{{ $supplier->id }}">{{ $supplier->name }}</option>@endforeach</select></div>
                             <flux:input wire:model="newInvoice.category" :label="__('Category')" list="expense-category-names" />
-                            <div><label class="mb-1 block text-sm font-medium">{{ __('Wallet') }}</label><select wire:model="newInvoice.wallet_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"><option value="">{{ __('No wallet') }}</option>@foreach($allWallets as $wallet)<option value="{{ $wallet->id }}">{{ $wallet->driver_name ?: __('Custodian :id', ['id' => $wallet->driver_id]) }}</option>@endforeach</select></div>
+                            @unless($usesBank)<div><label class="mb-1 block text-sm font-medium">{{ __('Wallet') }}</label><select wire:model="newInvoice.wallet_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"><option value="">{{ __('No wallet') }}</option>@foreach($allWallets as $wallet)<option value="{{ $wallet->id }}">{{ $wallet->driver_name ?: __('Custodian :id', ['id' => $wallet->driver_id]) }}</option>@endforeach</select></div>@endunless
                             <flux:input wire:model="newInvoice.reference_number" :label="__('Reference')" />
                             <flux:input wire:model="newInvoice.due_date" type="date" :label="__('Due Date')" />
                             <div><label class="mb-1 block text-sm font-medium">{{ __('Paid') }}</label><select wire:model="newInvoice.paid" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"><option value="0">{{ __('Unpaid') }}</option><option value="1">{{ __('Paid') }}</option></select></div>
@@ -375,7 +392,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         <div><dt class="text-xs text-neutral-500">{{ __('Supplier') }}</dt><dd>{{ $entry['supplier'] }}</dd></div>
                         <div><dt class="text-xs text-neutral-500">{{ __('Due Date') }}</dt><dd>{{ $header['due_date'] ?? '—' }}</dd></div>
                         <div><dt class="text-xs text-neutral-500">{{ __('Category') }}</dt><dd>{{ $entry['category'] }}</dd></div>
-                        <div><dt class="text-xs text-neutral-500">{{ __('Wallet') }}</dt><dd>{{ $entry['wallet'] }}</dd></div>
+                        <div><dt class="text-xs text-neutral-500">{{ $usesBank ? __('Bank Account') : __('Wallet') }}</dt><dd>{{ $entry['payment_source'] }}</dd></div>
                         <div><dt class="text-xs text-neutral-500">{{ __('Settlement') }}</dt><dd>{{ ($header['paid'] ?? false) ? __('Paid') : __('Pending') }}</dd></div>
                         <div><dt class="text-xs text-neutral-500">{{ __('Lines') }}</dt><dd>{{ $entry['line_count'] }}</dd></div>
                         <div><dt class="text-xs text-neutral-500">{{ __('Subtotal') }}</dt><dd>{{ number_format($entry['subtotal'], 2) }}</dd></div>

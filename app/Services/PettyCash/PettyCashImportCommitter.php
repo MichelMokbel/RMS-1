@@ -5,6 +5,7 @@ namespace App\Services\PettyCash;
 use App\Enums\PettyCash\PettyCashImportStatus;
 use App\Models\AccountingCompany;
 use App\Models\ApInvoice;
+use App\Models\BankAccount;
 use App\Models\ExpenseCategory;
 use App\Models\PettyCashImportBatch;
 use App\Models\PettyCashImportCategoryProposal;
@@ -91,7 +92,11 @@ class PettyCashImportCommitter
 
                 $this->resolveCategories($locked, $stagedInvoices, $actor);
                 $this->lockSuppliers($stagedInvoices);
-                $downgradedAtCommit = $this->lockAndApplyWalletCapacity($stagedInvoices);
+                $usesBank = ($locked->funding_source ?? 'petty_cash') === 'bank_account';
+                if ($usesBank) {
+                    $this->lockBankAccount($locked, (string) $company->base_currency);
+                }
+                $downgradedAtCommit = $usesBank ? 0 : $this->lockAndApplyWalletCapacity($stagedInvoices);
                 foreach ($stagedInvoices as $stagedInvoice) {
                     $this->commitInvoice(
                         $locked,
@@ -118,6 +123,8 @@ class PettyCashImportCommitter
                     'date_to' => $locked->date_to?->format('Y-m-d') ?? $locked->business_date->format('Y-m-d'),
                     'invoices' => $stagedInvoices->count(),
                     'rows' => $stagedInvoices->sum(fn ($invoice) => $invoice->rows->count()),
+                    'funding_source' => $locked->funding_source ?? 'petty_cash',
+                    'default_bank_account_id' => $locked->default_bank_account_id,
                     'unpaid_for_insufficient_balance' => $stats['unpaid_for_insufficient_balance'],
                     'target_invoice_ids' => $stagedInvoices->pluck('target_invoice_id')->filter()->values()->all(),
                 ], (int) $locked->company_id);
@@ -141,6 +148,7 @@ class PettyCashImportCommitter
         string $currencyCode
     ): void {
         $header = $stagedInvoice->header;
+        $usesBank = ($batch->funding_source ?? 'petty_cash') === 'bank_account';
         $this->assertCommitEntry($header, $businessDate, (int) $batch->company_id);
         $sequence = $this->sequences->next(
             'pc_expense_'.str_replace('-', '', $businessDate),
@@ -157,7 +165,8 @@ class PettyCashImportCommitter
             'company_id' => (int) $batch->company_id,
             'supplier_id' => (int) $header['supplier_id'],
             'category_id' => (int) $header['category_id'],
-            'wallet_id' => (int) $header['wallet_id'],
+            'expense_channel' => $usesBank ? 'vendor' : 'petty_cash',
+            'wallet_id' => $usesBank ? null : (int) $header['wallet_id'],
             'invoice_number' => sprintf('EXP-%s-%04d', str_replace('-', '', $businessDate), $sequence),
             'reference_number' => $header['reference_number'] ?? null,
             'invoice_date' => $businessDate,
@@ -174,19 +183,30 @@ class PettyCashImportCommitter
             ])->all(),
         ], (int) $actor->id);
 
-        $invoice = $this->workflow->autoProcessPettyCashOnCreate(
-            $invoice,
-            (int) $actor->id,
-            ! (bool) $header['paid'],
-            [
-                'payment_method' => 'petty_cash',
-                'payment_date' => $businessDate,
-                'recognition_date' => $businessDate,
-                'reference' => $header['reference_number'] ?? null,
-                'client_uuid' => (string) $stagedInvoice->client_uuid,
-                'notes' => __('Settlement created by petty cash import :batch.', ['batch' => $batch->id]),
-            ]
-        );
+        $settlement = [
+            'payment_method' => $usesBank ? 'bank_transfer' : 'petty_cash',
+            'bank_account_id' => $usesBank ? (int) $batch->default_bank_account_id : null,
+            'payment_date' => $businessDate,
+            'recognition_date' => $businessDate,
+            'reference' => $header['reference_number'] ?? null,
+            'client_uuid' => (string) $stagedInvoice->client_uuid,
+            'notes' => __('Settlement created by expense import :batch.', ['batch' => $batch->id]),
+        ];
+
+        if ($usesBank) {
+            $invoice = $this->workflow->submit($invoice, (int) $actor->id);
+            $invoice = $this->workflow->post($invoice, (int) $actor->id, $businessDate);
+            if ((bool) $header['paid']) {
+                $invoice = $this->workflow->settle($invoice, (int) $actor->id, $settlement);
+            }
+        } else {
+            $invoice = $this->workflow->autoProcessPettyCashOnCreate(
+                $invoice,
+                (int) $actor->id,
+                ! (bool) $header['paid'],
+                $settlement
+            );
+        }
 
         $stagedInvoice->forceFill([
             'status' => 'committed',
@@ -342,6 +362,29 @@ class PettyCashImportCommitter
         }
 
         return $downgraded;
+    }
+
+    private function lockBankAccount(PettyCashImportBatch $batch, string $currencyCode): BankAccount
+    {
+        $bank = BankAccount::query()
+            ->whereKey((int) ($batch->default_bank_account_id ?? 0))
+            ->lockForUpdate()
+            ->first();
+        if (! $bank
+            || ! $bank->is_active
+            || (int) $bank->company_id !== (int) $batch->company_id
+            || ! $bank->ledger_account_id) {
+            throw ValidationException::withMessages([
+                'default_bank_account_id' => __('The selected bank account is inactive, missing, or not linked to a ledger account.'),
+            ]);
+        }
+        if (filled($bank->currency_code) && strtoupper((string) $bank->currency_code) !== strtoupper($currencyCode)) {
+            throw ValidationException::withMessages([
+                'default_bank_account_id' => __('The bank account currency must match the accounting company currency.'),
+            ]);
+        }
+
+        return $bank;
     }
 
     /** @param array<string, mixed> $header */

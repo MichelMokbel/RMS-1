@@ -37,6 +37,7 @@ class ApExpenseCreationService
     public function createDraft(array $payload, int $actorId): ApInvoice
     {
         $supplierId = (int) ($payload['supplier_id'] ?? 0);
+        $expenseChannel = (string) ($payload['expense_channel'] ?? (filled($payload['wallet_id'] ?? null) ? 'petty_cash' : 'vendor'));
         $data = Validator::make($payload, [
             'company_id' => ['required', 'integer', 'exists:accounting_companies,id'],
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
@@ -47,7 +48,8 @@ class ApExpenseCreationService
                 'integer',
                 Rule::exists('expense_categories', 'id')->where(fn ($query) => $query->where('active', true)),
             ],
-            'wallet_id' => ['required', 'integer', 'exists:petty_cash_wallets,id'],
+            'expense_channel' => ['nullable', Rule::in(['petty_cash', 'vendor'])],
+            'wallet_id' => [Rule::requiredIf($expenseChannel === 'petty_cash'), 'nullable', 'integer', 'exists:petty_cash_wallets,id'],
             'invoice_number' => [
                 'required',
                 'string',
@@ -87,9 +89,11 @@ class ApExpenseCreationService
             throw ValidationException::withMessages(['category_id' => __('The expense category is inactive.')]);
         }
 
-        $wallet = PettyCashWallet::query()->findOrFail((int) $data['wallet_id']);
-        if (! $wallet->isActive()) {
-            throw ValidationException::withMessages(['wallet_id' => __('The petty cash wallet is inactive.')]);
+        if ($expenseChannel === 'petty_cash') {
+            $wallet = PettyCashWallet::query()->findOrFail((int) $data['wallet_id']);
+            if (! $wallet->isActive()) {
+                throw ValidationException::withMessages(['wallet_id' => __('The petty cash wallet is inactive.')]);
+            }
         }
 
         $companyId = $this->accountingContext->resolveCompanyId(
@@ -105,7 +109,7 @@ class ApExpenseCreationService
             'invoice_date'
         );
 
-        return DB::transaction(function () use ($data, $actorId, $companyId, $periodId): ApInvoice {
+        return DB::transaction(function () use ($data, $actorId, $companyId, $periodId, $expenseChannel): ApInvoice {
             $attributes = [
                 'company_id' => $companyId,
                 'branch_id' => $data['branch_id'] ?? null,
@@ -145,7 +149,11 @@ class ApExpenseCreationService
             }
 
             $invoice = $this->totals->recalc($invoice);
-            $this->workflow->initializeProfile($invoice, 'petty_cash', (int) $data['wallet_id']);
+            $this->workflow->initializeProfile(
+                $invoice,
+                $expenseChannel,
+                $expenseChannel === 'petty_cash' ? (int) $data['wallet_id'] : null
+            );
 
             return $invoice->fresh(['items', 'expenseProfile.wallet', 'supplier']);
         });
