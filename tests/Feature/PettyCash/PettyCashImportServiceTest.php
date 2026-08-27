@@ -335,6 +335,31 @@ it('inherits invoice fields across compact line rows and ignores unused entry sl
         ->and($batch->rows->last()->payload['notes'])->toBe('Morning run');
 });
 
+it('allows different notes on rows grouped into the same invoice', function () {
+    $workbook = pettyCashImportWorkbook([
+        ['ENTRY-NOTES-1', $this->supplier->id.' | Daily Market', 'NOTES-REF-1', '', '', '', 'FALSE', 'First line', '1', '10.00', 'First line note'],
+        ['ENTRY-NOTES-1', $this->supplier->id.' | Daily Market', 'NOTES-REF-1', '', '', '', 'FALSE', 'Second line', '1', '5.00', 'Second line note'],
+    ]);
+
+    $batch = app(PettyCashImportService::class)->stage(
+        $workbook,
+        '2026-08-15',
+        $this->category->id,
+        $this->wallet->id,
+        $this->company->id,
+        $this->actor
+    );
+
+    expect($batch->status->value)->toBe('ready')
+        ->and($batch->invoices)->toHaveCount(1)
+        ->and($batch->invoices->first()->errors)->toBeEmpty()
+        ->and($batch->invoices->first()->header['notes'])->toBe('First line note')
+        ->and($batch->rows->pluck('payload')->pluck('notes')->all())->toBe([
+            'First line note',
+            'Second line note',
+        ]);
+});
+
 it('rejects a workbook containing only prefilled entry slots', function () {
     $workbook = pettyCashImportWorkbook([
         ['ENTRY-001'],

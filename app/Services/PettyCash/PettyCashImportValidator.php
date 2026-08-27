@@ -102,12 +102,12 @@ class PettyCashImportValidator
             $first = $rows[$indexes[0]]['payload'];
             $entryId = $first['entry_id'];
             $invoiceDate = $first['business_date'];
-            $headerFields = [
+            $consistentHeaderFields = [
                 'supplier_id', 'reference_number', 'due_date', 'category_id',
-                'category_name', 'category_normalized', 'wallet_id', 'paid', 'notes',
+                'category_name', 'category_normalized', 'wallet_id', 'paid',
             ];
             $groupErrors = [];
-            foreach ($headerFields as $field) {
+            foreach ($consistentHeaderFields as $field) {
                 $values = collect($indexes)
                     ->map(fn (int $index): mixed => $rows[$index]['payload'][$field] ?? null)
                     ->uniqueStrict();
@@ -157,7 +157,7 @@ class PettyCashImportValidator
                     $rows[$index]['errors']['reference_number'] = $message;
                 }
             }
-            $header = collect($first)->only($headerFields)->all();
+            $header = collect($first)->only([...$consistentHeaderFields, 'notes'])->all();
             $header['business_date'] = $invoiceDate;
             $header['tax_amount'] = 0.0;
             $header['subtotal'] = $invoiceTotal;
