@@ -25,13 +25,18 @@ class PettyCashImportRowPreparer
      * @param  array<int, array<string, mixed>>  $sourceRows
      * @return array<int, array<string, mixed>>
      */
-    public function prepare(array $sourceRows): array
+    public function prepare(array $sourceRows, bool $multipleDates = false): array
     {
         $prepared = [];
         $currentEntryId = null;
+        $currentBusinessDate = null;
 
         foreach ($sourceRows as $offset => $source) {
             $entryId = Str::upper(trim((string) ($source['entry_id'] ?? '')));
+            $businessDate = trim((string) ($source['business_date'] ?? ''));
+            if ($multipleDates && $businessDate !== '') {
+                $currentBusinessDate = $businessDate;
+            }
             if ($entryId !== '') {
                 $currentEntryId = $entryId;
             }
@@ -41,6 +46,9 @@ class PettyCashImportRowPreparer
             if ($entryId === '' && $currentEntryId !== null) {
                 $source['entry_id'] = $currentEntryId;
             }
+            if ($multipleDates && $businessDate === '' && $currentBusinessDate !== null) {
+                $source['business_date'] = $currentBusinessDate;
+            }
             $prepared[$offset] = $source;
         }
 
@@ -48,7 +56,8 @@ class PettyCashImportRowPreparer
         foreach ($prepared as $offset => $source) {
             $entryId = Str::upper(trim((string) ($source['entry_id'] ?? '')));
             if ($entryId !== '') {
-                $groups[$entryId][] = $offset;
+                $date = $multipleDates ? trim((string) ($source['business_date'] ?? '')) : '';
+                $groups[$date.'|'.$entryId][] = $offset;
             }
         }
 

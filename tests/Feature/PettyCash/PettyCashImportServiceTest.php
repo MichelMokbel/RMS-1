@@ -2,16 +2,19 @@
 
 use App\Models\AccountingAccountMapping;
 use App\Models\AccountingCompany;
+use App\Models\AccountingPeriod;
 use App\Models\ApInvoice;
 use App\Models\ApPayment;
 use App\Models\ExpenseCategory;
 use App\Models\LedgerAccount;
 use App\Models\PettyCashImportBatch;
+use App\Models\PettyCashImportEditEvent;
 use App\Models\PettyCashWallet;
 use App\Models\SubledgerEntry;
 use App\Models\Supplier;
 use App\Models\User;
 use App\Services\AP\ApReportsService;
+use App\Services\PettyCash\PettyCashImportEditor;
 use App\Services\PettyCash\PettyCashImportService;
 use App\Services\PettyCash\PettyCashImportTemplateBuilder;
 use App\Services\Spend\SpendReportService;
@@ -454,6 +457,145 @@ it('revalidates supplier references after another ready batch commits', function
         ->and($second->fresh()->status->value)->toBe('ready');
 });
 
+it('stages edits and atomically commits multiple dates with proposed categories', function () {
+    $this->wallet->forceFill(['balance' => 25])->save();
+    $workbook = pettyCashBulkImportWorkbook([
+        ['2026-07-31', 'ENTRY-001', '', 'BULK-1', '', 'Bulk Food', '', '', 'Meat', '1', '15', ''],
+        ['2026-07-31', 'ENTRY-001', '', 'BULK-1', '', 'Bulk Food', '', '', 'Fish', '1', '5', ''],
+        ['2026-08-01', 'ENTRY-001', '', 'BULK-2', '', 'Bulk Operations', '', '', 'Transfer fee', '1', '10', ''],
+    ], [
+        ['01', 'Bulk Food'],
+        ['19', 'Bulk Unused Category'],
+    ]);
+
+    $service = app(PettyCashImportService::class);
+    $batch = $service->stageBulk(
+        $workbook,
+        $this->supplier->id,
+        null,
+        $this->wallet->id,
+        true,
+        $this->company->id,
+        $this->actor,
+    );
+
+    expect($batch->import_mode)->toBe('bulk')
+        ->and($batch->status->value)->toBe('ready')
+        ->and($batch->date_from->format('Y-m-d'))->toBe('2026-07-31')
+        ->and($batch->date_to->format('Y-m-d'))->toBe('2026-08-01')
+        ->and($batch->invoices)->toHaveCount(2)
+        ->and($batch->categoryProposals)->toHaveCount(3)
+        ->and($batch->invoices->pluck('entry_id')->all())->toBe(['ENTRY-001', 'ENTRY-001']);
+
+    $fish = $batch->rows->first(fn ($row): bool => $row->payload['description'] === 'Fish');
+    $edited = app(PettyCashImportEditor::class)->updateRow(
+        $fish,
+        $batch->revision,
+        ['unit_price' => '6'],
+        $this->actor,
+    );
+    expect($edited->revision)->toBe(1)
+        ->and((float) $fish->fresh()->payload['unit_price'])->toBe(6.0)
+        ->and((float) $fish->fresh()->original_payload['unit_price'])->toBe(5.0)
+        ->and(PettyCashImportEditEvent::query()->where('import_batch_id', $batch->id)->count())->toBe(1);
+    $encryptedBefore = DB::table('petty_cash_import_edit_events')->value('before_values');
+    expect($encryptedBefore)->not->toContain('Fish');
+
+    expect(fn () => app(PettyCashImportEditor::class)->updateRow(
+        $fish,
+        0,
+        ['unit_price' => '7'],
+        $this->actor,
+    ))->toThrow(ValidationException::class, 'changed in another session');
+
+    $committed = $service->commit($edited, $this->actor);
+    $july = ApInvoice::query()->where('reference_number', 'BULK-1')->firstOrFail();
+    $august = ApInvoice::query()->where('reference_number', 'BULK-2')->firstOrFail();
+    expect($committed->status->value)->toBe('completed')
+        ->and($july->invoice_date->format('Y-m-d'))->toBe('2026-07-31')
+        ->and($july->status)->toBe('paid')
+        ->and($august->invoice_date->format('Y-m-d'))->toBe('2026-08-01')
+        ->and($august->status)->toBe('posted')
+        ->and((float) $this->wallet->fresh()->balance)->toBe(4.0)
+        ->and(ExpenseCategory::query()->whereIn('name', [
+            'Bulk Food', 'Bulk Operations', 'Bulk Unused Category',
+        ])->count())->toBe(3);
+});
+
+it('requires review when an unused declared category ambiguously matches existing categories', function () {
+    ExpenseCategory::factory()->create(['name' => 'Ambiguous Declared', 'active' => true]);
+    ExpenseCategory::factory()->create(['name' => 'ambiguous   declared', 'active' => true]);
+    $workbook = pettyCashBulkImportWorkbook([
+        ['2026-07-31', 'AMBIG-1', '', 'AMBIG-REF-1', '', '', '', 'FALSE', 'Line', '1', '5', ''],
+    ], [['20', 'AMBIGUOUS DECLARED']]);
+
+    $batch = app(PettyCashImportService::class)->stageBulk(
+        $workbook,
+        $this->supplier->id,
+        $this->category->id,
+        $this->wallet->id,
+        false,
+        $this->company->id,
+        $this->actor,
+    );
+
+    expect($batch->status->value)->toBe('needs_review')
+        ->and($batch->stats['invalid_categories'])->toBe(1)
+        ->and($batch->categoryProposals->firstWhere('source_code', '20')->status)->toBe('ambiguous');
+});
+
+it('rolls back categories and all dates when a bulk commit fails', function () {
+    $workbook = pettyCashBulkImportWorkbook([
+        ['2026-07-31', 'ROLLBACK-1', '', 'BULK-RB-1', '', 'Bulk Rollback Category', '', 'FALSE', 'Line', '1', '5', ''],
+    ], [['RB', 'Bulk Declared Rollback']]);
+    $batch = app(PettyCashImportService::class)->stageBulk(
+        $workbook,
+        $this->supplier->id,
+        null,
+        $this->wallet->id,
+        false,
+        $this->company->id,
+        $this->actor,
+    );
+    $this->supplier->forceFill(['hold_status' => 'hold'])->save();
+
+    expect(fn () => app(PettyCashImportService::class)->commit($batch, $this->actor))
+        ->toThrow(ValidationException::class);
+    expect(ApInvoice::query()->where('reference_number', 'BULK-RB-1')->exists())->toBeFalse()
+        ->and(ExpenseCategory::query()->whereIn('name', [
+            'Bulk Rollback Category', 'Bulk Declared Rollback',
+        ])->exists())->toBeFalse();
+});
+
+it('stages a closed bulk date for review and becomes ready after revalidation', function () {
+    $period = AccountingPeriod::query()
+        ->where('company_id', $this->company->id)
+        ->whereDate('start_date', '<=', '2026-07-31')
+        ->whereDate('end_date', '>=', '2026-07-31')
+        ->firstOrFail();
+    $period->forceFill(['status' => 'closed'])->save();
+    $workbook = pettyCashBulkImportWorkbook([
+        ['2026-07-31', 'CLOSED-1', '', 'CLOSED-BULK-1', '', 'Closed Review Category', '', 'FALSE', 'Line', '1', '5', ''],
+    ]);
+
+    $batch = app(PettyCashImportService::class)->stageBulk(
+        $workbook,
+        $this->supplier->id,
+        null,
+        $this->wallet->id,
+        false,
+        $this->company->id,
+        $this->actor,
+    );
+    expect($batch->status->value)->toBe('needs_review')
+        ->and($batch->invoices->first()->errors)->toHaveKey('business_date');
+
+    $period->forceFill(['status' => 'open'])->save();
+    $revalidated = app(PettyCashImportEditor::class)->revalidate($batch, 0, $this->actor);
+    expect($revalidated->status->value)->toBe('ready')
+        ->and($revalidated->invoices->first()->errors)->toBeEmpty();
+});
+
 function pettyCashImportMapping(AccountingCompany $company, string $key, string $code, string $type): LedgerAccount
 {
     $account = LedgerAccount::query()->firstOrCreate(
@@ -519,4 +661,56 @@ function pettyCashImportWorkbook(array $rows): UploadedFile
         null,
         true
     );
+}
+
+/**
+ * @param  array<int, array<int, string>>  $rows
+ * @param  array<int, array{0:string,1:string}>  $definitions
+ */
+function pettyCashBulkImportWorkbook(array $rows, array $definitions = []): UploadedFile
+{
+    $path = app(PettyCashImportTemplateBuilder::class)->buildBulk([], [], []);
+    $zip = new ZipArchive;
+    if ($zip->open($path) !== true) {
+        throw new RuntimeException('Unable to open generated bulk petty cash workbook.');
+    }
+
+    try {
+        replacePettyCashWorkbookRows($zip, 'xl/worksheets/sheet2.xml', $rows);
+        replacePettyCashWorkbookRows($zip, 'xl/worksheets/sheet3.xml', $definitions);
+    } finally {
+        $zip->close();
+    }
+
+    return new UploadedFile(
+        $path,
+        'petty-cash-bulk.xlsx',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        null,
+        true
+    );
+}
+
+/** @param array<int, array<int, string>> $rows */
+function replacePettyCashWorkbookRows(ZipArchive $zip, string $sheetPath, array $rows): void
+{
+    $sheet = (string) $zip->getFromName($sheetPath);
+    $xmlRows = '';
+    foreach ($rows as $index => $row) {
+        $rowNumber = $index + 2;
+        $cells = '';
+        foreach ($row as $column => $value) {
+            if ($value === '') {
+                continue;
+            }
+            $reference = chr(ord('A') + $column).$rowNumber;
+            $escaped = htmlspecialchars((string) $value, ENT_QUOTES | ENT_XML1, 'UTF-8');
+            $cells .= '<c r="'.$reference.'" t="inlineStr"><is><t>'.$escaped.'</t></is></c>';
+        }
+        $xmlRows .= '<row r="'.$rowNumber.'">'.$cells.'</row>';
+    }
+    preg_match('/<row r="1".*?<\/row>/s', $sheet, $headerMatch);
+    $header = $headerMatch[0] ?? throw new RuntimeException('Workbook header is missing.');
+    $updated = preg_replace('/<sheetData>.*?<\/sheetData>/s', '<sheetData>'.$header.$xmlRows.'</sheetData>', $sheet, 1);
+    $zip->addFromString($sheetPath, $updated ?: throw new RuntimeException('Unable to replace workbook rows.'));
 }

@@ -5,7 +5,9 @@ namespace App\Services\PettyCash;
 use App\Enums\PettyCash\PettyCashImportStatus;
 use App\Models\AccountingCompany;
 use App\Models\ApInvoice;
+use App\Models\ExpenseCategory;
 use App\Models\PettyCashImportBatch;
+use App\Models\PettyCashImportCategoryProposal;
 use App\Models\PettyCashImportInvoice;
 use App\Models\PettyCashImportRow;
 use App\Models\PettyCashWallet;
@@ -58,9 +60,6 @@ class PettyCashImportCommitter
                     ]);
                 }
 
-                $businessDate = $locked->business_date->format('Y-m-d');
-                $periodId = $this->accountingContext->resolvePeriodId($businessDate, (int) $locked->company_id);
-                $this->periodGate->assertDateOpen($businessDate, (int) $locked->company_id, $periodId, 'ap', 'business_date');
                 $locked->forceFill([
                     'status' => 'committing',
                     'failure_reason' => null,
@@ -69,17 +68,38 @@ class PettyCashImportCommitter
 
                 $stagedInvoices = PettyCashImportInvoice::query()
                     ->where('import_batch_id', $locked->id)
-                    ->with(['rows' => fn ($query) => $query->orderBy('row_number')])
+                    ->where('excluded', false)
+                    ->with(['rows' => fn ($query) => $query->where('excluded', false)->orderBy('row_number')])
+                    ->orderBy('business_date')
                     ->orderBy('id')
                     ->get();
                 if ($stagedInvoices->isEmpty() || $stagedInvoices->contains(fn ($invoice) => $invoice->status->value !== 'valid')) {
                     throw ValidationException::withMessages(['rows' => __('All staged entries must be valid before commit.')]);
                 }
 
+                foreach ($stagedInvoices->pluck('business_date')->filter()->unique() as $date) {
+                    $businessDate = $date->format('Y-m-d');
+                    $periodId = $this->accountingContext->resolvePeriodId($businessDate, (int) $locked->company_id);
+                    $this->periodGate->assertDateOpen(
+                        $businessDate,
+                        (int) $locked->company_id,
+                        $periodId,
+                        'ap',
+                        'business_date'
+                    );
+                }
+
+                $this->resolveCategories($locked, $stagedInvoices, $actor);
                 $this->lockSuppliers($stagedInvoices);
                 $downgradedAtCommit = $this->lockAndApplyWalletCapacity($stagedInvoices);
                 foreach ($stagedInvoices as $stagedInvoice) {
-                    $this->commitInvoice($locked, $stagedInvoice, $actor, $businessDate, (string) $company->base_currency);
+                    $this->commitInvoice(
+                        $locked,
+                        $stagedInvoice,
+                        $actor,
+                        $stagedInvoice->business_date->format('Y-m-d'),
+                        (string) $company->base_currency
+                    );
                 }
 
                 $stats = $locked->stats ?? [];
@@ -94,7 +114,8 @@ class PettyCashImportCommitter
                     'failed_at' => null,
                 ])->save();
                 $this->audit->log('petty_cash_import.committed', (int) $actor->id, $locked, [
-                    'business_date' => $businessDate,
+                    'date_from' => $locked->date_from?->format('Y-m-d') ?? $locked->business_date->format('Y-m-d'),
+                    'date_to' => $locked->date_to?->format('Y-m-d') ?? $locked->business_date->format('Y-m-d'),
                     'invoices' => $stagedInvoices->count(),
                     'rows' => $stagedInvoices->sum(fn ($invoice) => $invoice->rows->count()),
                     'unpaid_for_insufficient_balance' => $stats['unpaid_for_insufficient_balance'],
@@ -173,6 +194,7 @@ class PettyCashImportCommitter
         ])->save();
         PettyCashImportRow::query()
             ->where('import_invoice_id', $stagedInvoice->id)
+            ->where('excluded', false)
             ->update([
                 'status' => 'committed',
                 'target_type' => ApInvoice::class,
@@ -191,6 +213,79 @@ class PettyCashImportCommitter
             ->values();
 
         Supplier::query()->whereIn('id', $supplierIds)->orderBy('id')->lockForUpdate()->get();
+    }
+
+    private function resolveCategories(PettyCashImportBatch $batch, $stagedInvoices, User $actor): void
+    {
+        $categories = ExpenseCategory::query()->orderBy('id')->lockForUpdate()->get();
+        $byName = $categories->groupBy(fn (ExpenseCategory $category): string => $this->normalizeCategoryName($category->name));
+        $proposals = PettyCashImportCategoryProposal::query()
+            ->where('import_batch_id', $batch->id)
+            ->orderBy('normalized_name')
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($proposals as $proposal) {
+            $matches = $byName->get($proposal->normalized_name, collect());
+            if ($matches->count() > 1) {
+                throw ValidationException::withMessages([
+                    'category' => __('A staged category name matches multiple existing categories.'),
+                ]);
+            }
+            $category = $matches->first();
+            $created = false;
+            if ($category && ! $category->active) {
+                throw ValidationException::withMessages([
+                    'category' => __('An inactive category named :name must be reviewed before commit.', [
+                        'name' => $proposal->source_name,
+                    ]),
+                ]);
+            }
+            if (! $category) {
+                $created = true;
+                $category = ExpenseCategory::query()->create([
+                    'name' => $proposal->source_name,
+                    'description' => __('Created by petty cash import batch :batch.', ['batch' => $batch->id]),
+                    'active' => true,
+                ]);
+                $byName->put($proposal->normalized_name, collect([$category]));
+                $this->audit->log('expense_category.created_by_import', (int) $actor->id, $category, [
+                    'import_batch_id' => $batch->id,
+                    'source_code' => $proposal->source_code,
+                    'source_name' => $proposal->source_name,
+                ], (int) $batch->company_id);
+            }
+            $proposal->forceFill([
+                'status' => $created ? 'created' : 'matched',
+                'expense_category_id' => $category->id,
+            ])->save();
+        }
+
+        foreach ($stagedInvoices as $invoice) {
+            $header = $invoice->header;
+            if ((int) ($header['category_id'] ?? 0) > 0) {
+                continue;
+            }
+            $normalized = (string) ($header['category_normalized'] ?? '');
+            $category = $byName->get($normalized, collect())->first();
+            if (! $category) {
+                throw ValidationException::withMessages(['category' => __('A staged category could not be resolved.')]);
+            }
+            $header['category_id'] = (int) $category->id;
+            $invoice->forceFill(['header' => $header])->save();
+            foreach ($invoice->rows as $row) {
+                $payload = $row->payload;
+                $payload['category_id'] = (int) $category->id;
+                $row->forceFill(['payload' => $payload])->save();
+            }
+        }
+    }
+
+    private function normalizeCategoryName(string $name): string
+    {
+        $collapsed = preg_replace('/\s+/u', ' ', trim($name)) ?: trim($name);
+
+        return mb_strtolower($collapsed);
     }
 
     private function lockAndApplyWalletCapacity($stagedInvoices): int

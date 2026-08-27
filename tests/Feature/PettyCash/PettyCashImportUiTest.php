@@ -3,6 +3,7 @@
 use App\Models\AccountingCompany;
 use App\Models\ExpenseCategory;
 use App\Models\PettyCashImportBatch;
+use App\Models\PettyCashImportCategoryProposal;
 use App\Models\PettyCashImportInvoice;
 use App\Models\PettyCashImportRow;
 use App\Models\PettyCashWallet;
@@ -41,7 +42,9 @@ it('shows the petty cash import entry point only to users with import permission
     $this->actingAs($importer)
         ->get(route('petty-cash.imports.index'))
         ->assertOk()
-        ->assertSee('Daily Expense Imports')
+        ->assertSee('Expense Imports')
+        ->assertSee('Daily')
+        ->assertSee('Multiple Dates')
         ->assertSee('Business Date')
         ->assertSee('Default Category')
         ->assertSee('Default Wallet')
@@ -52,6 +55,120 @@ it('shows the petty cash import entry point only to users with import permission
         ->assertOk()
         ->assertDontSee('Import Expenses')
         ->assertDontSee(route('petty-cash.imports.index'), false);
+});
+
+it('shows required multiple-date defaults and downloads the bulk template', function () {
+    $company = AccountingCompany::query()->where('is_default', true)->firstOrFail();
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+    $user->givePermissionTo('petty_cash.import');
+    Supplier::factory()->create(['company_id' => $company->id, 'name' => 'Bulk Supplier', 'status' => 'active']);
+    PettyCashWallet::factory()->create(['driver_name' => 'Bulk Wallet', 'active' => true]);
+
+    $this->actingAs($user);
+
+    Volt::test('petty-cash.imports.index')
+        ->set('import_mode', 'bulk')
+        ->assertSee('Upload multiple-date workbook')
+        ->assertSee('Default Supplier')
+        ->assertSee('Default Paid Status')
+        ->assertSee('Choose default wallet')
+        ->assertDontSee('Default Category');
+
+    Volt::test('petty-cash.imports.index')
+        ->set('import_mode', 'bulk')
+        ->call('stage')
+        ->assertHasErrors(['default_supplier_id', 'default_wallet_id', 'default_paid', 'workbook']);
+
+    $response = $this->get(route('petty-cash.imports.template', ['mode' => 'bulk']));
+    $response->assertOk()->assertDownload('petty-cash-multiple-date-import-template.xlsx');
+    $path = $response->baseResponse->getFile()->getPathname();
+    $parsed = app(SafeSpreadsheetReader::class)->workbook($path);
+
+    expect(array_keys($parsed['sheets']))
+        ->toContain('petty_cash_expenses', 'category_definitions')
+        ->and(array_keys($parsed['sheets']['petty_cash_expenses'][0]))->toBe(PettyCashImportTemplateBuilder::BULK_HEADERS);
+});
+
+it('renders editable bulk invoice and line controls before commit', function () {
+    $company = AccountingCompany::query()->where('is_default', true)->firstOrFail();
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+    $user->givePermissionTo('petty_cash.import');
+    $supplier = Supplier::factory()->create(['company_id' => $company->id, 'name' => 'Editable Supplier', 'status' => 'active']);
+    $wallet = PettyCashWallet::factory()->create(['driver_name' => 'Editable Wallet', 'active' => true]);
+    $batch = PettyCashImportBatch::query()->create([
+        'company_id' => $company->id,
+        'import_mode' => 'bulk',
+        'business_date' => '2026-07-01',
+        'date_from' => '2026-07-01',
+        'date_to' => '2026-08-31',
+        'default_supplier_id' => $supplier->id,
+        'default_wallet_id' => $wallet->id,
+        'default_paid' => true,
+        'revision' => 0,
+        'status' => 'needs_review',
+        'source_name' => 'bulk-expenses.xlsx',
+        'storage_disk' => 'local',
+        'object_key' => 'petty-cash/imports/bulk-expenses.xlsx',
+        'sha256' => str_repeat('a', 64),
+        'idempotency_key' => str_repeat('b', 64),
+        'stats' => ['rows' => 1, 'invoices' => 1, 'valid_invoices' => 0, 'invalid_invoices' => 1],
+        'initiated_by' => $user->id,
+        'initiated_at' => now(),
+    ]);
+    $invoice = PettyCashImportInvoice::query()->create([
+        'import_batch_id' => $batch->id,
+        'entry_id' => '20260701-RAW',
+        'business_date' => '2026-07-01',
+        'group_key' => hash('sha256', '2026-07-01|20260701-RAW'),
+        'status' => 'invalid',
+        'excluded' => false,
+        'header' => [
+            'supplier_id' => $supplier->id, 'category' => 'Raw Material', 'wallet_id' => $wallet->id,
+            'paid' => true, 'paid_requested' => true, 'due_date' => '2026-07-01',
+        ],
+        'errors' => ['category' => 'A new category will be created during commit.'],
+        'client_uuid' => fake()->uuid(),
+    ]);
+    PettyCashImportRow::query()->create([
+        'import_batch_id' => $batch->id,
+        'import_invoice_id' => $invoice->id,
+        'row_number' => 2,
+        'source_identifier' => '20260701-RAW',
+        'status' => 'invalid',
+        'excluded' => false,
+        'payload' => [
+            'business_date' => '2026-07-01', 'entry_id' => '20260701-RAW',
+            'supplier' => (string) $supplier->id, 'category' => 'Raw Material', 'wallet' => (string) $wallet->id,
+            'paid' => true, 'description' => 'Meat', 'quantity' => 1, 'unit_price' => 120,
+        ],
+        'errors' => ['category' => ['A new category will be created during commit.']],
+        'row_hash' => hash('sha256', 'bulk-row'),
+    ]);
+    PettyCashImportCategoryProposal::query()->create([
+        'import_batch_id' => $batch->id,
+        'source_code' => '1',
+        'source_name' => 'Raw Material',
+        'normalized_name' => 'raw material',
+        'is_declared' => true,
+        'status' => 'proposed',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('petty-cash.imports.show', $batch))
+        ->assertOk()
+        ->assertSee('Multiple Dates:')
+        ->assertSee('Review Filters and Overrides')
+        ->assertSee('Category Definitions')
+        ->assertSee('Will create')
+        ->assertSee('Apply to Filtered Invoices')
+        ->assertSee('Add Staged Expense')
+        ->assertSee('Save Invoice')
+        ->assertSee('Add Line')
+        ->assertSee('Exclude Invoice')
+        ->assertSee('Meat')
+        ->assertDontSee('Confirm and Commit');
 });
 
 it('protects all petty cash import routes with the dedicated permission', function () {

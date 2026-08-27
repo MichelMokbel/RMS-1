@@ -5,6 +5,7 @@ use App\Models\PettyCashImportBatch;
 use App\Models\PettyCashWallet;
 use App\Models\Supplier;
 use App\Services\Accounting\AccountingContextService;
+use App\Livewire\Concerns\InteractsWithPettyCashImportReview;
 use App\Services\PettyCash\PettyCashImportService;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -14,7 +15,7 @@ use Livewire\WithPagination;
 
 new #[Layout('components.layouts.app')] class extends Component
 {
-    use WithPagination;
+    use InteractsWithPettyCashImportReview, WithPagination;
 
     public int $batchId;
 
@@ -23,6 +24,7 @@ new #[Layout('components.layouts.app')] class extends Component
         abort_unless(auth()->user()?->hasRole('admin') && auth()->user()?->can('petty_cash.import'), 403);
         $this->batchId = $batch;
         $this->batch();
+        $this->syncForms();
     }
 
     public function commitImport(PettyCashImportService $service): void
@@ -52,14 +54,14 @@ new #[Layout('components.layouts.app')] class extends Component
         $batch = $this->batch();
         $rows = $batch->rows()->orderBy('row_number')->paginate(30);
 
-        $stagedInvoices = $batch->invoices()->with(['targetInvoice', 'rows'])->orderBy('id')->get();
+        $stagedInvoices = $batch->invoices()->with(['targetInvoice', 'rows'])->orderBy('business_date')->orderBy('id')->get();
         $headers = $stagedInvoices->pluck('header');
         $suppliers = Supplier::query()->whereIn('id', $headers->pluck('supplier_id')->filter()->unique())->pluck('name', 'id');
         $categories = ExpenseCategory::query()->whereIn('id', $headers->pluck('category_id')->filter()->unique())->pluck('name', 'id');
         $wallets = PettyCashWallet::query()->whereIn('id', $headers->pluck('wallet_id')->filter()->unique())->get()->keyBy('id');
         $importInvoices = $stagedInvoices->map(function ($invoice) use ($suppliers, $categories, $wallets): array {
             $header = $invoice->header ?? [];
-            $subtotal = round((float) $invoice->rows->sum(fn ($row): float => round(
+            $subtotal = round((float) $invoice->rows->where('excluded', false)->sum(fn ($row): float => round(
                 (float) ($row->payload['quantity'] ?? 0) * (float) ($row->payload['unit_price'] ?? 0),
                 2
             )), 2);
@@ -68,13 +70,37 @@ new #[Layout('components.layouts.app')] class extends Component
             return [
                 'model' => $invoice,
                 'supplier' => $suppliers->get((int) ($header['supplier_id'] ?? 0), __('Unknown supplier')),
-                'category' => $categories->get((int) ($header['category_id'] ?? 0), __('Unknown category')),
+                'category' => $categories->get((int) ($header['category_id'] ?? 0), $header['category'] ?? $header['category_name'] ?? __('Unknown category')),
                 'wallet' => $wallet?->driver_name ?: ($wallet ? __('Custodian :id', ['id' => $wallet->driver_id]) : __('Unknown wallet')),
-                'line_count' => $invoice->rows->count(),
+                'line_count' => $invoice->rows->where('excluded', false)->count(),
                 'subtotal' => $subtotal,
                 'total' => $subtotal,
             ];
         });
+
+        $importInvoices = $importInvoices->filter(function (array $entry): bool {
+            $invoice = $entry['model'];
+            $header = $invoice->header ?? [];
+            $date = optional($invoice->business_date)->toDateString() ?: ($header['business_date'] ?? '');
+            $status = $invoice->excluded ? 'excluded' : ($invoice->status->value ?? (string) $invoice->status);
+
+            return ($this->filter_date === '' || $date === $this->filter_date)
+                && ($this->filter_category === '' || str_contains(Str::lower($entry['category']), Str::lower($this->filter_category)))
+                && ($this->filter_supplier === '' || (int) ($header['supplier_id'] ?? 0) === (int) $this->filter_supplier)
+                && ($this->filter_wallet === '' || (int) ($header['wallet_id'] ?? 0) === (int) $this->filter_wallet)
+                && ($this->filter_paid === '' || (bool) ($header['paid_requested'] ?? $header['paid'] ?? false) === ($this->filter_paid === '1'))
+                && ($this->filter_status === '' || $status === $this->filter_status);
+        })->values();
+
+        $allSuppliers = Supplier::query()
+            ->where('status', 'active')
+            ->where(fn ($query) => $query->whereNull('hold_status')->orWhere('hold_status', 'open'))
+            ->where(fn ($query) => $query->where('company_id', $batch->company_id)->orWhereNull('company_id'))
+            ->orderBy('name')
+            ->get();
+        $allCategories = ExpenseCategory::query()->where('active', true)->orderBy('name')->get();
+        $allWallets = PettyCashWallet::query()->where('active', true)->orderBy('driver_name')->get();
+        $categoryProposals = $batch->categoryProposals()->orderByRaw('source_code IS NULL, source_code')->orderBy('source_name')->get();
 
         return [
             'batch' => $batch,
@@ -82,6 +108,11 @@ new #[Layout('components.layouts.app')] class extends Component
             'reviewRows' => $rows,
             'statusValue' => $this->statusValue($batch),
             'stats' => $batch->stats ?? [],
+            'allSuppliers' => $allSuppliers,
+            'allCategories' => $allCategories,
+            'allWallets' => $allWallets,
+            'categoryProposals' => $categoryProposals,
+            'editable' => ($batch->import_mode ?? 'daily') === 'bulk' && in_array($this->statusValue($batch), ['needs_review', 'ready'], true),
         ];
     }
 
@@ -126,11 +157,23 @@ new #[Layout('components.layouts.app')] class extends Component
         <div>
             <p class="text-sm text-neutral-500">{{ __('Petty cash import review') }}</p>
             <h1 class="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{{ $batch->source_name ?: __('Import #:id', ['id' => $batch->id]) }}</h1>
-            <p class="text-sm text-neutral-500">{{ __('Business date: :date', ['date' => optional($batch->business_date)->format('d M Y') ?: $batch->business_date]) }}</p>
+            @if(($batch->import_mode ?? 'daily') === 'bulk')
+                <p class="text-sm text-neutral-500">
+                    {{ __('Multiple Dates: :from – :to', [
+                        'from' => optional($batch->date_from)->format('d M Y') ?: ($batch->date_from ?: '—'),
+                        'to' => optional($batch->date_to)->format('d M Y') ?: ($batch->date_to ?: '—'),
+                    ]) }}
+                </p>
+            @else
+                <p class="text-sm text-neutral-500">{{ __('Business date: :date', ['date' => optional($batch->business_date)->format('d M Y') ?: $batch->business_date]) }}</p>
+            @endif
         </div>
         <div class="flex flex-wrap gap-2">
             <flux:button :href="route('petty-cash.imports.index')" wire:navigate variant="ghost" icon="arrow-left">{{ __('All Imports') }}</flux:button>
             <flux:button :href="route('petty-cash.imports.index')" wire:navigate variant="ghost" icon="arrow-up-tray">{{ __('Upload Another') }}</flux:button>
+            @if($editable)
+                <flux:button type="button" wire:click="revalidateImport" wire:loading.attr="disabled" wire:target="revalidateImport" variant="ghost" icon="arrow-path">{{ __('Revalidate') }}</flux:button>
+            @endif
             @if($statusValue === 'ready')
                 <button
                     type="button"
@@ -183,6 +226,11 @@ new #[Layout('components.layouts.app')] class extends Component
             <p class="font-medium">{{ __('Validation passed. No accounting or wallet records have changed yet.') }}</p>
             <p class="mt-1">{{ __('Review the staged rows below. Committing creates every invoice and applies only the settlements marked as paid.') }}</p>
         </div>
+    @elseif($statusValue === 'needs_review')
+        <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+            <p class="font-medium">{{ __('This import needs review before it can be committed.') }}</p>
+            <p class="mt-1">{{ __('Use the filters and editable invoice cards below to correct the flagged values. Each save revalidates the complete batch.') }}</p>
+        </div>
     @elseif($statusValue === 'failed')
         <div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900 dark:bg-red-950/30 dark:text-red-100">
             <p class="font-medium">{{ __('This workbook cannot be committed because validation errors were found.') }}</p>
@@ -215,16 +263,102 @@ new #[Layout('components.layouts.app')] class extends Component
         @endforeach
     </section>
 
+    @if(($batch->import_mode ?? 'daily') === 'bulk')
+        @include('livewire.petty-cash.imports.partials.category-proposals')
+
+        <section class="space-y-4 rounded-lg border border-neutral-200 bg-white p-5 dark:border-neutral-700 dark:bg-neutral-900">
+            <div>
+                <h2 class="text-lg font-semibold">{{ __('Review Filters and Overrides') }}</h2>
+                <p class="text-sm text-neutral-500">{{ __('Filters control the invoice cards below and which invoices receive a bulk override.') }}</p>
+            </div>
+            <div class="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+                <flux:input wire:model.live.debounce.300ms="filter_date" type="date" :label="__('Date')" />
+                <flux:input wire:model.live.debounce.300ms="filter_category" :label="__('Category')" :placeholder="__('Any category')" />
+                <div>
+                    <label class="mb-1 block text-sm font-medium">{{ __('Supplier') }}</label>
+                    <select wire:model.live="filter_supplier" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800">
+                        <option value="">{{ __('All suppliers') }}</option>
+                        @foreach($allSuppliers as $supplier)<option value="{{ $supplier->id }}">{{ $supplier->name }}</option>@endforeach
+                    </select>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm font-medium">{{ __('Wallet') }}</label>
+                    <select wire:model.live="filter_wallet" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800">
+                        <option value="">{{ __('All wallets') }}</option>
+                        @foreach($allWallets as $wallet)<option value="{{ $wallet->id }}">{{ $wallet->driver_name ?: __('Custodian :id', ['id' => $wallet->driver_id]) }}</option>@endforeach
+                    </select>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm font-medium">{{ __('Paid State') }}</label>
+                    <select wire:model.live="filter_paid" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800">
+                        <option value="">{{ __('All states') }}</option><option value="1">{{ __('Paid requested') }}</option><option value="0">{{ __('Unpaid') }}</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm font-medium">{{ __('Validation Status') }}</label>
+                    <select wire:model.live="filter_status" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800">
+                        <option value="">{{ __('All statuses') }}</option><option value="valid">{{ __('Valid') }}</option><option value="invalid">{{ __('Needs Correction') }}</option><option value="excluded">{{ __('Excluded') }}</option>
+                    </select>
+                </div>
+            </div>
+
+            @if($editable)
+                <div class="border-t border-neutral-200 pt-4 dark:border-neutral-700">
+                    <h3 class="font-medium">{{ __('Apply to Filtered Invoices') }}</h3>
+                    <div class="mt-3 grid gap-3 md:grid-cols-4">
+                        <select wire:model="bulk_supplier_id" aria-label="{{ __('Override supplier') }}" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800">
+                            <option value="">{{ __('Keep supplier') }}</option>@foreach($allSuppliers as $supplier)<option value="{{ $supplier->id }}">{{ $supplier->name }}</option>@endforeach
+                        </select>
+                        <select wire:model="bulk_wallet_id" aria-label="{{ __('Override wallet') }}" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800">
+                            <option value="">{{ __('Keep wallet') }}</option>@foreach($allWallets as $wallet)<option value="{{ $wallet->id }}">{{ $wallet->driver_name ?: __('Custodian :id', ['id' => $wallet->driver_id]) }}</option>@endforeach
+                        </select>
+                        <select wire:model="bulk_paid" aria-label="{{ __('Override paid state') }}" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800">
+                            <option value="">{{ __('Keep paid state') }}</option><option value="1">{{ __('Set paid') }}</option><option value="0">{{ __('Set unpaid') }}</option>
+                        </select>
+                        <flux:button type="button" wire:click="applyBulkOverride" variant="primary">{{ __('Apply Overrides') }}</flux:button>
+                    </div>
+                    @error('bulk_override') <p class="mt-2 text-xs text-rose-600">{{ $message }}</p> @enderror
+                </div>
+
+                <details class="border-t border-neutral-200 pt-4 dark:border-neutral-700">
+                    <summary class="cursor-pointer font-medium">{{ __('Add Staged Expense') }}</summary>
+                    <form wire:submit="addInvoice" class="mt-4 space-y-4">
+                        <div class="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+                            <flux:input wire:model="newInvoice.entry_id" :label="__('Entry ID')" />
+                            <flux:input wire:model="newInvoice.business_date" type="date" :label="__('Business Date')" />
+                            <div><label class="mb-1 block text-sm font-medium">{{ __('Supplier') }}</label><select wire:model="newInvoice.supplier_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"><option value="">{{ __('Choose supplier') }}</option>@foreach($allSuppliers as $supplier)<option value="{{ $supplier->id }}">{{ $supplier->name }}</option>@endforeach</select></div>
+                            <flux:input wire:model="newInvoice.category" :label="__('Category')" list="expense-category-names" />
+                            <div><label class="mb-1 block text-sm font-medium">{{ __('Wallet') }}</label><select wire:model="newInvoice.wallet_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"><option value="">{{ __('No wallet') }}</option>@foreach($allWallets as $wallet)<option value="{{ $wallet->id }}">{{ $wallet->driver_name ?: __('Custodian :id', ['id' => $wallet->driver_id]) }}</option>@endforeach</select></div>
+                            <flux:input wire:model="newInvoice.reference_number" :label="__('Reference')" />
+                            <flux:input wire:model="newInvoice.due_date" type="date" :label="__('Due Date')" />
+                            <div><label class="mb-1 block text-sm font-medium">{{ __('Paid') }}</label><select wire:model="newInvoice.paid" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"><option value="0">{{ __('Unpaid') }}</option><option value="1">{{ __('Paid') }}</option></select></div>
+                            <flux:input wire:model="newInvoice.description" :label="__('Line Description')" />
+                            <flux:input wire:model="newInvoice.quantity" type="number" step="0.0001" min="0.0001" :label="__('Quantity')" />
+                            <flux:input wire:model="newInvoice.unit_price" type="number" step="0.0001" min="0" :label="__('Unit Price')" />
+                            <flux:input wire:model="newInvoice.notes" :label="__('Notes')" />
+                        </div>
+                        <div class="flex justify-end"><flux:button type="submit" variant="primary" icon="plus">{{ __('Add Expense') }}</flux:button></div>
+                    </form>
+                </details>
+                <datalist id="expense-category-names">@foreach($allCategories as $category)<option value="{{ $category->name }}"></option>@endforeach</datalist>
+            @endif
+        </section>
+    @endif
+
     <section class="space-y-3">
         <div>
             <h2 class="text-lg font-semibold">{{ __('Invoice Group Summary') }}</h2>
             <p class="text-sm text-neutral-500">{{ __('Every entry ID becomes one AP invoice after a successful commit.') }}</p>
         </div>
-        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div @class(['grid gap-3', 'md:grid-cols-2 xl:grid-cols-3' => ($batch->import_mode ?? 'daily') !== 'bulk'])>
             @foreach($importInvoices as $entry)
                 @php($importInvoice = $entry['model'])
                 @php($header = $importInvoice->header ?? [])
                 @php($groupErrors = $importInvoice->errors ?? [])
+                @if(($batch->import_mode ?? 'daily') === 'bulk')
+                    @include('livewire.petty-cash.imports.partials.bulk-invoice-card')
+                    @continue
+                @endif
                 <article @class([
                     'rounded-lg border bg-white p-4 dark:bg-neutral-900',
                     'border-red-300 dark:border-red-800' => $groupErrors !== [],
@@ -265,6 +399,7 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
     </section>
 
+    @if(($batch->import_mode ?? 'daily') !== 'bulk')
     <section class="space-y-4">
         <div class="flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -322,5 +457,6 @@ new #[Layout('components.layouts.app')] class extends Component
 
         <div>{{ $reviewRows->links() }}</div>
     </section>
+    @endif
 
 </div>

@@ -11,10 +11,17 @@ class PettyCashImportBatch extends Model
 {
     protected $fillable = [
         'company_id',
+        'import_mode',
         'business_date',
+        'date_from',
+        'date_to',
         'default_category_id',
+        'default_supplier_id',
         'default_wallet_id',
+        'default_paid',
         'status',
+        'revision',
+        'parser_version',
         'source_name',
         'storage_disk',
         'object_key',
@@ -32,9 +39,14 @@ class PettyCashImportBatch extends Model
     protected $casts = [
         'company_id' => 'integer',
         'business_date' => 'date',
+        'date_from' => 'date',
+        'date_to' => 'date',
         'default_category_id' => 'integer',
+        'default_supplier_id' => 'integer',
         'default_wallet_id' => 'integer',
+        'default_paid' => 'boolean',
         'status' => PettyCashImportStatus::class,
+        'revision' => 'integer',
         'stats' => 'array',
         'initiated_by' => 'integer',
         'initiated_at' => 'datetime',
@@ -58,6 +70,16 @@ class PettyCashImportBatch extends Model
         return $this->hasMany(PettyCashImportInvoice::class, 'import_batch_id');
     }
 
+    public function categoryProposals(): HasMany
+    {
+        return $this->hasMany(PettyCashImportCategoryProposal::class, 'import_batch_id');
+    }
+
+    public function editEvents(): HasMany
+    {
+        return $this->hasMany(PettyCashImportEditEvent::class, 'import_batch_id');
+    }
+
     public function initiator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'initiated_by');
@@ -76,5 +98,10 @@ class PettyCashImportBatch extends Model
     public function defaultWallet(): BelongsTo
     {
         return $this->belongsTo(PettyCashWallet::class, 'default_wallet_id');
+    }
+
+    public function defaultSupplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class, 'default_supplier_id');
     }
 }
