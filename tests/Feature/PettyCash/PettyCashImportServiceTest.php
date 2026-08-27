@@ -660,8 +660,83 @@ it('stages edits and atomically commits multiple dates with proposed categories'
         ])->count())->toBe(3);
 });
 
-it('requires review when an unused declared category ambiguously matches existing categories', function () {
-    ExpenseCategory::factory()->create(['name' => 'Ambiguous Declared', 'active' => true]);
+it('keeps an existing category matched through revalidation and invoice edits with a long ID token', function () {
+    ExpenseCategory::factory()->create(['name' => 'Other Active Category', 'active' => true]);
+    $this->category->update(['name' => str_repeat('Long', 25)]);
+    $batch = app(PettyCashImportService::class)->stageBulk(
+        pettyCashBulkImportWorkbook([
+            ['2026-07-31', 'MATCH-1', '', 'MATCH-REF-1', '', $this->category->name, '', 'FALSE', 'Line', '1', '5', ''],
+        ]),
+        $this->supplier->id,
+        null,
+        $this->wallet->id,
+        false,
+        $this->company->id,
+        $this->actor,
+    );
+
+    $revalidated = app(PettyCashImportEditor::class)->revalidate($batch, $batch->revision, $this->actor);
+
+    expect($revalidated->status->value)->toBe('ready')
+        ->and($revalidated->stats['invalid_categories'])->toBe(0)
+        ->and($revalidated->categoryProposals->first()->status)->toBe('matched')
+        ->and($revalidated->categoryProposals->first()->expense_category_id)->toBe($this->category->id);
+
+    $invoice = $revalidated->invoices->first();
+    $this->actingAs($this->actor);
+    Volt::test('petty-cash.imports.show', ['batch' => $batch->id])
+        ->assertSet("invoiceForms.{$invoice->id}.category", $this->category->id.' | '.$this->category->name)
+        ->set("invoiceForms.{$invoice->id}.notes", 'Only the notes changed')
+        ->call('saveInvoice', $invoice->id)
+        ->assertHasNoErrors();
+    $committed = app(PettyCashImportService::class)->commit($batch->fresh(), $this->actor);
+    expect($committed->status->value)->toBe('completed')
+        ->and(ApInvoice::query()->where('reference_number', 'MATCH-REF-1')->firstOrFail()->category_id)->toBe($this->category->id);
+});
+
+it('maps an inactive category across multiple dates and commits without creating categories', function () {
+    $inactive = ExpenseCategory::factory()->create(['name' => 'Retired Supplies', 'active' => false]);
+    $service = app(PettyCashImportService::class);
+    $batch = $service->stageBulk(
+        pettyCashBulkImportWorkbook([
+            ['2026-07-31', 'MAP-1', '', 'MAP-JULY', '', $inactive->name, '', 'FALSE', 'July supplies', '1', '5', ''],
+            ['2026-08-01', 'MAP-2', '', 'MAP-AUGUST', '', $inactive->name, '', 'FALSE', 'August supplies', '2', '5', ''],
+        ], [['OLD', $inactive->name]]),
+        $this->supplier->id,
+        null,
+        $this->wallet->id,
+        false,
+        $this->company->id,
+        $this->actor,
+    );
+    $proposal = $batch->categoryProposals->firstWhere('source_code', 'OLD');
+    $categoryCount = ExpenseCategory::query()->count();
+    expect($batch->status->value)->toBe('needs_review');
+
+    $resolved = app(PettyCashImportEditor::class)->resolveCategory(
+        $proposal, $batch->revision, ['category_id' => $this->category->id], $this->actor,
+    );
+
+    expect($resolved->status->value)->toBe('ready')
+        ->and($resolved->stats['invalid_categories'])->toBe(0)
+        ->and($resolved->stats['invalid_invoices'])->toBe(0)
+        ->and($resolved->invoices->pluck('header.category_id')->unique()->all())->toBe([$this->category->id])
+        ->and($resolved->rows->pluck('payload.category_id')->unique()->all())->toBe([$this->category->id])
+        ->and($resolved->rows->pluck('original_payload.category')->unique()->all())->toBe([$inactive->name])
+        ->and($proposal->fresh()->source_name)->toBe($inactive->name)
+        ->and($proposal->fresh()->status)->toBe('mapped');
+
+    $committed = $service->commit($resolved, $this->actor);
+    $invoices = ApInvoice::query()->whereIn('reference_number', ['MAP-JULY', 'MAP-AUGUST'])->get();
+    expect($committed->status->value)->toBe('completed')
+        ->and($invoices)->toHaveCount(2)
+        ->and($invoices->pluck('category_id')->unique()->all())->toBe([$this->category->id])
+        ->and(ExpenseCategory::query()->count())->toBe($categoryCount)
+        ->and($inactive->fresh()->active)->toBeFalse();
+});
+
+it('resolves an unused ambiguous declaration by ID and preserves it through edits and commit', function () {
+    $chosen = ExpenseCategory::factory()->create(['name' => 'Ambiguous Declared', 'active' => true]);
     ExpenseCategory::factory()->create(['name' => 'ambiguous   declared', 'active' => true]);
     $workbook = pettyCashBulkImportWorkbook([
         ['2026-07-31', 'AMBIG-1', '', 'AMBIG-REF-1', '', '', '', 'FALSE', 'Line', '1', '5', ''],
@@ -680,6 +755,249 @@ it('requires review when an unused declared category ambiguously matches existin
     expect($batch->status->value)->toBe('needs_review')
         ->and($batch->stats['invalid_categories'])->toBe(1)
         ->and($batch->categoryProposals->firstWhere('source_code', '20')->status)->toBe('ambiguous');
+
+    $proposal = $batch->categoryProposals->firstWhere('source_code', '20');
+    $editor = app(PettyCashImportEditor::class);
+    $resolved = $editor->resolveCategory($proposal, $batch->revision, ['category_id' => $chosen->id], $this->actor);
+    $edited = $editor->updateRow($resolved->rows->first(), $resolved->revision, ['unit_price' => '6'], $this->actor);
+
+    expect($edited->status->value)->toBe('ready')
+        ->and($edited->stats['invalid_categories'])->toBe(0)
+        ->and($proposal->fresh()->status)->toBe('mapped')
+        ->and($proposal->fresh()->expense_category_id)->toBe($chosen->id);
+
+    $committed = app(PettyCashImportService::class)->commit($edited, $this->actor);
+    expect($committed->status->value)->toBe('completed')
+        ->and($proposal->fresh()->expense_category_id)->toBe($chosen->id)
+        ->and(ApInvoice::query()->where('reference_number', 'AMBIG-REF-1')->firstOrFail()->category_id)->toBe($this->category->id);
+});
+
+it('merges a renamed proposal into another staged category and creates it only once on commit', function () {
+    $service = app(PettyCashImportService::class);
+    $batch = $service->stageBulk(
+        pettyCashBulkImportWorkbook([
+            ['2026-07-31', 'RENAME-1', '', 'RENAME-JULY', '', 'Original Supplies', '', 'FALSE', 'July supplies', '1', '5', ''],
+            ['2026-08-01', 'RENAME-2', '', 'RENAME-AUGUST', '', 'Unified Supplies', '', 'FALSE', 'August supplies', '1', '5', ''],
+        ], [['OLD', 'Original Supplies']]),
+        $this->supplier->id,
+        null,
+        $this->wallet->id,
+        false,
+        $this->company->id,
+        $this->actor,
+    );
+    $source = $batch->categoryProposals->firstWhere('source_name', 'Original Supplies');
+    $target = $batch->categoryProposals->firstWhere('source_name', 'Unified Supplies');
+    $categoryCount = ExpenseCategory::query()->count();
+
+    $resolved = app(PettyCashImportEditor::class)->resolveCategory(
+        $source, $batch->revision, ['name' => 'Unified Supplies'], $this->actor,
+    );
+    expect($resolved->status->value)->toBe('ready')
+        ->and($resolved->categoryProposals)->toHaveCount(1)
+        ->and($resolved->categoryProposals->first()->id)->toBe($target->id)
+        ->and($resolved->categoryProposals->first()->is_declared)->toBeTrue()
+        ->and($resolved->rows->pluck('payload.category')->unique()->all())->toBe(['Unified Supplies'])
+        ->and($resolved->rows->pluck('original_payload.category')->all())->toBe(['Original Supplies', 'Unified Supplies'])
+        ->and(ExpenseCategory::query()->count())->toBe($categoryCount);
+
+    $committed = $service->commit($resolved, $this->actor);
+    $created = ExpenseCategory::query()->where('name', 'Unified Supplies')->firstOrFail();
+    expect($committed->status->value)->toBe('completed')
+        ->and(ExpenseCategory::query()->count())->toBe($categoryCount + 1)
+        ->and(ApInvoice::query()->whereIn('reference_number', ['RENAME-JULY', 'RENAME-AUGUST'])
+            ->pluck('category_id')->unique()->all())->toBe([$created->id]);
+});
+
+it('completes category review in Livewire and preserves an explicit duplicate-name choice when editing an invoice', function () {
+    $chosen = ExpenseCategory::factory()->create(['name' => 'Duplicate Supplies', 'active' => true]);
+    ExpenseCategory::factory()->create(['name' => 'duplicate   supplies', 'active' => true]);
+    $batch = app(PettyCashImportService::class)->stageBulk(
+        pettyCashBulkImportWorkbook([
+            ['2026-07-31', 'UI-MAPPED', '', 'UI-MAPPED-REF', '', 'DUPLICATE SUPPLIES', '', 'FALSE', 'Line', '1', '5', ''],
+        ]),
+        $this->supplier->id,
+        null,
+        $this->wallet->id,
+        false,
+        $this->company->id,
+        $this->actor,
+    );
+    $proposal = $batch->categoryProposals->first();
+    $invoice = $batch->invoices->first();
+    $this->actingAs($this->actor);
+    expect($batch->status->value)->toBe('needs_review');
+
+    $component = Volt::test('petty-cash.imports.show', ['batch' => $batch->id])
+        ->set("categoryForms.{$proposal->id}.mode", 'existing')
+        ->set("categoryForms.{$proposal->id}.category_id", (string) $chosen->id)
+        ->call('saveCategory', $proposal->id)
+        ->assertHasNoErrors()
+        ->assertSet("invoiceForms.{$invoice->id}.category", $chosen->id.' | '.$chosen->name)
+        ->set("invoiceForms.{$invoice->id}.notes", 'Reviewed without changing the category')
+        ->call('saveInvoice', $invoice->id)
+        ->assertHasNoErrors()
+        ->assertSee('Confirm and Commit');
+    expect($invoice->fresh()->header['category_id'])->toBe($chosen->id)
+        ->and($batch->rows->first()->fresh()->payload['_category_proposal_id'])->toBe($proposal->id);
+
+    $component->call('commitImport')->assertHasNoErrors()
+        ->assertRedirect(route('petty-cash.imports.show', ['batch' => $batch->id]));
+    expect($batch->fresh()->status->value)->toBe('completed')
+        ->and(ApInvoice::query()->where('reference_number', 'UI-MAPPED-REF')->firstOrFail()->category_id)->toBe($chosen->id);
+});
+
+it('remaps only the owned rows when separate source categories share an existing target', function () {
+    $alternative = ExpenseCategory::factory()->create(['name' => 'Alternative Supplies', 'active' => true]);
+    $batch = app(PettyCashImportService::class)->stageBulk(
+        pettyCashBulkImportWorkbook([
+            ['2026-07-31', 'OWNED-1', '', 'OWNED-FIRST', '', 'First Source', '', 'FALSE', 'First line', '1', '5', ''],
+            ['2026-08-01', 'OWNED-2', '', 'OWNED-SECOND', '', 'Second Source', '', 'FALSE', 'Second line', '1', '5', ''],
+        ]),
+        $this->supplier->id,
+        null,
+        $this->wallet->id,
+        false,
+        $this->company->id,
+        $this->actor,
+    );
+    $first = $batch->categoryProposals->firstWhere('source_name', 'First Source');
+    $second = $batch->categoryProposals->firstWhere('source_name', 'Second Source');
+    $editor = app(PettyCashImportEditor::class);
+    foreach ([$first, $second] as $proposal) {
+        $batch = $editor->resolveCategory($proposal, $batch->revision, ['category_id' => $this->category->id], $this->actor);
+    }
+    $batch = $editor->resolveCategory($first, $batch->revision, ['category_id' => $alternative->id], $this->actor);
+
+    expect($batch->status->value)->toBe('ready')
+        ->and($batch->rows->pluck('payload.category_id')->all())->toBe([$alternative->id, $this->category->id])
+        ->and($batch->rows->pluck('payload._category_proposal_id')->all())->toBe([$first->id, $second->id])
+        ->and($batch->rows->pluck('original_payload.category')->all())->toBe(['First Source', 'Second Source']);
+    app(PettyCashImportService::class)->commit($batch, $this->actor);
+    expect(ApInvoice::query()->where('reference_number', 'OWNED-FIRST')->firstOrFail()->category_id)->toBe($alternative->id)
+        ->and(ApInvoice::query()->where('reference_number', 'OWNED-SECOND')->firstOrFail()->category_id)->toBe($this->category->id);
+});
+
+it('rejects merging a new category name into an already mapped source proposal without altering either source', function () {
+    $batch = app(PettyCashImportService::class)->stageBulk(
+        pettyCashBulkImportWorkbook([
+            ['2026-07-31', 'ALIAS-1', '', 'ALIAS-MAPPED', '', 'Reviewed Alias', '', 'FALSE', 'Mapped line', '1', '5', ''],
+            ['2026-08-01', 'ALIAS-2', '', 'ALIAS-UNREVIEWED', '', 'Unreviewed Source', '', 'FALSE', 'Unreviewed line', '1', '5', ''],
+        ]),
+        $this->supplier->id,
+        null,
+        $this->wallet->id,
+        false,
+        $this->company->id,
+        $this->actor,
+    );
+    $mapped = $batch->categoryProposals->firstWhere('source_name', 'Reviewed Alias');
+    $unreviewed = $batch->categoryProposals->firstWhere('source_name', 'Unreviewed Source');
+    $editor = app(PettyCashImportEditor::class);
+    $batch = $editor->resolveCategory($mapped, $batch->revision, ['category_id' => $this->category->id], $this->actor);
+    $payloads = $batch->rows->pluck('payload', 'id')->all();
+
+    expect(fn () => $editor->resolveCategory($unreviewed, $batch->revision, ['name' => 'Reviewed Alias'], $this->actor))
+        ->toThrow(ValidationException::class);
+    expect($batch->fresh()->revision)->toBe($batch->revision)
+        ->and($batch->rows()->get()->pluck('payload', 'id')->all())->toBe($payloads)
+        ->and($mapped->fresh()->status)->toBe('mapped')
+        ->and($mapped->fresh()->expense_category_id)->toBe($this->category->id)
+        ->and($unreviewed->fresh()->status)->toBe('proposed')
+        ->and($unreviewed->fresh()->source_name)->toBe('Unreviewed Source')
+        ->and($batch->categoryProposals()->count())->toBe(2);
+});
+
+it('rejects missing inactive and stale category mappings without changing staged expenses', function () {
+    $inactive = ExpenseCategory::factory()->create(['name' => 'Inactive Mapping Target', 'active' => false]);
+    $batch = app(PettyCashImportService::class)->stageBulk(
+        pettyCashBulkImportWorkbook([
+            ['2026-07-31', 'INVALID-MAP', '', 'INVALID-MAP-REF', '', 'Unmapped Supplies', '', 'FALSE', 'Line', '1', '5', ''],
+        ]),
+        $this->supplier->id,
+        null,
+        $this->wallet->id,
+        false,
+        $this->company->id,
+        $this->actor,
+    );
+    $proposal = $batch->categoryProposals->first();
+    $editor = app(PettyCashImportEditor::class);
+    $originalPayload = $batch->rows->first()->payload;
+    foreach ([(int) ExpenseCategory::query()->max('id') + 1, $inactive->id] as $categoryId) {
+        expect(fn () => $editor->resolveCategory($proposal, $batch->revision, ['category_id' => $categoryId], $this->actor))
+            ->toThrow(ValidationException::class);
+    }
+    expect($batch->fresh()->revision)->toBe($batch->revision)
+        ->and($batch->rows->first()->fresh()->payload)->toBe($originalPayload)
+        ->and($proposal->fresh()->status)->toBe('proposed');
+
+    $resolved = $editor->resolveCategory($proposal, $batch->revision, ['category_id' => $this->category->id], $this->actor);
+    expect(fn () => $editor->resolveCategory($proposal, $batch->revision, ['category_id' => $this->category->id], $this->actor))
+        ->toThrow(ValidationException::class, 'changed in another session');
+    expect($batch->fresh()->revision)->toBe($resolved->revision)
+        ->and($proposal->fresh()->expense_category_id)->toBe($this->category->id);
+});
+
+it('rolls back a commit when a mapped category becomes inactive', function () {
+    $service = app(PettyCashImportService::class);
+    $batch = $service->stageBulk(
+        pettyCashBulkImportWorkbook([
+            ['2026-07-31', 'CHANGED-MAP', '', 'CHANGED-MAP-REF', '', 'Mapped Supplies', '', 'FALSE', 'Line', '1', '5', ''],
+        ], [['NEW', 'Additional Proposed Category']]),
+        $this->supplier->id,
+        null,
+        $this->wallet->id,
+        false,
+        $this->company->id,
+        $this->actor,
+    );
+    $resolved = app(PettyCashImportEditor::class)->resolveCategory(
+        $batch->categoryProposals->firstWhere('source_name', 'Mapped Supplies'),
+        $batch->revision,
+        ['category_id' => $this->category->id],
+        $this->actor,
+    );
+    $this->category->forceFill(['active' => false])->save();
+
+    expect(fn () => $service->commit($resolved, $this->actor))->toThrow(ValidationException::class);
+    expect(ApInvoice::query()->where('reference_number', 'CHANGED-MAP-REF')->exists())->toBeFalse()
+        ->and(ExpenseCategory::query()->where('name', 'Additional Proposed Category')->exists())->toBeFalse()
+        ->and($batch->fresh()->status->value)->toBe('ready');
+});
+
+it('keeps an unavailable mapping blocked through revalidation and restores it when the category is active', function () {
+    $target = ExpenseCategory::factory()->create(['name' => 'Temporarily Unavailable Category', 'active' => true]);
+    $batch = app(PettyCashImportService::class)->stageBulk(
+        pettyCashBulkImportWorkbook([
+            ['2026-07-31', 'UNAVAILABLE-MAP', '', 'UNAVAILABLE-MAP-REF', '', '', '', 'FALSE', 'Line', '1', '5', ''],
+        ], [['UNUSED', 'Unused Mapped Declaration']]),
+        $this->supplier->id,
+        $this->category->id,
+        $this->wallet->id,
+        false,
+        $this->company->id,
+        $this->actor,
+    );
+    $proposal = $batch->categoryProposals->firstWhere('source_code', 'UNUSED');
+    $editor = app(PettyCashImportEditor::class);
+    $batch = $editor->resolveCategory($proposal, $batch->revision, ['category_id' => $target->id], $this->actor);
+    $target->update(['active' => false]);
+
+    foreach ([1, 2] as $attempt) {
+        $batch = $editor->revalidate($batch, $batch->revision, $this->actor);
+        expect($batch->status->value)->toBe('needs_review')
+            ->and($batch->stats['invalid_categories'])->toBe(1)
+            ->and($proposal->fresh()->status)->toBe('mapped_inactive')
+            ->and($proposal->fresh()->expense_category_id)->toBe($target->id);
+    }
+
+    $target->update(['active' => true]);
+    $batch = $editor->revalidate($batch, $batch->revision, $this->actor);
+    expect($batch->status->value)->toBe('ready')
+        ->and($batch->stats['invalid_categories'])->toBe(0)
+        ->and($proposal->fresh()->status)->toBe('mapped')
+        ->and($proposal->fresh()->expense_category_id)->toBe($target->id);
 });
 
 it('rolls back categories and all dates when a bulk commit fails', function () {

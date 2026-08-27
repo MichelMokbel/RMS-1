@@ -4,7 +4,6 @@ namespace App\Services\PettyCash;
 
 use App\Enums\PettyCash\PettyCashImportStatus;
 use App\Models\BankAccount;
-use App\Models\ExpenseCategory;
 use App\Models\PettyCashImportBatch;
 use App\Models\PettyCashImportCategoryProposal;
 use App\Models\PettyCashImportEditEvent;
@@ -27,7 +26,23 @@ class PettyCashImportEditor
         protected AccountingContextService $accountingContext,
         protected AccountingPeriodGateService $periodGate,
         protected LedgerAccountMappingService $mappings,
+        protected PettyCashImportCategoryProposalService $categoryProposals,
     ) {}
+
+    public function resolveCategory(
+        PettyCashImportCategoryProposal $proposal,
+        int $expectedRevision,
+        array $data,
+        User $actor,
+    ): PettyCashImportBatch {
+        return $this->mutate($proposal->batch, $expectedRevision, $actor, function (PettyCashImportBatch $batch) use ($proposal, $data, $actor): void {
+            $locked = $batch->categoryProposals()->lockForUpdate()->findOrFail($proposal->id);
+            $before = $locked->only(['id', 'source_name', 'normalized_name', 'status', 'expense_category_id']);
+            $resolved = $this->categoryProposals->resolve($locked, $data);
+            $this->event($batch, 'category.resolved', $actor, $before,
+                $resolved->only(['id', 'source_name', 'normalized_name', 'status', 'expense_category_id']));
+        });
+    }
 
     public function updateInvoice(
         PettyCashImportInvoice $invoice,
@@ -261,17 +276,17 @@ class PettyCashImportEditor
                 ->where('row_number', $result['row_number'])
                 ->lockForUpdate()
                 ->first();
+            $payload = array_merge($result['payload'], array_intersect_key($row?->payload ?? [], ['_category_proposal_id' => true]));
             $row?->forceFill([
-                'payload' => $result['payload'],
+                'payload' => $payload,
                 'errors' => $result['errors'],
                 'status' => $result['status'],
-                'row_hash' => hash('sha256', json_encode($result['payload'], JSON_THROW_ON_ERROR)),
+                'row_hash' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR)),
             ])->save();
         }
-        $this->syncInvoiceCategoryProposals($batch, $validated);
-        $this->refreshProposalMatches($batch);
+        $this->categoryProposals->sync($batch, $validated);
         $invalid = $batch->invoices()->where('excluded', false)->where('status', 'invalid')->count();
-        $invalidCategories = $batch->categoryProposals()->whereIn('status', ['inactive', 'ambiguous'])->count();
+        $invalidCategories = $batch->categoryProposals()->whereIn('status', ['inactive', 'ambiguous', 'mapped_inactive'])->count();
         $stats = $validated['stats'];
         $stats['invalid_invoices'] = $invalid;
         $stats['valid_invoices'] = max(0, (int) $stats['invoices'] - $invalid);
@@ -350,6 +365,7 @@ class PettyCashImportEditor
 
     private function applyInvoiceChanges(array $payload, array $data): array
     {
+        $previousCategory = $payload['category'] ?? null;
         foreach (['business_date', 'reference_number', 'due_date', 'paid', 'notes'] as $field) {
             if (array_key_exists($field, $data)) {
                 $payload[$field] = $data[$field];
@@ -362,6 +378,9 @@ class PettyCashImportEditor
             } elseif (array_key_exists($field, $data)) {
                 $payload[$field] = $data[$field];
             }
+        }
+        if (($payload['category'] ?? null) !== $previousCategory) {
+            unset($payload['_category_proposal_id']);
         }
 
         return $payload;
@@ -387,52 +406,6 @@ class PettyCashImportEditor
             'errors' => [],
             'row_hash' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR)),
         ]);
-    }
-
-    private function syncInvoiceCategoryProposals(PettyCashImportBatch $batch, array $validated): void
-    {
-        $used = collect($validated['invoices'])->pluck('header.category_normalized')->filter()->unique();
-        PettyCashImportCategoryProposal::query()
-            ->where('import_batch_id', $batch->id)
-            ->where('is_declared', false)
-            ->whereNotIn('normalized_name', $used)
-            ->delete();
-        $categories = ExpenseCategory::query()->get()->keyBy(fn (ExpenseCategory $category): string => $this->normalizeName($category->name));
-        foreach ($validated['invoices'] as $invoice) {
-            $name = $invoice['header']['category_name'] ?? null;
-            $normalized = $invoice['header']['category_normalized'] ?? null;
-            if (! $name || ! $normalized) {
-                continue;
-            }
-            $category = $categories->get($normalized);
-            $proposal = PettyCashImportCategoryProposal::query()->firstOrNew([
-                'import_batch_id' => $batch->id,
-                'normalized_name' => $normalized,
-            ]);
-            $proposal->fill([
-                'source_name' => $name,
-                'is_declared' => $proposal->exists ? $proposal->is_declared : false,
-                'status' => ! $category ? 'proposed' : ($category->active ? 'matched' : 'inactive'),
-                'expense_category_id' => $category?->id,
-            ])->save();
-        }
-    }
-
-    private function refreshProposalMatches(PettyCashImportBatch $batch): void
-    {
-        $categories = ExpenseCategory::query()->get()->keyBy(
-            fn (ExpenseCategory $category): string => $this->normalizeName($category->name)
-        );
-        foreach ($batch->categoryProposals()->lockForUpdate()->get() as $proposal) {
-            $matches = $categories->get($proposal->normalized_name, collect());
-            $category = $matches->count() === 1 ? $matches->first() : null;
-            $proposal->forceFill([
-                'status' => $matches->count() > 1
-                    ? 'ambiguous'
-                    : (! $category ? 'proposed' : ($category->active ? 'matched' : 'inactive')),
-                'expense_category_id' => $category?->id,
-            ])->save();
-        }
     }
 
     private function event(
@@ -474,11 +447,6 @@ class PettyCashImportEditor
         if (! $actor->hasRole('admin') || ! $actor->can('petty_cash.import')) {
             throw new AuthorizationException(__('Only administrators may edit petty cash imports.'));
         }
-    }
-
-    private function normalizeName(string $name): string
-    {
-        return mb_strtolower(preg_replace('/\s+/u', ' ', trim($name)) ?: trim($name));
     }
 
     private function relations(): array

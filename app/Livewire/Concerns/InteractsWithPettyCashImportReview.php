@@ -5,6 +5,9 @@ namespace App\Livewire\Concerns;
 use App\Models\ExpenseCategory;
 use App\Models\PettyCashImportBatch;
 use App\Services\PettyCash\PettyCashImportEditor;
+use App\Services\PettyCash\PettyCashImportValueParser;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 trait InteractsWithPettyCashImportReview
 {
@@ -13,6 +16,9 @@ trait InteractsWithPettyCashImportReview
 
     /** @var array<int, array<string, mixed>> */
     public array $rowForms = [];
+
+    /** @var array<int, array<string, string>> */
+    public array $categoryForms = [];
 
     public string $filter_date = '';
 
@@ -38,6 +44,40 @@ trait InteractsWithPettyCashImportReview
         'description' => '', 'quantity' => '1', 'unit_price' => '',
     ];
 
+    public function saveCategory(int $proposalId, PettyCashImportEditor $editor): void
+    {
+        $proposal = $this->editableBatch()->categoryProposals()->findOrFail($proposalId);
+        $prefix = "categoryForms.$proposalId";
+        $mode = $this->categoryForms[$proposalId]['mode'] ?? '';
+        $data = $this->validate([
+            "$prefix.mode" => ['required', Rule::in(['existing', 'new'])],
+            "$prefix.category_id" => $mode === 'existing'
+                ? ['required', 'integer', Rule::exists('expense_categories', 'id')->where('active', true)] : ['nullable'],
+            "$prefix.name" => $mode === 'new' ? ['required', 'string', 'max:100'] : ['nullable'],
+        ], [
+            "$prefix.category_id.required" => __('Choose an active existing category, or select Create a new category.'),
+            "$prefix.category_id.exists" => __('Choose an active existing category.'),
+            "$prefix.name.required" => __('Enter a new category name.'),
+        ], [
+            "$prefix.mode" => __('category action'),
+            "$prefix.category_id" => __('existing category'),
+            "$prefix.name" => __('new category name'),
+        ])['categoryForms'][$proposalId];
+
+        try {
+            $editor->resolveCategory($proposal, $this->revision(), $mode === 'existing'
+                ? ['category_id' => (int) $data['category_id']]
+                : ['name' => $data['name']], auth()->user());
+        } catch (ValidationException $exception) {
+            foreach ($exception->errors() as $field => $messages) {
+                $this->addError(in_array($field, ['category_id', 'name'], true) ? "$prefix.$field" : $field, implode(' ', $messages));
+            }
+
+            return;
+        }
+        $this->afterEdit(__('Category saved. Affected expenses across all dates were updated and the import was revalidated.'));
+    }
+
     public function saveInvoice(int $invoiceId, PettyCashImportEditor $editor): void
     {
         $invoice = $this->editableInvoice($invoiceId);
@@ -49,7 +89,7 @@ trait InteractsWithPettyCashImportReview
             "invoiceForms.$invoiceId.supplier_id" => ['required', 'integer', 'exists:suppliers,id'],
             "invoiceForms.$invoiceId.reference_number" => ['nullable', 'string', 'max:100'],
             "invoiceForms.$invoiceId.due_date" => ['nullable', 'date'],
-            "invoiceForms.$invoiceId.category" => ['required', 'string', 'max:100'],
+            "invoiceForms.$invoiceId.category" => $this->categoryInputRules($this->invoiceForms[$invoiceId]['category'] ?? null),
             "invoiceForms.$invoiceId.wallet_id" => $walletRules,
             "invoiceForms.$invoiceId.paid" => ['required', 'boolean'],
             "invoiceForms.$invoiceId.notes" => ['nullable', 'string', 'max:2000'],
@@ -92,7 +132,7 @@ trait InteractsWithPettyCashImportReview
             'newInvoice.supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
             'newInvoice.reference_number' => ['nullable', 'string', 'max:100'],
             'newInvoice.due_date' => ['nullable', 'date'],
-            'newInvoice.category' => ['required', 'string', 'max:100'],
+            'newInvoice.category' => $this->categoryInputRules($this->newInvoice['category'] ?? null),
             'newInvoice.wallet_id' => $walletRules,
             'newInvoice.paid' => ['required', 'boolean'],
             'newInvoice.notes' => ['nullable', 'string', 'max:2000'],
@@ -158,12 +198,20 @@ trait InteractsWithPettyCashImportReview
 
     private function syncForms(): void
     {
-        $batch = $this->batch()->load('invoices.rows');
+        $batch = $this->batch()->load(['invoices.rows', 'categoryProposals']);
         $categoryNames = ExpenseCategory::query()
             ->whereIn('id', $batch->invoices->pluck('header')->pluck('category_id')->filter()->unique())
             ->pluck('name', 'id');
         $this->invoiceForms = [];
         $this->rowForms = [];
+        $this->categoryForms = [];
+        foreach ($batch->categoryProposals as $proposal) {
+            $this->categoryForms[$proposal->id] = [
+                'mode' => $proposal->status === 'proposed' ? 'new' : 'existing',
+                'category_id' => in_array($proposal->status, ['matched', 'mapped'], true) ? (string) $proposal->expense_category_id : '',
+                'name' => $proposal->source_name,
+            ];
+        }
 
         foreach ($batch->invoices as $invoice) {
             $header = $invoice->header ?? [];
@@ -172,7 +220,9 @@ trait InteractsWithPettyCashImportReview
                 'supplier_id' => (string) ($header['supplier_id'] ?? ''),
                 'reference_number' => (string) ($header['reference_number'] ?? ''),
                 'due_date' => (string) ($header['due_date'] ?? ''),
-                'category' => (string) ($header['category'] ?? $header['category_name'] ?? $categoryNames->get((int) ($header['category_id'] ?? 0), '')),
+                'category' => ! empty($header['category_id'])
+                    ? $header['category_id'].' | '.$categoryNames->get((int) $header['category_id'], $header['category_name'] ?? '')
+                    : (string) ($header['category'] ?? $header['category_name'] ?? ''),
                 'wallet_id' => (string) ($header['wallet_id'] ?? ''),
                 'paid' => (string) ((bool) ($header['paid_requested'] ?? $header['paid'] ?? false) ? 1 : 0),
                 'notes' => (string) ($header['notes'] ?? ''),
@@ -193,6 +243,11 @@ trait InteractsWithPettyCashImportReview
         $this->resetValidation();
         $this->syncForms();
         session()->flash('status', $message);
+    }
+
+    private function categoryInputRules(mixed $value): array
+    {
+        return ['required', 'string', app(PettyCashImportValueParser::class)->tokenId($value) ? 'max:125' : 'max:100'];
     }
 
     private function revision(): int

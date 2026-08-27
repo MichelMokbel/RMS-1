@@ -106,7 +106,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->get();
         $allCategories = ExpenseCategory::query()->where('active', true)->orderBy('name')->get();
         $allWallets = PettyCashWallet::query()->where('active', true)->orderBy('driver_name')->get();
-        $categoryProposals = $batch->categoryProposals()->orderByRaw('source_code IS NULL, source_code')->orderBy('source_name')->get();
+        $categoryProposals = $batch->categoryProposals()->with('category')->orderByRaw('source_code IS NULL, source_code')->orderBy('source_name')->get();
 
         return [
             'batch' => $batch,
@@ -206,14 +206,14 @@ new #[Layout('components.layouts.app')] class extends Component
     </div>
 
     @if(session('status'))
-        <div class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">
+        <div role="status" class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">
             {{ session('status') }}
         </div>
     @endif
 
     @if($errors->any())
-        <div class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-100">
-            <p class="font-medium">{{ __('The import could not be committed.') }}</p>
+        <div role="alert" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-100">
+            <p class="font-medium">{{ __('Please review the following issues.') }}</p>
             <ul class="mt-2 list-disc space-y-1 pl-5">
                 @foreach(array_unique($errors->all()) as $message)
                     <li>{{ $message }}</li>
@@ -243,6 +243,10 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
             <p class="font-medium">{{ __('This import needs review before it can be committed.') }}</p>
             <p class="mt-1">{{ __('Use the filters and editable invoice cards below to correct the flagged values. Each save revalidates the complete batch.') }}</p>
+            @if($editable && $categoryProposals->isNotEmpty())
+                <p class="mt-2">{{ __('Review the category definitions and correct any flagged categories, including those not used by an invoice.') }}</p>
+                <a href="#category-review" class="mt-2 inline-block rounded font-semibold underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4">{{ __('Review Categories') }}</a>
+            @endif
         </div>
     @elseif($statusValue === 'failed')
         <div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900 dark:bg-red-950/30 dark:text-red-100">
@@ -357,7 +361,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         <div class="flex justify-end"><flux:button type="submit" variant="primary" icon="plus">{{ __('Add Expense') }}</flux:button></div>
                     </form>
                 </details>
-                <datalist id="expense-category-names">@foreach($allCategories as $category)<option value="{{ $category->name }}"></option>@endforeach</datalist>
+                <datalist id="expense-category-names">@foreach($allCategories as $category)<option value="{{ $category->id }} | {{ $category->name }}"></option>@endforeach</datalist>
             @endif
         </section>
     @endif

@@ -308,6 +308,16 @@ class PettyCashImportService
                 }
 
                 $this->categoryProposals->persist($batch, $validated, $categoryDefinitions);
+                if ($importMode === 'bulk') {
+                    $this->categoryProposals->sync($batch, $validated);
+                    $validated['stats']['invalid_categories'] = $batch->categoryProposals()->whereIn('status', ['inactive', 'ambiguous', 'mapped_inactive'])->count();
+                    $invalid = (int) $validated['stats']['invalid_rows'] + (int) $validated['stats']['invalid_invoices']
+                        + $validated['stats']['invalid_categories'];
+                    $batch->forceFill([
+                        'stats' => $validated['stats'],
+                        'status' => $invalid === 0 ? 'ready' : 'needs_review',
+                    ])->save();
+                }
 
                 $this->audit->log(
                     $invalid === 0

@@ -11,9 +11,11 @@ use App\Models\PettyCashImportRow;
 use App\Models\PettyCashWallet;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Services\PettyCash\PettyCashImportEditor;
 use App\Services\PettyCash\PettyCashImportService;
 use App\Services\PettyCash\PettyCashImportTemplateBuilder;
 use App\Support\Imports\SafeSpreadsheetReader;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
 use Spatie\Permission\Models\Permission;
@@ -115,7 +117,8 @@ it('shows required multiple-date defaults and downloads the bulk template', func
         ->and(array_keys($parsed['sheets']['petty_cash_expenses'][0]))->toBe(PettyCashImportTemplateBuilder::BULK_HEADERS);
 });
 
-it('renders editable bulk invoice and line controls before commit', function () {
+function pettyCashImportReviewFixture(): array
+{
     $company = AccountingCompany::query()->where('is_default', true)->firstOrFail();
     $user = User::factory()->create();
     $user->assignRole('admin');
@@ -138,7 +141,7 @@ it('renders editable bulk invoice and line controls before commit', function () 
         'object_key' => 'petty-cash/imports/bulk-expenses.xlsx',
         'sha256' => str_repeat('a', 64),
         'idempotency_key' => str_repeat('b', 64),
-        'stats' => ['rows' => 1, 'invoices' => 1, 'valid_invoices' => 0, 'invalid_invoices' => 1],
+        'stats' => ['rows' => 1, 'invoices' => 1, 'valid_invoices' => 0, 'invalid_invoices' => 1, 'invalid_categories' => 1],
         'initiated_by' => $user->id,
         'initiated_at' => now(),
     ]);
@@ -171,7 +174,7 @@ it('renders editable bulk invoice and line controls before commit', function () 
         'errors' => ['category' => ['A new category will be created during commit.']],
         'row_hash' => hash('sha256', 'bulk-row'),
     ]);
-    PettyCashImportCategoryProposal::query()->create([
+    $proposal = PettyCashImportCategoryProposal::query()->create([
         'import_batch_id' => $batch->id,
         'source_code' => '1',
         'source_name' => 'Raw Material',
@@ -180,12 +183,23 @@ it('renders editable bulk invoice and line controls before commit', function () 
         'status' => 'proposed',
     ]);
 
+    return [$user, $batch, $proposal];
+}
+
+it('renders accessible category review and editable bulk invoice and line controls before commit', function () {
+    [$user, $batch] = pettyCashImportReviewFixture();
+
     $this->actingAs($user)
         ->get(route('petty-cash.imports.show', $batch))
         ->assertOk()
         ->assertSee('Multiple Dates:')
         ->assertSee('Review Filters and Overrides')
-        ->assertSee('Category Definitions')
+        ->assertSee('Review Categories')
+        ->assertSee('id="category-review"', false)
+        ->assertSee('href="#category-review"', false)
+        ->assertSee('Save Category')
+        ->assertSee('Use existing category')
+        ->assertSee('Create a new category')
         ->assertSee('Will create')
         ->assertSee('Apply to Filtered Invoices')
         ->assertSee('Add Staged Expense')
@@ -194,6 +208,71 @@ it('renders editable bulk invoice and line controls before commit', function () 
         ->assertSee('Exclude Invoice')
         ->assertSee('Meat')
         ->assertDontSee('Confirm and Commit');
+});
+
+it('validates category choices and saves existing and new category resolutions from the review page', function () {
+    [$user, $batch, $proposal] = pettyCashImportReviewFixture();
+    $category = ExpenseCategory::factory()->create(['name' => 'Selected Supplies', 'active' => true]);
+    $this->actingAs($user);
+    $editor = Mockery::mock(PettyCashImportEditor::class);
+    $editor->shouldReceive('resolveCategory')->once()
+        ->withArgs(fn (PettyCashImportCategoryProposal $received, int $revision, array $data, User $actor): bool => $received->is($proposal) && $revision === 0 && $data === ['category_id' => $category->id] && $actor->is($user))
+        ->andReturnUsing(function () use ($proposal, $category, $batch) {
+            $proposal->update(['status' => 'mapped', 'expense_category_id' => $category->id]);
+            $batch->increment('revision');
+
+            return $batch;
+        });
+    $editor->shouldReceive('resolveCategory')->once()
+        ->withArgs(fn (PettyCashImportCategoryProposal $received, int $revision, array $data, User $actor): bool => $received->is($proposal) && $revision === 1 && $data === ['name' => 'Reviewed Supplies'] && $actor->is($user))
+        ->andReturn($batch);
+    app()->instance(PettyCashImportEditor::class, $editor);
+
+    $component = Volt::test('petty-cash.imports.show', ['batch' => $batch->id])
+        ->set("categoryForms.{$proposal->id}.mode", 'existing')
+        ->set("categoryForms.{$proposal->id}.category_id", '')
+        ->assertSee('Existing category')
+        ->assertSee('<select', false)
+        ->call('saveCategory', $proposal->id)
+        ->assertHasErrors(["categoryForms.{$proposal->id}.category_id" => 'required'])
+        ->set("categoryForms.{$proposal->id}.category_id", (string) $category->id)
+        ->call('saveCategory', $proposal->id)
+        ->assertHasNoErrors()
+        ->assertSee('Selected')
+        ->assertSet("categoryForms.{$proposal->id}.category_id", (string) $category->id);
+
+    $component->set("categoryForms.{$proposal->id}.mode", 'new')
+        ->set("categoryForms.{$proposal->id}.name", '')
+        ->assertSee('New category name')
+        ->call('saveCategory', $proposal->id)
+        ->assertHasErrors(["categoryForms.{$proposal->id}.name" => 'required'])
+        ->set("categoryForms.{$proposal->id}.name", 'Reviewed Supplies')
+        ->call('saveCategory', $proposal->id)
+        ->assertHasNoErrors();
+});
+
+it('scopes category review actions to the current batch and hides editing after completion', function () {
+    [$user, $batch, $proposal] = pettyCashImportReviewFixture();
+    $otherBatch = $batch->replicate();
+    $otherBatch->forceFill(['idempotency_key' => str_repeat('c', 64)])->save();
+    $otherProposal = $proposal->replicate();
+    $otherProposal->forceFill(['import_batch_id' => $otherBatch->id])->save();
+    $this->actingAs($user);
+    $editor = Mockery::mock(PettyCashImportEditor::class);
+    $editor->shouldNotReceive('resolveCategory');
+    app()->instance(PettyCashImportEditor::class, $editor);
+
+    foreach ([$otherProposal->id, $otherProposal->id + 1] as $proposalId) {
+        expect(fn () => Volt::test('petty-cash.imports.show', ['batch' => $batch->id])
+            ->call('saveCategory', $proposalId))->toThrow(ModelNotFoundException::class);
+    }
+
+    $batch->update(['status' => 'completed']);
+    $this->get(route('petty-cash.imports.show', $batch))
+        ->assertOk()
+        ->assertDontSee('Save Category')
+        ->assertDontSee('Create a new category')
+        ->assertDontSee('Save Invoice');
 });
 
 it('protects all petty cash import routes with the dedicated permission', function () {

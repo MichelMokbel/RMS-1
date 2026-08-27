@@ -247,12 +247,18 @@ class PettyCashImportCommitter
 
         foreach ($proposals as $proposal) {
             $matches = $byName->get($proposal->normalized_name, collect());
-            if ($matches->count() > 1) {
+            $mapped = in_array($proposal->status, ['mapped', 'mapped_inactive'], true);
+            if (! $mapped && $matches->count() > 1) {
                 throw ValidationException::withMessages([
                     'category' => __('A staged category name matches multiple existing categories.'),
                 ]);
             }
-            $category = $matches->first();
+            $category = $mapped ? $categories->firstWhere('id', $proposal->expense_category_id) : $matches->first();
+            if ($mapped && (! $category || ! $category->active)) {
+                throw ValidationException::withMessages([
+                    'category' => __('A selected category is inactive or missing. Review the category selection before committing.'),
+                ]);
+            }
             $created = false;
             if ($category && ! $category->active) {
                 throw ValidationException::withMessages([
@@ -276,7 +282,7 @@ class PettyCashImportCommitter
                 ], (int) $batch->company_id);
             }
             $proposal->forceFill([
-                'status' => $created ? 'created' : 'matched',
+                'status' => $mapped ? 'mapped' : ($created ? 'created' : 'matched'),
                 'expense_category_id' => $category->id,
             ])->save();
         }
