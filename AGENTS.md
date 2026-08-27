@@ -26,6 +26,10 @@ Do not trade a higher priority for a lower one without making the tradeoff expli
 - When documentation and code disagree, verify behavior in routes, services, migrations, and tests; then update stale documentation when it is in scope.
 - Never infer production configuration from `.env.example` defaults.
 
+## Build approach
+
+<TBD, set by /scope>
+
 ## 3. Repository reality
 
 ### Runtime stack
@@ -35,7 +39,7 @@ Do not trade a higher priority for a lower one without making the tradeoff expli
 - Assets: Vite 7 and Node.js.
 - Authentication: Fortify for web sessions; Sanctum for API tokens.
 - Authorization: Spatie Permission plus custom branch, customer-portal, active-user, and POS middleware.
-- Database: MySQL/MariaDB in normal and CI usage; limited SQLite compatibility may exist.
+- Database: MySQL/MariaDB in normal and CI usage. The test contract targets MySQL; do not assume SQLite compatibility.
 - Async work: Laravel queues, scheduled commands, and jobs.
 - Storage: Laravel Filesystems with local/public/S3 options.
 - Tests: Pest 4 on PHPUnit, with Laravel `RefreshDatabase` for feature tests.
@@ -327,3 +331,11 @@ A task is complete only when:
 - no secrets, debug artifacts, accidental data files, or unrelated edits are included;
 - migrations, config, schedules, queues, and deployment implications are documented when applicable;
 - the final handoff states the outcome, files/areas changed, verification performed, and any residual risk or unverified step.
+
+## Context files
+
+- [app/Services/Accounting/AGENTS.md](app/Services/Accounting/AGENTS.md): accounting context, periods, journals, locking, and audit rules.
+- [app/Services/HR/AGENTS.md](app/Services/HR/AGENTS.md): HR access, append-only records, payroll stages, and safe imports.
+- [app/Services/POS/AGENTS.md](app/Services/POS/AGENTS.md): POS identity alignment, offline replay, locking, and printing rules.
+- [app/Services/Quotations/AGENTS.md](app/Services/Quotations/AGENTS.md): quotation lifecycle, snapshots, templates, numbering, and conversion rules.
+- [app/Services/PettyCash/AGENTS.md](app/Services/PettyCash/AGENTS.md): staged imports, idempotency, wallet capacity, and ordered locking rules.
