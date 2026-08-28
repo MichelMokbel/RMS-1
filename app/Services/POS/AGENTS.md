@@ -31,4 +31,11 @@ This area owns POS bootstrap, shifts, checkout, offline synchronization, numberi
 - Print-stream pruning is scheduled hourly in `bootstrap/app.php`.
 - Inspect the POS section of `routes/api.php`, `app/Http/Middleware/EnsurePosToken.php`, and `tests/Feature/POS/` before changing authentication or protocol behavior.
 
+## Related business workflows
+
+* Sync events can reach AP, AR, Spend, and Ledger services. You can read their guides before adding a new event type or changing replay payloads.
+* Bootstrap includes branch menu data, tables, sessions, wallets, currency scale, and receipt profile information. Those fields are part of the client contract.
+* Related guides are [sales](../Sales/AGENTS.md), [AP](../AP/AGENTS.md), [AR](../AR/AGENTS.md), [Spend](../Spend/AGENTS.md), and [ledger](../Ledger/AGENTS.md).
+* The [route access map](../../../routes/AGENTS.md) and [numbering guide](../Sequences/AGENTS.md) describe current entry points. The [audit report](../../../docs/audits/2026-08-28-context-audit.md) flags the existing blanket authentication and numbering statements for review.
+
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

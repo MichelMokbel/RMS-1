@@ -29,4 +29,12 @@ This area owns accounting context, period controls, journal workflows, reporting
 - Company scope and branch scope are different. Confirm which one owns each balance, journal, report, and permission check.
 - Inspect related services under `app/Services/Ledger/` and `app/Services/Banking/` plus tests under `tests/Feature/Accounting/` and `tests/Feature/Ledger/` before changing shared behavior.
 
+## Additional module boundaries
+
+* `BudgetService.php` owns budget versions, activation, locks, CSV import, and variance. `JobCostingService.php` owns jobs, phases, cost codes, budgets, and source cost reversals.
+* `AccountingReportService.php`, `AccountingPeriodChecklistService.php`, and `DashboardCashActivityService.php` are separate report and close workflow entry points.
+* `LedgerAccountMappingService.php` supplies company mappings used by AP, AR, banking, and ledger posting. You can inspect those consumers when changing a mapping.
+* Related guides are [ledger](../Ledger/AGENTS.md), [banking](../Banking/AGENTS.md), [finance settings](../Finance/AGENTS.md), and [reports](../Reports/AGENTS.md).
+* The [audit report](../../../docs/audits/2026-08-28-context-audit.md) proposes a clarification to the existing context service description without changing that curated line.
+
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

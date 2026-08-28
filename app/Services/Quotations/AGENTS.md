@@ -32,4 +32,11 @@ This area owns quotation drafts, lifecycle transitions, totals, template validat
 - Scheduled expiry is registered in `bootstrap/app.php` and is configuration driven.
 - Inspect `tests/Feature/Quotations/` and `tests/Unit/Quotations/`, including rendering and lifecycle coverage, before changing document behavior.
 
+## Rendering and integration boundaries
+
+* `CompanyDocumentProfileService.php` stores company document identity. `Rendering/` and `Storage/` own asset resolution, HTML, PDF, DOCX, and generated artifacts.
+* Finalization generates artifacts during its database transaction and attempts artifact cleanup on failure. You can preserve that compensation path when changing storage.
+* `QuotationInvoiceConversionService.php` connects accepted versions to AR source records and payment terms. Its source identity and total checks are part of the conversion contract.
+* Related guides are [AR](../AR/AGENTS.md), [shared numbering](../Sequences/AGENTS.md), and [UI module context](../../../resources/views/AGENTS.md).
+
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

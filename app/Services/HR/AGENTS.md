@@ -31,4 +31,12 @@ This area owns HR access, employee records, leave, compensation, payroll, alerts
 - HR alerts run on the scheduler in `bootstrap/app.php`; repeat execution and disabled behavior must remain safe.
 - Inspect `tests/Feature/HR/` and `tests/Unit/HR/`, especially safe XLSX and ZIP reader tests, before changing import behavior.
 
+## Documents and broader HR workflows
+
+* `EmployeeService.php`, `CompensationService.php`, `LeaveService.php`, and `PayrollRunService.php` own workflows beyond calculation and payment. You can preserve their distinct preparation, approval, rejection, and reversal actions.
+* `EmployeeDocumentService.php` inspects uploads, invokes `Documents/DocumentScanner.php`, quarantines rejected files, stores private versions, and checks checksums at download.
+* `config/hr.php` controls document and import limits. The general safe readers and full history import path are separate entry points, not interchangeable parsers.
+* `HrAccessService.php` checks permissions before its employee scope rules. Employee self access and direct manager rules differ from payroll, which checks every active company branch and the run's result branches for actors without admin access.
+* Related guides are [accounting](../Accounting/AGENTS.md), [database constraints](../../../database/AGENTS.md), and [test isolation](../../../tests/AGENTS.md).
+
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

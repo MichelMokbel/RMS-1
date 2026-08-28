@@ -26,9 +26,19 @@ Do not trade a higher priority for a lower one without making the tradeoff expli
 - When documentation and code disagree, verify behavior in routes, services, migrations, and tests; then update stale documentation when it is in scope.
 - Never infer production configuration from `.env.example` defaults.
 
+## Stack
+
+The current [runtime stack](#runtime-stack) is grounded in `composer.json` and `package.json`. No architecture spec was found under `docs/specs/` during this audit.
+
 ## Build approach
 
-<TBD, set by /scope>
+Tracer Bullet (prove one narrow real payment through every layer, then add breadth).
+
+This mirrors the recorded choice in [docs/scope/scope.md](docs/scope/scope.md). The scope describes planned work, not features already implemented.
+
+## Workflow context
+
+The repository workflow skills are indexed in [.agents/README.md](.agents/README.md). The [context audit report](docs/audits/2026-08-28-context-audit.md) records coverage, current boundaries, and existing wording proposed for review. The audit does not create a new integration spec or change the scope.
 
 ## 3. Repository reality
 
@@ -81,6 +91,15 @@ Do not trade a higher priority for a lower one without making the tradeoff expli
 | HR, leave, payroll, imports | `app/Services/HR`, `routes/hr.php`, HR pages/controllers |
 | Reports and exports | `app/Services/Reports`, report controllers, `config/reports.php` |
 | Help and AI provider | `app/Services/Help`, `app/Services/Ai` |
+| Pastry orders and images | `app/Services/PastryOrders`, pastry order models and Volt pages |
+| Daily order sheet and publication | `app/Services/OrderSheet`, `resources/views/livewire/order-sheet.blade.php` |
+| Sales and shared totals | `app/Services/Sales`, sale models and sales pages |
+| Daily dish and meal plan pricing | `app/Services/Pricing`, `config/pricing.php` |
+| Finance defaults and document sequences | `app/Services/Finance`, `app/Services/Sequences` |
+| Suppliers and catalog categories | `app/Services/SupplierReferenceChecker.php`, supplier/category APIs and Volt pages |
+| Organization, settings, and dashboard | `resources/views/livewire/settings`, `resources/views/livewire/dashboard.blade.php` |
+| Email history and notifications | `app/Services/Mail`, `app/Mail`, `app/Notifications` |
+| Application wiring and scheduled work | `bootstrap/app.php`, `app/Providers`, `app/Events`, `app/Listeners`, `app/Jobs` |
 
 Before changing a domain, inspect its service directory, models, routes, migrations, and closest tests. Search for all writers of the affected tables or state fields.
 
@@ -334,8 +353,41 @@ A task is complete only when:
 
 ## Context files
 
+The service guides cover every current service area. The UI guide maps every top level Volt module, including modules without a dedicated service folder. You can read the relevant service guide when changing a controller, model, view, job, or test outside that service's directory.
+
 - [app/Services/Accounting/AGENTS.md](app/Services/Accounting/AGENTS.md): accounting context, periods, journals, locking, and audit rules.
 - [app/Services/HR/AGENTS.md](app/Services/HR/AGENTS.md): HR access, append-only records, payroll stages, and safe imports.
 - [app/Services/POS/AGENTS.md](app/Services/POS/AGENTS.md): POS identity alignment, offline replay, locking, and printing rules.
 - [app/Services/Quotations/AGENTS.md](app/Services/Quotations/AGENTS.md): quotation lifecycle, snapshots, templates, numbering, and conversion rules.
 - [app/Services/PettyCash/AGENTS.md](app/Services/PettyCash/AGENTS.md): staged imports, idempotency, wallet capacity, and ordered locking rules.
+- [app/Services/AP/AGENTS.md](app/Services/AP/AGENTS.md) (supplier bills, expense categories, AP payments, corrections, and recurring bills).
+- [app/Services/AR/AGENTS.md](app/Services/AR/AGENTS.md) (receivable invoices, customer advances, allocations, credit notes, and clearing).
+- [app/Services/Ai/AGENTS.md](app/Services/Ai/AGENTS.md) (structured AI contract, Gemini provider, and caller validation).
+- [app/Services/Banking/AGENTS.md](app/Services/Banking/AGENTS.md) (statement imports, book transactions, matching, and reconciliation).
+- [app/Services/CompanyFood/AGENTS.md](app/Services/CompanyFood/AGENTS.md) (standalone catering projects, employee lists, menus, orders, and exports).
+- [app/Services/Customers/AGENTS.md](app/Services/Customers/AGENTS.md) (customer records, imports, merging, portal accounts, and phone verification).
+- [app/Services/DailyDish/AGENTS.md](app/Services/DailyDish/AGENTS.md) (dated branch menus, publishing, preparation totals, and kitchen consumers).
+- [app/Services/Finance/AGENTS.md](app/Services/Finance/AGENTS.md) (finance defaults, lock dates, bank defaults, and matching tolerances).
+- [app/Services/Help/AGENTS.md](app/Services/Help/AGENTS.md) (help visibility, search, cited answers, and screenshot capture).
+- [app/Services/Inventory/AGENTS.md](app/Services/Inventory/AGENTS.md) (stock, adjustments, transfers, availability, and landed costs).
+- [app/Services/Ledger/AGENTS.md](app/Services/Ledger/AGENTS.md) (source event posting, reversals, GL summaries, and batch closing).
+- [app/Services/Mail/AGENTS.md](app/Services/Mail/AGENTS.md) (email delivery history and customer notification boundaries).
+- [app/Services/Marketing/AGENTS.md](app/Services/Marketing/AGENTS.md) (campaigns, provider sync, spend snapshots, assets, briefs, and logs).
+- [app/Services/Menu/AGENTS.md](app/Services/Menu/AGENTS.md) (catalog categories, menu items, branch availability, and usage checks).
+- [app/Services/OrderSheet/AGENTS.md](app/Services/OrderSheet/AGENTS.md) (daily planning sheets, linked order publication, and prints).
+- [app/Services/Orders/AGENTS.md](app/Services/Orders/AGENTS.md) (ordinary orders, kitchen transitions, portal submissions, and generation).
+- [app/Services/PastryOrders/AGENTS.md](app/Services/PastryOrders/AGENTS.md) (pastry orders, images, totals, numbering, and AR conversion).
+- [app/Services/Pricing/AGENTS.md](app/Services/Pricing/AGENTS.md) (daily dish bundles, portion prices, meal plan prices, and labels).
+- [app/Services/Purchasing/AGENTS.md](app/Services/Purchasing/AGENTS.md) (purchase orders, receiving, supplier references, stock costs, and AP drafts).
+- [app/Services/Recipes/AGENTS.md](app/Services/Recipes/AGENTS.md) (recipe composition, nested ingredients, costing, and production).
+- [app/Services/Reports/AGENTS.md](app/Services/Reports/AGENTS.md) (report registry, filters, historical balances, and export formats).
+- [app/Services/Sales/AGENTS.md](app/Services/Sales/AGENTS.md) (sale items, snapshots, discounts, integer totals, and POS consumers).
+- [app/Services/Security/AGENTS.md](app/Services/Security/AGENTS.md) (IAM, roles, authentication helpers, branch scope, and admin safety).
+- [app/Services/Sequences/AGENTS.md](app/Services/Sequences/AGENTS.md) (shared document numbering and its distinction from POS reservations).
+- [app/Services/Spend/AGENTS.md](app/Services/Spend/AGENTS.md) (canonical AP expenses, approval stages, settlement, and reporting).
+- [app/Services/Subscriptions/AGENTS.md](app/Services/Subscriptions/AGENTS.md) (meal subscriptions, pauses, request conversion, payment links, and usage).
+- [bootstrap/AGENTS.md](bootstrap/AGENTS.md) (application wiring, provider contracts, events, queues, and schedules).
+- [routes/AGENTS.md](routes/AGENTS.md) (web, internal API, customer portal, public, POS, and HR access boundaries).
+- [resources/views/AGENTS.md](resources/views/AGENTS.md) (all UI modules, dashboard, suppliers, categories, organization, settings, and shared layouts).
+- [database/AGENTS.md](database/AGENTS.md) (migrations, constraints, triggers, reference data, and safe schema verification).
+- [tests/AGENTS.md](tests/AGENTS.md) (test isolation, domain suites, provider fakes, CI, and the Node converter check).
