@@ -1,8 +1,10 @@
 <?php
 
 use App\Models\ExpenseCategory;
+use App\Models\BankAccount;
 use App\Models\PettyCashImportBatch;
 use App\Models\PettyCashWallet;
+use App\Models\Supplier;
 use App\Services\Accounting\AccountingContextService;
 use App\Services\PettyCash\PettyCashImportService;
 use Illuminate\Validation\Rule;
@@ -17,52 +19,99 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public $workbook;
 
+    public string $import_mode = 'daily';
+
     public string $business_date = '';
 
     public ?int $default_category_id = null;
 
+    public ?int $default_supplier_id = null;
+
     public ?int $default_wallet_id = null;
 
-    public function mount(): void
+    public string $default_paid = '';
+
+    public string $funding_source = 'bank_account';
+
+    public ?int $default_bank_account_id = null;
+
+    public function mount(AccountingContextService $context): void
     {
         abort_unless(auth()->user()?->hasRole('admin') && auth()->user()?->can('petty_cash.import'), 403);
         $this->business_date = now()->toDateString();
+        $companyId = $context->resolveCompanyId();
+        $this->default_bank_account_id = $companyId ? $context->defaultBankAccountId((int) $companyId) : null;
     }
 
     public function stage(PettyCashImportService $service, AccountingContextService $context): void
     {
         abort_unless(auth()->user()?->hasRole('admin') && auth()->user()?->can('petty_cash.import'), 403);
 
+        $companyId = $context->resolveCompanyId();
+        if (! $companyId) {
+            throw ValidationException::withMessages([
+                'workbook' => __('A default accounting company must be configured before importing expenses.'),
+            ]);
+        }
+
         $data = $this->validate([
-            'business_date' => ['required', 'date'],
+            'import_mode' => ['required', Rule::in(['daily', 'bulk'])],
+            'business_date' => [Rule::requiredIf($this->import_mode === 'daily'), 'nullable', 'date'],
+            'default_supplier_id' => [
+                Rule::requiredIf($this->import_mode === 'bulk'),
+                'nullable',
+                'integer',
+                Rule::exists('suppliers', 'id')->where(fn ($query) => $query
+                    ->where('status', 'active')
+                    ->where(fn ($supplier) => $supplier->whereNull('hold_status')->orWhere('hold_status', 'open'))),
+            ],
             'default_category_id' => [
                 'nullable',
                 'integer',
                 Rule::exists('expense_categories', 'id')->where(fn ($query) => $query->where('active', true)),
             ],
             'default_wallet_id' => [
+                Rule::requiredIf($this->import_mode === 'bulk' && $this->funding_source === 'petty_cash'),
                 'nullable',
                 'integer',
                 Rule::exists('petty_cash_wallets', 'id')->where(fn ($query) => $query->where('active', true)),
             ],
+            'default_paid' => [Rule::requiredIf($this->import_mode === 'bulk'), Rule::in(['', '1', '0'])],
+            'funding_source' => ['required', Rule::in(['bank_account', 'petty_cash'])],
+            'default_bank_account_id' => [
+                Rule::requiredIf($this->funding_source === 'bank_account'),
+                'nullable',
+                'integer',
+                Rule::exists('bank_accounts', 'id')->where(fn ($query) => $query
+                    ->where('company_id', $companyId)
+                    ->where('is_active', true)
+                    ->whereNotNull('ledger_account_id')),
+            ],
             'workbook' => ['required', 'file', 'mimes:xlsx', 'max:'.(int) config('petty_cash.imports.max_upload_kb', 10_240)],
         ]);
 
-        $companyId = $context->resolveCompanyId();
-        if (! $companyId) {
-            throw ValidationException::withMessages([
-                'workbook' => __('A default accounting company must be configured before importing petty cash expenses.'),
-            ]);
-        }
-
-        $batch = $service->stage(
-            $this->workbook,
-            (string) $data['business_date'],
-            isset($data['default_category_id']) ? (int) $data['default_category_id'] : null,
-            isset($data['default_wallet_id']) ? (int) $data['default_wallet_id'] : null,
-            (int) $companyId,
-            auth()->user(),
-        );
+        $batch = $data['import_mode'] === 'bulk'
+            ? $service->stageBulk(
+                $this->workbook,
+                isset($data['default_supplier_id']) ? (int) $data['default_supplier_id'] : null,
+                null,
+                isset($data['default_wallet_id']) ? (int) $data['default_wallet_id'] : null,
+                $data['default_paid'] === '1',
+                (int) $companyId,
+                auth()->user(),
+                (string) $data['funding_source'],
+                isset($data['default_bank_account_id']) ? (int) $data['default_bank_account_id'] : null,
+            )
+            : $service->stage(
+                $this->workbook,
+                (string) $data['business_date'],
+                isset($data['default_category_id']) ? (int) $data['default_category_id'] : null,
+                isset($data['default_wallet_id']) ? (int) $data['default_wallet_id'] : null,
+                (int) $companyId,
+                auth()->user(),
+                (string) $data['funding_source'],
+                isset($data['default_bank_account_id']) ? (int) $data['default_bank_account_id'] : null,
+            );
 
         $this->reset('workbook');
         $this->resetValidation();
@@ -76,8 +125,21 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless($companyId, 422, __('A default accounting company must be configured before viewing petty cash imports.'));
 
         return [
+            'suppliers' => Supplier::query()
+                ->where('status', 'active')
+                ->where(fn ($query) => $query->whereNull('hold_status')->orWhere('hold_status', 'open'))
+                ->where(fn ($query) => $query->where('company_id', $companyId)->orWhereNull('company_id'))
+                ->orderBy('name')
+                ->get(),
             'categories' => ExpenseCategory::query()->where('active', true)->orderBy('name')->get(),
             'wallets' => PettyCashWallet::query()->where('active', true)->orderBy('driver_name')->get(),
+            'bankAccounts' => BankAccount::query()
+                ->where('company_id', $companyId)
+                ->where('is_active', true)
+                ->whereNotNull('ledger_account_id')
+                ->orderByDesc('is_default')
+                ->orderBy('name')
+                ->get(),
             'batches' => PettyCashImportBatch::query()
                 ->where('company_id', $companyId)
                 ->withCount([
@@ -99,12 +161,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
             <p class="text-sm text-neutral-500">{{ __('Petty Cash') }}</p>
-            <h1 class="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Daily Expense Imports') }}</h1>
-            <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Validate a one-day Excel workbook before creating invoices or changing a wallet balance.') }}</p>
+            <h1 class="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Expense Imports') }}</h1>
+            <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Stage daily or multiple-date Excel workbooks, correct them on screen, and commit them only after validation.') }}</p>
         </div>
         <div class="flex flex-wrap gap-2">
-            <flux:button :href="route('petty-cash.imports.template')" variant="ghost" icon="arrow-down-tray">
-                {{ __('Download Template') }}
+            <flux:button :href="route('petty-cash.imports.template', ['mode' => $import_mode === 'bulk' ? 'bulk' : 'daily'])" variant="ghost" icon="arrow-down-tray">
+                {{ $import_mode === 'bulk' ? __('Download Multiple-Date Template') : __('Download Daily Template') }}
             </flux:button>
             <flux:button :href="route('petty-cash.index')" wire:navigate variant="ghost" icon="arrow-left">
                 {{ __('Back to Petty Cash') }}
@@ -130,8 +192,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     @endif
 
     <section class="rounded-lg border border-violet-200 bg-violet-50 p-5 dark:border-violet-900 dark:bg-violet-950/30">
-        <h2 class="font-semibold text-violet-950 dark:text-violet-100">{{ __('Import one business day') }}</h2>
-        <p class="mt-1 text-sm text-violet-800 dark:text-violet-200">{{ __('Use one color-coded four-line block per invoice. Enter supplier, category, wallet, and payment details once on the first row, then fill only the line-item columns below it.') }}</p>
+        <h2 class="font-semibold text-violet-950 dark:text-violet-100">{{ $import_mode === 'bulk' ? __('Import expenses across multiple business dates') : __('Import one business day') }}</h2>
+        <p class="mt-1 text-sm text-violet-800 dark:text-violet-200">
+            {{ $import_mode === 'bulk'
+                ? __('Each date and entry ID identifies one invoice. Category names that do not exist yet are staged for review and created only during commit.')
+                : __('Use one color-coded four-line block per invoice. Enter supplier, category, wallet, and payment details once on the first row, then fill only the line-item columns below it.') }}
+        </p>
         <ol class="mt-4 grid gap-3 text-sm sm:grid-cols-4">
             <li class="rounded-md bg-white/70 px-3 py-2 dark:bg-neutral-900/40"><strong>1.</strong> {{ __('Download template') }}</li>
             <li class="rounded-md bg-white/70 px-3 py-2 dark:bg-neutral-900/40"><strong>2.</strong> {{ __('Enter daily expenses') }}</li>
@@ -142,13 +208,43 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <section class="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
         <div>
-            <h2 class="text-lg font-semibold">{{ __('Upload daily workbook') }}</h2>
-            <p class="text-sm text-neutral-500">{{ __('Category and wallet defaults only fill blank spreadsheet cells. Explicit row values take precedence.') }}</p>
+            <h2 class="text-lg font-semibold">{{ $import_mode === 'bulk' ? __('Upload multiple-date workbook') : __('Upload daily workbook') }}</h2>
+            <p class="text-sm text-neutral-500">{{ __('Upload defaults fill only blank spreadsheet values. Explicit workbook values take precedence.') }}</p>
         </div>
 
         <form wire:submit="stage" class="mt-5 space-y-5">
+            <fieldset>
+                <legend class="mb-2 text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Import Mode') }}</legend>
+                <div class="inline-flex rounded-lg border border-neutral-200 bg-neutral-50 p-1 dark:border-neutral-700 dark:bg-neutral-800">
+                    <label @class(['cursor-pointer rounded-md px-4 py-2 text-sm font-medium', 'bg-white shadow-sm dark:bg-neutral-700' => $import_mode === 'daily', 'text-neutral-500' => $import_mode !== 'daily'])>
+                        <input class="sr-only" type="radio" wire:model.live="import_mode" value="daily">
+                        {{ __('Daily') }}
+                    </label>
+                    <label @class(['cursor-pointer rounded-md px-4 py-2 text-sm font-medium', 'bg-white shadow-sm dark:bg-neutral-700' => $import_mode === 'bulk', 'text-neutral-500' => $import_mode !== 'bulk'])>
+                        <input class="sr-only" type="radio" wire:model.live="import_mode" value="bulk">
+                        {{ __('Multiple Dates') }}
+                    </label>
+                </div>
+                @error('import_mode') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+            </fieldset>
+
             <div class="grid gap-4 md:grid-cols-3">
-                <flux:input wire:model="business_date" type="date" :label="__('Business Date')" />
+                @if($import_mode === 'daily')
+                    <flux:input wire:model="business_date" type="date" :label="__('Business Date')" />
+                @else
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Default Supplier') }}</label>
+                        <select wire:model="default_supplier_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                            <option value="">{{ __('Choose default supplier') }}</option>
+                            @foreach($suppliers as $supplier)
+                                <option value="{{ $supplier->id }}">{{ $supplier->name }}</option>
+                            @endforeach
+                        </select>
+                        @error('default_supplier_id') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                    </div>
+                @endif
+
+                @if($import_mode === 'daily')
                 <div>
                     <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Default Category') }}</label>
                     <select wire:model="default_category_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
@@ -159,17 +255,59 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </select>
                     @error('default_category_id') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
                 </div>
+                @else
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Default Paid Status') }}</label>
+                        <select wire:model="default_paid" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                            <option value="">{{ __('Choose paid status') }}</option>
+                            <option value="1">{{ __('Paid') }}</option>
+                            <option value="0">{{ __('Unpaid') }}</option>
+                        </select>
+                        @error('default_paid') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                    </div>
+                @endif
                 <div>
-                    <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Default Wallet') }}</label>
-                    <select wire:model="default_wallet_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                        <option value="">{{ __('No default') }}</option>
-                        @foreach($wallets as $wallet)
-                            <option value="{{ $wallet->id }}">{{ $wallet->driver_name ?: __('Custodian :id', ['id' => $wallet->driver_id]) }}</option>
-                        @endforeach
+                    <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Pay From') }}</label>
+                    <select wire:model.live="funding_source" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                        <option value="bank_account">{{ __('Bank Account') }}</option>
+                        <option value="petty_cash">{{ __('Petty Cash Wallet') }}</option>
                     </select>
-                    @error('default_wallet_id') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                    @error('funding_source') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
                 </div>
+
+                @if($funding_source === 'bank_account')
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Bank Account') }}</label>
+                        <select wire:model="default_bank_account_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                            <option value="">{{ __('Choose bank account') }}</option>
+                            @foreach($bankAccounts as $bankAccount)
+                                <option value="{{ $bankAccount->id }}">{{ $bankAccount->name }}{{ $bankAccount->is_default ? ' · '.__('Default') : '' }}</option>
+                            @endforeach
+                        </select>
+                        <p class="mt-1 text-xs text-neutral-500">{{ __('Paid expenses will create bank-transfer payments and dated bank outflows. The workbook wallet column is ignored.') }}</p>
+                        @error('default_bank_account_id') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                    </div>
+                @else
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Default Wallet') }}</label>
+                        <select wire:model="default_wallet_id" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                            <option value="">{{ $import_mode === 'bulk' ? __('Choose default wallet') : __('No default') }}</option>
+                            @foreach($wallets as $wallet)
+                                <option value="{{ $wallet->id }}">{{ $wallet->driver_name ?: __('Custodian :id', ['id' => $wallet->driver_id]) }}</option>
+                            @endforeach
+                        </select>
+                        @error('default_wallet_id') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                    </div>
+                @endif
             </div>
+
+            @if($import_mode === 'bulk')
+                <p class="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                    {{ $funding_source === 'bank_account'
+                        ? __('The workbook supplies each business date and category. Supplier and paid status can be changed per invoice; paid entries use the selected bank account.')
+                        : __('The workbook supplies each business date and category. Supplier, wallet, and paid status can be changed per invoice on the review dashboard.') }}
+                </p>
+            @endif
 
             <flux:input wire:model="workbook" type="file" accept=".xlsx" :label="__('Excel Workbook')" />
             @error('workbook') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
@@ -196,7 +334,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <div>
                         <p class="font-medium">{{ $batch->source_name ?: __('Petty cash import #:id', ['id' => $batch->id]) }}</p>
                         <p class="text-sm text-neutral-500">
-                            {{ optional($batch->business_date)->format('d M Y') ?: $batch->business_date }} ·
+                            @if(($batch->import_mode ?? 'daily') === 'bulk')
+                                {{ __('Multiple Dates') }} ·
+                                {{ optional($batch->date_from)->format('d M Y') ?: ($batch->date_from ?: '—') }}
+                                – {{ optional($batch->date_to)->format('d M Y') ?: ($batch->date_to ?: '—') }} ·
+                            @else
+                                {{ __('Daily') }} · {{ optional($batch->business_date)->format('d M Y') ?: $batch->business_date }} ·
+                            @endif
                             {{ trans_choice(':count staged row|:count staged rows', $batch->rows_count, ['count' => $batch->rows_count]) }}
                         </p>
                         <p class="mt-1 text-xs text-neutral-500">
@@ -205,6 +349,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 'valid' => $stats['valid_invoices'] ?? 0,
                                 'errors' => $stats['invalid_invoices'] ?? $batch->invalid_rows_count,
                             ]) }}
+                        </p>
+                        <p class="mt-1 text-xs text-neutral-500">
+                            {{ ($batch->funding_source ?? 'petty_cash') === 'bank_account'
+                                ? __('Payment source: bank account')
+                                : __('Payment source: petty cash wallet') }}
                         </p>
                     </div>
                     <div class="flex items-center gap-2">

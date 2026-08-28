@@ -12,9 +12,12 @@ class PettyCashImportInvoice extends Model
     protected $fillable = [
         'import_batch_id',
         'entry_id',
+        'business_date',
         'group_key',
         'status',
+        'excluded',
         'header',
+        'original_header',
         'errors',
         'client_uuid',
         'target_invoice_id',
@@ -22,8 +25,11 @@ class PettyCashImportInvoice extends Model
 
     protected $casts = [
         'import_batch_id' => 'integer',
+        'business_date' => 'date',
         'status' => PettyCashImportInvoiceStatus::class,
+        'excluded' => 'boolean',
         'header' => 'encrypted:array',
+        'original_header' => 'encrypted:array',
         'errors' => 'encrypted:array',
         'target_invoice_id' => 'integer',
     ];

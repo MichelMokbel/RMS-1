@@ -3,6 +3,7 @@
 namespace App\Services\PettyCash;
 
 use App\Models\AccountingCompany;
+use App\Models\BankAccount;
 use App\Models\PettyCashImportBatch;
 use App\Models\PettyCashImportInvoice;
 use App\Models\PettyCashImportRow;
@@ -33,8 +34,19 @@ class PettyCashImportService
         'paid', 'description', 'quantity', 'unit_price', 'notes',
     ];
 
+    public const BULK_HEADERS = [
+        'business_date', ...self::HEADERS,
+    ];
+
+    public const CATEGORY_DEFINITION_SHEET = 'category_definitions';
+
+    public const CATEGORY_DEFINITION_HEADERS = ['code', 'name'];
+
+    private const PARSER_VERSION = '3';
+
     private const ALLOWED_SHEETS = [
         self::DATA_SHEET, 'instructions', 'suppliers', 'categories', 'wallets',
+        self::CATEGORY_DEFINITION_SHEET,
     ];
 
     public function __construct(
@@ -45,6 +57,7 @@ class PettyCashImportService
         protected LedgerAccountMappingService $mappings,
         protected PettyCashImportCommitter $committer,
         protected AccountingAuditLogService $audit,
+        protected PettyCashImportCategoryProposalService $categoryProposals,
     ) {}
 
     public function stage(
@@ -53,7 +66,65 @@ class PettyCashImportService
         ?int $defaultCategoryId,
         ?int $defaultWalletId,
         int $companyId,
-        User $actor
+        User $actor,
+        string $fundingSource = 'petty_cash',
+        ?int $defaultBankAccountId = null,
+    ): PettyCashImportBatch {
+        $businessDate = $this->businessDate($businessDate);
+
+        return $this->stageWorkbook(
+            $workbook,
+            'daily',
+            $businessDate,
+            null,
+            $defaultCategoryId,
+            $defaultWalletId,
+            null,
+            $companyId,
+            $actor,
+            $fundingSource,
+            $defaultBankAccountId,
+        );
+    }
+
+    public function stageBulk(
+        UploadedFile $workbook,
+        ?int $defaultSupplierId,
+        ?int $defaultCategoryId,
+        ?int $defaultWalletId,
+        bool $defaultPaid,
+        int $companyId,
+        User $actor,
+        string $fundingSource = 'petty_cash',
+        ?int $defaultBankAccountId = null,
+    ): PettyCashImportBatch {
+        return $this->stageWorkbook(
+            $workbook,
+            'bulk',
+            null,
+            $defaultSupplierId,
+            $defaultCategoryId,
+            $defaultWalletId,
+            $defaultPaid,
+            $companyId,
+            $actor,
+            $fundingSource,
+            $defaultBankAccountId,
+        );
+    }
+
+    private function stageWorkbook(
+        UploadedFile $workbook,
+        string $importMode,
+        ?string $businessDate,
+        ?int $defaultSupplierId,
+        ?int $defaultCategoryId,
+        ?int $defaultWalletId,
+        ?bool $defaultPaid,
+        int $companyId,
+        User $actor,
+        string $fundingSource,
+        ?int $defaultBankAccountId,
     ): PettyCashImportBatch {
         $this->assertAccess($actor);
         $company = AccountingCompany::query()->findOrFail($companyId);
@@ -62,11 +133,14 @@ class PettyCashImportService
                 'company_id' => __('The selected accounting company is inactive.'),
             ]);
         }
-        $businessDate = $this->businessDate($businessDate);
+        $fundingSource = $this->fundingSource($fundingSource);
+        $defaultBankAccountId = $fundingSource === 'bank_account'
+            ? $this->resolveBankAccountId($defaultBankAccountId, $companyId, (string) $company->base_currency)
+            : null;
+        if ($fundingSource === 'bank_account') {
+            $defaultWalletId = null;
+        }
         $this->assertUpload($workbook);
-
-        $periodId = $this->accountingContext->resolvePeriodId($businessDate, $companyId);
-        $this->periodGate->assertDateOpen($businessDate, $companyId, $periodId, 'ap', 'business_date');
 
         $sha256 = hash_file('sha256', $workbook->getRealPath());
         if (! is_string($sha256) || $sha256 === '') {
@@ -74,10 +148,16 @@ class PettyCashImportService
         }
         $idempotencyKey = hash('sha256', json_encode([
             'company_id' => $companyId,
+            'import_mode' => $importMode,
             'business_date' => $businessDate,
             'sha256' => $sha256,
             'default_category_id' => $defaultCategoryId,
+            'default_supplier_id' => $defaultSupplierId,
             'default_wallet_id' => $defaultWalletId,
+            'default_paid' => $defaultPaid,
+            'funding_source' => $fundingSource,
+            'default_bank_account_id' => $defaultBankAccountId,
+            'parser_version' => self::PARSER_VERSION,
         ], JSON_THROW_ON_ERROR));
         $existing = $this->existingBatch($companyId, $idempotencyKey);
         if ($existing) {
@@ -93,7 +173,8 @@ class PettyCashImportService
                 ]),
             ]);
         }
-        $this->assertWorkbookShape($parsed['sheets'], $parsed['headers']);
+        $this->assertWorkbookShape($parsed['sheets'], $parsed['headers'], $importMode);
+        $categoryDefinitions = $this->categoryProposals->definitions($parsed['sheets'], $parsed['headers']);
         $sourceRows = $parsed['sheets'][self::DATA_SHEET];
         if ($sourceRows === []) {
             throw ValidationException::withMessages(['workbook' => __('The workbook must contain at least one expense line.')]);
@@ -103,12 +184,31 @@ class PettyCashImportService
             $companyId,
             $defaultCategoryId,
             $defaultWalletId,
-            $businessDate,
+            $businessDate ?? '',
+            $defaultSupplierId,
+            $defaultPaid,
+            $importMode,
+            $fundingSource,
         );
         if ((int) $validated['stats']['rows'] === 0) {
             throw ValidationException::withMessages(['workbook' => __('The workbook must contain at least one expense line.')]);
         }
-        $this->assertAccountingPreflight($validated, $companyId);
+        if ($importMode === 'bulk') {
+            $this->applyBulkAccountingErrors($validated, $companyId, $fundingSource);
+        } else {
+            $this->assertAccountingPreflight($validated, $companyId, $fundingSource);
+        }
+        $dateFrom = $validated['stats']['date_from'] ?: null;
+        $dateTo = $validated['stats']['date_to'] ?: null;
+        if ($importMode === 'daily') {
+            foreach (collect($validated['invoices'])
+                ->filter(fn (array $invoice): bool => ($invoice['errors'] ?? []) === [])
+                ->pluck('business_date')->filter()->unique() as $date) {
+                $periodId = $this->accountingContext->resolvePeriodId($date, $companyId);
+                $this->periodGate->assertDateOpen($date, $companyId, $periodId, 'ap', 'business_date');
+            }
+        }
+        $conflictingDeclaredCategories = $this->categoryProposals->conflictCount($categoryDefinitions);
 
         $disk = (string) config('petty_cash.imports.disk', config('filesystems.default', 'local'));
         $root = "petty-cash/{$companyId}/imports";
@@ -127,23 +227,43 @@ class PettyCashImportService
             return DB::transaction(function () use (
                 $workbook,
                 $businessDate,
+                $importMode,
+                $dateFrom,
+                $dateTo,
+                $defaultSupplierId,
                 $defaultCategoryId,
                 $defaultWalletId,
+                $defaultPaid,
+                $fundingSource,
+                $defaultBankAccountId,
                 $companyId,
                 $actor,
                 $sha256,
                 $idempotencyKey,
                 $disk,
                 $objectKey,
-                $validated
+                $validated,
+                $categoryDefinitions,
+                $conflictingDeclaredCategories,
             ): PettyCashImportBatch {
                 $invalid = (int) $validated['stats']['invalid_rows'] + (int) $validated['stats']['invalid_invoices'];
+                $invalid += $conflictingDeclaredCategories;
+                $validated['stats']['invalid_categories'] = $conflictingDeclaredCategories;
                 $batch = PettyCashImportBatch::query()->create([
                     'company_id' => $companyId,
-                    'business_date' => $businessDate,
+                    'import_mode' => $importMode,
+                    'business_date' => $businessDate ?? $dateFrom ?? now()->toDateString(),
+                    'date_from' => $dateFrom,
+                    'date_to' => $dateTo,
                     'default_category_id' => $defaultCategoryId,
+                    'default_supplier_id' => $defaultSupplierId,
                     'default_wallet_id' => $defaultWalletId,
-                    'status' => $invalid === 0 ? 'ready' : 'failed',
+                    'default_paid' => $defaultPaid,
+                    'funding_source' => $fundingSource,
+                    'default_bank_account_id' => $defaultBankAccountId,
+                    'status' => $invalid === 0 ? 'ready' : ($importMode === 'bulk' ? 'needs_review' : 'failed'),
+                    'revision' => 0,
+                    'parser_version' => self::PARSER_VERSION,
                     'source_name' => Str::limit(basename($workbook->getClientOriginalName()), 255, ''),
                     'storage_disk' => $disk,
                     'object_key' => $objectKey,
@@ -152,8 +272,8 @@ class PettyCashImportService
                     'stats' => $validated['stats'],
                     'initiated_by' => $actor->id,
                     'initiated_at' => now(),
-                    'failed_at' => $invalid === 0 ? null : now(),
-                    'failure_reason' => $invalid === 0 ? null : 'Petty cash workbook validation failed.',
+                    'failed_at' => null,
+                    'failure_reason' => null,
                 ]);
 
                 $invoiceIds = [];
@@ -161,35 +281,56 @@ class PettyCashImportService
                     $stagedInvoice = PettyCashImportInvoice::query()->create([
                         'import_batch_id' => $batch->id,
                         'entry_id' => $entry['entry_id'],
+                        'business_date' => $this->nullableBusinessDate($entry['business_date']),
                         'group_key' => $entry['group_key'],
                         'status' => $entry['status'],
                         'header' => $entry['header'],
+                        'original_header' => $entry['header'],
                         'errors' => $entry['errors'],
                         'client_uuid' => $entry['client_uuid'],
                     ]);
-                    $invoiceIds[$entry['entry_id']] = (int) $stagedInvoice->id;
+                    $invoiceIds[$entry['business_date'].'|'.$entry['entry_id']] = (int) $stagedInvoice->id;
                 }
 
                 foreach ($validated['rows'] as $entry) {
                     $payload = $entry['payload'];
                     PettyCashImportRow::query()->create([
                         'import_batch_id' => $batch->id,
-                        'import_invoice_id' => $invoiceIds[$payload['entry_id']] ?? null,
+                        'import_invoice_id' => $invoiceIds[$payload['business_date'].'|'.$payload['entry_id']] ?? null,
                         'row_number' => $entry['row_number'],
                         'source_identifier' => Str::limit((string) ($payload['entry_id'] ?? ''), 191, ''),
                         'status' => $entry['status'],
                         'payload' => $payload,
+                        'original_payload' => $payload,
                         'errors' => $entry['errors'],
                         'row_hash' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR)),
                     ]);
                 }
 
+                $this->categoryProposals->persist($batch, $validated, $categoryDefinitions);
+                if ($importMode === 'bulk') {
+                    $this->categoryProposals->sync($batch, $validated);
+                    $validated['stats']['invalid_categories'] = $batch->categoryProposals()->whereIn('status', ['inactive', 'ambiguous', 'mapped_inactive'])->count();
+                    $invalid = (int) $validated['stats']['invalid_rows'] + (int) $validated['stats']['invalid_invoices']
+                        + $validated['stats']['invalid_categories'];
+                    $batch->forceFill([
+                        'stats' => $validated['stats'],
+                        'status' => $invalid === 0 ? 'ready' : 'needs_review',
+                    ])->save();
+                }
+
                 $this->audit->log(
-                    $invalid === 0 ? 'petty_cash_import.staged' : 'petty_cash_import.validation_failed',
+                    $invalid === 0
+                        ? 'petty_cash_import.staged'
+                        : ($importMode === 'bulk' ? 'petty_cash_import.needs_review' : 'petty_cash_import.validation_failed'),
                     (int) $actor->id,
                     $batch,
                     [
-                        'business_date' => $businessDate,
+                        'import_mode' => $importMode,
+                        'funding_source' => $fundingSource,
+                        'default_bank_account_id' => $defaultBankAccountId,
+                        'date_from' => $dateFrom,
+                        'date_to' => $dateTo,
                         'sha256' => $sha256,
                         'rows' => $validated['stats']['rows'],
                         'invoices' => $validated['stats']['invoices'],
@@ -200,7 +341,7 @@ class PettyCashImportService
                     $companyId
                 );
 
-                return $batch->fresh(['invoices.rows', 'rows']);
+                return $batch->fresh(['invoices.rows', 'rows', 'categoryProposals']);
             });
         } catch (QueryException $exception) {
             Storage::disk($disk)->delete($objectKey);
@@ -224,7 +365,7 @@ class PettyCashImportService
     }
 
     /** @param array{invoices:array<int,array<string,mixed>>} $validated */
-    private function assertAccountingPreflight(array $validated, int $companyId): void
+    private function assertAccountingPreflight(array $validated, int $companyId, string $fundingSource): void
     {
         $invoices = collect($validated['invoices'])
             ->filter(fn (array $invoice): bool => ($invoice['errors'] ?? []) === []);
@@ -233,7 +374,8 @@ class PettyCashImportService
         }
 
         $required = ['ap_control'];
-        if ($invoices->contains(fn (array $invoice): bool => (bool) ($invoice['header']['paid'] ?? false))) {
+        if ($fundingSource === 'petty_cash'
+            && $invoices->contains(fn (array $invoice): bool => (bool) ($invoice['header']['paid'] ?? false))) {
             $required[] = 'petty_cash_asset';
         }
         $supplierIds = $invoices->pluck('header.supplier_id')->filter()->map(fn ($id): int => (int) $id)->unique();
@@ -244,7 +386,47 @@ class PettyCashImportService
         $this->mappings->assertRequiredMappings($companyId, array_values(array_unique($required)));
     }
 
-    private function assertWorkbookShape(array $sheets, array $headers): void
+    private function applyBulkAccountingErrors(array &$validated, int $companyId, string $fundingSource): void
+    {
+        $mappingMessage = null;
+        try {
+            $this->assertAccountingPreflight($validated, $companyId, $fundingSource);
+        } catch (ValidationException $exception) {
+            $mappingMessage = collect($exception->errors())->flatten()->first()
+                ?? __('Required accounting mappings are missing.');
+        }
+
+        foreach ($validated['invoices'] as &$invoice) {
+            if ($mappingMessage !== null) {
+                $invoice['errors']['accounting_mapping'] = $mappingMessage;
+            }
+            if (filled($invoice['business_date'] ?? null)) {
+                try {
+                    $periodId = $this->accountingContext->resolvePeriodId($invoice['business_date'], $companyId);
+                    $this->periodGate->assertDateOpen(
+                        $invoice['business_date'],
+                        $companyId,
+                        $periodId,
+                        'ap',
+                        'business_date'
+                    );
+                } catch (ValidationException $exception) {
+                    $invoice['errors']['business_date'] = collect($exception->errors())->flatten()->first()
+                        ?? __('The accounting period is not open.');
+                }
+            }
+            $invoice['status'] = $invoice['errors'] === [] ? 'valid' : 'invalid';
+        }
+        unset($invoice);
+        $invalid = count(array_filter(
+            $validated['invoices'],
+            fn (array $invoice): bool => $invoice['status'] === 'invalid'
+        ));
+        $validated['stats']['invalid_invoices'] = $invalid;
+        $validated['stats']['valid_invoices'] = count($validated['invoices']) - $invalid;
+    }
+
+    private function assertWorkbookShape(array $sheets, array $headers, string $importMode): void
     {
         $errors = [];
         if (! array_key_exists(self::DATA_SHEET, $sheets)) {
@@ -254,9 +436,14 @@ class PettyCashImportService
         if ($unexpected !== []) {
             $errors['unexpected_sheets'] = __('Unexpected workbook sheets: :sheets.', ['sheets' => implode(', ', $unexpected)]);
         }
+        $expectedHeaders = $importMode === 'bulk' ? self::BULK_HEADERS : self::HEADERS;
         if (array_key_exists(self::DATA_SHEET, $sheets)
-            && ($headers[self::DATA_SHEET] ?? []) !== self::HEADERS) {
+            && ($headers[self::DATA_SHEET] ?? []) !== $expectedHeaders) {
             $errors['headers'] = __('The Petty Cash Expenses headers are missing, unexpected, or out of order.');
+        }
+        if (array_key_exists(self::CATEGORY_DEFINITION_SHEET, $sheets)
+            && ($headers[self::CATEGORY_DEFINITION_SHEET] ?? []) !== self::CATEGORY_DEFINITION_HEADERS) {
+            $errors['category_definitions'] = __('The Category Definitions headers must be code and name.');
         }
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
@@ -286,6 +473,47 @@ class PettyCashImportService
         return $value;
     }
 
+    private function fundingSource(string $value): string
+    {
+        if (! in_array($value, ['petty_cash', 'bank_account'], true)) {
+            throw ValidationException::withMessages([
+                'funding_source' => __('Choose a valid payment source.'),
+            ]);
+        }
+
+        return $value;
+    }
+
+    private function resolveBankAccountId(?int $bankAccountId, int $companyId, string $currencyCode): int
+    {
+        $bank = $this->mappings->resolveBankAccount($bankAccountId, $companyId);
+        if (! $bank instanceof BankAccount) {
+            throw ValidationException::withMessages([
+                'default_bank_account_id' => __('Choose an active bank account for this company.'),
+            ]);
+        }
+        if ((int) $bank->company_id !== $companyId || ! $bank->ledger_account_id) {
+            throw ValidationException::withMessages([
+                'default_bank_account_id' => __('The selected bank account must belong to the company and be linked to a ledger account.'),
+            ]);
+        }
+        if (filled($bank->currency_code) && strtoupper((string) $bank->currency_code) !== strtoupper($currencyCode)) {
+            throw ValidationException::withMessages([
+                'default_bank_account_id' => __('The bank account currency must match the accounting company currency.'),
+            ]);
+        }
+
+        return (int) $bank->id;
+    }
+
+    private function nullableBusinessDate(mixed $value): ?string
+    {
+        $raw = is_scalar($value) ? trim((string) $value) : '';
+        $date = DateTimeImmutable::createFromFormat('!Y-m-d', $raw);
+
+        return $date && $date->format('Y-m-d') === $raw ? $raw : null;
+    }
+
     private function assertAccess(User $actor): void
     {
         if (! $actor->hasRole('admin') || ! $actor->can('petty_cash.import')) {
@@ -299,6 +527,6 @@ class PettyCashImportService
             ->where('company_id', $companyId)
             ->where('idempotency_key', $idempotencyKey)
             ->first()
-            ?->load(['invoices.rows', 'rows']);
+            ?->load(['invoices.rows', 'rows', 'categoryProposals']);
     }
 }

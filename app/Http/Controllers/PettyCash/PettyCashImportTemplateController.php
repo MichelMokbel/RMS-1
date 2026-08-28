@@ -48,9 +48,12 @@ class PettyCashImportTemplateController extends Controller
             ->map(fn (PettyCashWallet $wallet): string => $wallet->id.' | '.($wallet->driver_name ?: __('Custodian :id', ['id' => $wallet->driver_id])))
             ->all();
 
-        $path = $builder->build($suppliers, $categories, $wallets);
+        $bulk = $request->query('mode') === 'bulk';
+        $path = $bulk
+            ? $builder->buildBulk($suppliers, $categories, $wallets)
+            : $builder->build($suppliers, $categories, $wallets);
 
-        return response()->download($path, 'petty-cash-daily-import-template.xlsx', [
+        return response()->download($path, $bulk ? 'petty-cash-multiple-date-import-template.xlsx' : 'petty-cash-daily-import-template.xlsx', [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ])->deleteFileAfterSend(true);
     }

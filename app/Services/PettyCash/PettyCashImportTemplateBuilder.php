@@ -26,6 +26,25 @@ class PettyCashImportTemplateBuilder
         'notes',
     ];
 
+    /** @var array<int, string> */
+    public const BULK_HEADERS = [
+        'business_date',
+        'entry_id',
+        'supplier',
+        'reference_number',
+        'due_date',
+        'category',
+        'wallet',
+        'paid',
+        'description',
+        'quantity',
+        'unit_price',
+        'notes',
+    ];
+
+    /** @var array<int, string> */
+    public const CATEGORY_DEFINITION_HEADERS = ['code', 'name'];
+
     /**
      * @param  array<int, string>  $suppliers
      * @param  array<int, string>  $categories
@@ -41,6 +60,32 @@ class PettyCashImportTemplateBuilder
             ['name' => 'Wallets', 'kind' => 'lookup', 'headers' => ['wallet'], 'rows' => array_map(fn (string $value): array => [$value], $wallets)],
         ];
 
+        return $this->buildWorkbook($sheets, count($suppliers), count($categories), count($wallets));
+    }
+
+    /**
+     * @param  array<int, string>  $suppliers
+     * @param  array<int, string>  $categories
+     * @param  array<int, string>  $wallets
+     */
+    public function buildBulk(array $suppliers, array $categories, array $wallets): string
+    {
+        $sheets = [
+            ['name' => 'Instructions', 'kind' => 'instructions', 'rows' => $this->bulkInstructions()],
+            ['name' => 'Petty Cash Expenses', 'kind' => 'bulk_data', 'headers' => self::BULK_HEADERS, 'rows' => $this->bulkStarterRows()],
+            ['name' => 'Category Definitions', 'kind' => 'definitions', 'headers' => self::CATEGORY_DEFINITION_HEADERS, 'rows' => array_fill(0, 50, ['', ''])],
+            ['name' => 'Suppliers', 'kind' => 'lookup', 'headers' => ['supplier'], 'rows' => array_map(fn (string $value): array => [$value], $suppliers)],
+            ['name' => 'Categories', 'kind' => 'lookup', 'headers' => ['category'], 'rows' => array_map(fn (string $value): array => [$value], $categories)],
+            ['name' => 'Wallets', 'kind' => 'lookup', 'headers' => ['wallet'], 'rows' => array_map(fn (string $value): array => [$value], $wallets)],
+        ];
+
+        return $this->buildWorkbook($sheets, count($suppliers), count($categories), count($wallets));
+    }
+
+    /** @param array<int, array<string, mixed>> $sheets */
+    private function buildWorkbook(array $sheets, int $supplierCount, int $categoryCount, int $walletCount): string
+    {
+
         $path = tempnam(sys_get_temp_dir(), 'petty-cash-import-');
         if ($path === false) {
             throw new RuntimeException('Unable to create the petty cash import template.');
@@ -55,7 +100,7 @@ class PettyCashImportTemplateBuilder
         try {
             $zip->addFromString('[Content_Types].xml', $this->contentTypesXml(count($sheets)));
             $zip->addFromString('_rels/.rels', $this->rootRelationshipsXml());
-            $zip->addFromString('xl/workbook.xml', $this->workbookXml($sheets, count($suppliers), count($categories), count($wallets)));
+            $zip->addFromString('xl/workbook.xml', $this->workbookXml($sheets, $supplierCount, $categoryCount, $walletCount));
             $zip->addFromString('xl/_rels/workbook.xml.rels', $this->workbookRelationshipsXml(count($sheets)));
             $zip->addFromString('xl/styles.xml', $this->stylesXml());
 
@@ -101,6 +146,32 @@ class PettyCashImportTemplateBuilder
     }
 
     /** @return array<int, array<int, string>> */
+    private function bulkInstructions(): array
+    {
+        return [
+            ['Petty cash multiple-date expense import'],
+            ['Use the Petty Cash Expenses sheet for transactions. Keep every header exactly as supplied.'],
+            [],
+            ['How invoice grouping works'],
+            ['Business dates', 'Enter the invoice date on every used row. Dates may span multiple open accounting periods.'],
+            ['Invoice groups', 'Rows with the same business_date and entry_id become line items on one AP invoice. The same entry ID may be reused on another date.'],
+            ['Invoice fields', 'Enter supplier, reference, due date, category, wallet, paid status, and notes on the first row of each group. Blank values inherit within the group.'],
+            ['Upload defaults', 'Supplier, wallet, and paid status may be left blank when defaults are selected on the upload screen. Workbook values take precedence.'],
+            ['category', 'Choose an existing lookup token or type a category name. Unknown names are reviewed and created only when the batch is committed.'],
+            ['Category Definitions', 'Optionally list category code and name pairs on that sheet, including categories not used by an expense row.'],
+            ['description, quantity, unit_price', 'Each used row becomes one line item. Quantity defaults to 1; unit price cannot be negative and may use up to four decimals.'],
+            ['Unused lines', 'Leave unused rows blank. Add rows freely below the prepared area while retaining the exact headers.'],
+            [],
+            ['Validation and safety'],
+            ['Review before commit', 'Uploading only stages the workbook. Correct invoice and line values on the review dashboard before committing.'],
+            ['Atomic commit', 'All dates and categories commit together. If an unexpected accounting operation fails, none of the batch is applied.'],
+            ['Duplicates', 'Re-uploading the same workbook and defaults reopens the existing batch instead of creating duplicate invoices.'],
+            ['Security', 'Do not use formulas, macros, external links, renamed sheets, or additional transaction headers. Unsafe workbooks are rejected.'],
+            ['Attachments', 'Receipts and PDFs are not embedded. Upload supporting files to the created invoice afterward.'],
+        ];
+    }
+
+    /** @return array<int, array<int, string>> */
     private function starterRows(): array
     {
         $rows = [];
@@ -108,6 +179,20 @@ class PettyCashImportTemplateBuilder
             $entryId = sprintf('ENTRY-%03d', $entry);
             for ($line = 0; $line < self::LINES_PER_ENTRY; $line++) {
                 $rows[] = [$entryId, '', '', '', '', '', '', '', '', '', '', ''];
+            }
+        }
+
+        return $rows;
+    }
+
+    /** @return array<int, array<int, string>> */
+    private function bulkStarterRows(): array
+    {
+        $rows = [];
+        for ($entry = 1; $entry <= self::STARTER_ENTRY_COUNT; $entry++) {
+            $entryId = sprintf('ENTRY-%03d', $entry);
+            for ($line = 0; $line < self::LINES_PER_ENTRY; $line++) {
+                $rows[] = ['', $entryId, '', '', '', '', '', '', '', '', '', ''];
             }
         }
 
@@ -227,55 +312,69 @@ XML;
         foreach ($rows as $rowIndex => $row) {
             $cells = '';
             foreach ($row as $column => $value) {
-                $style = $kind === 'data' ? $this->starterCellStyle($rowIndex, $column) : 0;
+                $style = in_array($kind, ['data', 'bulk_data'], true)
+                    ? $this->starterCellStyle($rowIndex, $column, $headers)
+                    : 0;
                 $cells .= $this->stringCell($this->column($column + 1).($rowIndex + 2), (string) $value, $style);
             }
             $rowXml .= '<row r="'.($rowIndex + 2).'">'.$cells.'</row>';
         }
 
         $lastColumn = $this->column(count($headers));
-        $validations = $kind === 'data' ? $this->validationsXml() : '';
+        $validations = in_array($kind, ['data', 'bulk_data'], true) ? $this->validationsXml($headers) : '';
 
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
             .'<sheetPr><tabColor rgb="'.($kind === 'lookup' ? 'FF64748B' : 'FF7C3AED').'"/></sheetPr><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
             .'<cols>'.$columns.'</cols><sheetData>'.$rowXml.'</sheetData><autoFilter ref="A1:'.$lastColumn.'1"/>'.$validations.'</worksheet>';
     }
 
-    private function starterCellStyle(int $rowIndex, int $columnIndex): int
+    /** @param array<int, string> $headers */
+    private function starterCellStyle(int $rowIndex, int $columnIndex, array $headers): int
     {
+        $field = $headers[$columnIndex] ?? '';
+
         if ($rowIndex % self::LINES_PER_ENTRY === 0) {
-            return match ($columnIndex) {
-                3 => 9,
-                8 => 10,
-                9 => 11,
+            return match ($field) {
+                'business_date', 'due_date' => 9,
+                'quantity' => 10,
+                'unit_price' => 11,
                 default => 8,
             };
         }
 
-        return match ($columnIndex) {
-            0 => intdiv($rowIndex, self::LINES_PER_ENTRY) % 2 === 0 ? 17 : 18,
-            3 => 13,
-            8 => 15,
-            9 => 16,
-            7 => 14,
+        return match ($field) {
+            'entry_id' => intdiv($rowIndex, self::LINES_PER_ENTRY) % 2 === 0 ? 17 : 18,
+            'business_date', 'due_date' => 13,
+            'quantity' => 15,
+            'unit_price' => 16,
+            'description' => 14,
             default => 12,
         };
     }
 
-    private function validationsXml(): string
+    /** @param array<int, string> $headers */
+    private function validationsXml(array $headers): string
     {
-        $supplierRows = $this->invoiceFieldRows('B');
-        $categoryRows = $this->invoiceFieldRows('E');
-        $walletRows = $this->invoiceFieldRows('F');
-        $paidRows = $this->invoiceFieldRows('G');
+        $columnFor = fn (string $field): string => $this->column(((int) array_search($field, $headers, true)) + 1);
+        $supplierRows = $this->invoiceFieldRows($columnFor('supplier'));
+        $categoryRows = $this->invoiceFieldRows($columnFor('category'));
+        $walletRows = $this->invoiceFieldRows($columnFor('wallet'));
+        $paidRows = $this->invoiceFieldRows($columnFor('paid'));
+        $quantityColumn = $columnFor('quantity');
+        $unitPriceColumn = $columnFor('unit_price');
         $rules = [
             $this->listValidation($supplierRows, 'SupplierValues', true),
             $this->listValidation($categoryRows, 'CategoryValues', true),
             $this->listValidation($walletRows, 'WalletValues', true),
             $this->listValidation($paidRows, '&quot;TRUE,FALSE&quot;', true),
-            '<dataValidation type="decimal" operator="greaterThan" allowBlank="1" showErrorMessage="1" errorTitle="Invalid quantity" error="Quantity must be greater than zero when supplied." sqref="I2:I5001"><formula1>0</formula1></dataValidation>',
-            '<dataValidation type="decimal" operator="greaterThanOrEqual" allowBlank="1" showErrorMessage="1" errorTitle="Invalid amount" error="Unit price cannot be negative." sqref="J2:J5001"><formula1>0</formula1></dataValidation>',
+            '<dataValidation type="decimal" operator="greaterThan" allowBlank="1" showErrorMessage="1" errorTitle="Invalid quantity" error="Quantity must be greater than zero when supplied." sqref="'.$quantityColumn.'2:'.$quantityColumn.'5001"><formula1>0</formula1></dataValidation>',
+            '<dataValidation type="decimal" operator="greaterThanOrEqual" allowBlank="1" showErrorMessage="1" errorTitle="Invalid amount" error="Unit price cannot be negative." sqref="'.$unitPriceColumn.'2:'.$unitPriceColumn.'5001"><formula1>0</formula1></dataValidation>',
         ];
+
+        if (in_array('business_date', $headers, true)) {
+            $businessDateColumn = $columnFor('business_date');
+            $rules[] = '<dataValidation type="date" operator="between" allowBlank="1" showErrorMessage="1" errorTitle="Invalid business date" error="Enter a valid Excel date." sqref="'.$businessDateColumn.'2:'.$businessDateColumn.'5001"><formula1>1</formula1><formula2>2958465</formula2></dataValidation>';
+        }
 
         return '<dataValidations count="'.count($rules).'">'.implode('', $rules).'</dataValidations>';
     }
