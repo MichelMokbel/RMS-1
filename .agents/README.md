@@ -31,6 +31,26 @@ Skills are invoked using `$skill-name` syntax. Each skill has:
 - Trigger and skip conditions
 - Commands and examples
 
+### Engineering workflow skill pack
+
+The following skills are vendored from
+[`jsmastery-pro/skills`](https://github.com/jsmastery-pro/skills) at commit
+`43b69e44c9ca905fe3a3418ccdf4102255e20d40`:
+
+- `$scope`
+- `$audit`
+- `$architect`
+- `$develop`
+- `$check`
+- `$test`
+- `$document`
+- `$sync`
+- `$debug`
+
+See `skills/jsmastery-pro-skills.SOURCE.md` for provenance and update guidance.
+The upstream MIT license is preserved in
+`skills/jsmastery-pro-skills.LICENSE`.
+
 ## Documentation
 
 - Main instructions: `AGENTS.md` (project root)
