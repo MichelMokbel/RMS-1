@@ -19,6 +19,7 @@
 
     @if($mealPlanMeals)
         <p><strong>Meal Plan Request:</strong> {{ $mealPlanMeals }} meals @if($mealPlanRequestId)(Lead #{{ $mealPlanRequestId }})@endif</p>
+        <p><strong>Selected meals total:</strong> {{ $currency }} {{ number_format((float) $orders->sum('total_amount'), $moneyDigits) }}</p>
     @endif
 
     @foreach($orders as $order)
@@ -35,5 +36,4 @@
         </ul>
     @endforeach
 </div>
-
 

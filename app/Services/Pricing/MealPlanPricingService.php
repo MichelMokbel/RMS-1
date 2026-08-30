@@ -46,6 +46,19 @@ class MealPlanPricingService
         return (float) $planPrices[$key];
     }
 
+    public function planTotalForMeals(string $key, int $mealCount): ?float
+    {
+        $price = $this->planPriceForKey($key);
+        if ($price === null) {
+            return null;
+        }
+
+        $total = round($price * $mealCount, 3);
+
+        // Match checkout: round a complete plan up, leaving partial selections unchanged.
+        return $mealCount === (int) $key ? ceil($total) : $total;
+    }
+
     public function portionPrice(string $portion): ?float
     {
         $prices = config('pricing.daily_dish.portion_prices', []);
@@ -69,6 +82,7 @@ class MealPlanPricingService
     public function portionLabel(string $portion): string
     {
         $labels = config('pricing.daily_dish.portion_labels', []);
+
         return (string) ($labels[$portion] ?? 'Plate');
     }
 

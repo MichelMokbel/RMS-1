@@ -19,7 +19,7 @@ class DailyDishPricingService
         $portionQuantity = (int) ($order->daily_dish_portion_quantity ?? 0);
 
         if ($portionType === 'full' && $portionQuantity > 0) {
-            $price = (float) config('pricing.daily_dish.portion_prices.full', 200);
+            $price = (float) config('pricing.daily_dish.portion_prices.full', 240);
 
             return $portionQuantity * $price;
         }
@@ -42,7 +42,7 @@ class DailyDishPricingService
     public function computeFromSelection(array $selectedItemsWithRoles, string $portionType, ?int $portionQuantity): float
     {
         if ($portionType === 'full' && $portionQuantity > 0) {
-            $price = (float) config('pricing.daily_dish.portion_prices.full', 200);
+            $price = (float) config('pricing.daily_dish.portion_prices.full', 240);
 
             return $portionQuantity * $price;
         }

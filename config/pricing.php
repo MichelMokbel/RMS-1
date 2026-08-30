@@ -3,8 +3,8 @@
 return [
     'meal_plan' => [
         'plan_prices' => [
-            '20' => 40.0,
-            '26' => 42.30,
+            '20' => 45.0,
+            '26' => 46.15,
         ],
         'base_prices' => [
             'main_only' => 50.0,
@@ -16,7 +16,7 @@ return [
         'portion_prices' => [
             'plate' => 50.0,
             'half' => 130.0,
-            'full' => 200.0,
+            'full' => 240.0,
         ],
         'addon_prices' => [
             'salad' => 15.0,

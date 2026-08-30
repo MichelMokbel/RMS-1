@@ -14,6 +14,7 @@
 
     @if($mealPlanMeals)
         <p><strong>Meal Plan Request:</strong> {{ $mealPlanMeals }} meals. Our team will contact you to finalize. @if($mealPlanRequestId)(Reference #{{ $mealPlanRequestId }})@endif</p>
+        <p><strong>Selected meals total:</strong> {{ $currency }} {{ number_format((float) $orders->sum('total_amount'), $moneyDigits) }}</p>
     @endif
 
     @foreach($orders as $order)
@@ -33,5 +34,4 @@
         If you need changes, please contact us on WhatsApp/Phone: <strong>55683442</strong>.
     </p>
 </div>
-
 

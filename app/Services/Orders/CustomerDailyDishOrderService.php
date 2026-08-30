@@ -4,7 +4,6 @@ namespace App\Services\Orders;
 
 use App\Mail\DailyDishOrderAdminMail;
 use App\Mail\DailyDishOrderCustomerMail;
-use App\Models\Customer;
 use App\Models\DailyDishMenu;
 use App\Models\MealPlanRequest;
 use App\Models\MenuItem;
@@ -28,8 +27,7 @@ class CustomerDailyDishOrderService
         private readonly MealPlanPricingService $pricingService,
         private readonly CustomerPortalOrderAuditService $auditService,
         private readonly EmailLogService $emailLogs,
-    ) {
-    }
+    ) {}
 
     /**
      * @param  array<string, mixed>  $payload
@@ -61,7 +59,7 @@ class CustomerDailyDishOrderService
         $appetizerMenuItemId = null;
 
         if ($isSubscriptionRequest) {
-            $planPrice = $this->fixedSubscriptionPrice((string) ($payload['mealPlan'] ?? ''));
+            $planPrice = $this->pricingService->planPriceForKey((string) ($payload['mealPlan'] ?? ''));
             if ($planPrice === null) {
                 throw ValidationException::withMessages([
                     'mealPlan' => __('Unsupported meal plan.'),
@@ -77,6 +75,9 @@ class CustomerDailyDishOrderService
         }
 
         $groups = $items->groupBy('key');
+        if ($isSubscriptionRequest) {
+            $groups = $groups->sortKeys();
+        }
         $createdOrderIds = [];
         $leadId = null;
 
@@ -94,6 +95,10 @@ class CustomerDailyDishOrderService
             $planPrice,
             $appetizerMenuItemId
         ): void {
+            $selectedMealCount = 0;
+            $subscriptionSubtotal = 0.0;
+            $lastSubscriptionOrder = null;
+
             foreach ($groups as $date => $groupItems) {
                 $websiteDayTotal = ! $isSubscriptionRequest
                     ? $this->resolveWebsiteDayTotal($groupItems, (string) $date)
@@ -525,6 +530,24 @@ class CustomerDailyDishOrderService
                 }
 
                 $createdOrderIds[] = $order->id;
+                if ($isSubscriptionRequest) {
+                    $selectedMealCount += (int) $subscriptionMealCount;
+                    $subscriptionSubtotal += $orderTotal;
+                    $lastSubscriptionOrder = $order;
+                }
+            }
+
+            if ($lastSubscriptionOrder !== null) {
+                $planTotal = $this->pricingService->planTotalForMeals((string) $payload['mealPlan'], $selectedMealCount);
+                $adjustment = round($planTotal - $subscriptionSubtotal, 3);
+                if ($adjustment > 0) {
+                    // Keep the request and its emails in sync with the full checkout total.
+                    // Apply the rounding difference once, to the last delivery in this request.
+                    $lastSubscriptionOrder->update([
+                        'total_before_tax' => round((float) $lastSubscriptionOrder->total_before_tax + $adjustment, 3),
+                        'total_amount' => round((float) $lastSubscriptionOrder->total_amount + $adjustment, 3),
+                    ]);
+                }
             }
 
             $lead = MealPlanRequest::create([
@@ -830,15 +853,6 @@ class CustomerDailyDishOrderService
     private function isSubscriptionRequest(array $payload): bool
     {
         return in_array((string) ($payload['mealPlan'] ?? ''), ['20', '26'], true);
-    }
-
-    private function fixedSubscriptionPrice(string $planKey): ?float
-    {
-        return match ($planKey) {
-            '20' => 40.000,
-            '26' => 42.300,
-            default => null,
-        };
     }
 
     private function resolveWebsiteDayTotal(Collection $items, string $date): float

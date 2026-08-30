@@ -1,8 +1,8 @@
 <?php
 
+use App\Models\Customer;
 use App\Models\DailyDishMenu;
 use App\Models\DailyDishMenuItem;
-use App\Models\Customer;
 use App\Models\EmailLog;
 use App\Models\MenuItem;
 use App\Models\OpsEvent;
@@ -141,7 +141,7 @@ it('allows newly registered bypassed customers to order because they are marked 
     expect($user->fresh()->portal_phone_verified_at)->not->toBeNull();
 });
 
-it('creates only subscription orders with fixed 40 total and auto appetizer for mealPlan 20', function () {
+it('creates only subscription orders with 45 total and auto appetizer for mealPlan 20', function () {
     [, $customer] = actingAsVerifiedCustomer();
     $appetizer = MenuItem::factory()->create(['code' => 'APP-DEFAULT', 'name' => 'Default Appetizer', 'is_active' => true]);
 
@@ -186,8 +186,8 @@ it('creates only subscription orders with fixed 40 total and auto appetizer for 
     expect($orders)->toHaveCount(2);
     expect($orders->pluck('source')->unique()->values()->all())->toBe(['Subscription']);
     expect($orders->pluck('customer_id')->unique()->values()->all())->toBe([$customer->id]);
-    expect((float) $orders[0]->total_amount)->toBe(40.0);
-    expect((float) $orders[1]->total_amount)->toBe(40.0);
+    expect((float) $orders[0]->total_amount)->toBe(45.0);
+    expect((float) $orders[1]->total_amount)->toBe(45.0);
 
     foreach ($orders as $order) {
         $hasApp = $order->items()->where('menu_item_id', $appetizer->id)->exists();
@@ -197,7 +197,7 @@ it('creates only subscription orders with fixed 40 total and auto appetizer for 
     }
 });
 
-it('uses fixed 42.3 total for mealPlan 26', function () {
+it('uses 46.15 total for one meal in mealPlan 26', function () {
     actingAsVerifiedCustomer();
     MenuItem::factory()->create(['code' => 'APP-DEFAULT', 'name' => 'Default Appetizer', 'is_active' => true]);
     $main = MenuItem::factory()->create(['code' => 'MAIN-026', 'name' => 'Fish Fillet']);
@@ -226,7 +226,7 @@ it('uses fixed 42.3 total for mealPlan 26', function () {
 
     $order = Order::query()->firstOrFail();
     expect($order->source)->toBe('Subscription');
-    expect((float) $order->total_amount)->toBe(42.3);
+    expect((float) $order->total_amount)->toBe(46.15);
     expect($order->items()->where('role', 'salad')->exists())->toBeTrue();
     expect($order->items()->where('role', 'dessert')->exists())->toBeTrue();
     expect($order->items()->where('role', 'appetizer')->exists())->toBeTrue();
@@ -263,11 +263,85 @@ it('multiplies subscription totals and appetizer quantity by the selected meals 
     $appetizerLine = $order->items()->where('role', 'appetizer')->firstOrFail();
     $mainLine = $order->items()->where('role', 'main')->firstOrFail();
 
-    expect((float) $order->total_amount)->toBe(84.6);
+    expect((float) $order->total_amount)->toBe(92.3);
     expect((float) $mainLine->quantity)->toBe(2.0);
     expect((float) $appetizerLine->quantity)->toBe(2.0);
     expect((int) $appetizerLine->menu_item_id)->toBe($appetizer->id);
 });
+
+it('persists current meal plan totals and emails the same amounts without duplicating a retry', function (string $plan, int $days, int $quantity, float $rate, float $expectedTotal) {
+    Config::set('mail.default', 'smtp');
+    Config::set('mail.daily_dish_admin_emails', ['ops@example.com']);
+    Config::set('pos.currency', 'QAR');
+    Mail::fake();
+    actingAsVerifiedCustomer();
+
+    MenuItem::factory()->create(['code' => 'APP-DEFAULT', 'is_active' => true]);
+    $main = MenuItem::factory()->create(['name' => 'Plan Main']);
+    $salad = MenuItem::factory()->create();
+    $dessert = MenuItem::factory()->create();
+    $items = [];
+    for ($day = 1; $day <= $days; $day++) {
+        $date = sprintf('2026-09-%02d', $day);
+        createPublishedMenuForDate($date, 1, $main, $salad, $dessert);
+        $items[] = [
+            'key' => $date,
+            'mains' => [['name' => $main->name, 'portion' => 'plate', 'qty' => $quantity]],
+            'salad_qty' => $quantity,
+            'dessert_qty' => $quantity,
+            // Stale browser totals must not determine subscription pricing.
+            'day_total' => 40,
+        ];
+    }
+
+    $payload = createWebsiteOrderPayload(['mealPlan' => $plan]);
+    $payload['items'] = array_reverse($items);
+    $response = $this->postJson('/api/public/daily-dish/orders', $payload)
+        ->assertOk()->assertJson(['success' => true, 'replayed' => false]);
+    $request = \App\Models\MealPlanRequest::findOrFail($response->json('meal_plan_request_id'));
+    $orders = $request->orders()->orderBy('scheduled_date')->get();
+    expect($request->plan_meals)->toBe((int) $plan);
+    expect($orders)->toHaveCount($days);
+    expect(round((float) $orders->sum('total_amount'), 3))->toBe($expectedTotal);
+    expect(round((float) $orders->sum('total_before_tax'), 3))->toBe($expectedTotal);
+    expect((float) $orders->sum('tax_amount'))->toBe(0.0);
+    foreach ($orders as $index => $order) {
+        $expectedDayTotal = $index === $days - 1
+            ? round($expectedTotal - $rate * $quantity * ($days - 1), 3)
+            : round($rate * $quantity, 3);
+        expect((float) $order->total_amount)->toBe($expectedDayTotal);
+    }
+
+    $digits = \App\Support\Money\MinorUnits::scaleDigits(\App\Support\Money\MinorUnits::posScale());
+    foreach ([\App\Mail\DailyDishOrderAdminMail::class, \App\Mail\DailyDishOrderCustomerMail::class] as $mailClass) {
+        Mail::assertSent($mailClass, function ($mail) use ($request, $expectedTotal, $orders, $digits): bool {
+            expect($mail->mealPlanRequestId)->toBe($request->id);
+            expect(round((float) $mail->orders->sum('total_amount'), 3))->toBe($expectedTotal);
+            $html = $mail->render();
+            expect($html)->toContain('Selected meals total:</strong> QAR '.number_format($expectedTotal, $digits));
+            foreach ($orders as $order) {
+                expect($html)->toContain('Total:</strong> QAR '.number_format((float) $order->total_amount, $digits));
+            }
+
+            return true;
+        });
+    }
+
+    $retry = $this->postJson('/api/public/daily-dish/orders', $payload)
+        ->assertOk()->assertJson(['success' => true, 'replayed' => true]);
+    expect($retry->json('order_ids'))->toBe($response->json('order_ids'));
+    expect(Order::count())->toBe($days);
+    expect(\App\Models\MealPlanRequest::count())->toBe(1);
+    expect(round((float) $request->orders()->sum('total_amount'), 3))->toBe($expectedTotal);
+    Mail::assertSentCount(2);
+})->with([
+    'complete 20 meal plan' => ['20', 20, 1, 45.0, 900.0],
+    'complete 26 meal plan' => ['26', 26, 1, 46.15, 1200.0],
+    'multiple meals per day' => ['26', 13, 2, 46.15, 1200.0],
+    'all meals on one day' => ['26', 1, 26, 46.15, 1200.0],
+    'partial 20 meal plan' => ['20', 2, 1, 45.0, 90.0],
+    'partial 26 meal plan' => ['26', 2, 1, 46.15, 92.3],
+]);
 
 it('returns 422 when subscription appetizer code is not configured to an active menu item', function () {
     actingAsVerifiedCustomer();

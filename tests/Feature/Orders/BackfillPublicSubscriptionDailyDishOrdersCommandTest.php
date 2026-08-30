@@ -98,8 +98,8 @@ it('backfills draft public subscription daily dish orders using the linked meal 
 
     Artisan::call('orders:backfill-public-subscription-daily-dish');
 
-    expect((float) $draftOrder->fresh()->total_amount)->toBe(84.6);
-    expect((float) $draftOrder->fresh()->total_before_tax)->toBe(84.6);
+    expect((float) $draftOrder->fresh()->total_amount)->toBe(92.3);
+    expect((float) $draftOrder->fresh()->total_before_tax)->toBe(92.3);
     expect((float) $draftOrder->items()->where('role', 'appetizer')->firstOrFail()->quantity)->toBe(2.0);
 
     expect((float) $confirmedOrder->fresh()->total_amount)->toBe(42.3);
