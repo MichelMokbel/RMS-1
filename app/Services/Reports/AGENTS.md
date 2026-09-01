@@ -12,6 +12,7 @@ This area owns shared report queries and financial report helpers. Report screen
 | `OutstandingIssuedChequesReportService.php` | Issued cheque reporting. |
 | `UnsettledIncomingReceiptsReportService.php` | Incoming receipts awaiting settlement. |
 | `InventoryTransactionsReportQueryService.php` | Inventory movement report data. |
+| `ApReportService.php`, `DailyApJournalService.php` | Scoped AP report queries, daily snapshots, delivery claims, regeneration, and sequential numbers. |
 | `config/reports.php`, `app/Support/Reports/ReportRegistry.php` | Report categories, route keys, filters, and outputs. |
 | `app/Support/Reports/` | CSV, PDF, XLSX, and print helpers. |
 | `app/Http/Controllers/Reports/` | Export and print adapters. |
@@ -22,6 +23,8 @@ This area owns shared report queries and financial report helpers. Report screen
 * Historical balances use event dates and active allocations, not only current invoice status. Imported balances have specific fallback behavior.
 * Company and branch scope apply to totals and exports as well as visible rows.
 * Shared queries prevent a screen and its export from drifting. Report data can also live in Accounting, AP, and Spend services.
+* A saved daily AP journal belongs to one company and accounting date. Regeneration keeps its document number and never resends a completed or uncertain delivery.
+* Opening a live report does not allocate a document number. Daily generation uses the shared company and year sequence inside the same transaction as the saved snapshot.
 
 ## Gotchas
 

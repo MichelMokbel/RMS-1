@@ -20,10 +20,15 @@ class FinanceSetting extends Model
         'po_price_tolerance_percent',
         'purchase_price_variance_account_id',
         'updated_by',
+        'ap_report_enabled',
+        'ap_report_email',
+        'ap_report_company_id',
     ];
 
     protected $casts = [
         'lock_date' => 'date',
+        'ap_report_enabled' => 'boolean',
+        'ap_report_company_id' => 'integer',
         'default_company_id' => 'integer',
         'default_bank_account_id' => 'integer',
         'po_quantity_tolerance_percent' => 'decimal:3',

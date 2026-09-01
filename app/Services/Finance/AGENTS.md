@@ -9,6 +9,7 @@ This area stores finance defaults and the finance lock date. These settings affe
 | File | Owns |
 |---|---|
 | `FinanceSettingsService.php` | Reading and saving the singleton settings record. |
+| `ApReportSettingsService.php` | Administrator controlled daily AP report delivery settings. |
 | `app/Models/FinanceSetting.php` | Persisted finance defaults. |
 | `app/Providers/AppServiceProvider.php` | Loading the stored lock date into runtime configuration. |
 | `app/Console/Commands/FinanceLockDate.php` | The lock date command. |
@@ -21,6 +22,7 @@ This area stores finance defaults and the finance lock date. These settings affe
 * A supplied nonempty lock date is normalized through Carbon. Moving it backwards requires the service's explicit override.
 * Company, bank, purchase order tolerance, and price variance defaults are distinct settings. You can keep caller validation for those references.
 * App boot can load the stored lock date into configuration, with guards for an unavailable database.
+* Daily AP report delivery uses the same singleton record. Its recipient and company are administrator controlled, and delivery is disabled by default.
 
 ## Gotchas
 

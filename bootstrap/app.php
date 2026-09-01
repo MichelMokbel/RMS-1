@@ -97,6 +97,10 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $schedule->command('hr:refresh-alerts')->dailyAt('01:30')->withoutOverlapping();
 
+        $schedule->command('reports:send-ap-journal')
+            ->dailyAt('17:00')->timezone(config('app.timezone'))->withoutOverlapping();
+        $schedule->command('reports:refresh-ap-journals')->everyMinute()->withoutOverlapping();
+
         // Marketing: sync campaign structure daily
         $schedule->call(function () {
             try {
