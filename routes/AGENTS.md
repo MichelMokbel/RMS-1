@@ -35,6 +35,7 @@ This area declares browser, internal API, public website, customer portal, POS, 
 * Named routes are consumed by navigation, redirects, reports, exports, and help content. API response and route names are compatibility contracts.
 * Branch middleware is appended globally, but arbitrary model identifiers still need ownership checks.
 * The legacy expenses API returns HTTP 410 and directs callers to Spend.
+* AP journal reads use the general reports boundary. Generating and emailing company wide daily report ranges is an administrator only POST action.
 
 ## Gotchas
 

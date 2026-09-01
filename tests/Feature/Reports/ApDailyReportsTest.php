@@ -1,5 +1,6 @@
 <?php
 
+use App\Mail\ApJournalRangeMail;
 use App\Mail\DailyApJournalMail;
 use App\Models\AccountingCompany;
 use App\Models\ApDailyJournalReport;
@@ -258,6 +259,128 @@ it('renders the daily email and complete journal PDF attachment', function () {
     $attachments = $sent->getSymfonySentMessage()->getOriginalMessage()->getAttachments();
     expect($attachments)->toHaveCount(1);
     expect($attachments[0]->getFilename())->toBe('APJ-2026-0001.pdf')->and($attachments[0]->getBody())->toStartWith('%PDF');
+});
+
+it('generates each selected day in order and emails the range as one PDF', function () {
+    enableApDailyEmail($this);
+    foreach (['2026-08-29', '2026-08-30', '2026-08-31'] as $date) {
+        apDailyTestEntry($this, ['entry_date' => $date, 'description' => 'Range '.$date]);
+    }
+    $filters = ['company_id' => $this->company->id, 'date_from' => '2026-08-29', 'date_to' => '2026-08-31'];
+
+    $this->actingAs($this->admin)->post(route('reports.ap-journal.generate-email'), $filters)
+        ->assertRedirect(route('reports.ap-journal', $filters))
+        ->assertSessionHas('status');
+
+    $reports = ApDailyJournalReport::query()->orderBy('report_date')->get();
+    expect($reports)->toHaveCount(3)
+        ->and($reports->pluck('document_number')->all())->toBe(['APJ-2026-0001', 'APJ-2026-0002', 'APJ-2026-0003'])
+        ->and($reports->pluck('entry_count')->all())->toBe([1, 1, 1])
+        ->and($reports->pluck('email_status')->unique()->all())->toBe(['sent'])
+        ->and($reports->pluck('emailed_revision')->all())->toBe([1, 1, 1]);
+    Mail::assertSentCount(1);
+    Mail::assertNotSent(DailyApJournalMail::class);
+    Mail::assertSent(ApJournalRangeMail::class, function (ApJournalRangeMail $mail) {
+        return $mail->hasTo('accounts@example.test')
+            && $mail->dateFrom === '2026-08-29'
+            && $mail->dateTo === '2026-08-31'
+            && collect($mail->reports)->pluck('document_number')->all() === ['APJ-2026-0001', 'APJ-2026-0002', 'APJ-2026-0003'];
+    });
+    expect(EmailLog::where('category', 'ap_journal_range')->where('status', 'sent')->count())->toBe(1);
+
+    $this->post(route('reports.ap-journal.generate-email'), $filters)->assertSessionHas('status');
+    Mail::assertSentCount(1);
+    expect(ApDailyJournalReport::count())->toBe(3);
+
+    apDailyTestEntry($this, ['entry_date' => '2026-08-30', 'description' => 'Late range addition']);
+    $this->post(route('reports.ap-journal.generate-email'), $filters)->assertSessionHas('status');
+    Mail::assertSentCount(2);
+    expect(ApDailyJournalReport::whereDate('report_date', '2026-08-30')->sole()->revision)->toBe(2)
+        ->and(ApDailyJournalReport::whereDate('report_date', '2026-08-30')->sole()->emailed_revision)->toBe(2);
+});
+
+it('renders one combined PDF attachment for a generated AP journal range', function () {
+    foreach (['2026-08-30', '2026-08-31'] as $date) {
+        apDailyTestEntry($this, ['entry_date' => $date, 'description' => 'Combined attachment '.$date]);
+    }
+    $service = app(DailyApJournalService::class);
+    $reports = collect([
+        $service->generate($this->company->id, '2026-08-30'),
+        $service->generate($this->company->id, '2026-08-31'),
+    ])->map(fn (ApDailyJournalReport $report) => [
+        'id' => $report->id,
+        'date' => $report->report_date->toDateString(),
+        'document_number' => $report->document_number,
+        'revision' => $report->revision,
+        'generated_at' => $report->generated_at,
+        'snapshot' => $report->snapshot,
+    ])->all();
+    $mail = new ApJournalRangeMail($reports, $this->company->id, $this->company->name, '2026-08-30', '2026-08-31', now());
+
+    expect($mail->render())->toContain('2 daily reports were generated')->toContain('APJ-2026-0001')->toContain('APJ-2026-0002');
+    $sent = $this->mailManager->mailer('array')->send(
+        (new ApJournalRangeMail($reports, $this->company->id, $this->company->name, '2026-08-30', '2026-08-31', now()))->to('accounts@example.test')
+    );
+    $attachments = $sent->getSymfonySentMessage()->getOriginalMessage()->getAttachments();
+    expect($attachments)->toHaveCount(1)
+        ->and($attachments[0]->getFilename())->toBe('AP-journals-2026-08-30-to-2026-08-31.pdf')
+        ->and($attachments[0]->getBody())->toStartWith('%PDF');
+});
+
+it('allows only admins to generate company wide daily AP report ranges', function () {
+    enableApDailyEmail($this);
+    $filters = ['company_id' => $this->company->id, 'date_from' => '2026-08-31', 'date_to' => '2026-08-31'];
+
+    $this->actingAs($this->manager)->get(route('reports.ap-journal', $filters))
+        ->assertOk()
+        ->assertDontSee('Generate daily reports and email one PDF');
+    $this->post(route('reports.ap-journal.generate-email'), $filters)->assertForbidden();
+
+    $this->actingAs($this->admin)->get(route('reports.ap-journal', $filters))
+        ->assertOk()
+        ->assertSee('Generate daily reports and email one PDF')
+        ->assertSee('accounts@example.test');
+    $this->post(route('reports.ap-journal.generate-email'), ['company_id' => $this->otherCompany->id] + $filters)
+        ->assertSessionHasErrors('company_id');
+    Mail::assertNothingSent();
+});
+
+it('rejects a historical AP journal email range longer than one year', function () {
+    enableApDailyEmail($this);
+    $this->actingAs($this->admin)->post(route('reports.ap-journal.generate-email'), [
+        'company_id' => $this->company->id,
+        'date_from' => '2025-08-30',
+        'date_to' => '2026-08-31',
+    ])->assertSessionHasErrors('date_to');
+
+    expect(ApDailyJournalReport::count())->toBe(0);
+    Mail::assertNothingSent();
+});
+
+it('requires an explicit retry after a combined range email fails', function () {
+    enableApDailyEmail($this);
+    apDailyTestEntry($this);
+    $filters = ['company_id' => $this->company->id, 'date_from' => '2026-08-31', 'date_to' => '2026-08-31'];
+    Mail::shouldReceive('to')->once()->with('accounts@example.test')->andReturnSelf();
+    Mail::shouldReceive('send')->once()->andThrow(new \RuntimeException('Provider failure with sensitive payload'));
+
+    $this->actingAs($this->admin)->post(route('reports.ap-journal.generate-email'), $filters)
+        ->assertSessionHas('error')
+        ->assertSessionHas('ap_range_retry_available', true);
+    expect(ApDailyJournalReport::sole()->email_status)->toBe('failed')
+        ->and(EmailLog::where('category', 'ap_journal_range')->where('status', 'failed')->sole()->error_message)->toBeNull();
+
+    Mail::swap($this->mailManager);
+    Mail::fake();
+    $this->post(route('reports.ap-journal.generate-email'), $filters)
+        ->assertSessionHas('ap_range_retry_available', true);
+    Mail::assertNothingSent();
+
+    $this->post(route('reports.ap-journal.generate-email'), $filters + ['retry_failed' => true])
+        ->assertSessionHas('status');
+    Mail::assertSentCount(1);
+    expect(ApDailyJournalReport::sole()->email_status)->toBe('sent')
+        ->and(ApDailyJournalReport::sole()->document_number)->toBe('APJ-2026-0001');
 });
 
 it('numbers generated documents sequentially per company and accounting year without consuming numbers on regeneration', function () {

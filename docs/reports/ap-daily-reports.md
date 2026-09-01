@@ -12,6 +12,10 @@ At 17:00 in `config('app.timezone')`, the application generates the current day'
 
 When further AP entries are added for a saved report's date, a scheduled check regenerates the same report within a minute. This also applies to backdated additions. Its revision increases only if the data changes. The email remains once per company and date, and records which revision it contained. Regeneration does not resend an email. The email links to the current interactive report, which queries current data. Empty days receive an empty report.
 
+An administrator can also select a company-wide date range in the AP Journal Entries report and choose **Generate daily reports and email one PDF**. The action generates or refreshes one numbered report per calendar day from oldest to newest, then sends all selected daily reports as one PDF attachment to the configured AP report recipient. The range is limited to 366 days. Unchanged report revisions are not resent by a repeated click. A later ledger entry changes that day's revision and allows the selected range to be sent again. The action is unavailable for branch-filtered views because saved daily reports cover the whole configured company.
+
+Daily report generation reads existing posted AP subledger entries. It does not create or backfill accounting journals. Historical dates without matching `subledger_entries` produce empty daily sections.
+
 ## Configuration and deployment
 
 1. Apply the forward migration `2026_08_31_170000_add_daily_ap_journal_reports.php` through the normal deployment process. It adds disabled by default finance settings, the report snapshot table, and a subledger index for daily refresh queries. Existing finance defaults are preserved; no business data backfill is required. Allow for index creation time on a large subledger.
@@ -23,11 +27,13 @@ The scheduler runs `reports:send-ap-journal` at 17:00 and `reports:refresh-ap-jo
 
 For deployments using direct SQL, `database/sql/ap_daily_reports.sql` applies both migrations and records them in Laravel's migration history only after success. Import the whole file in the application database using a MySQL client that supports `DELIMITER` and a user with routine/schema privileges. Back up first and pause application writes and the scheduler. It handles both a fresh installation and existing daily reports, preserves assigned numbers and delivery settings, and can resume after interruption. DDL is not transactional; stop on any error before resuming the application. Do not also run the two migrations manually after importing the SQL. The SQL does not deploy application code or install the scheduler.
 
-An operator can generate and send a missed date with `php artisan reports:send-ap-journal --date=2026-08-31`. Rerunning an already sent date refreshes its data but does not resend it. A scheduled run missed during downtime is not automatically emailed the next day.
+An operator can generate and send a missed date with `php artisan reports:send-ap-journal --date=2026-08-31`. Rerunning an already sent date refreshes its data but does not resend it. A scheduled run missed during downtime is not automatically emailed the next day. For several dates, the administrator can use the range action on the report page instead of running the command once per date.
 
 ## Delivery failures
 
 The email log category is `ap_daily_journal`. Report records retain generation time, revision, recipient, delivery status, sent time, and emailed revision. Provider error text is not copied into email history; only its exception class is retained in the context.
+
+Combined range messages use the email log category `ap_journal_range`. If a range delivery fails, the page shows a retry action. Check email history and the mail provider before using it. A range containing a report still marked `sending` is not sent again automatically.
 
 SMTP cannot guarantee exactly once delivery across a network timeout or a process crash. Failed or uncertain attempts are not automatically retried. After checking the provider for an already accepted message, an operator can retry a failed delivery with `php artisan reports:send-ap-journal --date=2026-08-31 --retry-failed`. A report left in `sending` requires operator investigation; it is deliberately not reclaimed automatically. Already sent reports are never resent by this command.
 

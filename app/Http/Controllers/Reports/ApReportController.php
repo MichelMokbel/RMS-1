@@ -4,9 +4,12 @@ namespace App\Http\Controllers\Reports;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Reports\ApReportRequest;
+use App\Http\Requests\Reports\SendApJournalRangeRequest;
 use App\Models\ApDailyJournalReport;
 use App\Models\Branch;
+use App\Models\FinanceSetting;
 use App\Services\Reports\ApReportService;
+use App\Services\Reports\DailyApJournalService;
 use App\Services\Security\BranchAccessService;
 use App\Support\Reports\CsvExport;
 use App\Support\Reports\PdfExport;
@@ -61,11 +64,58 @@ class ApReportController extends Controller
         $data['paginator'] = new LengthAwarePaginator(array_slice($data['rows'], ($page - 1) * 50, 50), count($data['rows']), 50, $page,
             ['path' => $request->url(), 'query' => $filters]);
 
+        $data['apRangeEmailSettings'] = $report === 'ap-journal' && $request->user()->isAdmin()
+            ? FinanceSetting::query()->find(1)
+            : null;
+
         return view('reports.ap-report', $data + ['companies' => $this->reports->companies($request->user()), 'branches' => $branchQuery->get()]);
+    }
+
+    public function sendRange(SendApJournalRangeRequest $request, DailyApJournalService $service)
+    {
+        $filters = $request->validated();
+
+        try {
+            $result = $service->sendRange(
+                companyId: (int) $filters['company_id'],
+                dateFrom: $filters['date_from'],
+                dateTo: $filters['date_to'],
+                actorId: (int) $request->user()->id,
+                retryFailed: (bool) ($filters['retry_failed'] ?? false),
+            );
+        } catch (\RuntimeException $exception) {
+            return redirect()->route('reports.ap-journal', $this->rangeFilters($filters))
+                ->with('error', $exception->getMessage())
+                ->with('ap_range_retry_available', true);
+        }
+
+        $message = match ($result['status']) {
+            'sent' => trans_choice(':count daily AP report was generated and emailed as one PDF to :recipient.|:count daily AP reports were generated and emailed as one PDF to :recipient.', $result['count'], [
+                'count' => $result['count'],
+                'recipient' => $result['recipient'],
+            ]),
+            'already-sent' => __('These daily report revisions were already emailed to :recipient.', ['recipient' => $result['recipient']]),
+            'in-progress' => __('An email containing one or more selected daily reports is already being sent.'),
+            'failed' => __('A previous delivery failed. Check email history and the mail provider, then use Retry failed email.'),
+            default => __('The AP journal range could not be sent.'),
+        };
+
+        return redirect()->route('reports.ap-journal', $this->rangeFilters($filters))
+            ->with($result['status'] === 'failed' ? 'error' : 'status', $message)
+            ->with('ap_range_retry_available', $result['status'] === 'failed');
     }
 
     private function csvRow(array $row): array
     {
         return array_map(fn ($cell) => is_string($cell) && preg_match('/^[\s]*[=+@-]/u', $cell) ? "'".$cell : $cell, $row);
+    }
+
+    private function rangeFilters(array $filters): array
+    {
+        return [
+            'company_id' => $filters['company_id'],
+            'date_from' => $filters['date_from'],
+            'date_to' => $filters['date_to'],
+        ];
     }
 }
