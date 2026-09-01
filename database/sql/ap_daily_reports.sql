@@ -106,7 +106,7 @@ BEGIN
            MAX(CAST(SUBSTRING(document_number, 10) AS UNSIGNED)) + 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       FROM ap_daily_journal_reports
      WHERE document_number IS NOT NULL
-     GROUP BY company_id, YEAR(report_date)
+     GROUP BY company_id, CAST(YEAR(report_date) AS CHAR)
     ON DUPLICATE KEY UPDATE
         updated_at = IF(document_sequences.next_number < VALUES(next_number), VALUES(updated_at), document_sequences.updated_at),
         next_number = GREATEST(document_sequences.next_number, VALUES(next_number));
