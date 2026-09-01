@@ -26,6 +26,7 @@ This area owns shared report queries and financial report helpers. Report screen
 * A saved daily AP journal belongs to one company and accounting date. Regeneration keeps its document number and never resends a completed or uncertain delivery.
 * Opening a live report does not allocate a document number. Daily generation uses the shared company and year sequence inside the same transaction as the saved snapshot.
 * Historical AP range delivery generates saved days from oldest to newest, sends one combined PDF, and treats unchanged emailed revisions as already delivered.
+* AP journal presentation groups all balanced ledger lines belonging to one subledger entry into one event row. Show both account sides and a single event amount, keep reversals visible with an explicit `VOID` label, and prefer business references over internal source IDs.
 
 ## Gotchas
 

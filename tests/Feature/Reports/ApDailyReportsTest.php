@@ -12,6 +12,7 @@ use App\Models\FinanceSetting;
 use App\Models\LedgerAccount;
 use App\Models\SubledgerEntry;
 use App\Models\SubledgerLine;
+use App\Models\Supplier;
 use App\Models\User;
 use App\Services\Finance\ApReportSettingsService;
 use App\Services\Reports\ApReportService;
@@ -97,11 +98,60 @@ it('includes every AP source and reversal without including other dates companie
     }
     $response = $this->actingAs($this->manager)->get(route('reports.ap-journal', $this->filters))->assertOk();
     $response->assertSee('Original remains visible')->assertSee('Reversal remains visible')->assertDontSee('Excluded journal');
-    expect($response->viewData('rows'))->toHaveCount(12);
-    expect(array_slice($response->viewData('totals')[0], -2))->toBe(['74.0400', '74.0400']);
+    expect($response->viewData('headers'))->toBe(['Date / time', 'Transaction', 'Reference', 'Supplier / branch', 'Debit account', 'Credit account', 'Amount'])
+        ->and($response->viewData('rows'))->toHaveCount(6)
+        ->and($response->viewData('rows')[0])->toHaveCount(7)
+        ->and(collect($response->viewData('rows'))->where(1, 'VOID - Supplier invoice'))->toHaveCount(1)
+        ->and($response->viewData('totals')[0])->toBe(['Total journal movement', '', '', '', '', '', 'QAR 74.040']);
     $this->get(route('reports.ap-journal.print', $this->filters))->assertOk()->assertDontSee('Excluded journal');
     $csv = $this->get(route('reports.ap-journal.csv', $this->filters))->assertOk()->streamedContent();
-    expect($csv)->toContain('74.0400,74.0400')->not->toContain('Excluded journal');
+    expect($csv)->toContain('QAR 74.040')->not->toContain('Excluded journal')->not->toContain('ap_invoice:');
+});
+
+it('shows business references and supplier names instead of internal AP source ids', function () {
+    $supplier = Supplier::factory()->create(['company_id' => $this->company->id, 'name' => 'Readable Supplier']);
+    $invoice = ApInvoice::factory()->create([
+        'company_id' => $this->company->id,
+        'branch_id' => $this->branch->id,
+        'supplier_id' => $supplier->id,
+        'invoice_number' => 'INV-READABLE-42',
+    ]);
+    apDailyTestEntry($this, ['source_id' => $invoice->id, 'description' => 'Internal posting description']);
+
+    $row = $this->actingAs($this->manager)->get(route('reports.ap-journal', $this->filters))->assertOk()->viewData('rows')[0];
+
+    expect($row[1])->toBe('Supplier invoice')
+        ->and($row[2])->toBe('INV-READABLE-42')
+        ->and($row[3])->toContain('Readable Supplier')->toContain('Report Branch')
+        ->and($row[4])->toContain($this->accounts[0]->code)
+        ->and($row[5])->toContain($this->accounts[1]->code)
+        ->and($row[6])->toBe('QAR 12.340');
+});
+
+it('keeps a multi account journal entry on one row and shows each split amount', function () {
+    $taxAccount = LedgerAccount::factory()->create(['company_id' => $this->company->id]);
+    $entry = SubledgerEntry::forceCreate([
+        'company_id' => $this->company->id,
+        'branch_id' => $this->branch->id,
+        'source_type' => 'ap_invoice',
+        'source_id' => 4242,
+        'event' => 'post',
+        'entry_date' => '2026-08-31',
+        'posted_at' => now(),
+        'status' => 'posted',
+        'currency_code' => 'QAR',
+        'description' => 'SPLIT-42',
+    ]);
+    SubledgerLine::create(['entry_id' => $entry->id, 'account_id' => $this->accounts[0]->id, 'debit' => '10.0000', 'credit' => 0]);
+    SubledgerLine::create(['entry_id' => $entry->id, 'account_id' => $taxAccount->id, 'debit' => '2.3400', 'credit' => 0]);
+    SubledgerLine::create(['entry_id' => $entry->id, 'account_id' => $this->accounts[1]->id, 'debit' => 0, 'credit' => '12.3400']);
+
+    $row = $this->actingAs($this->manager)->get(route('reports.ap-journal', $this->filters))->assertOk()->viewData('rows')[0];
+
+    expect($row[4])->toContain($this->accounts[0]->code.' '.$this->accounts[0]->name.' (10.000)')
+        ->toContain($taxAccount->code.' '.$taxAccount->name.' (2.340)')
+        ->and($row[5])->toBe($this->accounts[1]->code.' '.$this->accounts[1]->name)
+        ->and($row[6])->toBe('QAR 12.340');
 });
 
 it('protects every report output and rejects unauthorized company and branch filters', function (string $report, string $suffix) {
@@ -125,14 +175,14 @@ it('sends a calendar day report once then regenerates the same report for late a
     apDailyTestEntry($this, ['company_id' => $this->otherCompany->id, 'description' => 'Other company excluded']);
     $this->artisan('reports:send-ap-journal')->assertSuccessful();
     $report = ApDailyJournalReport::sole();
-    expect($report->email_status)->toBe('sent')->and($report->revision)->toBe(1)->and($report->snapshot['rows'])->toHaveCount(2)
+    expect($report->email_status)->toBe('sent')->and($report->revision)->toBe(1)->and($report->snapshot['rows'])->toHaveCount(1)
         ->and($report->document_number)->toBe('APJ-2026-0001');
-    Mail::assertSent(DailyApJournalMail::class, fn ($mail) => $mail->hasTo('accounts@example.test') && $mail->reportDate === '2026-08-31' && count($mail->snapshot['rows']) === 2 && $mail->documentNumber === 'APJ-2026-0001');
+    Mail::assertSent(DailyApJournalMail::class, fn ($mail) => $mail->hasTo('accounts@example.test') && $mail->reportDate === '2026-08-31' && count($mail->snapshot['rows']) === 1 && $mail->documentNumber === 'APJ-2026-0001');
     expect(EmailLog::where('category', 'ap_daily_journal')->where('status', 'sent')->count())->toBe(1);
     $this->travelTo(now()->setTime(23, 59, 59));
     apDailyTestEntry($this, ['description' => 'Late same day']);
     $this->artisan('reports:refresh-ap-journals')->assertSuccessful();
-    expect($report->fresh()->revision)->toBe(2)->and($report->fresh()->snapshot['rows'])->toHaveCount(4)->and($report->fresh()->emailed_revision)->toBe(1);
+    expect($report->fresh()->revision)->toBe(2)->and($report->fresh()->snapshot['rows'])->toHaveCount(2)->and($report->fresh()->emailed_revision)->toBe(1);
     $this->artisan('reports:send-ap-journal')->assertSuccessful();
     $this->artisan('reports:refresh-ap-journals')->assertSuccessful();
     expect($report->fresh()->revision)->toBe(2)->and(ApDailyJournalReport::count())->toBe(1);
@@ -140,7 +190,7 @@ it('sends a calendar day report once then regenerates the same report for late a
     $this->travelTo(now()->addDay()->setTime(10, 0));
     apDailyTestEntry($this, ['description' => 'Backdated addition']);
     $this->artisan('reports:refresh-ap-journals')->assertSuccessful();
-    expect($report->fresh()->revision)->toBe(3)->and($report->fresh()->snapshot['rows'])->toHaveCount(6);
+    expect($report->fresh()->revision)->toBe(3)->and($report->fresh()->snapshot['rows'])->toHaveCount(3);
     expect($report->fresh()->document_number)->toBe('APJ-2026-0001');
     $this->artisan('reports:send-ap-journal')->assertSuccessful();
     $next = ApDailyJournalReport::whereDate('report_date', '2026-09-01')->sole();
@@ -210,6 +260,21 @@ it('regenerates when an earlier allocated entry id commits after the initial rep
     apDailyTestEntry($this, ['id' => 90001, 'description' => 'Committed after a larger id']);
     expect($service->refreshChanged())->toBe(1);
     expect($report->fresh()->revision)->toBe(2)->and($report->fresh()->entry_count)->toBe(2);
+});
+
+it('refreshes a saved report once when its snapshot uses the legacy line by line layout', function () {
+    apDailyTestEntry($this);
+    $service = app(DailyApJournalService::class);
+    $report = $service->generate($this->company->id, '2026-08-31');
+    $snapshot = $report->snapshot;
+    unset($snapshot['layoutVersion']);
+    $report->update(['snapshot' => $snapshot]);
+
+    expect($service->refreshChanged())->toBe(1)
+        ->and($report->fresh()->revision)->toBe(2)
+        ->and($report->fresh()->snapshot['layoutVersion'])->toBe(ApReportService::JOURNAL_LAYOUT_VERSION)
+        ->and($report->fresh()->snapshot['rows'])->toHaveCount(1)
+        ->and($service->refreshChanged())->toBe(0);
 });
 
 it('does not regenerate merely because MySQL reordered stored JSON keys', function () {
@@ -431,11 +496,11 @@ it('shows saved document numbers in scoped daily and range exports without alloc
     $service->generate($this->otherCompany->id, '2026-08-31');
     $response = $this->get(route('reports.ap-journal', $this->filters))->assertOk()
         ->assertViewHas('documentNumber', 'APJ-2026-0001')->assertSee('APJ-2026-0001')->assertDontSee('Private numbered entry');
-    expect($response->viewData('rows'))->toHaveCount(2);
+    expect($response->viewData('rows'))->toHaveCount(1);
     $this->get(route('reports.ap-journal.print', $this->filters))->assertOk()->assertSee('APJ-2026-0001')->assertDontSee('Private numbered entry');
     $this->get(route('reports.ap-journal.pdf', $this->filters))->assertOk()->assertDownload('APJ-2026-0001.pdf');
     $csv = $this->get(route('reports.ap-journal.csv', $this->filters))->assertOk()->assertDownload('APJ-2026-0001.csv')->streamedContent();
-    expect($csv)->toContain('APJ-2026-0001')->not->toContain('Private numbered entry');
+    expect($csv)->toContain('"Date / time",Transaction,Reference')->not->toContain('Daily document number')->not->toContain('Private numbered entry');
     $range = ['date_to' => '2026-09-01'] + $this->filters;
     $csv = $this->get(route('reports.ap-journal.csv', $range))->assertOk()->streamedContent();
     expect($csv)->toContain('APJ-2026-0001')->toContain('APJ-2026-0002')->not->toContain('Private numbered entry');

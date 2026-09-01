@@ -3,15 +3,23 @@
 namespace App\Services\Reports;
 
 use App\Models\AccountingCompany;
+use App\Models\ApChequeClearance;
+use App\Models\ApInvoice;
+use App\Models\ApPayment;
+use App\Models\ApPaymentAllocation;
 use App\Models\User;
 use App\Services\Security\BranchAccessService;
 use App\Support\Money\MinorUnits;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class ApReportService
 {
     public const JOURNAL_SOURCES = ['ap_invoice', 'ap_payment', 'ap_payment_allocation', 'ap_cheque_clearance'];
+
+    public const JOURNAL_LAYOUT_VERSION = 2;
 
     public function __construct(private readonly BranchAccessService $branchAccess) {}
 
@@ -71,20 +79,149 @@ class ApReportService
             ->whereBetween('e.entry_date', [$filters['date_from'], $filters['date_to']]);
         $this->scope($query, 'e', $companyId, $filters, $actor);
 
-        $rows = $query->select(['e.id', 'e.entry_date', 'e.posted_at', 'e.event', 'e.source_type', 'e.source_id',
-            'e.description', 'e.currency_code', 'b.name as branch', 'a.code', 'a.name as account', 'l.debit', 'l.credit'])
+        $lines = $query->select(['e.id', 'e.entry_date', 'e.posted_at', 'e.event', 'e.source_type', 'e.source_id',
+            'e.description', 'e.currency_code', 'b.name as branch', 'l.account_id', 'a.code', 'a.name as account', 'l.debit', 'l.credit'])
             ->orderBy('e.posted_at')->orderBy('e.id')->orderBy('l.id')->get();
+        $sourceDetails = $this->journalSourceDetails($lines, $companyId);
+        $entries = $lines->groupBy('id')->map(function (Collection $entryLines) use ($sourceDetails) {
+            $entry = $entryLines->first();
+            $details = $sourceDetails[$entry->source_type][(int) $entry->source_id] ?? [];
+            $postedTime = $entry->posted_at ? Carbon::parse($entry->posted_at)->format('H:i') : '';
+            $context = collect([$details['details'] ?? null, $entry->branch])->filter()->unique()->implode(' / ');
+            $amount = $entryLines->sum(fn ($line) => MinorUnits::parse((string) $line->debit, 10000));
+
+            return [
+                'currency' => $entry->currency_code,
+                'amount' => $amount,
+                'row' => [
+                    trim($entry->entry_date.' '.$postedTime),
+                    $this->journalType($entry->source_type, $entry->event),
+                    $details['reference'] ?? $this->journalFallbackReference($entry->source_type, (int) $entry->source_id, (string) $entry->description),
+                    $context,
+                    $this->journalAccounts($entryLines, 'debit'),
+                    $this->journalAccounts($entryLines, 'credit'),
+                    $entry->currency_code.' '.$this->journalAmount($amount),
+                ],
+            ];
+        })->values();
 
         return [
             'title' => __('AP Journal Entries'),
-            'description' => __('Posted AP activity by accounting calendar date, including original entries and their reversal entries.'),
-            'headers' => [__('Entry'), __('Accounting date'), __('Posted at'), __('Event'), __('Source'), __('Description'), __('Branch'), __('Account'), __('Currency'), __('Debit'), __('Credit')],
-            'rows' => $rows->map(fn ($row) => [$row->id, $row->entry_date, $row->posted_at, $row->event,
-                $row->source_type.':'.$row->source_id, $row->description, $row->branch, $row->code.' '.$row->account,
-                $row->currency_code, $this->money($row->debit, 10000), $this->money($row->credit, 10000)])->all(),
-            'totals' => $rows->groupBy('currency_code')->map(fn ($group, $currency) => [__('Total'), '', '', '', '', '', '', '', $currency,
-                $this->sum($group, 'debit', 10000), $this->sum($group, 'credit', 10000)])->values()->all(),
+            'description' => __('Each row is one AP accounting event. Debit and credit accounts are the two sides of that event. VOID rows reverse an earlier event.'),
+            'headers' => [__('Date / time'), __('Transaction'), __('Reference'), __('Supplier / branch'), __('Debit account'), __('Credit account'), __('Amount')],
+            'rows' => $entries->pluck('row')->all(),
+            'totals' => $entries->groupBy('currency')->map(fn ($group, $currency) => [__('Total journal movement'), '', '', '', '', '',
+                $currency.' '.$this->journalAmount($group->sum('amount'))])->values()->all(),
+            'entryCount' => $entries->count(),
+            'layoutVersion' => self::JOURNAL_LAYOUT_VERSION,
         ];
+    }
+
+    /** @return array<string, array<int, array{reference: string, details: string}>> */
+    private function journalSourceDetails(Collection $lines, int $companyId): array
+    {
+        $ids = $lines->groupBy('source_type')->map(fn (Collection $rows) => $rows->pluck('source_id')->map(fn ($id) => (int) $id)->unique()->values());
+        $details = [];
+
+        if ($invoiceIds = $ids->get('ap_invoice')) {
+            ApInvoice::query()->with('supplier:id,name')->where('company_id', $companyId)->whereKey($invoiceIds)->get()
+                ->each(function (ApInvoice $invoice) use (&$details) {
+                    $details['ap_invoice'][$invoice->id] = [
+                        'reference' => $invoice->invoice_number ?: __('Invoice #:id', ['id' => $invoice->id]),
+                        'details' => (string) ($invoice->supplier?->name ?? ''),
+                    ];
+                });
+        }
+
+        if ($paymentIds = $ids->get('ap_payment')) {
+            ApPayment::query()->with('supplier:id,name')->where('company_id', $companyId)->whereKey($paymentIds)->get()
+                ->each(function (ApPayment $payment) use (&$details) {
+                    $context = collect([$payment->supplier?->name, $payment->reference ? __('Reference: :reference', ['reference' => $payment->reference]) : null])->filter()->implode(' / ');
+                    $details['ap_payment'][$payment->id] = [
+                        'reference' => $payment->voucherNumber(),
+                        'details' => $context,
+                    ];
+                });
+        }
+
+        if ($allocationIds = $ids->get('ap_payment_allocation')) {
+            ApPaymentAllocation::query()->with(['payment.supplier:id,name', 'invoice:id,invoice_number'])
+                ->whereKey($allocationIds)
+                ->whereHas('payment', fn ($query) => $query->where('company_id', $companyId))
+                ->get()->each(function (ApPaymentAllocation $allocation) use (&$details) {
+                    $payment = $allocation->payment;
+                    $details['ap_payment_allocation'][$allocation->id] = [
+                        'reference' => collect([$payment?->voucherNumber(), $allocation->invoice?->invoice_number])->filter()->implode(' / '),
+                        'details' => (string) ($payment?->supplier?->name ?? ''),
+                    ];
+                });
+        }
+
+        if ($clearanceIds = $ids->get('ap_cheque_clearance')) {
+            ApChequeClearance::query()->with('apPayment.supplier:id,name')->where('company_id', $companyId)->whereKey($clearanceIds)->get()
+                ->each(function (ApChequeClearance $clearance) use (&$details) {
+                    $details['ap_cheque_clearance'][$clearance->id] = [
+                        'reference' => $clearance->reference ?: __('Clearance #:id', ['id' => $clearance->id]),
+                        'details' => collect([$clearance->apPayment?->supplier?->name, $clearance->apPayment?->voucherNumber()])->filter()->implode(' / '),
+                    ];
+                });
+        }
+
+        return $details;
+    }
+
+    private function journalType(string $sourceType, string $event): string
+    {
+        $void = str_contains(strtolower($event), 'void');
+
+        return match ($sourceType) {
+            'ap_invoice' => $void ? __('VOID - Supplier invoice') : __('Supplier invoice'),
+            'ap_payment' => $void ? __('VOID - Supplier payment') : __('Supplier payment'),
+            'ap_payment_allocation' => $void ? __('VOID - Advance allocation') : __('Advance allocation'),
+            'ap_cheque_clearance' => $void ? __('VOID - Cheque clearance') : __('Cheque clearance'),
+            default => $void ? __('VOID - AP event') : __('AP event'),
+        };
+    }
+
+    private function journalFallbackReference(string $sourceType, int $sourceId, string $description): string
+    {
+        if ($sourceType === 'ap_invoice') {
+            $reference = trim((string) preg_replace('/^AP Invoice(?: void)?\s*/i', '', $description));
+
+            return $reference !== '' ? $reference : __('Invoice #:id', ['id' => $sourceId]);
+        }
+
+        return match ($sourceType) {
+            'ap_payment' => __('Payment #:id', ['id' => $sourceId]),
+            'ap_payment_allocation' => __('Allocation #:id', ['id' => $sourceId]),
+            'ap_cheque_clearance' => __('Clearance #:id', ['id' => $sourceId]),
+            default => '#'.$sourceId,
+        };
+    }
+
+    private function journalAccounts(Collection $lines, string $side): string
+    {
+        $accounts = $lines->filter(fn ($line) => MinorUnits::parse((string) $line->$side, 10000) > 0)->groupBy('account_id');
+        $showAmounts = $accounts->count() > 1;
+
+        return $accounts->map(function (Collection $accountLines) use ($side, $showAmounts) {
+            $line = $accountLines->first();
+            $label = trim($line->code.' '.$line->account);
+            if (! $showAmounts) {
+                return $label;
+            }
+            $amount = $accountLines->sum(fn ($accountLine) => MinorUnits::parse((string) $accountLine->$side, 10000));
+
+            return $label.' ('.$this->journalAmount($amount).')';
+        })->implode('; ');
+    }
+
+    private function journalAmount(int $minorUnitsAtFourDecimals): string
+    {
+        $sign = $minorUnitsAtFourDecimals < 0 ? -1 : 1;
+        $rounded = intdiv(abs($minorUnitsAtFourDecimals) + 5, 10) * $sign;
+
+        return MinorUnits::format($rounded, 1000);
     }
 
     private function scope(Builder $query, string $alias, int $companyId, array $filters, ?User $actor): void

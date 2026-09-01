@@ -89,13 +89,17 @@
             <p class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Document number') }}: {{ $documentNumber }}</p>
         @endif
         <div class="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700" tabindex="0" role="region" aria-label="{{ $title }}">
-            <table class="w-full whitespace-nowrap text-left text-sm text-neutral-800 dark:text-neutral-100">
+            <table @class([
+                'w-full text-left text-sm text-neutral-800 dark:text-neutral-100',
+                'min-w-[1000px]' => $reportKey === 'ap-journal',
+                'whitespace-nowrap' => $reportKey !== 'ap-journal',
+            ])>
                 <thead class="bg-neutral-100 dark:bg-neutral-800">
                     <tr>@foreach ($headers as $header)<th scope="col" class="px-4 py-3 font-semibold">{{ $header }}</th>@endforeach</tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-700">
                     @forelse ($paginator as $row)
-                        <tr>@foreach ($row as $cell)<td class="px-4 py-3">{{ $cell }}</td>@endforeach</tr>
+                        <tr>@foreach ($row as $index => $cell)<td @class(['px-4 py-3', 'max-w-64 whitespace-normal' => $reportKey === 'ap-journal' && in_array($index, [3, 4, 5], true), 'text-right whitespace-nowrap' => $reportKey === 'ap-journal' && $index === count($row) - 1])>{{ $cell }}</td>@endforeach</tr>
                     @empty
                         <tr><td class="px-4 py-8 text-center" colspan="{{ count($headers) }}">{{ __('No matching records.') }}</td></tr>
                     @endforelse

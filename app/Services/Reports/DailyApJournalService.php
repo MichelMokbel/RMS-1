@@ -34,7 +34,7 @@ class DailyApJournalService
             $report = ApDailyJournalReport::query()->where('company_id', $companyId)->where('report_date', $date)->lockForUpdate()->first();
             $filters = ['date_from' => $date, 'date_to' => $date, 'company_id' => $companyId];
             $snapshot = $this->reports->journal($companyId, $filters) + ['company' => $company->name, 'filters' => $filters, 'reportKey' => 'ap-journal'];
-            $entryCount = collect($snapshot['rows'])->pluck(0)->unique()->count();
+            $entryCount = (int) $snapshot['entryCount'];
 
             // MySQL JSON storage may reorder object keys. Compare the data, not key order.
             if ($report && $report->snapshot == $snapshot) {
@@ -62,12 +62,16 @@ class DailyApJournalService
         // AP entries are append only. Check for newly committed entries for any saved date.
         // Count committed entries instead of using the largest ID, because transactions can commit out of ID order.
         $changed = ApDailyJournalReport::query()->where(function ($query) {
-            $query->selectRaw('COUNT(*)')->from('subledger_entries as e')
-                ->whereColumn('e.company_id', 'ap_daily_journal_reports.company_id')
-                ->whereColumn('e.entry_date', 'ap_daily_journal_reports.report_date')
-                ->whereIn('e.source_type', ApReportService::JOURNAL_SOURCES)
-                ->where('e.status', 'posted')->whereNull('e.voided_at');
-        }, '>', DB::raw('ap_daily_journal_reports.entry_count'))->get(['id', 'company_id', 'report_date']);
+            $query->where(function ($entries) {
+                $entries->selectRaw('COUNT(*)')->from('subledger_entries as e')
+                    ->whereColumn('e.company_id', 'ap_daily_journal_reports.company_id')
+                    ->whereColumn('e.entry_date', 'ap_daily_journal_reports.report_date')
+                    ->whereIn('e.source_type', ApReportService::JOURNAL_SOURCES)
+                    ->where('e.status', 'posted')->whereNull('e.voided_at');
+            }, '>', DB::raw('ap_daily_journal_reports.entry_count'))
+                ->orWhereNull('snapshot->layoutVersion')
+                ->orWhere('snapshot->layoutVersion', '<>', ApReportService::JOURNAL_LAYOUT_VERSION);
+        })->get(['id', 'company_id', 'report_date']);
 
         foreach ($changed as $report) {
             $this->generate($report->company_id, $report->report_date->toDateString());

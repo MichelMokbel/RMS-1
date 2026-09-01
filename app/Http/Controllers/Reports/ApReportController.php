@@ -34,17 +34,19 @@ class ApReportController extends Controller
             $numbers = ApDailyJournalReport::query()->where('company_id', $company->id)
                 ->whereBetween('report_date', [$filters['date_from'], $filters['date_to']])->pluck('document_number', 'report_date');
             $data['documentNumber'] = $filters['date_from'] === $filters['date_to'] ? $numbers->get($filters['date_from']) : null;
-            array_splice($data['headers'], 1, 0, [__('Daily document number')]);
-            $data['rows'] = array_map(function ($row) use ($numbers) {
-                array_splice($row, 1, 0, [$numbers->get($row[1], '')]);
+            if ($filters['date_from'] !== $filters['date_to']) {
+                array_splice($data['headers'], 1, 0, [__('Daily document number')]);
+                $data['rows'] = array_map(function ($row) use ($numbers) {
+                    array_splice($row, 1, 0, [$numbers->get(substr($row[0], 0, 10), '')]);
 
-                return $row;
-            }, $data['rows']);
-            $data['totals'] = array_map(function ($row) {
-                array_splice($row, 1, 0, ['']);
+                    return $row;
+                }, $data['rows']);
+                $data['totals'] = array_map(function ($row) {
+                    array_splice($row, 1, 0, ['']);
 
-                return $row;
-            }, $data['totals']);
+                    return $row;
+                }, $data['totals']);
+            }
         }
         $filename = $data['documentNumber'] ?? $report;
 
