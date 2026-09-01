@@ -1,0 +1,70 @@
+# Payment operations verification
+
+This is an implementation verification plan, not evidence that application tests have run. The build contract is [index.md](index.md). Use [0003 verification](../0003-skipcash-paid-order/verify.md) for provider and ordinary order completion, and [0004 verification](../0004-skipcash-settlement/verify.md) for payout behavior.
+
+## Environment and evidence
+
+* Confirm the isolated MySQL `store_test` connection and test configuration before any migration or `RefreshDatabase` run. Never use development or production data.
+* Use synthetic customer, provider, and mail evidence. Freeze time around alert thresholds and use fake mail/HTTP/queues for automated tests. No production provider call or real customer email belongs in this suite.
+* Record the command, completed result, relevant test names, and any remaining failure. Do not call a stubbed handler proof of the actual financial transaction; integration tests must invoke the canonical services.
+* Keep original customer/provider/terms/financial snapshots available for before/after comparison. Assert database totals and audit records as well as rendered labels.
+
+## Acceptance matrix
+
+| Scenario | Required assertions | Criteria |
+|---|---|---|
+| First operations path | A verified payment blocked by a required period has no partial posting, appears in Needs attention immediately, has one alert intent, and completes from the same saved dates after authorized correction and Retry | AC-1, AC-2, AC-3, AC-4, AC-7 |
+| Attempts without receipts | Pending, unknown dispatch, and verified paid processing attempts appear without an AR payment. Accepted provider amount is distinct from Not recorded receipt. All checkouts search finds them | AC-1, AC-10 |
+| Existing Customer Payments compatibility | Old receipt list, filters, pagination, creation, print, and editing permissions remain unchanged except the approved saved credit guard. Literal SkipCash routing cannot bind as a payment ID | AC-1, AC-6, AC-9 |
+| Search and counts | Customer name/normalized phone and attempt/provider/receipt references work. Filters and pagination persist; counts use the same permitted scope. No provider phone alone grants access or matches money | AC-1, AC-6, AC-11 |
+| Automatic success | A normally completed purchase requires no operator approval and produces no issue alert. Order states are not an added fulfillment task | AC-1, AC-3, AC-10 |
+| Processing timer | With first issue at time T, T+14:59 has no alert, T+15:00 is eligible, and the next healthy minute pass queues one intent. Provider finish time, attempt expiry, browser time, and hourly GET backoff do not set or delay that eligibility | AC-3, AC-4, AC-12 |
+| Resolves before alert | Processing completes before eligibility or after intent creation but before claim. Recheck suppresses an unsent alert; history records resolution. No fresh alert appears on repeated sweeps | AC-3, AC-4, AC-7 |
+| Escalation and simultaneous issues | Temporary processing becomes a locked period error without resetting its episode or first seen time. A separate confirmation issue is retained; resolving one leaves the other visible | AC-3, AC-4, AC-7 |
+| One alert per episode | Concurrent sweeps, changed reason wording, request retries, and worker restarts retain one episode/intent. A genuinely resolved then recurring issue gets a new episode, with old history preserved | AC-4, AC-7 |
+| Alert mail failure | Known nonacceptance follows 1/5/15/60 minute backoff with five total sends. Possible acceptance and stale claims become unknown, not blind retries. Alert failure creates no recursive alert. Needs attention remains visible | AC-4, AC-7, AC-12 |
+| Missing alert recipients | No fallback to another company or example email. Issue is visible as undeliverable. Configuration repair can populate an unsent missing snapshot once; it cannot replace recipients after a send began | AC-4, AC-6, AC-11 |
+| Decline and abandonment | Ordinary declines and unpaid abandoned/expired attempts remain searchable but produce no intervention alert. New evidence is evaluated by the approved verified handler, not by age | AC-1, AC-3, AC-10 |
+| Retry permissions | Allowed staff can enqueue recovery. View only, inactive, customer portal, wrong company, and wrong branch actors cannot call the action directly. No accepted audit or external side effect occurs on rejection | AC-2, AC-6 |
+| Retry exact replay and concurrent work | Same UUID returns the same operation; changed inputs conflict. Two clicks with distinct UUIDs while work is active return the active operation. Scheduler and staff recovery share claims and cannot duplicate any financial effect | AC-2, AC-7 |
+| Unknown provider ID and evidence conflict | Staff Retry never calls create or makes a useless GET without an ID. It explains the verified evidence needed. A valid later event can make the existing attempt recoverable without a force paid action | AC-2, AC-10 |
+| Completion rollback | Inject failure at invoice, payment, allocation, subledger, and audit writes. Atomic rollback preserves the accepted paid evidence and original intent; recovery creates the required records once | AC-2, AC-7, AC-10 |
+| Late ordinary completion | Retry after checkout expiry or Qatar midnight creates the saved ordinary order under 0003, with unchanged amounts/dates. No timing based retained credit outcome or request for another payment | AC-2, AC-10 |
+| Corrected completed records | Edit or void a linked invoice after completion, then replay completion and old action UUIDs. No order, invoice, allocation, revenue, or payment is recreated; the current invoice state remains visible | AC-2, AC-9, AC-10 |
+| Deliberate resend | A completed paid order with retained customer snapshot can be resent after sent, exhausted failure, or acknowledged unknown delivery. It sends the original recipient/content and creates only dispatch, email, and audit effects | AC-5, AC-7, AC-11 |
+| Resend rejection | Missing snapshot, noncompleted purchase, unsupported free request, current voided/unpaid invoice, changed snapshot hash, unacknowledged unknown, active send, or pending normal retry is rejected with a clear reason | AC-5, AC-10 |
+| Resend replay and uncertainty | Lost response and concurrent identical UUIDs send once effectively; original marker stays unchanged. New deliberate UUID after completion can send another copy. Unknown send outcome is not automatically resent | AC-5, AC-7 |
+| Resend access changes | Revoke permission or change canonical ownership before the unstarted action claims. Recheck prevents unauthorized send. A merge never silently switches the retained recipient or modifies payment evidence | AC-5, AC-6, AC-11 |
+| Audit outage | Missing audit table and failed insert reject protected mutation acceptance and evidence reveal before side effects. Existing audit service's silent fallback cannot turn rejection into success | AC-6, AC-7, AC-11 |
+| History and raw evidence | Email/event IDs from another checkout or scope fail. Evidence access is audited and escaped; normal pages do not decrypt raw bodies. Purged raw bodies show normalized evidence and removal status | AC-6, AC-7, AC-11 |
+| Settings | Administrator with permission can save 5 and 60 minutes and valid HH:MM. Reject fractions, 4/61, invalid clock, changed timezone, wrong company, missing required contact, and stale version. Audit exact before/after without secrets | AC-6, AC-8 |
+| Settings snapshot isolation | Start an attempt and confirm a booking, then edit duration/cutoff/contact. Old snapshots and deadlines remain; later records use new values. Reading health/settings does not create finance defaults | AC-8, AC-12 |
+| Saved credit allowed and denied | Administrator can allocate eligible saved credit using existing AR behavior. `finance.write` alone, support permission alone, customer token, and nonadmin with the new allocation permission are rejected at every writer | AC-6, AC-9 |
+| Saved credit limits | Wrong current customer/company/branch/currency, voided payment, ineligible invoice, closed period, excess amount, duplicate invoice inputs, and inconsistent funding are rejected without partial mutations | AC-9, AC-10, AC-11 |
+| Competing saved credit allocations | Independent connections submit overlapping requests against one payment. Active allocations never exceed eligible funds or invoice balance. Stable UUID replay returns its original result, including after a later allocation void | AC-9 |
+| Membership funding exclusions | When the membership slice exists, unallocated funds backing unused or reserved main dishes remain committed. Restoring a reservation does not free its funding for an unrelated invoice. Automatic daily funding still uses the correct oldest supplying block | AC-9, AC-10 |
+| No new financial meaning | Paid provider fact, completion, current invoice, email state, and settlement can differ without overwriting one another. Fees leave receipt gross unchanged. No refund action or automatic reversal posting exists | AC-10 |
+| Free requests and late legacy labels | A pending 100 percent request creates no checkout/receipt/allowance here. Legacy expired labels do not erase verified unused credit. No check reactivates a membership or manufactures quota from a label | AC-10, AC-12 |
+| Merge while queued | Current owner changes through 0002, source login is revoked, and delayed recovery resolves the destination. Original checkout user/UUID, provider IDs, source accounts, dates, and notification evidence stay intact | AC-6, AC-11 |
+| Basic consistency reporting | Wrong amount/source/currency, missing receipt/target link, invalid ownership, and allocation excess become traceable issues. The check does not rewrite posted history or allocate credit. Repeated checks reuse the issue episode | AC-7, AC-9, AC-10, AC-12 |
+| Bounded jobs and queue loss | No more than 100 due checkout IDs per scheduler pass, stable order and no overlap. Lost dispatch is recovered from saved intent. Provider HTTP is outside locks and scheduler request; failed jobs contain IDs/codes only | AC-2, AC-4, AC-7, AC-12 |
+| Health degradation | Fresh successful run markers display their times. Missing cache/markers is Unknown; recovery older than 5 minutes and purge older than 26 hours is stale. An idle queue is not proof of worker health; overdue intents remain visible | AC-12 |
+| Safe shutdown | Disable new collection and legacy direct unpaid entry according to 0003. Existing status, history, recovery, eligible resend, alerts, and purge continue. No disabled control causes a new create request | AC-2, AC-4, AC-5, AC-12 |
+| Privacy and retention | Purge encrypted raw body at 90 days, retain normalized/audit/financial links. Inspect logs, failed jobs, audit payloads, URLs, and metrics for provider keys, pay URLs, phone searches, recipients, raw bodies, and card data | AC-6, AC-11, AC-12 |
+| Migration and existing data | Clean isolated migration and representative null tracking attempts work. Already resolved old attempts send no retrospective alert. New first observation is deterministic; repeat initialization creates no duplicate issue or financial row | AC-4, AC-7, AC-12 |
+| Responsive operation | At 360/768/1024 pixels, tab/filter/detail controls and primary actions remain usable, keyboard accessible, and readable in dark mode. Loading state prevents accidental resubmission | AC-1, AC-5, AC-6 |
+
+## Domain and release checks
+
+* Run narrow feature tests during development, then affected AR allocation/invoice/clearing, finance lock, customer merge, mail, and permission suites. Add command tests for disabled/empty feature, recovery, and purge. Format changed PHP with Pint and build assets for the Volt changes.
+* For concurrent financial/action tests, use independent MySQL connections and a coordinated race. Assert one accepted action result, balanced subledger effects, eligible credit limits, and preserved identities, not merely two HTTP success responses.
+* Repeat the 0003 customer website return, pending, paid processing, completed, declined, Account recovery, and disabled direct order tests in `/Applications/XAMPP/htdocs/laylakitchen`, the actual location recorded in scope. There is no new customer operations UI. Verify staff recovery makes the existing customer status converge without another checkout or a new public status.
+* Exercise mail uncertainty and a queue restart with synthetic recipients in a controlled environment. Confirm copied order confirmation wording and current invoice eligibility before any real customer resend is enabled.
+* Keep membership specific projections and committed funding tests as explicit membership launch gates if ordinary checkout ships first. Do not report those tests as passed merely because their future adapters are absent. A missing funding adapter must deny discretionary allocation for those records.
+* Before live collection, verify actual credentials, company/branch/source accounts, default payout bank and fee mappings, admin recipients, active system actor, audit writes, scheduled commands, worker runtime, terms, and webhook connectivity under 0001 through 0004. Writing or approving this spec is not live enablement authority.
+
+## Documentation checks
+
+* Each AC has a build milestone and a verification scenario. All local document links resolve.
+* Owner approval and the skipped independent design check are recorded. Scope feature 4 links the specification and five build milestones; only its design task is checked. Other scope features and preceding specifications are unchanged by this approval update.
+* This file lists required future application tests; it does not claim those tests, a migration, a provider call, or a customer email have run.

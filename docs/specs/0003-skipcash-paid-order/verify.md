@@ -9,24 +9,25 @@ This is a planned verification contract, not a test result. No application tests
 * Use synthetic customers, phones, emails, menu IDs, provider references, and event bodies. Do not copy the supplied settlement workbook or real provider secrets into fixtures.
 * Sandbox integration requires approved sandbox credentials, a test customer identity, callback configuration, and explicit authorization at execution time. Live collection is a separate release action, not part of routine testing.
 * Website verification uses a local mock or the approved test RMS. Do not submit against the configured production dashboard accidentally.
+* The normal provider journey is one session and one successful payment per checkout. Synthetic financial evidence cases below check defensive accounting rules, not documented provider behavior. Do not add a special extra payment email, customer journey, or a requirement to reproduce two successful charges within one hosted session.
 
 ## Requirement matrix
 
 | Criterion | Required evidence | Suggested suite ownership |
 |---|---|---|
 | AC-1 | RMS quote and website estimate parity, tampered price rejection, valid menu/role IDs, integer totals, no unsupported mode | New Payments quote suite; existing Orders submission and website pricing suites |
-| AC-2 | Active owner, fallback resolution, accepted bypass, shutdown verification, default company/branch alignment | Payments API and existing CustomerPortal/Customers suites |
+| AC-2 | Active owner, fallback resolution, accepted bypass, shutdown verification, default company/branch alignment, required provider profile before insertion | Payments API and existing CustomerPortal/Customers suites |
 | AC-3 | Today only, mixed cart review, future dates, current terms acceptance, immutable started snapshots | Quote/checkout time and terms tests; website review flow |
-| AC-4 | Exact replay, changed UUID payload, concurrent submission, lost dispatch/response, explicit repeat purchase | Payments initiation/idempotency suite and browser recovery tests |
-| AC-5 | Independent HMAC vectors, signed field handling, GET detail verification, no browser authority | Provider adapter and webhook suite |
+| AC-4 | Exact replay, changed UUID payload, concurrent submission, lost dispatch/response, stable recovery after side changes, explicit repeat purchase | Payments initiation/idempotency suite and browser recovery tests |
+| AC-5 | Independent HMAC vectors, signed field handling, GET detail verification, accepted capture only totals, no browser authority | Provider adapter and webhook suite |
 | AC-6 | One and several dated targets, atomic order/invoice/payment links, rollback at each writer, no premature operational rows | Payments completion with Orders/AR integration tests |
 | AC-7 | Correct source/method/account, balanced invoice and receipt entries, no bank/fee/revenue duplication | AR, Accounting, Ledger, and payment source tests |
 | AC-8 | Old credit untouched, exact allocation, legacy auto allocation unchanged, edit/void replay stable, no meal usage | Existing Receivables/AR/Subscriptions plus completion regression tests |
 | AC-9 | Original purchase completes before, at, and after expiry; released target recovery; distinct extra capture retained once; reversal exception | Payment classification and recovery suite |
 | AC-10 | Qatar event dates, finance locks, missing mappings/ledger, retry preserving dates | Accounting period and gateway completion tests |
 | AC-11 | Four public states plus confirmation flag, same tab return, Account recovery, draft revisions, future booked wording | CustomerPortal projections and website interaction tests |
-| AC-12 | After commit mail intent, recipients/snapshots, queue loss, known failure versus unknown send, no financial replay | Mail dispatch and completion transaction tests |
-| AC-13 | Allowed/denied actors, company/branch isolation, merge races, redaction, raw evidence retention | Security boundary, customer merge, queue/log payload tests |
+| AC-12 | After commit mail intent, encrypted recipient snapshots, queue loss, known failure versus unknown send, no financial replay | Mail dispatch and completion transaction tests |
+| AC-13 | Allowed/denied actors, company/branch isolation, merge races, encrypted private fields, redaction, raw evidence retention | Security boundary, customer merge, queue/log payload tests |
 | AC-14 | Bounded recovery, stale claim behavior, overlap prevention, settings snapshots, purge restart | Commands/jobs and payment settings API tests |
 | AC-15 | Forward migration with legacy rows, both site base paths, safe flag matrix, old route denied at cutover | Migration, existing domains, website routing, release drill |
 
@@ -47,11 +48,15 @@ Cover main only, both bundled sides, each single side, extra sides, multiple dis
 
 Verify decimal safe price conversion, zero/negative/fractional quantities, missing role items, duplicate dates, unsupported promotion/plan/credit fields, overflow, and unsupported currency/scale. A valid configuration edit changes a fresh quote but never an existing attempt. Order line decimals and invoice summary cents reconcile exactly. Covers AC-1, AC-3, AC-4, AC-6, and AC-8.
 
-An initial quote accepted before a terms, menu, price, or Qatar day change cannot silently start against new values. First creation returns a revised quote and requires review. Exact existing attempt replay still returns the original accepted snapshot. The effective terms content hash must match its retained file. Covers AC-3, AC-4, and AC-10.
+An initial quote accepted before a terms, menu, price, or Qatar day change cannot silently start against new values. With no existing attempt to replay or recover, first creation returns a revised quote and requires review. Exact existing attempt replay still returns the original accepted snapshot. The effective terms content hash must match its retained file. Covers AC-3, AC-4, and AC-10.
 
 ## Identity and date boundaries
 
 Test real verified phone, the explicitly accepted server bypass, bypass disabled with old fabricated timestamps, current phone verification, legacy active unlinked token, inactive login, wrong token ability, uncertain match with owned fallback, and another customer's attempt. Disabling historical matching must not disable fallback ownership. Covers AC-2 and AC-13.
+
+Test required provider fields before any new attempt or target insertion. Cover absent/blank account names, malformed UTF8 or remaining controls, missing/invalid/overlength phone and email, and Unicode or single word names. Expect HTTP 422 `PROFILE_REQUIRED` on the relevant `profile.name`, `profile.phone`, or `profile.email` key, intact selections, and no attempt, target, initiation job, or provider call. An absent portal name uses the actual account name, not a linked customer's display name; valid accents, punctuation, and non Latin scripts remain valid. One word repeats in both provider name fields, and each outbound field respects the 60 character limit without changing the original RMS name. Correcting the profile permits the normal new checkout. Covers AC-2, AC-4, and AC-13.
+
+After creating an attempt, change or clear the mutable account profile while retaining an active owning login. Exact replay must return the original reference and use saved outbound fields, not produce a new profile error or provider dispatch. Do not confuse this with bypass shutdown or revoked login, whose existing access rules still apply. Covers AC-2, AC-4, and AC-13.
 
 Test today only, tomorrow only, and mixed dates from Qatar and a device using another timezone. Mixed quote review must exclude today without creating any financial or order effect for it. A today only ordinary cart has no payable checkout, unlike the separately scoped membership zero selection journey. Covers AC-3 and AC-11.
 
@@ -62,12 +67,28 @@ Test timestamp with offset, offsetless merchant time, missing/unsigned/invalid/f
 ## Retry, concurrency, and provider evidence
 
 * Two simultaneous requests with one UUID create one attempt and one dispatch claim. Changed payload cannot share it. Two different UUIDs for an equivalent unresolved cart return recovery unless an owned explicit separate purchase acknowledgement is present. That acknowledgement allows another real purchase without modifying the first. Covers AC-4 and AC-11.
+* Start an unresolved checkout, then replace its dated salad/dessert menu IDs. A new UUID submitting the same normalized selections returns `EXISTING_CHECKOUT` with the original reference and no new attempt/job/provider POST. Repeat with an old or refreshed quote, reordered equivalent mains, current price/terms changes, missing current menu roles, and Qatar day rollover. Recovery uses the syntax only hash before those mutable checks and preserves the old resolved snapshot. A meaningful cart change does not match; another customer/company/branch cannot recover this attempt. An owned explicit separate purchase uses a fresh quote and all current validation, never rewrites or cancels the first. Covers AC-3, AC-4, AC-11, and AC-13.
 * Crash before queue dispatch, before claim commit, after claim commit, after provider accepts but before response persistence, and after final accounting commit. Recover only cases safe under the saved state. There must never be a second provider POST after an in_flight or unknown claim. Covers AC-4 and AC-14.
 * Confirm exact outgoing string/body, nonempty signed field order, UTF8 names, zero status values, decoded constant time signature comparison, different create/webhook secrets, and Client ID detail authorization using independent fixtures. Invalid signature produces no inbox row; signed mismatches produce no financial effect. Covers AC-5 and AC-13.
 * Test unsupported pay URL host/scheme, provider HTTP redirect, malformed success response, missing provider ID, missing pay URL, and expired known session. Unknown create must remain recoverable without a new POST. Covers AC-4, AC-5, and AC-13.
 * Deliver webhook before create response save, duplicate events with changed JSON formatting, status 12/0 transitions, paid then failed, failed then paid, unknown status, and missing required detail. Verify monotonic paid facts and source/provider uniqueness. Covers AC-4, AC-5, AC-9, and AC-14.
 * Deliver two distinct valid paid provider IDs for one attempt concurrently. Only one completes the purchase. The other creates one unallocated receipt after verification; it never reuses the first receipt UUID or allocates automatically. Run both orders of evidence arrival with captures before and after expiry: the selected first capture funds the purchase, and only the distinct additional capture becomes retained credit. Covers AC-6, AC-7, and AC-9.
 * A partial/wrong amount, wrong currency, wrong merchant reference, unexpected custom field, wrong source, refund, or reversal cannot silently become a completed purchase or automatic refund. Retain appropriate signed evidence and an exception. Covers AC-5, AC-9, and AC-13.
+
+### Public amount projection
+
+For a QAR 65 attempt, prove these owned detail and list results using distinct synthetic provider IDs. Repeat events must never increase a total. Covers AC-5, AC-9, AC-10, AC-11, and AC-13.
+
+| Evidence and accounting state | Paid cents | Confirmed cents | Retained credit cents |
+|---|---|---|---|
+| Only signed partial/wrong amount, currency/reference/source mismatch, or missing reliable finish time | 0 | 0 | 0 |
+| Fully matching capture accepted, but accounting blocked by a finance lock | 6500 | 0 | 0 |
+| Original matching capture completes the purchase | 6500 | 6500 | 0 |
+| Additional fully matching capture accepted, but its receipt is not posted yet | 13000 | 6500 | 0 |
+| That additional receipt commits and remains unallocated | 13000 | 6500 | 6500 |
+| Administrator later allocates the additional receipt in full | 13000 | 6500 | 0 |
+
+Assert `verified_paid_at` remains null until all matching checks pass and then persists with the immutable accepted amount/currency/finish/attempt association. A newly quarantined event does not enter paid totals. A later declined/refund/reversal/conflicting event for an already accepted capture neither erases its historical paid amount nor changes purchase confirmation or money by itself. Keep original accepted facts separate from later exception evidence. Provider status 2 or a valid signature alone is insufficient.
 
 ## Corrections and existing behavior
 
@@ -84,6 +105,7 @@ Merge while a checkout is pending, while verified completion awaits a finance lo
 Run browser interaction checks in addition to the existing Node extraction tests:
 
 * Guest builds selections, signs in, completes any required phone step, reviews the RMS quote/terms, and leaves in the same tab only after a durable reference exists.
+* A missing required provider profile field shows an actionable account correction error with the cart intact. After correction, review and payment continue normally; an existing checkout remains recoverable from its saved snapshot.
 * Provider return contains fake success and amount values. The page ignores them and reads RMS. Refresh, back/forward navigation, missing reference, login expiry, and another customer's reference remain safe.
 * Lost POST response keeps the exact submitted request. Closed browser or another device finds the checkout in Account. Resume reuses a usable provider session; no session is reconstructed from browser data.
 * New draft edits made after submission survive completion of the original revision. No HTTP 202, decline, logout, or paid_processing outcome clears selections.
@@ -95,6 +117,8 @@ Run browser interaction checks in addition to the existing Node extraction tests
 These checks cover AC-3, AC-4, AC-11, AC-13, and AC-15.
 
 Force mail queue dispatch loss, known send failure, duplicate jobs, and a crash after possible SMTP/provider acceptance. Financial status remains completed. Known unsent work recovers; uncertain delivery does not blindly resend. Assert recipient and amount snapshots, successful EmailLog links, no email before commit, and no PII in failed job payloads. Repeat with payment finishing after expiry: send the normal order confirmation once after commit and no expiry credit email. Covers AC-12, AC-13, and AC-14.
+
+Read the raw stored `notification_snapshots` column without model decryption and prove synthetic customer/admin emails and message content are not plaintext. An authorized worker can decrypt the original snapshots; `notification_dispatch` contains only the documented nonpersonal fields. Change the account email after checkout and administrator recipient configuration after completion, then retry mail: it still uses the retained respective recipients. Queue/failed job payloads, operational logs, and error text expose no recipient or message content. Reuse existing EmailLog behavior without creating another outbox. Covers AC-12 and AC-13.
 
 ## Operations and release checks
 
@@ -115,4 +139,10 @@ In the website repository, run `node --test tests/orders-pricing.test.cjs`, any 
 
 On 2026-08-30, documentation checks passed for all three files: required sections, local Markdown links, whitespace, Proposed status, all 15 criteria in the build/critical scenario/verification matrices, and five build stages. SHA256 comparisons confirmed the scope and all six files in 0001 and 0002 were unchanged.
 
-Application and sandbox checks above are unexecuted. The independent gpt-5.5 review completed before the owner changed the ordinary payment after expiry rule on 2026-08-30. The written matrix now requires normal purchase completion on both sides of expiry. The other proposed review clarifications and full design acceptance remain pending.
+Application and sandbox checks above are unexecuted. The independent gpt-5.5 review completed before the owner changed the ordinary payment after expiry rule on 2026-08-30. The written matrix requires normal purchase completion on both sides of expiry.
+
+On 2026-08-31, the four approved independent review fixes were applied to the specification and the planned cases above. The later extra payment email proposal was withdrawn after the owner's objection to speculative complexity. The owner then instructed proceeding; the design is confirmed, with no additional email or planning blocker for that scenario. Application and sandbox verification remain unexecuted.
+
+The earlier review fix checks passed: all three files retained the required sections, all 11 local Markdown links resolved, all 15 unchanged acceptance criteria appeared in the build/scenario/verification coverage, the five build stages and Proposed status remained intact, and `git diff --check` reported no whitespace errors. At that checkpoint, the scope and both earlier specifications were unchanged. These checks did not execute or prove the planned application behavior.
+
+Final design closeout checks on 2026-08-31 passed for this specification and its scope link: 14 local Markdown links across four documents resolve, all 15 unchanged criteria map to the build/scenario/verification/scope coverage, and scope feature 2 has five pending build milestones and all GA execution gates unchecked. Only feature 2 and its summary status changed in the scope; 0001 and 0002 remain unchanged. The speculative email blocker is closed. No application or provider verification was run.

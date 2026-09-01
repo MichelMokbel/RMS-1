@@ -66,12 +66,23 @@ The small internal choices follow that same boundary:
 |---|---|---|
 | Queued provider creation with saved dispatch claim | A proxy timeout cannot lose the identity of a possible collection | Synchronous creation is simpler but increases dependence on the website's 12 second transport window |
 | Recomputed quote and immutable started attempt | No new quote table is needed; a changed first quote returns to review | Persist every browsing quote, adding retention and cleanup work without payment authority |
-| Original client UUID plus canonical cart recovery guard | Retries keep one identity while an explicit separate purchase stays possible | A new purchase/cart entity gives more lifecycle flexibility but is unnecessary here |
-| Saved notification intent in the checkout and existing EmailLog | A queue dispatch loss can be found without making email part of the financial transaction | A generic outbox table scales to many event kinds but adds a wider framework to this slice |
+| Original client UUID plus syntax only submitted cart recovery guard | Retries keep one identity despite changed menu sides, while an explicit separate purchase stays possible | Using the resolved cart hash is simpler but misses an existing checkout when a side ID changes |
+| Encrypted notification snapshots, nonpersonal dispatch markers, and existing EmailLog | A queue dispatch loss can be found without exposing recipients or making email part of the financial transaction | A generic outbox table scales to many event kinds but adds a wider framework to this slice |
 | Existing page styles and bounded polling | Fits the installed PHP/vanilla JavaScript site and its operating scale | Websocket updates add infrastructure without changing payment authority |
 | Source aware clearing resolution | Method stays skipcash and every gross receipt has the account needed for later payout reconciliation | Generic other clearing mixes provider balances and loses the accepted source contract |
 
-These are engineering refinements to the confirmed data structure, not new customer policies. They were stated before drafting and remain subject to the complete draft review. No new provider, library, hosting service, AI model, delivery workflow, or membership model was selected.
+These are engineering refinements to the confirmed data structure, not new customer policies. The initial choices were stated before drafting; the later approved refinements and final design confirmation are recorded below. No new provider, library, hosting service, AI model, delivery workflow, or membership model was selected.
+
+### Approved review fixes
+
+The owner approved these four targeted fixes on 2026-08-31. That approval refined the existing records and rules without authorizing implementation; the later design confirmation is recorded separately below. (basis: the independent gpt-5.5 review, 0001 verified capture and privacy rules, 0002 account name sourcing, and the owner's approval)
+
+| Fix | Decision and reason | Alternative not selected |
+|---|---|---|
+| Required provider profile | Validate the real account name, effective phone, and email before creating a new attempt. Return actionable profile errors with the cart intact. Replay uses the saved profile | Discovering missing names in the worker strands a durable checkout; inventing a name misrepresents the customer |
+| Recipient storage | Store recipients and message snapshots in an encrypted attempt field, with only nonpersonal dispatch state outside it | Plain dispatch JSON is convenient but unnecessarily exposes customer and administrator email addresses |
+| Equivalent checkout recovery | Add `recovery_fingerprint` from syntax only submitted selections and resolve it before mutable menu/date/price/terms/profile checks. Keep resolved sides in quote and target snapshots | A hash containing today's resolved side IDs can miss the same submitted cart and permit another accidental payment |
+| Public paid amount | Count distinct fully matching captures marked `verified_paid_at`, including those awaiting accounting; exclude unaccepted exception evidence. Preserve accepted historical amounts after later conflicts or reversal exceptions | Summing every signed paid event confuses authentication with matching this purchase; summing only posted receipts hides verified money during a finance lock |
 
 ## Source evidence
 
@@ -89,6 +100,7 @@ The main thread read the affected code. A bounded read only scout independently 
 | `app/Models/Payment.php` and payment migrations | Payment source FK is absent. Payment updates are restricted; extend creation and keep source immutable |
 | `app/Listeners/SyncSubscriptionMealsOnInvoiceIssued.php` | Invoice metadata and plan items can change subscription usage. Ordinary invoices must never carry those subscription markers |
 | `app/Services/Mail/EmailLogService.php` | Existing log records delivery outcomes, not a unique pending dispatch intent |
+| `app/Services/Customers/CustomerPortalAccountService.php` and 0002 account name rules | Account display can prefer the linked customer name. Required provider identity instead uses the authenticated user's portal name with account name fallback, validated before attempt creation |
 | Website `assets/js/orders-core.js:2972` | Submission clears all selections on HTTP success. Paid checkout must read purchase_confirmed and preserve newer drafts |
 | Website `api/orders/_proxy.php` | Existing stream transport has a 12 second timeout and explicit authorization forwarding. Preserve statuses and avoid raw exception disclosure |
 | Website shared page, router, Apache rules, and asset guide | New private result page needs both base paths, asset version helpers, route parity, no indexing, and controlled analytics |
@@ -116,8 +128,11 @@ These facts shape the adapter contract and integration gates. They do not author
 
 * 2026-08-30: Owner confirmed same tab hosted payment after durable RMS checkout, followed by an RMS backed status page with recoverable selections.
 * 2026-08-30: Owner confirmed the ordinary subset of the shared checkout, dated target, provider transaction/event, and existing financial record structure.
-* 2026-08-30: Main thread drafted the detailed slice and verification matrix. The independent gpt-5.5 cross check subsequently completed read only. Other proposed clarifications and full draft ratification remain pending. The Proposed status does not indicate implementation.
+* 2026-08-30: Main thread drafted the detailed slice and verification matrix. The independent gpt-5.5 cross check subsequently completed read only. Other proposed clarifications and full draft ratification were pending at that point. The Proposed status does not indicate implementation.
 * 2026-08-30: Owner replaced the ordinary payment after expiry credit outcome with normal creation of the saved order, paid invoice, payment, allocation, and confirmation. Expiry alone must not make a paying customer contact support. This revises 0001 for ordinary checkout only; membership promotion timing and genuinely additional captures are unchanged. The timer still limits payment initiation and link display, while verified receipt dates and finance checks remain authoritative. (basis: the owner's instruction to simply create the order and the updated scope)
+* 2026-08-31: Owner approved the four independent review fixes above. Main thread updated this specification and its verification cases only. At that point, full design acceptance was still pending and an extra payment receipt email was proposed, but not added.
+* 2026-08-31: Owner challenged the unproven scenario of two successful payments for one checkout. The extra email proposal was withdrawn: the current design already prevents another create call after a timeout, and repeated callbacks are not new money. Multiple successful charges from one hosted session were not established as provider behavior. No dedicated customer journey, email, or additional launch gate is required for that hypothetical scenario. The existing verification, duplicate processing protection, and accounting evidence rules remain intact. (basis: the owner's direction to avoid speculative complexity and the single dispatch contract)
+* 2026-08-31: Owner instructed proceeding after that withdrawal. Design confirmed and linked to scope feature 2 with build milestones and the existing GA verification gates. Status remains `Proposed`; no implementation, application tests, provider requests, or production changes were authorized by this planning closeout. Settlement and fee clearing remain the next separately scoped design.
 
 ## References
 

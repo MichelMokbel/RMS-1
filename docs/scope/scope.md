@@ -4,6 +4,8 @@ Extend RMS and the customer ordering website so customers can register with auto
 
 Both applications are in scope. The customer website was located at `/Applications/XAMPP/htdocs/laylakitchen`, not the initially supplied `/Documents/XAMPP/htdocs/laylakitchen`. Its checkout, payment return, account status, membership code entry, and returning customer meal selection are part of the same delivery, not a later optional integration.
 
+**Development handoff, 2026-09-01:** [Consolidated plan](../specs/payment-integration-development-plan.md) maps all ten features, implementation order, shared migration and locking responsibilities, customer journeys, verification gates and remaining owner inputs. The owner accepted the final five designs after the independent review and all three corrections. Their design boxes are complete and their ready to build milestones are recorded below. The specifications remain `Proposed` because implementation has not started.
+
 Confirmed financial ownership: the default accounting company in RMS owns SkipCash payments and clearing. Use the existing accounting company default and retain the resolved owner when checkout starts, so retries and later changes to defaults cannot move an existing transaction to another company. Preserve the existing order or subscription branch and validate its accounting company alignment before collecting money. Payments, invoices, allocations, clearing, and the default bank account must agree on the owning company.
 
 Confirmed payout bank: the existing default bank account for the default accounting company receives SkipCash payouts. Use that account when posting the settlement. Do not add a separate SkipCash bank choice. If the default bank account is missing or inactive, keep the settlement unposted and show an RMS setup exception until an admin corrects the existing default.
@@ -113,14 +115,14 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | D | Membership and subscription orders | Existing | existing |
 | 1 | Payment and accounting contract | Foundation | in-progress |
 | 8 | Customer matching and creation at signup | Foundation | in-progress |
-| 2 | SkipCash paid order tracer | Slice 1 | planned |
-| 3 | Gateway settlement and fee clearing | Slice 2 | planned |
-| 4 | Payment exceptions and operations | Slice 3 | planned |
-| 9 | Automated consistency checks | Slice 3 | planned |
-| 7 | Membership purchase and renewal checkout | Slice 4 | planned |
-| 10 | Existing membership meal selection | Slice 4 | planned |
-| 5 | Promotion rules and dashboard | Slice 5 | planned |
-| 6 | Promotion validation and redemption API | Slice 6 | planned |
+| 2 | SkipCash paid order tracer | Slice 1 | in-progress |
+| 3 | Gateway settlement and fee clearing | Slice 2 | in-progress |
+| 4 | Payment exceptions and operations | Slice 3 | in-progress |
+| 9 | Automated consistency checks | Slice 3 | in-progress |
+| 7 | Membership purchase and renewal checkout | Slice 4 | in-progress |
+| 10 | Existing membership meal selection | Slice 4 | in-progress |
+| 5 | Promotion rules and dashboard | Slice 5 | in-progress |
+| 6 | Promotion validation and redemption API | Slice 6 | in-progress |
 
 ## Customer journey coverage before technical design
 
@@ -226,17 +228,35 @@ The milestones below cover this identity foundation. Payment, membership, and pr
 
 ## Slice 1: One real paid order
 
-### 2. SkipCash paid order tracer · needs a decision
+### 2. SkipCash paid order tracer · in-progress
 Prove one real flow through the customer website and RMS: server priced checkout, existing order creation, SkipCash initiation, verified server confirmation, paid invoice and payment creation, customer status, ledger posting, and audit. The browser return is informative only and cannot mark money as paid.
 **Done when:** one QAR order can be paid once without trusting browser totals; the server rejects saved credit payment requests and allocates the checkout's new payment without automatically using old customer advances; the fully paid invoice makes the order fulfilled for this release without a manual or automatic order state transition; customer views still show future service as booked rather than delivered; today only attempts are blocked before payment with the contact path, mixed carts proceed only with customer confirmed future items and a revised total, and future bookings remain valid; the original ordinary checkout completes from its saved snapshot when matching payment is verified even after expiry or date rollover, while new or changed same day attempts remain blocked; exact retries, a closed browser, delayed confirmation, forged or mismatched events, and a Qatar date rollover are handled safely; the invoice, payment, allocation, service date, and clearing balance agree, with a defined extension for one checkout containing several dated orders.
 
-- [ ] Design it (spec): `/architect SkipCash paid order tracer`
+Spec: [0003](../specs/0003-skipcash-paid-order/index.md). Design confirmed on 2026-08-31 after the independent review, four approved fixes, and withdrawal of the speculative extra payment email proposal. The specification remains `Proposed`; implementation has not started.
+
+The normal checkout uses one provider session and records its successful payment once. Repeated requests and notifications must not repeat orders or accounting. No separate customer email or planning blocker is added for an unproven second successful charge within one session. The existing safeguards for verified financial evidence remain unchanged.
+
+The milestones below follow the ordinary paid order specification. Memberships, promotions, settlement, and the wider operations features keep their separate scope. Design acceptance does not enable live collection.
+
+* [x] Design it (spec): `/architect SkipCash paid order tracer`
+* [ ] Build it: `/develop SkipCash paid order tracer`
+  * [ ] Payment source, settings, durable checkout records, safe setup, permissions, and encrypted evidence (AC-2, AC-4, AC-7, AC-13, AC-14, AC-15).
+  * [ ] One dated order through server quote, validated provider profile, one payment session, verified completion, paid invoice, clearing entry, and confirmation email (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-11, AC-12, AC-13).
+  * [ ] Multiple dates, existing portions and bundles, same day exclusions, and completion from saved selections after midnight or checkout expiry (AC-1, AC-3, AC-6, AC-8, AC-9, AC-10, AC-11, AC-15).
+  * [ ] Payment and email recovery, finance locks, merge ownership, evidence retention, and correction replay (AC-2, AC-4, AC-5, AC-8, AC-9, AC-10, AC-12, AC-13, AC-14).
+  * [ ] Website and Account recovery, preserved cart revisions, both base paths, accessibility, and controlled cutover (AC-4, AC-11, AC-12, AC-13, AC-14, AC-15).
+* [ ] Verify it: `/check verify SkipCash paid order tracer`
+* [ ] Test it: `/test SkipCash paid order tracer`
+* [ ] Review it (fresh model): `/check review SkipCash paid order tracer`
+* [ ] Document it: `/document SkipCash paid order tracer`
 
 ## Slice 2: Clear provider payouts
 
-### 3. Gateway settlement and fee clearing · needs a decision
+### 3. Gateway settlement and fee clearing · in-progress
 Stage the SkipCash XLSX import for finance review, match sales to captured payments, and post sale commissions and separate settlement fees before matching the net payout to the existing default bank account for the recorded owning company. Bank statement matching confirms the deposit, not another customer payment. Admin allocation of saved credit creates no new provider collection or clearing entry, and fees never reduce the customer's receipt, advance, or meal allowance.
 **Done when:** report rows and batch totals reconcile to existing gross receipts, actual fees, expected payout, and bank evidence; importing the same file or overlapping reports cannot duplicate receipts, fees, or settlements; unmatched, partial, or conflicting rows remain visible without inventing payments, and company, period, and audit rules hold.
+
+Spec: [0004](../specs/0004-skipcash-settlement/index.md). Design confirmed on 2026-08-31 after the independent GPT-5.5 review and three approved corrections. The specification remains `Proposed`; implementation has not started. Build after the payment source and verified receipt prerequisites in 0003 are available. Design acceptance does not enable settlement mutations.
 
 The supplied format uses `orderType` to distinguish `Sale` from `Settlement Fee`. A sale's `totalCommission` includes `variableCommission` and `fixedCommission`; record the expense once. A separate settlement fee row has zero gross amount and a negative `netMerchantSettlementAmount`, so it reduces the batch payout without being a customer payment or refund. Do not also subtract that fee after summing the reported net amounts.
 
@@ -244,31 +264,75 @@ In this sample, `paymentRef` is shared by the sale and settlement fee, so use it
 
 Preserve report period, transaction dates and times, and bank dates separately; the sample settlement fee falls outside its sales period and must not be dropped. Currency and timezone are not explicit columns, so use verified merchant configuration. Treat blank and literal `Null` values as missing and reject unsupported row types or conflicting amounts for review. No tax applies in this flow. The provider coupon field is not an RMS membership promotion. Keep the original workbook and customer data in protected storage, with sanitized logs and synthetic test fixtures.
 
-- [ ] Design it (spec): `/architect gateway settlement and fee clearing`
+* [x] Design it (spec): `/architect gateway settlement and fee clearing`
+* [ ] Build it: `/develop gateway settlement and fee clearing`
+  * [ ] Private report staging, exact spreadsheet values, additive schema and dedicated permissions (AC-1, AC-2, AC-6, AC-9, AC-11).
+  * [ ] One payout through verified receipt matching, review, net bank and fee posting, reconciliation and authorized void, with customer balances unchanged (AC-1, AC-2, AC-3, AC-4, AC-5, AC-7, AC-8, AC-9, AC-10).
+  * [ ] Complete payout review across imports, duplicate and conflict evidence, safe retries, review invalidation and atomic concurrent posting (AC-3, AC-4, AC-5, AC-6, AC-9).
+  * [ ] Scoped history, correction required subtotals, bank reservation guards, private downloads, merge support and compatibility with existing clearing and spreadsheet consumers (AC-7, AC-8, AC-9, AC-10, AC-11).
+  * [ ] Configuration and provider mapping proof, controlled end to end reconciliation, all verification gates and operation and rollback guidance before enablement (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-10, AC-11).
+* [ ] Verify it: `/check verify gateway settlement and fee clearing`
+* [ ] Test it: `/test gateway settlement and fee clearing`
+* [ ] Review it (fresh model): `/check review gateway settlement and fee clearing`
+* [ ] Document it: `/document gateway settlement and fee clearing`
 
 ## Slice 3: Operate safely
 
-### 4. Payment exceptions and operations · needs a decision
+### 4. Payment exceptions and operations · in-progress
 Give finance and support staff a safe view of pending, successful, failed, expired, disputed, and mismatched transactions, with deliberate recovery actions. Let authorized staff configure the payment checkout window in RMS with company scope and audit, without changing active attempts. Distinguish pending 100 percent discount meal plan requests from completed paid membership purchases and collected gateway payments in customer status, staff views, and reports. Define separate permissions for support, gateway settings, payout posting, and promotion management, and reserve saved credit allocation for admins in RMS. Do not add refund actions. Unexpected provider refund or reversal notifications remain traceable exceptions for finance review, not automatic balance changes.
 **Done when:** staff can reconcile provider success with failed internal processing, review report matches and unexplained fees, handle late or duplicate payments, preserve unused customer credit on cancellation and for legacy records marked expired, and explain every transaction without editing posted history. Tests prove that an authorized admin can allocate available saved credit, other staff and customers cannot, scope and period restrictions still hold, and concurrent or repeated actions cannot spend the same credit twice. Monitoring, recovery, safe shutdown, and both applications' release checks are ready before live payments are enabled.
 
-- [ ] Design it (spec): `/architect payment exceptions and operations`
+**Spec:** [0005 payment operations](../specs/0005-payment-operations/index.md). The owner approved the design on 2026-08-31 and chose to skip the independent design check. The specification remains `Proposed` because implementation has not started; the build and verification gates below are still open.
 
-### 9. Automated consistency checks · planned · needs a decision
+* [x] Design it (spec): `/architect payment exceptions and operations`
+* [ ] Build it: `/develop payment exceptions and operations`
+  * [ ] Checkout tracking, permissions, scoped operations view, one administrator alert, and safe recovery from a locked period with audit (AC-1, AC-2, AC-3, AC-4, AC-6, AC-7).
+  * [ ] Alert timing, simultaneous issues, provider and mail uncertainty, safe action retries, search, private history, merge, and settlement links (AC-1, AC-2, AC-3, AC-4, AC-6, AC-7, AC-10, AC-11).
+  * [ ] Saved customer confirmation resend and audited company settings, with current access checks and unchanged purchase snapshots (AC-5, AC-6, AC-7, AC-8, AC-11).
+  * [ ] Administrator saved credit allocation guards, committed membership funding protection, exact action replay, and canonical balance projections (AC-6, AC-9, AC-10, AC-11).
+  * [ ] Basic consistency reporting, recovery and queue health, safe shutdown, retention, responsive UI, and both applications' release verification (AC-1, AC-2, AC-4, AC-5, AC-6, AC-9, AC-10, AC-11, AC-12).
+* [ ] Verify it: `/check verify payment exceptions and operations`
+* [ ] Test it: `/test payment exceptions and operations`
+* [ ] Review it (fresh model): `/check review payment exceptions and operations`
+* [ ] Document it: `/document payment exceptions and operations`
+
+### 9. Automated consistency checks · in-progress
 Run checks after processing and scheduled sweeps that compare provider results, customer ownership, approved customer merges, inactive source customer references, portal ownership, company and branch alignment, payments, paid invoice fulfillment, retained credit and authorized admin allocations, daily invoice allocations, each queued purchase block's funding links, sequence, used and reserved meals, released reservations, available quota, request conversion, promotions, company wide booking cutoff decisions and per booking snapshots, pause periods and their booking, invoice, allocation, and balance effects, imported report totals, and payout clearing against bank evidence. Do not require routine order state transitions for fulfillment. A voided linked daily invoice is the confirmed exception and must agree with a cancelled subscription order. Include duplicate bookings, duplicate credit restoration, a late customer change, an incomplete customer merge, two active portal accounts after merge, a moved payment without its allocation or purchase block, an inconsistent branch cutoff, a booking whose snapshot changed after confirmation, a future pause invoice that remained active, a voided invoice whose order or allocation remained active, incorrect queue order, premature use of a later block, and invoices or payments attributed to the wrong purchase block. Extend the checks as later slices land, with basic payment and credit checks ready before live collection.
 **Done when:** missing or duplicate records, amount differences, stale processing, invalid links, incomplete customer merges, references still owned by an inactive merged customer, unauthorized credit use, conversion, sequence, usage, restoration, cutoff, pause, invoice driven subscription order cancellation, or funding discrepancies, restored promo uses after membership cancellation or customer merge, and any time based expiry of unused meals or paid credit produce traceable exceptions without delaying correct purchases; repeated runs do not duplicate alerts or money movements, failed runs are visible, and authorized recovery uses existing financial workflows instead of silently rewriting posted records. A valid 100 percent discount submission requires one pending meal plan request and must not have a subscription, purchase block, allowance, order, booking, invoice, payment, payment link, allocation, gateway event, settlement row, meal use, fulfillment, or conversion. Checks and recovery cannot allocate saved credit without an admin action, apply one customer merge or invoice void twice, leave an order or allocation active for a voided linked invoice, treat an invoice edit as cancellation, allow a customer change at or after cutoff, use a later block before an earlier block is exhausted, or create membership effects from a pending request; normal daily allocation from the completed purchase block that supplies the meal remains intact.
 
-- [ ] Design it (spec): `/architect automated payment and membership consistency checks`
+**Spec:** [0006 payment consistency](../specs/0006-payment-consistency/index.md). Design accepted on 2026-09-01. It includes the approved after commit, every 15 minutes and nightly 02:00 Qatar check schedule plus the exact rule registry from the independent review. The specification remains `Proposed` until implementation and verification are complete.
+
+* [x] Design it (spec): `/architect automated payment and membership consistency checks`
+* [ ] Build it: `/develop automated payment and membership consistency checks`
+  * [ ] Diagnostic schema, scoped ownership and the complete versioned rule registry with missing reader contract checks (AC-2, AC-3, AC-4, AC-5, AC-8).
+  * [ ] Targeted dispatch, ordinary payment, ownership, credit and settlement adapters, resumable sweeps and full scans (AC-1, AC-2, AC-4, AC-6).
+  * [ ] Scoped diagnostics, manual recheck, one issue episode, alerts and visible run health (AC-3, AC-4, AC-5, AC-7).
+  * [ ] Membership, booking and promotion adapters plus the complete synthetic and release verification matrix (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8).
+* [ ] Verify it: `/check verify automated payment and membership consistency checks`
+* [ ] Test it: `/test automated payment and membership consistency checks`
+* [ ] Review it (fresh model): `/check review automated payment and membership consistency checks`
+* [ ] Document it: `/document automated payment and membership consistency checks`
 
 ## Slice 4: Purchase and use memberships
 
-### 7. Membership purchase and renewal checkout · planned · needs a decision
+### 7. Membership purchase and renewal checkout · in-progress
 Let customers purchase, add another allowance, or renew through the website using one new payment when the final amount due after at most one promo code is positive. Accept all, some, or none of the initial meal selections without requiring the full allowance or future menus to be available. Do not offer or apply previously retained customer credit at membership checkout. Establish the first subscription and convert its request immediately after verified payment. A later completed paid purchase records its own conversion and adds its allowance to the same ordered membership queue without a competing active subscription choice. When a valid promotion makes the final amount zero, stop after creating one pending meal plan request. Continue daily invoices for actual meal orders from completed paid purchase blocks, allocating only the payment of the block supplying each meal, not an invoice for the full package. Every purchase and renewal is customer initiated. Automatic recurring charges are out of scope.
 **Done when:** the first subscription and every completed paid purchase request are established once without staff approval, with one new payment and payment link; the confirmed QAR 900 and QAR 1,200 package totals include delivery without a separate delivery fee, payment, or invoice line; later paid allowances enter the queue after earlier unused credits rather than becoming competing active subscription balances; an initial partial selection reserves one credit for each selected main dish quantity rather than one credit for each distinct date, while included sides reserve no additional credit and the full purchased entitlement is available over later visits without time based expiry. A paid purchase with no selections completes without a published menu, placeholder meal orders, daily invoices, or any meal use, and shows its allowance in the queue for later booking. The existing single mode website experience remains, and server validation rejects a membership request containing ordinary items, paid extras, unsupported portions, or side quantities beyond the included main dish quantities. Daily invoices draw from the payment of the completed purchase block that supplied the meal without a second charge, delivery charge, or package invoice. Unrelated advances and retained balances are never silently used. A 100 percent discount submission creates only one pending meal plan request and no gateway call, payment, subscription, allowance, order, booking, invoice, allocation, meal use, fulfillment, or conversion. Staff can find and handle that request through the existing RMS meal plan request process without a new approval flow. Scheduled orders, queue transitions, quota exhaustion, pauses, cancellation, retained unused paid credit, and legacy memberships stay consistent. Every completed partially discounted block consumes main dish credits normally.
 
-- [ ] Design it (spec): `/architect membership purchase and renewal checkout`
+**Spec:** [0007 membership purchase](../specs/0007-membership-purchase/index.md). Design accepted on 2026-09-01. It covers immediate conversion, empty or partial selection, sequential funding, the reviewed verified/incomplete/unsupported/already-applied legacy opening manifest and the existing website branch projection. The specification remains `Proposed` until implementation and verification are complete.
 
-### 10. Existing membership meal selection · planned · needs a decision
+* [x] Design it (spec): `/architect membership purchase and renewal checkout`
+* [ ] Build it: `/develop membership purchase and renewal checkout`
+  * [ ] Plan, queue, purchase block and request schema plus one conversion service and guards for every legacy writer (AC-1, AC-2, AC-4, AC-7, AC-9).
+  * [ ] One complete paid purchase through quote, SkipCash, receipt, immediate conversion, repeat block and optional initial booking with 0008 (AC-1, AC-2, AC-3, AC-4, AC-9, AC-10).
+  * [ ] Late and unknown recovery, promotion integration, exact apportioned funding, cancellation and merge compatibility (AC-4, AC-5, AC-6, AC-7, AC-9).
+  * [ ] Restart safe legacy manifest, branch scoped website and account states, diagnostic adapters and both application release checks (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-10).
+* [ ] Verify it: `/check verify membership purchase and renewal checkout`
+* [ ] Test it: `/test membership purchase and renewal checkout`
+* [ ] Review it (fresh model): `/check review membership purchase and renewal checkout`
+* [ ] Document it: `/document membership purchase and renewal checkout`
+
+### 10. Existing membership meal selection · in-progress
 Add a complete returning customer path across the website and RMS: show the customer's ordered membership allowance queue and booking balance, let the customer book some or all remaining meals without choosing a purchase source, and keep buying another allowance as a separate explicit action. Before the company wide configured cutoff, let the customer change or cancel eligible future meal bookings and update the balance safely. At or after cutoff, keep the booking unchanged and show the restaurant contact. Every branch uses the same cutoff owned by the default accounting company in this release. The welcome, menu, review, and account pages must preserve the customer's queue and distinguish a covered booking from a new purchase. This path is required before membership checkout goes live, not a later optional enhancement.
 **Done when:** customers can buy 20 meals, initially choose 5 main dishes, return six weeks later and choose 4 more, and have 11 still available to choose with only the original purchase payment; they can place several main dishes on one eligible future date or spread the same quantity across dates, and both choices reduce the balance by the selected main dish quantity rather than the number of dates. Covered bookings never add a delivery charge or require another payment because delivery is included in the completed purchase price. Family meals are extra quantities under the same customer and use that customer's name, phone number, and delivery address without separate recipient profiles. Included sides do not reduce the balance. The same journey works for 26 meal blocks and partially discounted completed blocks without an elapsed time or menu month expiry. Customers who completed a paid purchase with no selections can make their first booking later through this same covered path without another charge or conversion. A pending 100 percent discount request appears separately and supplies no queue balance or covered booking access. A second completed paid purchase extends the queue immediately, but every booking uses remaining credits from the first block before the second. One booking may consume the last credits from the first block and continue into the next while preserving each block's invoice funding. Before cutoff, a valid dish or date change is revalidated and a valid cancellation or quantity reduction restores each unused reservation to its original block exactly once. An existing booking keeps its recorded cutoff time and customer delivery details after a company setting or profile change, while a newly confirmed booking uses the current values. An effective pause voids each linked future invoice in its period, releases its allocation, cancels its subscription order, restores its meal balance exactly once, and shows the updated balance for later dates. Voiding any linked daily invoice has the same result, including after an invoice edit, without adding a separate failure classification or cancellation model. At or after cutoff, customer attempts make no booking, quota, invoice, or financial fulfillment change. Server checks reject another customer's queue, ineligible service dates or status, and bookings beyond total available quota; repeated or concurrent requests cannot duplicate orders, restore credits twice, overbook, advance the queue twice, use later funding too early, or charge again. Account views show used, booked, available, queued, pending requests, deadlines, pause effects, invoice driven cancellations, paid invoice fulfillment, and scheduled service accurately after reload and on another device, while legacy memberships retain verified balances and access.
 
@@ -276,23 +340,56 @@ The design must count selected main dish quantities, not order rows, calendar da
 
 Reconcile legacy end dates and expired labels against the confirmed no time based expiry rule using verified ownership, quota, and financial history. Distinguish date based expiry from exhausted quota or cancellation; do not blindly reactivate records, restore used meals, or rewrite posted history. This scope decision alone makes no changes to stored memberships.
 
-- [ ] Design it (spec): `/architect existing membership meal selection`
+**Spec:** [0008 membership booking](../specs/0008-membership-booking/index.md). Design accepted on 2026-09-01. It covers returning members, selected branch spendable balance, original block attribution, evidenced legacy restoration, cutoff snapshots, invoice voids and pause correction. The specification remains `Proposed` until implementation and verification are complete.
+
+* [x] Design it (spec): `/architect existing membership meal selection`
+* [ ] Build it: `/develop existing membership meal selection`
+  * [ ] Funding and booking revision schema, branch scoped queue projection, shared locks and exact position allocation (AC-1, AC-2, AC-7, AC-9).
+  * [ ] Covered quote and confirmation through the canonical order, invoice, payment allocation and initial purchase path (AC-2, AC-3, AC-7, AC-9).
+  * [ ] Saved cutoff, booking replacement, invoice void, evidenced legacy restoration and pause adapters across every writer (AC-4, AC-5, AC-6, AC-7, AC-9).
+  * [ ] Returning member website and account experience, scoped drafts, confirmations and the full quantity, finance, merge and release matrix (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9).
+* [ ] Verify it: `/check verify existing membership meal selection`
+* [ ] Test it: `/test existing membership meal selection`
+* [ ] Review it (fresh model): `/check review existing membership meal selection`
+* [ ] Document it: `/document existing membership meal selection`
 
 ## Slice 5: Manage promotion rules
 
-### 5. Promotion rules and dashboard · needs a decision
+### 5. Promotion rules and dashboard · in-progress
 Let admins generate and manage company wide membership payment codes with a fixed QAR or percentage value, required start and end dates, a required total redemption limit, a configurable per customer limit, package eligibility, purchase eligibility, status, and audit history. Admins share the generated codes manually outside RMS. Apply the confirmed repeat purchase rule and merged customer history. Do not add automatic code distribution, recipient assignment, branch specific rules, or a new messaging provider.
 **Done when:** admins can create, activate, pause, expire, and inspect fixed or percentage codes for the 20 meal plan, the 26 meal plan, or both, then copy and share them manually; every code has valid dates and a positive total limit, the per customer limit defaults to one, and a 100 percent code locks that limit to one; a partial discount reduces the completed purchase price without changing allowance, while a 100 percent discount creates only a pending meal plan request and never creates credit; the customer's combined completed membership and redemption history after an approved merge determines eligibility, completed discounts are never clawed back, ordinary order discounts are not enabled implicitly, and every rule change, request, and redemption remains explainable.
 
-- [ ] Design it (spec): `/architect promotion rules and dashboard`
+**Spec:** [0009 promotion administration](../specs/0009-promotion-administration/index.md). Design accepted on 2026-09-01. Activated offer terms stay fixed, with a copied new code for a changed offer. The specification remains `Proposed` until implementation and verification are complete.
+
+* [x] Design it (spec): `/architect promotion rules and dashboard`
+* [ ] Build it: `/develop promotion rules and dashboard`
+  * [ ] Promotion schema, generated codes, validation, permissions and complete audit conventions (AC-1, AC-2, AC-3, AC-4).
+  * [ ] Draft, activation, pause, expiry and limit actions with immutable offer snapshots, action replay and revision checks (AC-2, AC-5, AC-7).
+  * [ ] Scoped and responsive admin forms, manual copy, eligibility examples and history (AC-1, AC-3, AC-4, AC-6).
+  * [ ] Reservation and redemption projections with 0010, merged history, diagnostics and the complete release verification matrix (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7).
+* [ ] Verify it: `/check verify promotion rules and dashboard`
+* [ ] Test it: `/test promotion rules and dashboard`
+* [ ] Review it (fresh model): `/check review promotion rules and dashboard`
+* [ ] Document it: `/document promotion rules and dashboard`
 
 ## Slice 6: Apply promotions once
 
-### 6. Promotion validation and redemption API · needs a decision
+### 6. Promotion validation and redemption API · in-progress
 Expose a stable API contract and website entry flow to quote a code, then apply it to the final server calculated membership amount without trusting browser totals or a browser claim that this is a first purchase. Apply the code's eligibility setting using the customer's completed membership history. Keep a partial discount and the purchased meal allowance as separate facts, and carry the confirmed partial discount allocation into daily invoices using the completed membership's payment. When the final amount is zero, create only the pending meal plan request.
 **Done when:** eligible customers receive the correct fixed QAR or percentage discount from at most one code without changing normal meal use or leaving artificial unpaid balances; the server enforces the required dates, total limit, per customer limit, selected package, first purchase or renewal setting, company ownership, and all branch availability. Earlier completed paid purchases and approved customer merges are recognized for eligibility, ineligible or exhausted codes fail clearly, and concurrent purchases or retries cannot reuse first purchase eligibility or overuse a code. Multiple promo codes and attempts to use saved credit at membership checkout are rejected by the server. The first valid 100 percent discount request submission counts as that customer's one redemption. Exact retries, later submissions, and attempts after rejection or cancellation return the same request and cannot establish another request, allowance, conversion, invoice, payment, or fulfillment. Forged zero totals and invalid or exhausted codes cannot create even the request. Tests prove that cancelling a completed paid purchase block, including before its first meal, preserves the completed redemption, usage counts, and purchase history without restoring a use or first purchase eligibility. A completed discount before a customer merge remains honored, while every later attempt uses the combined history and cannot exceed either limit. Unsuccessful paid checkouts do not become completed redemptions, and temporary reservation release handles delayed payment confirmation safely. Immutable paid purchase and daily invoice snapshots reconcile to the final partially discounted price, including rounding. Retained credit reflects only unused paid funds, never the promotional discount.
 
-- [ ] Design it (spec): `/architect promotion validation and redemption API`
+**Spec:** [0010 promotion redemption](../specs/0010-promotion-redemption/index.md). Design accepted on 2026-09-01. It covers eligibility, protected positive checkout uses, permanent redemption and the isolated zero amount request. The specification remains `Proposed` until implementation and verification are complete.
+
+* [x] Design it (spec): `/architect promotion validation and redemption API`
+* [ ] Build it: `/develop promotion validation and redemption API`
+  * [ ] Reservation and permanent redemption schema, zero request fields and the shared completed history and merge resolver (AC-1, AC-3, AC-5, AC-6, AC-7, AC-8).
+  * [ ] Server quote, exact discount, capacity locks and positive checkout completion and release integration (AC-1, AC-2, AC-3, AC-4, AC-7, AC-8).
+  * [ ] Request only zero result, permanent replay, explicit manual handling boundary and durable request email (AC-5, AC-6, AC-7, AC-8, AC-9).
+  * [ ] Website code entry and requote, result and account recovery, admin projections, diagnostics and the complete cross application verification matrix (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-10).
+* [ ] Verify it: `/check verify promotion validation and redemption API`
+* [ ] Test it: `/test promotion validation and redemption API`
+* [ ] Review it (fresh model): `/check review promotion validation and redemption API`
+* [ ] Document it: `/document promotion validation and redemption API`
 
 ## Deferred
 
@@ -308,6 +405,6 @@ Expose a stable API contract and website entry flow to quote a code, then apply 
 
 **Feature lifecycle:** `planned` becomes `in-progress` when design or build starts, then `done` when you accept the verified result. `existing` describes work that predates this workflow.
 
-**Next step:** the customer journey and business rule walkthrough is complete. The recommended next command is `/architect payment and accounting contract`.
+**Next step:** update this feature branch from `origin/main` without losing the current work, then begin `/develop` with the foundation and identity and ordinary payment tracer. The shared accounting contract and final feature designs are accepted; do not restart that requirements discussion.
 
 **Workflow:** GA means payment features normally run `/architect`, `/develop`, `/check verify`, `/test`, a fresh `/check review`, and `/document`.
