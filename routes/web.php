@@ -1301,6 +1301,16 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|rep
     Volt::route('purchase-order-inventory-list', 'reports.purchase-order-inventory-list')->name('purchase-order-inventory-list');
     Volt::route('supplier-purchases', 'reports.supplier-purchases')->name('supplier-purchases');
     Volt::route('expenses', 'reports.expenses')->name('expenses');
+    Route::post('ap-journal/generate-email', [\App\Http\Controllers\Reports\ApReportController::class, 'sendRange'])
+        ->middleware(['role:admin', 'ensure.admin'])
+        ->name('ap-journal.generate-email');
+    foreach (['ap-journal', 'expenses-by-category'] as $report) {
+        Route::get($report, [\App\Http\Controllers\Reports\ApReportController::class, 'show'])->defaults('report', $report)->name($report);
+        foreach (['print', 'csv', 'pdf'] as $format) {
+            Route::get($report.'/'.$format, [\App\Http\Controllers\Reports\ApReportController::class, 'show'])
+                ->defaults('report', $report)->defaults('format', $format)->name($report.'.'.$format);
+        }
+    }
     Volt::route('costing', 'reports.costing')->name('costing');
     Volt::route('sales', 'reports.sales')->name('sales');
     Volt::route('inventory', 'reports.inventory')->name('inventory');

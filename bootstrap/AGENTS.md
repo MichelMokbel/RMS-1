@@ -22,6 +22,7 @@ This area connects routes, middleware, commands, and scheduled work. You can als
 | Subscription orders | Configured daily callback, enabled by subscription settings and a system actor. |
 | POS print retention | Hourly `pos:prune-print-stream-events` command. |
 | Recurring AP bills | Daily `accounting:generate-recurring-bills` command. |
+| Daily AP journal reports | `reports:send-ap-journal` at 17:00 in the application timezone, plus `reports:refresh-ap-journals` every minute. |
 | Quotation expiry | Daily `quotations:expire` command at the configured time. |
 | HR alerts | Daily `hr:refresh-alerts` command. |
 | Marketing campaigns and spend | Daily callbacks dispatching account and date specific jobs. |
