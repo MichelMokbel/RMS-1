@@ -99,17 +99,21 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Duplicate existing AP document numbers. No reports have been renumbered.';
     END IF;
 
-    -- Never lower a counter, including after an interrupted deployment or a rollback.
-    -- The shared sequence uses branch_id as its namespace; AP journals namespace by company.
-    INSERT INTO document_sequences (branch_id, type, year, next_number, created_at, updated_at)
-    SELECT company_id, 'ap_daily_journal', CAST(YEAR(report_date) AS CHAR),
-           MAX(CAST(SUBSTRING(document_number, 10) AS UNSIGNED)) + 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-      FROM ap_daily_journal_reports
-     WHERE document_number IS NOT NULL
-     GROUP BY company_id, CAST(YEAR(report_date) AS CHAR)
-    ON DUPLICATE KEY UPDATE
-        updated_at = IF(document_sequences.next_number < VALUES(next_number), VALUES(updated_at), document_sequences.updated_at),
-        next_number = GREATEST(document_sequences.next_number, VALUES(next_number));
+    -- Existing numbers must have been allocated by the shared sequence. Stop rather than
+    -- guess if a manual or interrupted deployment left a counter behind an assigned number.
+    IF EXISTS (
+        SELECT 1
+          FROM ap_daily_journal_reports AS reports
+          LEFT JOIN document_sequences AS sequences
+            ON sequences.branch_id = reports.company_id
+           AND sequences.type = 'ap_daily_journal'
+           AND sequences.year = DATE_FORMAT(reports.report_date, '%Y')
+         WHERE reports.document_number IS NOT NULL
+           AND (sequences.id IS NULL
+             OR sequences.next_number <= CAST(SUBSTRING(reports.document_number, 10) AS UNSIGNED))
+    ) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'An AP report number is ahead of its sequence. Review the sequence before continuing.';
+    END IF;
 
     -- Backfill only unnumbered reports, in date order per company/year, 200 per transaction.
     WHILE EXISTS (SELECT 1 FROM ap_daily_journal_reports WHERE document_number IS NULL) DO
