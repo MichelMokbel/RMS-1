@@ -49,3 +49,10 @@ CLAUDE.local.md
 /.swarm/
 /.playwright-cli/
 outputs/
+
+# Local generated and private artifacts
+**/.DS_Store
+/ruvector.db
+/docs/*.xlsx
+/docs/*.csv
+/database/sql/void_august_2026_duplicate_expenses.sql
