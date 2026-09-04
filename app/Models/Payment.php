@@ -5,7 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use App\Models\ArClearingSettlementItem;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Validation\ValidationException;
 
@@ -20,6 +19,7 @@ class Payment extends Model
         'customer_id',
         'company_id',
         'bank_account_id',
+        'payment_source_id',
         'period_id',
         'client_uuid',
         'terminal_id',
@@ -41,6 +41,7 @@ class Payment extends Model
     protected $casts = [
         'company_id' => 'integer',
         'bank_account_id' => 'integer',
+        'payment_source_id' => 'integer',
         'period_id' => 'integer',
         'terminal_id' => 'integer',
         'pos_shift_id' => 'integer',
@@ -83,6 +84,11 @@ class Payment extends Model
     public function bankAccount(): BelongsTo
     {
         return $this->belongsTo(BankAccount::class, 'bank_account_id');
+    }
+
+    public function paymentSource(): BelongsTo
+    {
+        return $this->belongsTo(PaymentSource::class, 'payment_source_id');
     }
 
     public function allocations(): HasMany

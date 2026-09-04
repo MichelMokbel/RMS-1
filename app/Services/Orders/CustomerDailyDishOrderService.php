@@ -589,14 +589,15 @@ class CustomerDailyDishOrderService
         $adminRecipients = $this->resolveAdminRecipients();
         $customerRecipients = $this->resolveCustomerRecipients($payload, $user);
         $firstOrderId = $createdOrderIds[0] ?? null;
+        $mealPlanMeals = filled($payload['mealPlan'] ?? null) ? (int) $payload['mealPlan'] : null;
         $adminMail = new DailyDishOrderAdminMail(
             orders: $ordersForEmail,
-            mealPlanMeals: $payload['mealPlan'] ? (int) $payload['mealPlan'] : null,
+            mealPlanMeals: $mealPlanMeals,
             mealPlanRequestId: $leadId
         );
         $customerMail = new DailyDishOrderCustomerMail(
             orders: $ordersForEmail,
-            mealPlanMeals: $payload['mealPlan'] ? (int) $payload['mealPlan'] : null,
+            mealPlanMeals: $mealPlanMeals,
             mealPlanRequestId: $leadId
         );
         $emailContext = [

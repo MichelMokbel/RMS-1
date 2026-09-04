@@ -192,8 +192,12 @@ class ArInvoiceService
         return $invoice->fresh(['items']);
     }
 
-    public function createFromOrder(Order $order, int $actorId, ?string $notes = null): ArInvoice
-    {
+    public function createFromOrder(
+        Order $order,
+        int $actorId,
+        ?string $notes = null,
+        ?string $issueDate = null,
+    ): ArInvoice {
         if (! $order->customer_id) {
             throw ValidationException::withMessages(['customer_id' => __('Customer is required to invoice an order.')]);
         }
@@ -239,7 +243,7 @@ class ArInvoiceService
             })->all();
         }
 
-        return DB::transaction(function () use ($order, $items, $actorId, $notes) {
+        return DB::transaction(function () use ($order, $items, $actorId, $notes, $issueDate) {
             $defaultCreditTermId = $this->defaultThirtyDayCreditTermId();
 
             $invoice = $this->createDraft(
@@ -252,6 +256,7 @@ class ArInvoiceService
                 source: 'order',
                 sourceSaleId: null,
                 type: 'invoice',
+                issueDate: $issueDate,
                 paymentType: 'credit',
                 paymentTermId: $defaultCreditTermId,
                 paymentTermDays: 30,
@@ -478,8 +483,11 @@ class ArInvoiceService
         return MinorUnits::parse((string) $price, $scale);
     }
 
-    public function issue(ArInvoice $invoice, int $actorId): ArInvoice
-    {
+    public function issue(
+        ArInvoice $invoice,
+        int $actorId,
+        bool $autoAllocateAvailableAdvances = true,
+    ): ArInvoice {
         $invoice = $invoice->fresh(['items', 'customer']);
 
         if (! $invoice->isDraft()) {
@@ -490,7 +498,7 @@ class ArInvoiceService
             throw ValidationException::withMessages(['items' => __('Add at least one invoice item.')]);
         }
 
-        return DB::transaction(function () use ($invoice, $actorId) {
+        return DB::transaction(function () use ($invoice, $actorId, $autoAllocateAvailableAdvances) {
             $locked = ArInvoice::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             if ($locked->status !== 'draft') {
                 throw ValidationException::withMessages(['invoice' => __('Invoice is not draft.')]);
@@ -555,7 +563,9 @@ class ArInvoiceService
             // Auto-allocate same-company customer advances for normal credit-term invoices.
             // Must happen BEFORE dispatching InvoiceIssued so listeners see the final allocation state.
             $issued = $locked->fresh(['items']);
-            $this->autoAllocateAvailableAdvancePayments($issued, $actorId);
+            if ($autoAllocateAvailableAdvances) {
+                $this->autoAllocateAvailableAdvancePayments($issued, $actorId);
+            }
 
             $this->auditLog->log('ar_invoice.issued', $actorId, $locked, [
                 'invoice_number' => (string) $locked->invoice_number,

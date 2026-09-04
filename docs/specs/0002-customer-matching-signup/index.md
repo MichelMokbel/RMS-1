@@ -1,7 +1,7 @@
 # 0002. Customer matching and signup
 
 **Date**: 2026-08-30
-**Status**: Proposed
+**Status**: In Progress
 
 ## Summary
 

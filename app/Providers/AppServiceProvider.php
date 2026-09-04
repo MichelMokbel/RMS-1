@@ -6,12 +6,15 @@ use App\Contracts\PhoneVerificationProvider;
 use App\Services\Ai\AiProviderInterface;
 use App\Services\Ai\GeminiProvider;
 use App\Services\Customers\AwsSnsPhoneVerificationProvider;
-use InvalidArgumentException;
-use Illuminate\Support\ServiceProvider;
+use App\Services\Finance\FinanceSettingsService;
+use App\Services\Payments\FakeSkipCashProvider;
+use App\Services\Payments\HttpSkipCashProvider;
+use App\Services\Payments\SkipCashProvider;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\View;
-use App\Services\Finance\FinanceSettingsService;
+use Illuminate\Support\ServiceProvider;
+use InvalidArgumentException;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -21,6 +24,11 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(AiProviderInterface::class, GeminiProvider::class);
+        $this->app->singleton(SkipCashProvider::class, function ($app) {
+            return (string) config('payments.skipcash.driver', 'http') === 'fake'
+                ? $app->make(FakeSkipCashProvider::class)
+                : $app->make(HttpSkipCashProvider::class);
+        });
         $this->app->bind(PhoneVerificationProvider::class, function ($app) {
             return match ((string) config('services.customer_sms.provider', 'aws_sns')) {
                 'aws_sns' => $app->make(AwsSnsPhoneVerificationProvider::class),

@@ -12,10 +12,10 @@ use Illuminate\Support\Str;
 class CustomerPortalRegistrationService
 {
     public function __construct(
+        private readonly CustomerIdentityResolver $identities,
         private readonly PhoneNumberService $phoneNumbers,
         private readonly CustomerPhoneVerificationService $verification,
-    ) {
-    }
+    ) {}
 
     /**
      * @param  array{name:string,email:string,password:string,phone:string,address?:string|null}  $data
@@ -75,11 +75,14 @@ class CustomerPortalRegistrationService
                 $phoneRaw,
                 $phoneE164,
                 $data['address'] ?? null,
-                true,
+            );
+            $user = $this->identities->resolveForRegistration(
+                $user,
+                CustomerIdentityResolver::VERIFICATION_BYPASS,
             );
 
             return [
-                'user' => $user->fresh('customer'),
+                'user' => $user,
             ];
         });
     }
@@ -91,7 +94,6 @@ class CustomerPortalRegistrationService
         string $phoneRaw,
         string $phoneE164,
         ?string $address,
-        bool $markVerified = false,
     ): User {
         $user = User::query()
             ->whereRaw('LOWER(email) = ?', [$email])
@@ -115,7 +117,7 @@ class CustomerPortalRegistrationService
             'portal_phone' => $phoneRaw,
             'portal_phone_e164' => $phoneE164,
             'portal_delivery_address' => $address,
-            'portal_phone_verified_at' => $markVerified ? now() : null,
+            'portal_phone_verified_at' => null,
             'status' => 'active',
             'pos_enabled' => false,
             'password' => Hash::make($password),

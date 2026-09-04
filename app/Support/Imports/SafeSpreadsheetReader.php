@@ -21,27 +21,27 @@ class SafeSpreadsheetReader
     private const MAX_TOTAL_CELLS = 2_000_000;
 
     /** @return array<int, array<string, mixed>> */
-    public function rows(string $path): array
+    public function rows(string $path, array $options = []): array
     {
-        $sheets = $this->sheets($path);
+        $sheets = $this->sheets($path, $options);
 
         return $sheets === [] ? [] : array_values($sheets)[0];
     }
 
     /** @return array<string, array<int, array<string, mixed>>> */
-    public function sheets(string $path): array
+    public function sheets(string $path, array $options = []): array
     {
-        return $this->workbook($path)['sheets'];
+        return $this->workbook($path, $options)['sheets'];
     }
 
     /** @return array<string, array<int, string>> */
-    public function headers(string $path): array
+    public function headers(string $path, array $options = []): array
     {
-        return $this->workbook($path)['headers'];
+        return $this->workbook($path, $options)['headers'];
     }
 
     /** @return array{sheets:array<string,array<int,array<string,mixed>>>,headers:array<string,array<int,string>>} */
-    public function workbook(string $path): array
+    public function workbook(string $path, array $options = []): array
     {
         $zip = new ZipArchive;
         if ($zip->open($path) !== true) {
@@ -67,7 +67,7 @@ class SafeSpreadsheetReader
                 if ($content === false) {
                     throw new RuntimeException("Worksheet [{$worksheet['name']}] is missing from the XLSX archive.");
                 }
-                $parsed = $this->sheetRows($content, $shared, $dateStyles, $date1904, $totalCells);
+                $parsed = $this->sheetRows($content, $shared, $dateStyles, $date1904, $totalCells, $options);
                 $result[$key] = $parsed['rows'];
                 $headers[$key] = $parsed['headers'];
             }
@@ -83,8 +83,14 @@ class SafeSpreadsheetReader
      * @param  array<int, true>  $dateStyles
      * @return array{headers:array<int,string>,rows:array<int,array<string,mixed>>}
      */
-    private function sheetRows(string $content, array $shared, array $dateStyles, bool $date1904, int &$totalCells): array
-    {
+    private function sheetRows(
+        string $content,
+        array $shared,
+        array $dateStyles,
+        bool $date1904,
+        int &$totalCells,
+        array $options,
+    ): array {
         $xml = $this->spreadsheetChildren($this->xml($content));
         $matrix = [];
         $rowCount = 0;
@@ -93,6 +99,10 @@ class SafeSpreadsheetReader
         foreach ($sheetData->row as $xmlRow) {
             if (++$rowCount > self::MAX_ROWS_PER_SHEET) {
                 throw new RuntimeException('An XLSX worksheet contains too many rows.');
+            }
+            $physicalRow = (int) ($xmlRow->attributes()['r'] ?? $rowCount);
+            if ($physicalRow <= 0) {
+                throw new RuntimeException('An XLSX worksheet contains an invalid row number.');
             }
             $values = [];
             foreach ($this->spreadsheetChildren($xmlRow)->c as $cell) {
@@ -112,18 +122,25 @@ class SafeSpreadsheetReader
                 if (++$totalCells > self::MAX_TOTAL_CELLS) {
                     throw new RuntimeException('The XLSX workbook contains too many cells.');
                 }
-                $values[$index] = $this->cellValue($cell, $cellBody, $shared, $dateStyles, $date1904);
+                $values[$index] = $this->cellValue(
+                    $cell,
+                    $cellBody,
+                    $shared,
+                    $dateStyles,
+                    $date1904,
+                    (bool) ($options['raw_numeric_strings'] ?? false),
+                );
             }
             if ($values !== []) {
                 ksort($values);
-                $matrix[] = $values;
+                $matrix[] = ['physical_row' => $physicalRow, 'values' => $values];
             }
         }
 
         if ($matrix === []) {
             return ['headers' => [], 'rows' => []];
         }
-        $headerValues = array_shift($matrix);
+        $headerValues = array_shift($matrix)['values'];
         $headers = [];
         foreach ($headerValues as $index => $value) {
             $header = $this->normalize((string) $value);
@@ -134,7 +151,8 @@ class SafeSpreadsheetReader
         }
 
         $rows = [];
-        foreach ($matrix as $values) {
+        foreach ($matrix as $matrixRow) {
+            $values = $matrixRow['values'];
             $row = [];
             foreach ($headers as $index => $header) {
                 if ($header !== '') {
@@ -142,6 +160,9 @@ class SafeSpreadsheetReader
                 }
             }
             if (array_filter($row, fn (mixed $value): bool => $value !== null && $value !== '') !== []) {
+                if ((bool) ($options['include_row_metadata'] ?? false)) {
+                    $row['__physical_row'] = (int) $matrixRow['physical_row'];
+                }
                 $rows[] = $row;
             }
         }
@@ -150,8 +171,14 @@ class SafeSpreadsheetReader
     }
 
     /** @param array<int, string> $shared @param array<int, true> $dateStyles */
-    private function cellValue(SimpleXMLElement $cell, SimpleXMLElement $body, array $shared, array $dateStyles, bool $date1904): mixed
-    {
+    private function cellValue(
+        SimpleXMLElement $cell,
+        SimpleXMLElement $body,
+        array $shared,
+        array $dateStyles,
+        bool $date1904,
+        bool $rawNumericStrings,
+    ): mixed {
         $attributes = $cell->attributes();
         $type = (string) $attributes['t'];
         $raw = (string) ($body->v ?? '');
@@ -162,18 +189,33 @@ class SafeSpreadsheetReader
             'b' => $raw === '1',
             'd' => $this->isoDate($raw),
             'e' => throw new RuntimeException('Excel error cells are not allowed in import workbooks.'),
-            default => $raw === '' ? null : $this->numericOrText($raw, (int) ($attributes['s'] ?? 0), $dateStyles, $date1904),
+            default => $raw === '' ? null : $this->numericOrText(
+                $raw,
+                (int) ($attributes['s'] ?? 0),
+                $dateStyles,
+                $date1904,
+                $rawNumericStrings,
+            ),
         };
     }
 
     /** @param array<int, true> $dateStyles */
-    private function numericOrText(string $raw, int $style, array $dateStyles, bool $date1904): mixed
-    {
+    private function numericOrText(
+        string $raw,
+        int $style,
+        array $dateStyles,
+        bool $date1904,
+        bool $rawNumericStrings,
+    ): mixed {
         if (! is_numeric($raw)) {
             return $raw;
         }
         if (isset($dateStyles[$style])) {
             return $this->excelDate((float) $raw, $date1904);
+        }
+
+        if ($rawNumericStrings) {
+            return $raw;
         }
 
         return preg_match('/^-?[0-9]+$/', $raw) ? (int) $raw : (float) $raw;

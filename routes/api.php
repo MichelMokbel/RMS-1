@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Accounting\BankingController as AccountingBankingController;
 use App\Http\Controllers\Api\Accounting\BudgetController as AccountingBudgetController;
+use App\Http\Controllers\Api\Accounting\GatewaySettlementImportController;
 use App\Http\Controllers\Api\Accounting\JobController as AccountingJobController;
 use App\Http\Controllers\Api\Accounting\PeriodCloseController as AccountingPeriodCloseController;
 use App\Http\Controllers\Api\Accounting\ReportController as AccountingReportController;
@@ -9,6 +10,7 @@ use App\Http\Controllers\Api\AP\ApInvoiceController;
 use App\Http\Controllers\Api\AP\ApPaymentController;
 use App\Http\Controllers\Api\AP\ApReportsController;
 use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\CustomerCheckoutController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\CustomerPortalAuthController;
 use App\Http\Controllers\Api\CustomerPortalDashboardController;
@@ -34,6 +36,7 @@ use App\Http\Controllers\Api\PublicCompanyFoodOrderController;
 use App\Http\Controllers\Api\PublicDailyDishController;
 use App\Http\Controllers\Api\PublicDailyDishOrderController;
 use App\Http\Controllers\Api\PurchaseOrderController;
+use App\Http\Controllers\Api\SkipCashWebhookController;
 use App\Http\Controllers\Api\Spend\ExpenseController as SpendExpenseController;
 use App\Http\Controllers\Api\SupplierController;
 use Illuminate\Support\Facades\Route;
@@ -81,9 +84,22 @@ Route::prefix('customer')->group(function () {
         Route::middleware('customer.phone.verified')->group(function () {
             Route::post('profile/phone/start-change', [CustomerPortalProfileController::class, 'startPhoneChange']);
             Route::post('profile/phone/verify-change', [CustomerPortalProfileController::class, 'verifyPhoneChange']);
+
+            Route::post('checkouts/quote', [CustomerCheckoutController::class, 'quote'])
+                ->middleware('throttle:60,1');
+            Route::post('checkouts', [CustomerCheckoutController::class, 'store'])
+                ->middleware('throttle:10,1');
         });
+
+        Route::get('checkouts', [CustomerCheckoutController::class, 'index'])
+            ->middleware('throttle:120,1');
+        Route::get('checkouts/{reference}', [CustomerCheckoutController::class, 'show'])
+            ->middleware('throttle:120,1');
     });
 });
+
+Route::post('integrations/skipcash/webhook', [SkipCashWebhookController::class, 'store'])
+    ->middleware('throttle:300,1');
 
 // Public endpoints for the external website form (no session/cookies)
 Route::middleware('api')->prefix('public')->group(function () {
@@ -181,6 +197,30 @@ Route::middleware(['api', $apiAuthMiddleware, 'reject.customer.backoffice'])->gr
     Route::get('accounting/period-close', [AccountingPeriodCloseController::class, 'index'])->name('api.accounting.period-close.index');
     Route::get('accounting/period-close/{period}', [AccountingPeriodCloseController::class, 'show'])->name('api.accounting.period-close.show');
     Route::get('accounting/reports/summary', [AccountingReportController::class, 'summary'])->name('api.accounting.reports.summary');
+
+    Route::middleware(['active', 'can:gateway_settlements.review'])->group(function () {
+        Route::get('accounting/gateway-settlement-imports', [GatewaySettlementImportController::class, 'index'])
+            ->name('api.accounting.gateway-settlement-imports.index');
+        Route::get('accounting/gateway-settlement-imports/{import}', [GatewaySettlementImportController::class, 'show'])
+            ->name('api.accounting.gateway-settlement-imports.show');
+        Route::get('accounting/gateway-settlement-imports/{import}/file', [GatewaySettlementImportController::class, 'file'])
+            ->name('api.accounting.gateway-settlement-imports.file');
+        Route::put('accounting/gateway-settlement-imports/{import}/rows/{row}/match', [GatewaySettlementImportController::class, 'match'])
+            ->name('api.accounting.gateway-settlement-imports.rows.match');
+        Route::put('accounting/gateway-settlement-imports/{import}/review', [GatewaySettlementImportController::class, 'review'])
+            ->name('api.accounting.gateway-settlement-imports.review');
+        Route::post('accounting/gateway-settlement-imports/{import}/evidence', [GatewaySettlementImportController::class, 'evidence'])
+            ->name('api.accounting.gateway-settlement-imports.evidence.store');
+        Route::get('accounting/gateway-settlement-imports/{import}/evidence/{evidence}', [GatewaySettlementImportController::class, 'evidenceFile'])
+            ->name('api.accounting.gateway-settlement-imports.evidence.file');
+    });
+
+    Route::post('accounting/gateway-settlement-imports', [GatewaySettlementImportController::class, 'store'])
+        ->middleware(['active', 'can:gateway_settlements.import'])
+        ->name('api.accounting.gateway-settlement-imports.store');
+    Route::post('accounting/gateway-settlement-imports/{import}/post', [GatewaySettlementImportController::class, 'post'])
+        ->middleware(['active', 'can:gateway_settlements.post'])
+        ->name('api.accounting.gateway-settlement-imports.post');
 
     // Spend (AP expense invoices)
     Route::get('spend/expenses', [SpendExpenseController::class, 'index'])->name('api.spend.expenses.index');

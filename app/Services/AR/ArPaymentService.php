@@ -4,8 +4,10 @@ namespace App\Services\AR;
 
 use App\Models\ArInvoice;
 use App\Models\Customer;
+use App\Models\LedgerAccount;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
+use App\Models\PaymentSource;
 use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\Accounting\AccountingContextService;
 use App\Services\Accounting\LedgerAccountMappingService;
@@ -153,6 +155,11 @@ class ArPaymentService
         $terminalId = $payload['terminal_id'] ?? null;
         $posShiftId = $payload['pos_shift_id'] ?? null;
         $bankAccountId = $payload['bank_account_id'] ?? null;
+        $paymentSourceId = $payload['payment_source_id'] ?? null;
+        $settlementAccountId = $payload['settlement_account_id'] ?? null;
+        $recordBankTransaction = array_key_exists('record_bank_transaction', $payload)
+            ? (bool) $payload['record_bank_transaction']
+            : true;
 
         usort($rows, function ($a, $b) {
             return (int) ($a['invoice_id'] ?? 0) <=> (int) ($b['invoice_id'] ?? 0);
@@ -175,8 +182,20 @@ class ArPaymentService
         }
 
         try {
-            return DB::transaction(function () use ($customer, $branchId, $amount, $method, $currency, $receivedAt, $reference, $notes, $rows, $actorId, $clientUuid, $terminalId, $posShiftId, $bankAccountId) {
+            return DB::transaction(function () use ($customer, $branchId, $amount, $method, $currency, $receivedAt, $reference, $notes, $rows, $actorId, $clientUuid, $terminalId, $posShiftId, $bankAccountId, $paymentSourceId, $settlementAccountId, $recordBankTransaction) {
                 $companyId = $this->accountingContext->resolveCompanyId($branchId);
+
+                $resolvedPaymentSourceId = $this->resolvePaymentSourceId(
+                    $paymentSourceId,
+                    $settlementAccountId,
+                    $companyId,
+                    $method,
+                );
+                $resolvedSettlementAccountId = $this->resolveSettlementAccountId(
+                    $settlementAccountId,
+                    $companyId,
+                    $resolvedPaymentSourceId,
+                );
 
                 $lockedInvoices = [];
                 foreach ($rows as $row) {
@@ -218,6 +237,7 @@ class ArPaymentService
                     'customer_id' => $customer->id,
                     'company_id' => $companyId,
                     'bank_account_id' => $this->resolveBankAccountId($method, $companyId, $bankAccountId),
+                    'payment_source_id' => $resolvedPaymentSourceId,
                     'period_id' => $this->accountingContext->resolvePeriodId((string) $receivedAt, $companyId),
                     'client_uuid' => $clientUuid !== '' ? $clientUuid : null,
                     'terminal_id' => $terminalId,
@@ -295,10 +315,13 @@ class ArPaymentService
                     $payment->fresh(),
                     $applied,
                     $amount - $applied,
-                    $actorId
+                    $actorId,
+                    $resolvedSettlementAccountId,
                 );
 
-                $this->bankTransactionService->recordArPayment($payment->fresh(), $actorId);
+                if ($recordBankTransaction) {
+                    $this->bankTransactionService->recordArPayment($payment->fresh(), $actorId);
+                }
                 $this->auditLog->log('ar_payment.created', $actorId, $payment, [
                     'applied_cents' => (int) $applied,
                     'unapplied_cents' => (int) ($amount - $applied),
@@ -567,6 +590,49 @@ class ArPaymentService
         }
 
         return (int) $bankAccount->id;
+    }
+
+    private function resolvePaymentSourceId(
+        mixed $paymentSourceId,
+        mixed $settlementAccountId,
+        ?int $companyId,
+        string $method,
+    ): ?int {
+        $id = (int) ($paymentSourceId ?? 0);
+        if ($id <= 0) {
+            return null;
+        }
+
+        $source = PaymentSource::query()->lockForUpdate()->find($id);
+        if (! $source
+            || (int) $source->company_id !== (int) $companyId
+            || (string) $source->method !== $method
+            || (int) $source->clearing_account_id !== (int) ($settlementAccountId ?? 0)) {
+            throw ValidationException::withMessages([
+                'payment_source_id' => __('The payment source does not match the payment context.'),
+            ]);
+        }
+
+        return (int) $source->id;
+    }
+
+    private function resolveSettlementAccountId(
+        mixed $settlementAccountId,
+        ?int $companyId,
+        ?int $paymentSourceId,
+    ): ?int {
+        if ($paymentSourceId === null) {
+            return null;
+        }
+
+        $account = LedgerAccount::query()->lockForUpdate()->find((int) $settlementAccountId);
+        if (! $account || ! $account->is_active || (int) $account->company_id !== (int) $companyId) {
+            throw ValidationException::withMessages([
+                'settlement_account_id' => __('The payment settlement account is unavailable.'),
+            ]);
+        }
+
+        return (int) $account->id;
     }
 
     /**

@@ -5,12 +5,12 @@ namespace App\Services\Banking;
 use App\Models\ApChequeClearance;
 use App\Models\ApPayment;
 use App\Models\ArClearingSettlement;
-use App\Models\PettyCashIssue;
-use App\Models\Payment;
 use App\Models\BankTransaction;
-use App\Services\Accounting\LedgerAccountMappingService;
+use App\Models\Payment;
+use App\Models\PettyCashIssue;
 use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\Accounting\AccountingContextService;
+use App\Services\Accounting\LedgerAccountMappingService;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -21,8 +21,7 @@ class BankTransactionService
         protected AccountingContextService $context,
         protected LedgerAccountMappingService $mappingService,
         protected AccountingAuditLogService $auditLog
-    ) {
-    }
+    ) {}
 
     public function recordApPayment(ApPayment $payment, int $actorId): ?BankTransaction
     {
@@ -170,7 +169,9 @@ class BankTransactionService
                 'reconciliation_run_id' => null,
                 'transaction_type' => 'ar_clearing_settlement',
                 'transaction_date' => optional($settlement->settlement_date)->toDateString() ?: now()->toDateString(),
-                'amount' => abs((float) $settlement->amount_cents / max((int) config('pos.money_scale', 100), 1)),
+                'amount' => abs((float) ($settlement->settlement_method === 'skipcash'
+                    ? $settlement->net_cents
+                    : $settlement->amount_cents) / max((int) config('pos.money_scale', 100), 1)),
                 'direction' => 'inflow',
                 'status' => $settlement->voided_at ? 'void' : 'open',
                 'is_cleared' => false,

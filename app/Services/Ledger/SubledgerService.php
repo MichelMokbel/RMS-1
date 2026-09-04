@@ -8,20 +8,20 @@ use App\Models\ApPaymentAllocation;
 use App\Models\ArInvoice;
 use App\Models\Branch;
 use App\Models\FinanceSetting;
-use App\Models\Payment;
-use App\Models\PaymentAllocation;
 use App\Models\InventoryTransaction;
 use App\Models\InventoryTransfer;
 use App\Models\JournalEntry;
-use App\Models\PurchaseOrderInvoiceMatch;
+use App\Models\Payment;
+use App\Models\PaymentAllocation;
 use App\Models\PettyCashIssue;
 use App\Models\PettyCashReconciliation;
-use App\Models\Supplier;
+use App\Models\PurchaseOrderInvoiceMatch;
 use App\Models\SubledgerEntry;
 use App\Models\SubledgerLine;
+use App\Models\Supplier;
 use App\Services\Accounting\AccountingContextService;
-use App\Services\Accounting\LedgerAccountMappingService;
 use App\Services\Accounting\AccountingPeriodGateService;
+use App\Services\Accounting\LedgerAccountMappingService;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
@@ -33,9 +33,7 @@ class SubledgerService
         protected AccountingContextService $accountingContext,
         protected LedgerAccountMappingService $mappingService,
         protected AccountingPeriodGateService $periodGate
-    )
-    {
-    }
+    ) {}
 
     public function recordInventoryTransaction(InventoryTransaction $transaction, ?int $userId = null): ?SubledgerEntry
     {
@@ -505,8 +503,13 @@ class SubledgerService
         );
     }
 
-    public function recordArPaymentReceived(Payment $payment, int $appliedCents, int $unappliedCents, int $userId): ?SubledgerEntry
-    {
+    public function recordArPaymentReceived(
+        Payment $payment,
+        int $appliedCents,
+        int $unappliedCents,
+        int $userId,
+        ?int $settlementAccountId = null,
+    ): ?SubledgerEntry {
         if (! $this->canPost()) {
             return null;
         }
@@ -520,9 +523,29 @@ class SubledgerService
         $unapplied = $this->moneyFromCents(max($unappliedCents, 0));
         $total = $this->moneyFromCents($amountCents);
 
+        $settlementAccountId ??= $this->paymentSettlementAccount(
+            $payment->method,
+            (int) ($payment->company_id ?? 0),
+            (int) ($payment->bank_account_id ?? 0),
+            'ar',
+        );
+
+        if ($settlementAccountId <= 0) {
+            throw ValidationException::withMessages([
+                'payment_method' => __('No settlement ledger account is configured for the selected payment method.'),
+            ]);
+        }
+
+        if ($payment->payment_source_id) {
+            $this->mappingService->assertRequiredMappings(
+                (int) ($payment->company_id ?? 0),
+                ['ar_control', 'customer_advances'],
+            );
+        }
+
         $lines = [
             [
-                'account_id' => $this->paymentSettlementAccount($payment->method, (int) ($payment->company_id ?? 0), (int) ($payment->bank_account_id ?? 0), 'ar'),
+                'account_id' => $settlementAccountId,
                 'debit' => $total,
                 'credit' => 0,
                 'memo' => 'Cash received',
@@ -1106,6 +1129,10 @@ class SubledgerService
         }
 
         $bankLedgerAccountId = (int) $bankAccount->ledger_account_id;
+        if ($settlement->settlement_method === 'skipcash') {
+            return $this->recordSkipCashClearingSettlement($settlement, $actorId, $bankLedgerAccountId);
+        }
+
         $clearingKey = $settlement->settlement_method === 'card' ? 'card_clearing' : 'ar_cheque_clearing';
         $clearingAccountId = $this->resolveAccountId($clearingKey, $companyId);
 
@@ -1127,6 +1154,93 @@ class SubledgerService
             ],
             userId: $actorId,
             companyId: $companyId,
+        );
+    }
+
+    private function recordSkipCashClearingSettlement(
+        \App\Models\ArClearingSettlement $settlement,
+        int $actorId,
+        int $bankLedgerAccountId,
+    ): ?SubledgerEntry {
+        $grossCents = (int) $settlement->amount_cents;
+        $commissionCents = (int) $settlement->commission_cents;
+        $feeCents = (int) $settlement->settlement_fee_cents;
+        $netCents = (int) $settlement->net_cents;
+        if ($grossCents <= 0 || $netCents <= 0 || $grossCents !== $netCents + $commissionCents + $feeCents) {
+            throw ValidationException::withMessages([
+                'settlement' => __('SkipCash gross, deductions and net do not balance.'),
+            ]);
+        }
+
+        $commissionAccountId = (int) $settlement->commission_expense_account_id;
+        $feeAccountId = (int) $settlement->settlement_fee_expense_account_id;
+        if (($commissionCents > 0 && $commissionAccountId <= 0) || ($feeCents > 0 && $feeAccountId <= 0)) {
+            throw ValidationException::withMessages([
+                'settlement' => __('SkipCash expense account snapshots are incomplete.'),
+            ]);
+        }
+
+        $lines = [[
+            'account_id' => $bankLedgerAccountId,
+            'debit' => $this->moneyFromCents($netCents),
+            'credit' => 0,
+            'memo' => 'SkipCash net settlement to bank',
+        ]];
+        if ($commissionCents > 0) {
+            $lines[] = [
+                'account_id' => $commissionAccountId,
+                'debit' => $this->moneyFromCents($commissionCents),
+                'credit' => 0,
+                'memo' => 'SkipCash commission expense',
+            ];
+        }
+        if ($feeCents > 0) {
+            $lines[] = [
+                'account_id' => $feeAccountId,
+                'debit' => $this->moneyFromCents($feeCents),
+                'credit' => 0,
+                'memo' => 'SkipCash settlement fee expense',
+            ];
+        }
+
+        $breakdown = $settlement->original_clearing_breakdown;
+        if (! is_array($breakdown) || $breakdown === []) {
+            throw ValidationException::withMessages([
+                'settlement' => __('The original SkipCash clearing account breakdown is missing.'),
+            ]);
+        }
+        $creditedCents = 0;
+        foreach ($breakdown as $item) {
+            $accountId = (int) ($item['account_id'] ?? 0);
+            $amountCents = (int) ($item['amount_cents'] ?? 0);
+            if ($accountId <= 0 || $amountCents <= 0) {
+                throw ValidationException::withMessages([
+                    'settlement' => __('The original SkipCash clearing account breakdown is invalid.'),
+                ]);
+            }
+            $creditedCents += $amountCents;
+            $lines[] = [
+                'account_id' => $accountId,
+                'debit' => 0,
+                'credit' => $this->moneyFromCents($amountCents),
+                'memo' => 'SkipCash customer receipts cleared',
+            ];
+        }
+        if ($creditedCents !== $grossCents) {
+            throw ValidationException::withMessages([
+                'settlement' => __('SkipCash clearing credits do not equal payout gross.'),
+            ]);
+        }
+
+        return $this->recordEntry(
+            sourceType: 'ar_clearing_settlement',
+            sourceId: (int) $settlement->id,
+            event: 'settle',
+            entryDate: optional($settlement->settlement_date)->toDateString() ?? now()->toDateString(),
+            description: 'SkipCash settlement '.$settlement->payout_reference,
+            lines: $lines,
+            userId: $actorId,
+            companyId: (int) $settlement->company_id,
         );
     }
 
@@ -1256,6 +1370,7 @@ class SubledgerService
     {
         $reference = $transaction->reference_type ?? 'manual';
         $refId = $transaction->reference_id ? '#'.$transaction->reference_id : '';
+
         return trim('Inventory '.$transaction->transaction_type.' '.$reference.' '.$refId);
     }
 
@@ -1324,8 +1439,8 @@ class SubledgerService
         if (! $can) {
             \Illuminate\Support\Facades\Log::warning('[SubledgerService] Accounting tables not available — subledger posting skipped.', [
                 'subledger_entries' => Schema::hasTable('subledger_entries'),
-                'subledger_lines'   => Schema::hasTable('subledger_lines'),
-                'ledger_accounts'   => Schema::hasTable('ledger_accounts'),
+                'subledger_lines' => Schema::hasTable('subledger_lines'),
+                'ledger_accounts' => Schema::hasTable('ledger_accounts'),
             ]);
         }
 

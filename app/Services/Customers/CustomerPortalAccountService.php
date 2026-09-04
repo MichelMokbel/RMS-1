@@ -2,10 +2,15 @@
 
 namespace App\Services\Customers;
 
+use App\Models\CustomerPhoneVerificationChallenge;
 use App\Models\User;
 
 class CustomerPortalAccountService
 {
+    public function __construct(
+        private readonly PhoneNumberService $phoneNumbers,
+    ) {}
+
     public function isLinked(User $user): bool
     {
         return (int) ($user->customer_id ?? 0) > 0 && $user->relationLoaded('customer')
@@ -15,14 +20,49 @@ class CustomerPortalAccountService
 
     public function isPhoneVerified(User $user): bool
     {
-        if ((bool) config('customers.verification_bypass', false)) {
-            return true;
+        return (bool) $this->phoneVerification($user)['satisfied'];
+    }
+
+    /**
+     * @return array{method:string,satisfied:bool,required:bool,verified_at:string|null,phone_masked:string|null}
+     */
+    public function phoneVerification(User $user): array
+    {
+        $effectivePhone = $this->effectivePhone($user);
+        $challenge = $effectivePhone === null
+            ? null
+            : CustomerPhoneVerificationChallenge::query()
+                ->where('user_id', $user->id)
+                ->where('phone_e164', $effectivePhone)
+                ->whereNull('cancelled_at')
+                ->whereNotNull('verified_at')
+                ->whereIn('purpose', [
+                    CustomerPhoneVerificationService::PURPOSE_SIGNUP,
+                    CustomerPhoneVerificationService::PURPOSE_PHONE_CHANGE,
+                    'portal_phone_verify',
+                ])
+                ->latest('verified_at')
+                ->first();
+
+        if ($challenge !== null) {
+            return [
+                'method' => 'sms',
+                'satisfied' => true,
+                'required' => true,
+                'verified_at' => $challenge->verified_at?->toIso8601String(),
+                'phone_masked' => $this->phoneNumbers->mask($effectivePhone),
+            ];
         }
 
-        $user->loadMissing('customer');
+        $bypassEnabled = (bool) config('customers.verification_bypass', false);
 
-        return $user->customer?->phone_verified_at !== null
-            || $user->portal_phone_verified_at !== null;
+        return [
+            'method' => $bypassEnabled ? 'bypass' : 'unverified',
+            'satisfied' => $bypassEnabled,
+            'required' => ! $bypassEnabled,
+            'verified_at' => null,
+            'phone_masked' => $effectivePhone === null ? null : $this->phoneNumbers->mask($effectivePhone),
+        ];
     }
 
     /**
@@ -55,6 +95,7 @@ class CustomerPortalAccountService
             ],
             'linked_customer' => $linked,
             'link_status' => $linked ? 'linked' : 'unlinked',
+            'phone_verification' => $this->phoneVerification($user),
         ];
     }
 
@@ -67,5 +108,13 @@ class CustomerPortalAccountService
         ])->save();
 
         return $user->fresh('customer');
+    }
+
+    private function effectivePhone(User $user): ?string
+    {
+        $user->loadMissing('customer');
+
+        return $this->phoneNumbers->normalize($user->portal_phone_e164)
+            ?? $this->phoneNumbers->normalize($user->customer?->phone_e164);
     }
 }

@@ -4,17 +4,20 @@ namespace App\Http\Controllers\Api;
 
 use App\Exceptions\CustomerPortalConflictException;
 use App\Http\Controllers\Controller;
+use App\Models\CustomerPhoneVerificationChallenge;
+use App\Models\User;
 use App\Notifications\CustomerPortalResetPassword;
-use App\Services\Customers\CustomerPortalAccountService;
+use App\Services\Customers\CustomerIdentityResolver;
 use App\Services\Customers\CustomerPhoneVerificationService;
+use App\Services\Customers\CustomerPortalAccountService;
 use App\Services\Customers\CustomerPortalRegistrationService;
 use App\Services\Customers\PhoneNumberService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\ValidationException;
-use App\Models\User;
 
 class CustomerPortalAuthController extends Controller
 {
@@ -23,8 +26,8 @@ class CustomerPortalAuthController extends Controller
         private readonly CustomerPhoneVerificationService $verification,
         private readonly PhoneNumberService $phoneNumbers,
         private readonly CustomerPortalAccountService $accounts,
-    ) {
-    }
+        private readonly CustomerIdentityResolver $identities,
+    ) {}
 
     public function registerStart(Request $request): JsonResponse
     {
@@ -76,22 +79,34 @@ class CustomerPortalAuthController extends Controller
             'code' => ['required', 'string', 'size:'.(int) config('customers.verification_code_length', 6)],
         ]);
 
-        $challenge = $this->verification->resolveChallengeFromToken(
-            $data['registration_token'],
-            CustomerPhoneVerificationService::PURPOSE_SIGNUP
-        );
+        $result = DB::transaction(function () use ($data): array {
+            $challenge = $this->verification->resolveChallengeFromToken(
+                $data['registration_token'],
+                CustomerPhoneVerificationService::PURPOSE_SIGNUP
+            );
+            $challenge = CustomerPhoneVerificationChallenge::query()
+                ->lockForUpdate()
+                ->findOrFail($challenge->id);
+            $challenge = $this->verification->verifyChallenge($challenge, $data['code']);
+            $user = $challenge->user()->with('customer')->firstOrFail();
+            $phoneRaw = $this->verification
+                ->decodeChallengeToken($data['registration_token'], CustomerPhoneVerificationService::PURPOSE_SIGNUP)['phone_raw'] ?? $user->portal_phone;
+            $user = $this->accounts->markPortalPhoneVerified($user, (string) $phoneRaw, $challenge->phone_e164);
+            $user = $this->identities->resolveForRegistration(
+                $user,
+                CustomerIdentityResolver::VERIFICATION_SMS,
+                $challenge->id,
+            );
 
-        $challenge = $this->verification->verifyChallenge($challenge, $data['code']);
-        $user = $challenge->user()->with('customer')->firstOrFail();
-        $phoneRaw = $this->verification
-            ->decodeChallengeToken($data['registration_token'], CustomerPhoneVerificationService::PURPOSE_SIGNUP)['phone_raw'] ?? $user->portal_phone;
-        $this->accounts->markPortalPhoneVerified($user, (string) $phoneRaw, $challenge->phone_e164);
-
-        $token = $user->createToken('customer:'.$user->id, ['customer:*']);
+            return [
+                'user' => $user,
+                'token' => $user->createToken('customer:'.$user->id, ['customer:*']),
+            ];
+        });
 
         return response()->json([
-            'token' => $token->plainTextToken,
-            'account' => $this->accounts->serializeAccount($user->fresh('customer')),
+            'token' => $result['token']->plainTextToken,
+            'account' => $this->accounts->serializeAccount($result['user']),
         ]);
     }
 

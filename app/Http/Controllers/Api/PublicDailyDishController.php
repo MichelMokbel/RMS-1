@@ -59,6 +59,7 @@ class PublicDailyDishController extends Controller
                 'enDay' => $menu->service_date?->format('l M j'),
                 'arDay' => null,
                 'mains' => array_values(array_filter(array_map(fn ($m) => $m['name'] !== '' ? $m : null, $mains))),
+                'mains_items' => array_values(array_filter(array_map(fn ($m) => $m['name'] !== '' ? $m : null, $mains))),
                 'salad' => $saladRow?->menuItem?->name ?? null,
                 'dessert' => $dessertRow?->menuItem?->name ?? null,
 
@@ -82,4 +83,3 @@ class PublicDailyDishController extends Controller
         ]);
     }
 }
-

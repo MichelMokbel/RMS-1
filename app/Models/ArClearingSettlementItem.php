@@ -8,9 +8,21 @@ use Illuminate\Validation\ValidationException;
 
 class ArClearingSettlementItem extends Model
 {
-    protected $fillable = ['settlement_id', 'payment_id', 'amount_cents'];
+    protected $fillable = [
+        'settlement_id',
+        'payment_id',
+        'provider_transaction_id',
+        'gateway_settlement_row_id',
+        'amount_cents',
+    ];
 
-    protected $casts = ['amount_cents' => 'integer'];
+    protected $casts = [
+        'settlement_id' => 'integer',
+        'payment_id' => 'integer',
+        'provider_transaction_id' => 'integer',
+        'gateway_settlement_row_id' => 'integer',
+        'amount_cents' => 'integer',
+    ];
 
     protected static function booted(): void
     {
@@ -35,5 +47,15 @@ class ArClearingSettlementItem extends Model
     public function payment(): BelongsTo
     {
         return $this->belongsTo(Payment::class);
+    }
+
+    public function providerTransaction(): BelongsTo
+    {
+        return $this->belongsTo(PaymentProviderTransaction::class, 'provider_transaction_id');
+    }
+
+    public function sourceRow(): BelongsTo
+    {
+        return $this->belongsTo(GatewaySettlementRow::class, 'gateway_settlement_row_id');
     }
 }

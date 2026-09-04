@@ -6,6 +6,8 @@ use App\Models\ArClearingSettlement;
 use App\Models\ArClearingSettlementItem;
 use App\Models\BankAccount;
 use App\Models\Payment;
+use App\Models\PaymentProviderTransaction;
+use App\Models\PaymentSource;
 use App\Models\SubledgerEntry;
 use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\Accounting\AccountingContextService;
@@ -85,22 +87,22 @@ class ArClearingSettlementService
                 }
 
                 $settlement = ArClearingSettlement::create([
-                    'company_id'        => $companyId,
-                    'bank_account_id'   => $bankAccountId,
+                    'company_id' => $companyId,
+                    'bank_account_id' => $bankAccountId,
                     'settlement_method' => $method,
-                    'settlement_date'   => $settlementDate,
-                    'amount_cents'      => $totalCents,
-                    'client_uuid'       => $clientUuid !== '' ? $clientUuid : null,
-                    'reference'         => $reference,
-                    'notes'             => $notes,
-                    'created_by'        => $actorId,
+                    'settlement_date' => $settlementDate,
+                    'amount_cents' => $totalCents,
+                    'client_uuid' => $clientUuid !== '' ? $clientUuid : null,
+                    'reference' => $reference,
+                    'notes' => $notes,
+                    'created_by' => $actorId,
                 ]);
 
                 foreach ($payments as $payment) {
                     ArClearingSettlementItem::create([
                         'settlement_id' => $settlement->id,
-                        'payment_id'    => $payment->id,
-                        'amount_cents'  => (int) $payment->amount_cents,
+                        'payment_id' => $payment->id,
+                        'amount_cents' => (int) $payment->amount_cents,
                     ]);
                     $payment->clearing_settled_at = now();
                     $payment->save();
@@ -116,8 +118,8 @@ class ArClearingSettlementService
 
                 $this->auditLog->log('ar_clearing_settlement.created', $actorId, $settlement, [
                     'payment_count' => count($paymentIds),
-                    'amount_cents'  => $totalCents,
-                    'method'        => $method,
+                    'amount_cents' => $totalCents,
+                    'method' => $method,
                 ], $companyId);
 
                 return $settlement->fresh(['items']);
@@ -139,10 +141,71 @@ class ArClearingSettlementService
         ?string $voidReason = null,
     ): ArClearingSettlement {
         return DB::transaction(function () use ($settlement, $actorId, $voidReason) {
+            if ($settlement->settlement_method === 'skipcash' && $settlement->payment_source_id !== null) {
+                PaymentSource::query()->lockForUpdate()->findOrFail((int) $settlement->payment_source_id);
+            }
             $settlement = ArClearingSettlement::whereKey($settlement->id)->lockForUpdate()->firstOrFail();
 
             if ($settlement->voided_at) {
                 throw ValidationException::withMessages(['settlement' => __('Settlement is already voided.')]);
+            }
+
+            if ($settlement->settlement_method === 'skipcash') {
+                if (trim((string) $voidReason) === '') {
+                    throw ValidationException::withMessages([
+                        'void_reason' => __('Give a reason for voiding this SkipCash settlement.'),
+                    ]);
+                }
+                $actor = \App\Models\User::query()->find($actorId);
+                if (! $actor?->can('gateway_settlements.void')) {
+                    throw new \Illuminate\Auth\Access\AuthorizationException('You are not allowed to void gateway settlements.');
+                }
+                $defaultCompanyId = $this->accountingContext->defaultCompanyId();
+                $paymentBranchIds = $settlement->items()
+                    ->join('payments', 'payments.id', '=', 'ar_clearing_settlement_items.payment_id')
+                    ->pluck('payments.branch_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->values()
+                    ->all();
+                if ($defaultCompanyId === null
+                    || (int) $settlement->company_id !== $defaultCompanyId
+                    || (! $actor->isAdmin() && ($paymentBranchIds === []
+                        || array_diff($paymentBranchIds, $actor->allowedBranchIds()) !== []))) {
+                    throw new \Illuminate\Auth\Access\AuthorizationException('The gateway settlement is outside your company or branch access.');
+                }
+                $providerTransactionIds = $settlement->items()
+                    ->whereNotNull('provider_transaction_id')
+                    ->pluck('provider_transaction_id');
+                $providerTransactions = PaymentProviderTransaction::query()
+                    ->whereIn('id', $providerTransactionIds)
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get();
+                $itemPaymentIds = $settlement->items()->pluck('payment_id');
+                $payments = Payment::query()
+                    ->whereIn('id', $itemPaymentIds)
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get();
+                $bankTransaction = \App\Models\BankTransaction::query()
+                    ->where('source_type', ArClearingSettlement::class)
+                    ->where('source_id', $settlement->id)
+                    ->where('transaction_type', 'ar_clearing_settlement')
+                    ->lockForUpdate()
+                    ->first();
+                if ($bankTransaction && ($bankTransaction->is_cleared || $bankTransaction->matched_bank_transaction_id !== null)) {
+                    throw ValidationException::withMessages([
+                        'settlement' => __('Unmatch the SkipCash bank transaction before voiding this settlement.'),
+                    ]);
+                }
+            } else {
+                $itemPaymentIds = $settlement->items()->pluck('payment_id');
+                $payments = Payment::query()
+                    ->whereIn('id', $itemPaymentIds)
+                    ->lockForUpdate()
+                    ->get();
+                $providerTransactions = collect();
             }
 
             $voidDate = now()->toDateString();
@@ -164,11 +227,17 @@ class ArClearingSettlementService
             }
 
             // Re-open all linked payments.
-            $itemPaymentIds = $settlement->items()->pluck('payment_id');
-            Payment::whereIn('id', $itemPaymentIds)->update(['clearing_settled_at' => null]);
+            foreach ($payments as $payment) {
+                $payment->forceFill(['clearing_settled_at' => null])->save();
+            }
+            foreach ($providerTransactions as $providerTransaction) {
+                if ((int) $providerTransaction->active_clearing_settlement_id === (int) $settlement->id) {
+                    $providerTransaction->forceFill(['active_clearing_settlement_id' => null])->save();
+                }
+            }
 
-            $settlement->voided_at   = now();
-            $settlement->voided_by   = $actorId;
+            $settlement->voided_at = now();
+            $settlement->voided_by = $actorId;
             $settlement->void_reason = $voidReason;
             $settlement->save();
             $this->bankTransactionService->voidArClearingSettlement($settlement, $actorId);

@@ -204,7 +204,7 @@ The milestones below roll up the shared contract. The existing slice features re
 Replace routine staff linking with customer resolution during registration: check normalized names and phone numbers, link an eligible existing customer when the identity evidence is strong, or create a separately owned customer record and continue immediately. Send uncertain or conflicting candidates to a staff review queue without holding checkout. This foundation precedes paid checkout so financial records have a known customer owner.
 **Done when:** uncertainty, slow matching, and AI failure do not prevent an otherwise valid signup, order, payment, or membership conversion; repeat requests do not create repeated customer records; historical automatic linking requires an exact normalized full name and phone, one active matching customer with no attached login, and genuine SMS proof except for the explicitly accepted temporary server bypass in 0002; review and the existing customer merge flow preserve one usable portal account, all current customer references, all new gateway and promotion references, membership queue order, payments, allocations, bookings, meal usage, promotion history, historical snapshots, and an audit trail without duplicating financial effects. Tests cover a source and target that each have memberships, financial records, promo history, and portal users, plus exact retry. No separate missing membership recovery flow is added.
 
-Spec: [0002](../specs/0002-customer-matching-signup/index.md). Design confirmed on 2026-08-30 after the independent review and approved clarifications. The specification remains `Proposed`; implementation has not started.
+Spec: [0002](../specs/0002-customer-matching-signup/index.md). Design confirmed on 2026-08-30 after the independent review and approved clarifications. The specification is `In Progress`; task 1 code is in `app/Services/Customers/CustomerIdentityResolver.php` and the customer portal authentication flow.
 
 The temporary bypass is a recorded risk acceptance, not proof of phone possession. Disabling it requires genuine verification for gated actions while retaining existing links, purchases, and history. Disabling historical matching separately still creates an owned fallback customer. Existing valid unlinked logins keep their session and cart, with ownership resolved before quote or checkout. No identity uncertainty becomes a staff approval gate.
 
@@ -232,19 +232,21 @@ The milestones below cover this identity foundation. Payment, membership, and pr
 Prove one real flow through the customer website and RMS: server priced checkout, existing order creation, SkipCash initiation, verified server confirmation, paid invoice and payment creation, customer status, ledger posting, and audit. The browser return is informative only and cannot mark money as paid.
 **Done when:** one QAR order can be paid once without trusting browser totals; the server rejects saved credit payment requests and allocates the checkout's new payment without automatically using old customer advances; the fully paid invoice makes the order fulfilled for this release without a manual or automatic order state transition; customer views still show future service as booked rather than delivered; today only attempts are blocked before payment with the contact path, mixed carts proceed only with customer confirmed future items and a revised total, and future bookings remain valid; the original ordinary checkout completes from its saved snapshot when matching payment is verified even after expiry or date rollover, while new or changed same day attempts remain blocked; exact retries, a closed browser, delayed confirmation, forged or mismatched events, and a Qatar date rollover are handled safely; the invoice, payment, allocation, service date, and clearing balance agree, with a defined extension for one checkout containing several dated orders.
 
-Spec: [0003](../specs/0003-skipcash-paid-order/index.md). Design confirmed on 2026-08-31 after the independent review, four approved fixes, and withdrawal of the speculative extra payment email proposal. The specification remains `Proposed`; implementation has not started.
+Spec: [0003](../specs/0003-skipcash-paid-order/index.md). Design confirmed on 2026-08-31 after the independent review, four approved fixes, and withdrawal of the speculative extra payment email proposal. The specification is `In Progress` and implementation is under way.
+
+Code in `app/Services/Payments/`, `app/Models/Payment*.php`, `database/migrations/2026_09_01_000001_create_skipcash_payment_foundation.php`, and the customer website checkout files in `/Applications/XAMPP/htdocs/laylakitchen`.
 
 The normal checkout uses one provider session and records its successful payment once. Repeated requests and notifications must not repeat orders or accounting. No separate customer email or planning blocker is added for an unproven second successful charge within one session. The existing safeguards for verified financial evidence remain unchanged.
 
 The milestones below follow the ordinary paid order specification. Memberships, promotions, settlement, and the wider operations features keep their separate scope. Design acceptance does not enable live collection.
 
 * [x] Design it (spec): `/architect SkipCash paid order tracer`
-* [ ] Build it: `/develop SkipCash paid order tracer`
-  * [ ] Payment source, settings, durable checkout records, safe setup, permissions, and encrypted evidence (AC-2, AC-4, AC-7, AC-13, AC-14, AC-15).
-  * [ ] One dated order through server quote, validated provider profile, one payment session, verified completion, paid invoice, clearing entry, and confirmation email (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-11, AC-12, AC-13).
-  * [ ] Multiple dates, existing portions and bundles, same day exclusions, and completion from saved selections after midnight or checkout expiry (AC-1, AC-3, AC-6, AC-8, AC-9, AC-10, AC-11, AC-15).
-  * [ ] Payment and email recovery, finance locks, merge ownership, evidence retention, and correction replay (AC-2, AC-4, AC-5, AC-8, AC-9, AC-10, AC-12, AC-13, AC-14).
-  * [ ] Website and Account recovery, preserved cart revisions, both base paths, accessibility, and controlled cutover (AC-4, AC-11, AC-12, AC-13, AC-14, AC-15).
+* [x] Build it: `/develop SkipCash paid order tracer`
+  * [x] Payment source, settings, durable checkout records, safe setup, permissions, and encrypted evidence (AC-2, AC-4, AC-7, AC-13, AC-14, AC-15).
+  * [x] One dated order through server quote, validated provider profile, one payment session, verified completion, paid invoice, clearing entry, and confirmation email (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-11, AC-12, AC-13).
+  * [x] Multiple dates, existing portions and bundles, same day exclusions, and completion from saved selections after midnight or checkout expiry (AC-1, AC-3, AC-6, AC-8, AC-9, AC-10, AC-11, AC-15).
+  * [x] Payment and email recovery, finance locks, merge ownership, evidence retention, and correction replay (AC-2, AC-4, AC-5, AC-8, AC-9, AC-10, AC-12, AC-13, AC-14).
+  * [x] Website and Account recovery, preserved cart revisions, both base paths, accessibility, and controlled cutover (AC-4, AC-11, AC-12, AC-13, AC-14, AC-15).
 * [ ] Verify it: `/check verify SkipCash paid order tracer`
 * [ ] Test it: `/test SkipCash paid order tracer`
 * [ ] Review it (fresh model): `/check review SkipCash paid order tracer`
@@ -256,7 +258,7 @@ The milestones below follow the ordinary paid order specification. Memberships, 
 Stage the SkipCash XLSX import for finance review, match sales to captured payments, and post sale commissions and separate settlement fees before matching the net payout to the existing default bank account for the recorded owning company. Bank statement matching confirms the deposit, not another customer payment. Admin allocation of saved credit creates no new provider collection or clearing entry, and fees never reduce the customer's receipt, advance, or meal allowance.
 **Done when:** report rows and batch totals reconcile to existing gross receipts, actual fees, expected payout, and bank evidence; importing the same file or overlapping reports cannot duplicate receipts, fees, or settlements; unmatched, partial, or conflicting rows remain visible without inventing payments, and company, period, and audit rules hold.
 
-Spec: [0004](../specs/0004-skipcash-settlement/index.md). Design confirmed on 2026-08-31 after the independent GPT-5.5 review and three approved corrections. The specification remains `Proposed`; implementation has not started. Build after the payment source and verified receipt prerequisites in 0003 are available. Design acceptance does not enable settlement mutations.
+Spec: [0004](../specs/0004-skipcash-settlement/index.md). Design confirmed on 2026-08-31 after the independent GPT-5.5 review and three approved corrections. The specification is `In Progress`; the implementation is in `app/Services/Payments/GatewaySettlement*.php`, `app/Services/Payments/SkipCashSettlementReportParser.php`, the gateway settlement models and migrations, and the AR clearing review pages. Settlement mutations remain disabled until retained provider evidence proves the identifier mapping and the controlled reconciliation gate passes.
 
 The supplied format uses `orderType` to distinguish `Sale` from `Settlement Fee`. A sale's `totalCommission` includes `variableCommission` and `fixedCommission`; record the expense once. A separate settlement fee row has zero gross amount and a negative `netMerchantSettlementAmount`, so it reduces the batch payout without being a customer payment or refund. Do not also subtract that fee after summing the reported net amounts.
 
@@ -266,10 +268,10 @@ Preserve report period, transaction dates and times, and bank dates separately; 
 
 * [x] Design it (spec): `/architect gateway settlement and fee clearing`
 * [ ] Build it: `/develop gateway settlement and fee clearing`
-  * [ ] Private report staging, exact spreadsheet values, additive schema and dedicated permissions (AC-1, AC-2, AC-6, AC-9, AC-11).
-  * [ ] One payout through verified receipt matching, review, net bank and fee posting, reconciliation and authorized void, with customer balances unchanged (AC-1, AC-2, AC-3, AC-4, AC-5, AC-7, AC-8, AC-9, AC-10).
-  * [ ] Complete payout review across imports, duplicate and conflict evidence, safe retries, review invalidation and atomic concurrent posting (AC-3, AC-4, AC-5, AC-6, AC-9).
-  * [ ] Scoped history, correction required subtotals, bank reservation guards, private downloads, merge support and compatibility with existing clearing and spreadsheet consumers (AC-7, AC-8, AC-9, AC-10, AC-11).
+  * [x] Private report staging, exact spreadsheet values, additive schema and dedicated permissions (AC-1, AC-2, AC-6, AC-9, AC-11).
+  * [x] One payout through verified receipt matching, review, net bank and fee posting, reconciliation and authorized void, with customer balances unchanged (AC-1, AC-2, AC-3, AC-4, AC-5, AC-7, AC-8, AC-9, AC-10).
+  * [x] Complete payout review across imports, duplicate and conflict evidence, safe retries, review invalidation and atomic concurrent posting (AC-3, AC-4, AC-5, AC-6, AC-9).
+  * [x] Scoped history, correction required subtotals, bank reservation guards, private downloads, merge support and compatibility with existing clearing and spreadsheet consumers (AC-7, AC-8, AC-9, AC-10, AC-11).
   * [ ] Configuration and provider mapping proof, controlled end to end reconciliation, all verification gates and operation and rollback guidance before enablement (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-10, AC-11).
 * [ ] Verify it: `/check verify gateway settlement and fee clearing`
 * [ ] Test it: `/test gateway settlement and fee clearing`

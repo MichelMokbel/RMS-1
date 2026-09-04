@@ -13,7 +13,9 @@ use App\Console\Commands\ImportDailyDishMenuFromForm;
 use App\Console\Commands\ImportMenuItemArabicNames;
 use App\Console\Commands\IntegrityAudit;
 use App\Console\Commands\PrunePosPrintStreamEvents;
+use App\Console\Commands\PurgeSkipCashProviderBodies;
 use App\Console\Commands\ReapplySafeForeignKeys;
+use App\Console\Commands\RecoverSkipCashPayments;
 use App\Console\Commands\RepairArCrossCompanyAllocations;
 use App\Console\Commands\RestoreDatabaseFromDump;
 use App\Console\Commands\UsersHashPasswords;
@@ -55,6 +57,8 @@ return Application::configure(basePath: dirname(__DIR__))
         ExpireQuotations::class,
         ImportMenuItemArabicNames::class,
         PrunePosPrintStreamEvents::class,
+        RecoverSkipCashPayments::class,
+        PurgeSkipCashProviderBodies::class,
         HelpSeedDemoCommand::class,
         HelpCaptureScreenshotsCommand::class,
         HrRefreshAlerts::class,
@@ -93,6 +97,14 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $schedule->command('quotations:expire')
             ->dailyAt((string) config('quotations.expiry_time', '00:30'))
+            ->withoutOverlapping();
+
+        $schedule->command('payments:recover-skipcash')
+            ->everyMinute()
+            ->withoutOverlapping();
+
+        $schedule->command('payments:purge-skipcash-provider-bodies')
+            ->dailyAt('02:00')
             ->withoutOverlapping();
 
         $schedule->command('hr:refresh-alerts')->dailyAt('01:30')->withoutOverlapping();

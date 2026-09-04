@@ -1,7 +1,7 @@
 # 0003. SkipCash paid ordinary orders
 
 **Date**: 2026-08-31
-**Status**: Proposed
+**Status**: In Progress
 
 ## Summary
 

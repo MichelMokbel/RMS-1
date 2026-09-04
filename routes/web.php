@@ -3,6 +3,7 @@
 use App\Http\Controllers\AP\ApInvoiceAttachmentPreviewController;
 use App\Http\Controllers\AP\ApPaymentRegisterPrintController;
 use App\Http\Controllers\AP\ApPaymentVoucherController;
+use App\Http\Controllers\Api\Accounting\GatewaySettlementImportController;
 use App\Http\Controllers\Help\HelpBotController;
 use App\Http\Controllers\PettyCash\PettyCashImportTemplateController;
 use App\Http\Controllers\Reports\CustomerStatementReportController;
@@ -1193,6 +1194,15 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|fin
     })->name('accounting.reports');
     Volt::route('accounting/period-close', 'accounting.period-close')->name('accounting.period-close');
     Volt::route('accounting/ar-clearing', 'accounting.ar-clearing')->name('accounting.ar-clearing');
+    Volt::route('accounting/ar-clearing/skipcash/{import}', 'accounting.ar-clearing-skipcash-show')
+        ->name('accounting.ar-clearing.skipcash.show')
+        ->middleware('can:gateway_settlements.review');
+    Route::get('accounting/ar-clearing/skipcash/{import}/file', [GatewaySettlementImportController::class, 'file'])
+        ->name('accounting.ar-clearing.skipcash.file')
+        ->middleware('can:gateway_settlements.review');
+    Route::get('accounting/ar-clearing/skipcash/{import}/evidence/{evidence}', [GatewaySettlementImportController::class, 'evidenceFile'])
+        ->name('accounting.ar-clearing.skipcash.evidence.file')
+        ->middleware('can:gateway_settlements.review');
     Volt::route('accounting/ar-clearing/{settlement}', 'accounting.ar-clearing-show')->name('accounting.ar-clearing-show');
     Volt::route('accounting/ap-cheque-clearance', 'accounting.ap-cheque-clearance')->name('accounting.ap-cheque-clearance');
     Volt::route('accounting/ap-cheque-clearances/{clearance}', 'accounting.ap-cheque-clearance-show')->name('accounting.ap-cheque-clearance-show');

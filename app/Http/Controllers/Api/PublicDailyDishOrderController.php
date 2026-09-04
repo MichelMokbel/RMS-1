@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Services\Orders\CustomerPortalOrderAuditService;
 use App\Services\Orders\CustomerDailyDishOrderService;
+use App\Services\Orders\CustomerPortalOrderAuditService;
 use App\Services\Orders\CustomerPortalOrderIdempotencyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -15,11 +15,18 @@ class PublicDailyDishOrderController extends Controller
         private readonly CustomerDailyDishOrderService $service,
         private readonly CustomerPortalOrderAuditService $auditService,
         private readonly CustomerPortalOrderIdempotencyService $idempotencyService,
-    ) {
-    }
+    ) {}
 
     public function store(Request $request)
     {
+        if (! (bool) config('payments.customer_direct_order_enabled', true)) {
+            return response()->json([
+                'success' => false,
+                'code' => 'DIRECT_ORDER_DISABLED',
+                'message' => __('Secure checkout is required for Daily Dish orders.'),
+            ], 409);
+        }
+
         $auditId = (string) Str::uuid();
         $payload = null;
 

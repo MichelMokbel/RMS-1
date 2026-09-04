@@ -2,9 +2,11 @@
 
 use App\Contracts\PhoneVerificationProvider;
 use App\Models\Customer;
+use App\Models\CustomerPhoneVerificationChallenge;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Role;
 use Tests\Support\FakePhoneVerificationProvider;
@@ -13,8 +15,9 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     Role::findOrCreate('customer', 'web');
+    Config::set('customers.verification_bypass', false);
 
-    $this->sms = new FakePhoneVerificationProvider();
+    $this->sms = new FakePhoneVerificationProvider;
     app()->instance(PhoneVerificationProvider::class, $this->sms);
 });
 
@@ -30,6 +33,15 @@ it('keeps the current phone active until a phone change otp is verified', functi
         'customer_id' => $customer->id,
     ]);
     $user->assignRole('customer');
+    CustomerPhoneVerificationChallenge::create([
+        'user_id' => $user->id,
+        'customer_id' => $customer->id,
+        'purpose' => 'signup',
+        'phone_e164' => '+97455123456',
+        'code_hash' => Hash::make('123456'),
+        'expires_at' => now()->addMinutes(10),
+        'verified_at' => now(),
+    ]);
 
     Sanctum::actingAs($user, ['customer:*']);
 

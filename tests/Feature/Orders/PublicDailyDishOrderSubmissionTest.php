@@ -112,7 +112,21 @@ it('rejects guest daily dish order submission', function () {
     ])->assertStatus(401);
 });
 
-it('allows newly registered bypassed customers to order because they are marked verified', function () {
+it('rejects the legacy direct order endpoint after secure checkout cutover', function () {
+    Config::set('payments.customer_direct_order_enabled', false);
+    actingAsVerifiedCustomer();
+
+    $this->postJson('/api/public/daily-dish/orders', createWebsiteOrderPayload())
+        ->assertStatus(409)
+        ->assertJson([
+            'success' => false,
+            'code' => 'DIRECT_ORDER_DISABLED',
+        ]);
+
+    expect(Order::query()->count())->toBe(0);
+});
+
+it('allows newly registered bypassed customers to order with their owned customer record', function () {
     Config::set('customers.verification_bypass', true);
 
     seedActiveBranch(1);
@@ -137,8 +151,8 @@ it('allows newly registered bypassed customers to order because they are marked 
         ->assertOk()
         ->assertJson(['success' => true]);
 
-    expect($user->customer_id)->toBeNull();
-    expect($user->fresh()->portal_phone_verified_at)->not->toBeNull();
+    expect($user->fresh()->customer_id)->not->toBeNull();
+    expect($user->fresh()->portal_phone_verified_at)->toBeNull();
 });
 
 it('creates only subscription orders with 45 total and auto appetizer for mealPlan 20', function () {

@@ -17,8 +17,10 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     Role::findOrCreate('customer', 'web');
+    Config::set('customers.verification_bypass', false);
+    Config::set('customers.matching_enabled', false);
 
-    $this->sms = new FakePhoneVerificationProvider();
+    $this->sms = new FakePhoneVerificationProvider;
     app()->instance(PhoneVerificationProvider::class, $this->sms);
 });
 
@@ -58,7 +60,7 @@ it('starts customer registration without linking to an existing customer and sen
     expect($this->sms->messages)->toHaveCount(1);
 });
 
-it('verifies signup otp, issues a customer api token, and keeps the account unlinked', function () {
+it('verifies signup otp, creates a linked customer, and issues a customer api token', function () {
     $start = $this->postJson('/api/customer/auth/register/start', [
         'name' => 'Portal Customer',
         'email' => 'portal@example.com',
@@ -80,21 +82,26 @@ it('verifies signup otp, issues a customer api token, and keeps the account unli
                 'customer' => ['id', 'phone_verified_at', 'data_source'],
                 'linked_customer',
                 'link_status',
+                'phone_verification' => ['method', 'satisfied', 'required', 'verified_at', 'phone_masked'],
             ],
         ])
         ->assertJson([
             'account' => [
-                'linked_customer' => false,
-                'link_status' => 'unlinked',
+                'linked_customer' => true,
+                'link_status' => 'linked',
                 'customer' => [
-                    'id' => null,
-                    'data_source' => 'portal',
+                    'data_source' => 'customer',
+                ],
+                'phone_verification' => [
+                    'method' => 'sms',
+                    'satisfied' => true,
+                    'required' => true,
                 ],
             ],
         ]);
 
     $user = User::query()->where('email', 'portal@example.com')->firstOrFail();
-    expect($user->customer_id)->toBeNull();
+    expect($user->customer_id)->not->toBeNull();
     expect($user->portal_phone_verified_at)->not->toBeNull();
 });
 
@@ -145,7 +152,7 @@ it('enforces resend cooldown for signup verification codes', function () {
     ])->assertStatus(422);
 });
 
-it('can bypass signup verification, issue a token immediately, and keep the account unlinked', function () {
+it('can bypass signup verification, issue a token immediately, and create a linked customer', function () {
     Config::set('customers.verification_bypass', true);
 
     $response = $this->postJson('/api/customer/auth/register/start', [
@@ -164,22 +171,120 @@ it('can bypass signup verification, issue a token immediately, and keep the acco
                 'customer' => ['id', 'phone_verified_at', 'data_source'],
                 'linked_customer',
                 'link_status',
+                'phone_verification' => ['method', 'satisfied', 'required', 'verified_at', 'phone_masked'],
             ],
         ])
         ->assertJson([
             'verification_bypassed' => true,
             'account' => [
-                'linked_customer' => false,
-                'link_status' => 'unlinked',
+                'linked_customer' => true,
+                'link_status' => 'linked',
+                'phone_verification' => [
+                    'method' => 'bypass',
+                    'satisfied' => true,
+                    'required' => false,
+                    'verified_at' => null,
+                ],
             ],
         ]);
 
     $user = User::query()->where('email', 'portal@example.com')->firstOrFail();
 
-    expect($user->customer_id)->toBeNull();
-    expect($user->portal_phone_verified_at)->not->toBeNull();
+    expect($user->customer_id)->not->toBeNull();
+    expect($user->portal_phone_verified_at)->toBeNull();
     expect(CustomerPhoneVerificationChallenge::query()->count())->toBe(0);
     expect($this->sms->messages)->toHaveCount(0);
+});
+
+it('creates a separately owned fallback customer when historical matching is disabled', function () {
+    Config::set('customers.verification_bypass', true);
+    Config::set('customers.matching_enabled', false);
+
+    $historicalCustomer = Customer::factory()->create([
+        'name' => 'Portal Customer',
+        'phone' => '55123456',
+        'phone_e164' => '+97455123456',
+        'email' => 'historical@example.com',
+    ]);
+
+    $response = $this->postJson('/api/customer/auth/register/start', [
+        'name' => 'Portal Customer',
+        'email' => 'portal@example.com',
+        'password' => 'password123',
+        'phone' => '55123456',
+        'address' => 'West Bay',
+    ]);
+
+    $response->assertCreated()
+        ->assertJsonPath('account.linked_customer', true)
+        ->assertJsonPath('account.phone_verification.method', 'bypass');
+
+    $user = User::query()->where('email', 'portal@example.com')->firstOrFail();
+    $customer = $user->customer()->firstOrFail();
+
+    expect($customer->id)->not->toBe($historicalCustomer->id)
+        ->and($customer->customer_type)->toBe(Customer::TYPE_RETAIL)
+        ->and($customer->phone_e164)->toBe('+97455123456')
+        ->and($customer->phone_verified_at)->toBeNull()
+        ->and($customer->created_by)->toBe($user->id);
+
+    $this->assertDatabaseHas('accounting_audit_logs', [
+        'action' => 'customer.identity.resolved',
+        'actor_id' => $user->id,
+        'subject_id' => $customer->id,
+    ]);
+});
+
+it('does not create a second customer or audit event when a resolved account is retried', function () {
+    Config::set('customers.verification_bypass', true);
+
+    $this->postJson('/api/customer/auth/register/start', [
+        'name' => 'Portal Customer',
+        'email' => 'portal@example.com',
+        'password' => 'password123',
+        'phone' => '55123456',
+        'address' => 'West Bay',
+    ])->assertCreated();
+
+    $user = User::query()->where('email', 'portal@example.com')->firstOrFail();
+    $customerId = $user->customer_id;
+
+    app(\App\Services\Customers\CustomerIdentityResolver::class)->resolveForRegistration(
+        $user,
+        \App\Services\Customers\CustomerIdentityResolver::VERIFICATION_BYPASS,
+    );
+
+    expect(User::query()->findOrFail($user->id)->customer_id)->toBe($customerId)
+        ->and(Customer::query()->count())->toBe(1)
+        ->and(CustomerPhoneVerificationChallenge::query()->count())->toBe(0);
+    expect(\App\Models\AccountingAuditLog::query()
+        ->where('action', 'customer.identity.resolved')
+        ->count())->toBe(1);
+});
+
+it('does not continue to trust bypass after the server setting is disabled', function () {
+    Config::set('customers.verification_bypass', true);
+
+    $this->postJson('/api/customer/auth/register/start', [
+        'name' => 'Portal Customer',
+        'email' => 'portal@example.com',
+        'password' => 'password123',
+        'phone' => '55123456',
+        'address' => 'West Bay',
+    ])->assertCreated();
+
+    $user = User::query()->where('email', 'portal@example.com')->firstOrFail();
+    $token = $user->createToken('customer:'.$user->id, ['customer:*']);
+    Config::set('customers.verification_bypass', false);
+
+    $this->withToken($token->plainTextToken)
+        ->getJson('/api/customer/me')
+        ->assertOk()
+        ->assertJsonPath('account.linked_customer', true)
+        ->assertJsonPath('account.phone_verification.method', 'unverified')
+        ->assertJsonPath('account.phone_verification.satisfied', false)
+        ->assertJsonPath('account.phone_verification.required', true)
+        ->assertJsonPath('account.phone_verification.verified_at', null);
 });
 
 it('rejects verify and resend while verification bypass is enabled', function () {

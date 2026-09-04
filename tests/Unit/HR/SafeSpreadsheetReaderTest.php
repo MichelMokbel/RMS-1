@@ -72,6 +72,35 @@ it('returns normalized multi-sheet rows and preserves first-sheet rows', functio
     }
 });
 
+it('can opt into exact numeric strings and physical row metadata', function (): void {
+    $path = hrReaderWorkbook([
+        ['name' => 'Settlement', 'xml' => hrReaderSheet(
+            '<row r="1"><c r="A1" t="inlineStr"><is><t>Reference Number</t></is></c><c r="B1" t="inlineStr"><is><t>Gross Amount</t></is></c></row>'
+            .'<row r="7"><c r="A7"><v>000123</v></c><c r="B7"><v>4270.00</v></c></row>'
+        )],
+    ]);
+
+    try {
+        $reader = new SafeSpreadsheetReader;
+        $legacy = $reader->workbook($path);
+        $exact = $reader->workbook($path, [
+            'raw_numeric_strings' => true,
+            'include_row_metadata' => true,
+        ]);
+
+        expect($legacy['sheets']['settlement'][0])->toBe([
+            'reference_number' => 123,
+            'gross_amount' => 4270.0,
+        ])->and($exact['sheets']['settlement'][0])->toBe([
+            'reference_number' => '000123',
+            'gross_amount' => '4270.00',
+            '__physical_row' => 7,
+        ]);
+    } finally {
+        @unlink($path);
+    }
+});
+
 it('reads Excel workbooks that prefix the spreadsheet namespace', function (): void {
     $path = hrReaderWorkbook([['name' => 'Employees', 'xml' => hrReaderSheet('')]]);
     hrPrefixReaderWorkbook($path);

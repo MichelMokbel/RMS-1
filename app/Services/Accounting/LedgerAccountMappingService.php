@@ -43,6 +43,18 @@ class LedgerAccountMappingService
                 'required' => true,
                 'fallback' => 'cheque_clearing',
             ],
+            'skipcash_commission_expense' => [
+                'label' => 'SkipCash commission expense',
+                'description' => 'Records commission retained by SkipCash from customer collections.',
+                'required' => true,
+                'fallback' => null,
+            ],
+            'skipcash_settlement_fee_expense' => [
+                'label' => 'SkipCash settlement fee expense',
+                'description' => 'Records fixed settlement fees retained from SkipCash payouts.',
+                'required' => true,
+                'fallback' => null,
+            ],
             'issued_cheques_clearing' => [
                 'label' => 'Issued cheques clearing',
                 'description' => 'Supplier cheques issued but not yet presented to bank.',

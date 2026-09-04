@@ -2,6 +2,7 @@
 
 namespace App\Services\Banking;
 
+use App\Models\ArClearingSettlement;
 use App\Models\BankAccount;
 use App\Models\BankReconciliationRun;
 use App\Models\BankStatementImport;
@@ -20,8 +21,7 @@ class BankReconciliationService
         protected AccountingContextService $context,
         protected AccountingPeriodGateService $periodGate,
         protected AccountingAuditLogService $auditLog
-    ) {
-    }
+    ) {}
 
     public function reconcile(BankAccount $bankAccount, array $data, int $actorId): array
     {
@@ -72,7 +72,8 @@ class BankReconciliationService
                         return false;
                     }
 
-                    return $this->referencesComparable($bookLine->reference, $statementLine->reference);
+                    return $this->referencesComparable($bookLine->reference, $statementLine->reference)
+                        && $this->pairRespectsSettlementEvidence($statementLine, $bookLine);
                 });
 
                 if ($match) {
@@ -137,9 +138,33 @@ class BankReconciliationService
                 ->whereNull('statement_import_id')
                 ->firstOrFail();
 
+            if ($statementLine->status === 'void' || $bookLine->status === 'void') {
+                throw ValidationException::withMessages([
+                    'match' => __('Voided bank transactions cannot be reconciled.'),
+                ]);
+            }
+
             if ((float) $statementLine->amount !== (float) $bookLine->amount || $statementLine->direction !== $bookLine->direction) {
                 throw ValidationException::withMessages([
                     'match' => __('Statement and book transactions must have the same amount and direction.'),
+                ]);
+            }
+
+            if (! $this->pairRespectsSettlementEvidence($statementLine, $bookLine)) {
+                throw ValidationException::withMessages([
+                    'match' => __('The bank statement deposit is reserved for a different SkipCash settlement transaction.'),
+                ]);
+            }
+            if ($statementLine->matched_bank_transaction_id !== null
+                && (int) $statementLine->matched_bank_transaction_id !== (int) $bookLine->id) {
+                throw ValidationException::withMessages([
+                    'statement_transaction_id' => __('The statement transaction is already matched to another book transaction.'),
+                ]);
+            }
+            if ($bookLine->matched_bank_transaction_id !== null
+                && (int) $bookLine->matched_bank_transaction_id !== (int) $statementLine->id) {
+                throw ValidationException::withMessages([
+                    'book_transaction_id' => __('The book transaction is already matched to another statement transaction.'),
                 ]);
             }
 
@@ -316,6 +341,7 @@ class BankReconciliationService
             ->where('bank_account_id', $bankAccount->id)
             ->whereNotNull('statement_import_id')
             ->whereNull('source_type')
+            ->where('status', '!=', 'void')
             ->where('is_cleared', false)
             ->whereDate('transaction_date', '<=', $statementDate)
             ->orderBy('transaction_date');
@@ -360,6 +386,29 @@ class BankReconciliationService
         $value = preg_replace('/[^a-z0-9]/', '', $value) ?? $value;
 
         return $value;
+    }
+
+    private function pairRespectsSettlementEvidence(BankTransaction $statementLine, BankTransaction $bookLine): bool
+    {
+        $reservedSettlement = ArClearingSettlement::query()
+            ->where('evidence_bank_transaction_id', $statementLine->id)
+            ->first();
+        if ($reservedSettlement) {
+            return ! $reservedSettlement->voided_at
+                && $bookLine->source_type === ArClearingSettlement::class
+                && (int) $bookLine->source_id === (int) $reservedSettlement->id;
+        }
+
+        if ($bookLine->source_type !== ArClearingSettlement::class || ! $bookLine->source_id) {
+            return true;
+        }
+
+        $bookSettlement = ArClearingSettlement::query()->find($bookLine->source_id);
+
+        return ! $bookSettlement
+            || ($bookSettlement->evidence_bank_transaction_id === null && $bookSettlement->voided_at === null)
+            || ($bookSettlement->voided_at === null
+                && (int) $bookSettlement->evidence_bank_transaction_id === (int) $statementLine->id);
     }
 
     private function applyMatch(BankReconciliationRun $run, BankTransaction $statementLine, BankTransaction $bookLine, string $statementDate): void

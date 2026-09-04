@@ -6,22 +6,25 @@ use App\Services\Customers\CustomerCodeService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use App\Models\User;
 
 class Customer extends Model
 {
     use HasFactory;
 
     public const TYPE_RETAIL = 'retail';
+
     public const TYPE_CORPORATE = 'corporate';
+
     public const TYPE_SUBSCRIPTION = 'subscription';
 
     protected $table = 'customers';
 
     protected $fillable = [
         'customer_code',
+        'merged_into_customer_id',
         'name',
         'customer_type',
         'contact_name',
@@ -47,6 +50,7 @@ class Customer extends Model
         'credit_limit' => 'decimal:3',
         'credit_terms_days' => 'integer',
         'default_payment_method_id' => 'integer',
+        'merged_into_customer_id' => 'integer',
         'phone_verified_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
@@ -103,6 +107,11 @@ class Customer extends Model
     public function user(): HasOne
     {
         return $this->hasOne(User::class, 'customer_id');
+    }
+
+    public function mergedIntoCustomer(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'merged_into_customer_id');
     }
 
     public function orders(): HasMany

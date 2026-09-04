@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\AccountingAuditLog;
 use App\Models\Customer;
 use App\Models\User;
 use App\Services\Customers\CustomerMergeService;
@@ -40,6 +41,7 @@ it('deactivates the source portal user when the target already has one', functio
     expect($sourceUser->fresh()->customer_id)->toBeNull();
     expect($sourceUser->fresh()->status)->toBe('inactive');
     expect($source->fresh()->is_active)->toBeFalse();
+    expect($source->fresh()->merged_into_customer_id)->toBe($target->id);
     expect($target->fresh()->is_active)->toBeTrue();
 });
 
@@ -60,4 +62,19 @@ it('moves the source portal user to the target when the target has no user', fun
     expect($sourceUser->fresh()->customer_id)->toBe($target->id);
     expect($sourceUser->fresh()->status)->toBe('active');
     expect($source->fresh()->is_active)->toBeFalse();
+    expect($source->fresh()->merged_into_customer_id)->toBe($target->id);
+});
+
+it('keeps the original merge outcome when the same source and destination are submitted again', function () {
+    $admin = makeCustomerMergeAdmin();
+    $service = app(CustomerMergeService::class);
+    $source = Customer::factory()->create(['name' => 'Source Customer']);
+    $target = Customer::factory()->create(['name' => 'Target Customer']);
+
+    $service->merge($source, $target, $admin->id);
+    $service->merge($source, $target, $admin->id);
+
+    expect($source->fresh()->is_active)->toBeFalse()
+        ->and($source->fresh()->merged_into_customer_id)->toBe($target->id)
+        ->and(AccountingAuditLog::query()->where('action', 'customer.merged')->count())->toBe(1);
 });
