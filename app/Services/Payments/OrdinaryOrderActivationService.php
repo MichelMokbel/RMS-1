@@ -138,18 +138,25 @@ class OrdinaryOrderActivationService
                 'classification' => 'purchase',
                 'receipt_date' => $allocationDate,
             ]);
+            $notificationSnapshots = [
+                'customer_email' => $attempt->customer_snapshot['email'] ?? null,
+                'admin_emails' => array_values(array_filter((array) config('mail.daily_dish_admin_emails', []))),
+                'order_ids' => $targets->pluck('order_id')->map(fn ($id): int => (int) $id)->all(),
+                'amount_cents' => (int) $attempt->payable_amount_cents,
+                'reference' => $attempt->reference,
+            ];
+            $existingNotificationSnapshots = is_array($attempt->notification_snapshots)
+                ? $attempt->notification_snapshots
+                : [];
+            if (is_array($existingNotificationSnapshots['operations_alerts'] ?? null)) {
+                $notificationSnapshots['operations_alerts'] = $existingNotificationSnapshots['operations_alerts'];
+            }
             $attempt->update([
                 'state' => 'completed',
                 'completed_at' => now('UTC'),
                 'next_recovery_at' => null,
                 'last_error_code' => null,
-                'notification_snapshots' => [
-                    'customer_email' => $attempt->customer_snapshot['email'] ?? null,
-                    'admin_emails' => array_values(array_filter((array) config('mail.daily_dish_admin_emails', []))),
-                    'order_ids' => $targets->pluck('order_id')->map(fn ($id): int => (int) $id)->all(),
-                    'amount_cents' => (int) $attempt->payable_amount_cents,
-                    'reference' => $attempt->reference,
-                ],
+                'notification_snapshots' => $notificationSnapshots,
                 'notification_dispatch' => [
                     'customer_confirmation' => ['state' => 'pending'],
                     'admin_confirmation' => ['state' => 'pending'],

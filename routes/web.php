@@ -1273,6 +1273,11 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|quotation
 });
 
 // AR (receivables)
+Route::middleware(['auth', 'active', 'role_or_permission:admin|payments.support.view'])->group(function () {
+    Volt::route('receivables/payments/skipcash', 'receivables.payments.skipcash.index')->name('receivables.payments.skipcash.index');
+    Volt::route('receivables/payments/skipcash/{checkout}', 'receivables.payments.skipcash.show')->name('receivables.payments.skipcash.show');
+});
+
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|receivables.access'])->group(function () {
     Volt::route('receivables/payments', 'receivables.payments.index')->name('receivables.payments.index');
     Volt::route('receivables/payments/create', 'receivables.payments.create')->name('receivables.payments.create');

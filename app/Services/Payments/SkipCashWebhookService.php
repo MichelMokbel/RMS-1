@@ -15,6 +15,7 @@ class SkipCashWebhookService
     public function __construct(
         private readonly SkipCashProvider $provider,
         private readonly OrdinaryOrderActivationService $activation,
+        private readonly PaymentOperationsTrackingService $operations,
     ) {}
 
     /**
@@ -161,12 +162,17 @@ class SkipCashWebhookService
             );
             $this->activation->complete((int) $context['attempt_id'], $providerTransaction->id);
             $this->markEventProcessed((int) $context['event_id']);
+            $this->operations->resolveProcessingIssue((int) $context['attempt_id']);
 
             return true;
         } catch (PaymentCheckoutException $exception) {
             $this->recordEventFailure((int) $context['event_id'], (int) $context['attempt_id'], $exception->codeName);
 
             throw $exception;
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $this->recordEventFailure((int) $context['event_id'], (int) $context['attempt_id'], 'FINANCIAL_PERIOD_BLOCKED');
+
+            throw new PaymentCheckoutException('FINANCIAL_PERIOD_BLOCKED', 503, __('Payment accounting is blocked and needs attention.'));
         } catch (\Throwable) {
             $this->recordEventFailure((int) $context['event_id'], (int) $context['attempt_id'], 'PAYMENT_PROCESSING_FAILED');
 
@@ -222,6 +228,7 @@ class SkipCashWebhookService
                 ]);
             }
         }, 3);
+        $this->operations->recordProcessingFailure($attemptId, $code);
     }
 
     private function recordNonPaidEvent(int $attemptId, int $eventId, string $status): void

@@ -37,6 +37,7 @@ class PaymentCheckoutAttempt extends Model
         'notification_snapshots',
         'source_account_snapshot',
         'notification_dispatch',
+        'operations_tracking',
         'financial_intent',
         'provider_request_uuid',
         'provider_create_outcome',
@@ -44,6 +45,7 @@ class PaymentCheckoutAttempt extends Model
         'last_error_code',
         'provider_detail_recovery_attempts',
         'next_recovery_at',
+        'operations_next_action_at',
     ];
 
     protected $casts = [
@@ -61,6 +63,7 @@ class PaymentCheckoutAttempt extends Model
         'provider_dispatched_at' => 'datetime',
         'provider_detail_recovery_attempts' => 'integer',
         'next_recovery_at' => 'datetime',
+        'operations_next_action_at' => 'datetime',
         'cart_snapshot' => 'encrypted:array',
         'customer_snapshot' => 'encrypted:array',
         'pricing_snapshot' => 'encrypted:array',
@@ -69,6 +72,7 @@ class PaymentCheckoutAttempt extends Model
         'notification_snapshots' => 'encrypted:array',
         'source_account_snapshot' => 'encrypted:array',
         'notification_dispatch' => 'array',
+        'operations_tracking' => 'array',
         'financial_intent' => 'array',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',

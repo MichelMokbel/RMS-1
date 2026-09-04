@@ -14,6 +14,7 @@ class SkipCashRecoveryService
 {
     public function __construct(
         private readonly SkipCashWebhookService $webhooks,
+        private readonly PaymentOperationsTrackingService $operations,
     ) {}
 
     /** @return array<string, int> */
@@ -28,6 +29,7 @@ class SkipCashRecoveryService
             'details_checked' => $this->recoverKnownProviderSessions($limit),
             'events_retried' => $this->recoverRetryableEvents($limit),
             'confirmations_retried' => $this->recoverRetryableConfirmations($limit),
+            'operations_observed' => $this->operations->observeOutstanding($limit),
         ];
     }
 

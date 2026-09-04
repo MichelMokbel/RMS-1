@@ -20,6 +20,7 @@ use App\Services\Accounting\AccountingPeriodGateService;
 use App\Services\AR\ArInvoiceService;
 use App\Services\Customers\CustomerMergeService;
 use App\Services\Payments\FakeSkipCashProvider;
+use App\Services\Payments\PaymentOperationsRecoveryService;
 use App\Services\Payments\SkipCashProvider;
 use App\Services\Payments\SkipCashRecoveryService;
 use Carbon\Carbon;
@@ -644,10 +645,16 @@ it('keeps verified payment in processing without partial records while finance i
         app()->forgetInstance(AccountingPeriodGateService::class);
     }
 
-    PaymentProviderEvent::query()->firstOrFail()->update(['next_retry_at' => now('UTC')->subMinute()]);
-    $recovery = app(SkipCashRecoveryService::class)->recover();
+    $admin = User::factory()->create(['status' => 'active']);
+    $admin->assignRole(Role::findOrCreate('admin', 'web'));
+    $operationUuid = (string) Str::uuid();
+    app(PaymentOperationsRecoveryService::class)->retry($attempt->id, $operationUuid, $admin);
 
-    expect($recovery['events_retried'])->toBe(1)
+    $attempt->refresh();
+    expect($attempt->operations_tracking['issues']['processing']['reason_code'])->toBe('FINANCIAL_PERIOD_BLOCKED')
+        ->and($attempt->operations_tracking['issues']['processing']['resolved_at'])->not->toBeNull()
+        ->and($attempt->operations_tracking['recovery']['operation_uuid'])->toBe($operationUuid)
+        ->and($attempt->operations_tracking['recovery']['state'])->toBe('succeeded')
         ->and($attempt->fresh()->state)->toBe('completed')
         ->and(DB::table('orders')->count())->toBe(1)
         ->and(DB::table('ar_invoices')->count())->toBe(1)
