@@ -15,6 +15,7 @@ class SkipCashRecoveryService
     public function __construct(
         private readonly SkipCashWebhookService $webhooks,
         private readonly PaymentOperationsTrackingService $operations,
+        private readonly PaymentOperationsConsistencyService $consistency,
     ) {}
 
     /** @return array<string, int> */
@@ -30,6 +31,7 @@ class SkipCashRecoveryService
             'events_retried' => $this->recoverRetryableEvents($limit),
             'confirmations_retried' => $this->recoverRetryableConfirmations($limit),
             'operations_observed' => $this->operations->observeOutstanding($limit),
+            'consistency_checked' => $this->consistency->scan($limit),
         ];
     }
 
@@ -115,6 +117,10 @@ class SkipCashRecoveryService
 
     private function dispatchUnsentAttempts(int $limit): int
     {
+        if (! (bool) config('payments.skipcash.enabled', false)) {
+            return 0;
+        }
+
         $ids = PaymentCheckoutAttempt::query()
             ->where('provider_create_outcome', 'not_sent')
             ->whereIn('state', ['initiating', 'pending'])

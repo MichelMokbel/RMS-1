@@ -1,7 +1,7 @@
 # 0005. Payment exceptions and operations
 
 **Date**: 2026-08-31
-**Status**: In Progress
+**Status**: Implemented
 
 ## Summary
 

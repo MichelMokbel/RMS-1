@@ -72,6 +72,16 @@ class PaymentOperationsTrackingService
         }
     }
 
+    public function recordConsistencyIssue(int $attemptId, string $reasonCode): void
+    {
+        $this->recordIssue($attemptId, 'processing', $reasonCode, 0, false);
+    }
+
+    public function resolveConsistencyIssue(int $attemptId): void
+    {
+        $this->resolveIssue($attemptId, 'processing', 'CONSISTENCY_');
+    }
+
     public function resolveProcessingIssue(int $attemptId): void
     {
         $this->resolveIssue($attemptId, 'processing');
@@ -177,12 +187,17 @@ class PaymentOperationsTrackingService
         return $dates === [] ? null : collect($dates)->sort()->first();
     }
 
-    private function recordIssue(int $attemptId, string $slot, string $reasonCode, int $attentionDelayMinutes): void
-    {
+    private function recordIssue(
+        int $attemptId,
+        string $slot,
+        string $reasonCode,
+        int $attentionDelayMinutes,
+        bool $replaceOpenReason = true,
+    ): void {
         $dispatch = false;
         $episodeUuid = null;
 
-        DB::transaction(function () use ($attemptId, $slot, $reasonCode, $attentionDelayMinutes, &$dispatch, &$episodeUuid): void {
+        DB::transaction(function () use ($attemptId, $slot, $reasonCode, $attentionDelayMinutes, $replaceOpenReason, &$dispatch, &$episodeUuid): void {
             $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->find($attemptId);
             if (! $attempt || ! in_array($slot, self::ISSUE_SLOTS, true)) {
                 return;
@@ -195,6 +210,9 @@ class PaymentOperationsTrackingService
             $isOpen = $issue !== [] && empty($issue['resolved_at']);
             $opened = ! $isOpen;
             $oldReason = $isOpen ? (string) ($issue['reason_code'] ?? '') : null;
+            if ($isOpen && ! $replaceOpenReason) {
+                return;
+            }
 
             if ($opened) {
                 $episodeUuid = (string) Str::uuid();
@@ -267,14 +285,17 @@ class PaymentOperationsTrackingService
         }
     }
 
-    private function resolveIssue(int $attemptId, string $slot): void
+    private function resolveIssue(int $attemptId, string $slot, ?string $reasonPrefix = null): void
     {
-        DB::transaction(function () use ($attemptId, $slot): void {
+        DB::transaction(function () use ($attemptId, $slot, $reasonPrefix): void {
             $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->find($attemptId);
             $tracking = is_array($attempt?->operations_tracking) ? $attempt->operations_tracking : [];
             $issues = is_array($tracking['issues'] ?? null) ? $tracking['issues'] : [];
             $issue = is_array($issues[$slot] ?? null) ? $issues[$slot] : [];
             if (! $attempt || $issue === [] || ! empty($issue['resolved_at'])) {
+                return;
+            }
+            if ($reasonPrefix !== null && ! str_starts_with((string) ($issue['reason_code'] ?? ''), $reasonPrefix)) {
                 return;
             }
 

@@ -1,22 +1,29 @@
 <?php
 
+use App\Jobs\InitiateSkipCashCheckout;
 use App\Jobs\RetrySkipCashPaymentProcessing;
 use App\Jobs\SendPaymentOperationsAlert;
 use App\Models\AccountingAuditLog;
 use App\Models\AccountingCompany;
+use App\Models\ArInvoice;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\EmailLog;
 use App\Models\LedgerAccount;
+use App\Models\Order;
 use App\Models\Payment;
+use App\Models\PaymentAllocation;
 use App\Models\PaymentCheckoutAttempt;
+use App\Models\PaymentCheckoutTarget;
 use App\Models\PaymentProviderEvent;
 use App\Models\PaymentProviderTransaction;
 use App\Models\PaymentSetting;
 use App\Models\PaymentSource;
 use App\Models\User;
 use App\Services\Accounting\AccountingAuditLogService;
+use App\Services\Payments\PaymentOperationsConsistencyService;
 use App\Services\Payments\PaymentOperationsEvidenceService;
+use App\Services\Payments\PaymentOperationsHealthService;
 use App\Services\Payments\PaymentOperationsQueryService;
 use App\Services\Payments\PaymentOperationsRecoveryService;
 use App\Services\Payments\PaymentOperationsTrackingService;
@@ -24,6 +31,7 @@ use App\Services\Payments\PaymentSettingsService;
 use App\Services\Payments\SkipCashRecoveryService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
@@ -559,4 +567,168 @@ it('renders the payment settings form for an authorized operator', function (): 
         ->assertSet('order_support_phone', '+974 2222 0000');
 
     expect(PaymentSetting::query()->where('company_id', $this->company->id)->value('checkout_duration_minutes'))->toBe(35);
+});
+
+it('reports basic completed payment inconsistencies without changing financial records', function (): void {
+    Queue::fake([SendPaymentOperationsAlert::class]);
+    $attempt = ($this->makeAttempt)([
+        'state' => 'completed',
+        'completed_at' => now('UTC'),
+        'last_error_code' => null,
+    ]);
+    $order = Order::factory()->create([
+        'branch_id' => $this->branch->id,
+        'customer_id' => $this->customer->id,
+    ]);
+    $invoice = ArInvoice::factory()->create([
+        'company_id' => $this->company->id,
+        'branch_id' => $this->branch->id,
+        'customer_id' => $this->customer->id,
+        'source_order_id' => $order->id,
+        'type' => 'invoice',
+        'status' => 'paid',
+        'currency' => 'QAR',
+        'total_cents' => 6500,
+        'paid_total_cents' => 6500,
+        'balance_cents' => 0,
+    ]);
+    PaymentCheckoutTarget::query()->create([
+        'attempt_id' => $attempt->id,
+        'sequence' => 1,
+        'target_type' => 'order',
+        'service_date' => now('Asia/Qatar')->addDay()->toDateString(),
+        'expected_amount_cents' => 6500,
+        'item_snapshot' => ['items' => []],
+        'hold_state' => 'activated',
+        'held_at' => now('UTC')->subMinute(),
+        'activated_at' => now('UTC'),
+        'intended_invoice_issue_date' => now('Asia/Qatar')->toDateString(),
+        'order_id' => $order->id,
+        'invoice_id' => $invoice->id,
+    ]);
+    $payment = Payment::factory()->create([
+        'company_id' => $this->company->id,
+        'branch_id' => $this->branch->id,
+        'customer_id' => $this->customer->id,
+        'payment_source_id' => $this->source->id,
+        'source' => 'ar',
+        'method' => 'skipcash',
+        'amount_cents' => 6400,
+        'currency' => 'QAR',
+    ]);
+    PaymentAllocation::query()->create([
+        'payment_id' => $payment->id,
+        'allocatable_type' => ArInvoice::class,
+        'allocatable_id' => $invoice->id,
+        'amount_cents' => 6400,
+    ]);
+    PaymentProviderTransaction::query()->create([
+        'attempt_id' => $attempt->id,
+        'payment_source_id' => $this->source->id,
+        'provider_payment_id' => 'health-provider-'.$attempt->id,
+        'merchant_transaction_id' => str_replace('-', '', $attempt->reference),
+        'amount_cents' => 6500,
+        'currency' => 'QAR',
+        'raw_status' => '2',
+        'normalized_status' => 'paid',
+        'classification' => 'purchase',
+        'verified_paid_at' => now('UTC'),
+        'verified_amount_cents' => 6500,
+        'verified_currency' => 'QAR',
+        'verified_finished_at' => now('UTC'),
+        'payment_id' => $payment->id,
+    ]);
+
+    $service = app(PaymentOperationsConsistencyService::class);
+    expect($service->check($attempt->id))->toBe('CONSISTENCY_RECEIPT_AMOUNT_MISMATCH')
+        ->and($service->check($attempt->id))->toBe('CONSISTENCY_RECEIPT_AMOUNT_MISMATCH')
+        ->and($payment->fresh()->amount_cents)->toBe(6400)
+        ->and(PaymentAllocation::query()->where('payment_id', $payment->id)->value('amount_cents'))->toBe(6400)
+        ->and(AccountingAuditLog::query()->where('action', 'payment.operations.issue_opened')->count())->toBe(1);
+
+    $issue = data_get($attempt->fresh()->operations_tracking, 'issues.processing');
+    expect($issue['reason_code'])->toBe('CONSISTENCY_RECEIPT_AMOUNT_MISMATCH')
+        ->and($issue['resolved_at'])->toBeNull();
+    Queue::assertPushed(SendPaymentOperationsAlert::class, 1);
+});
+
+it('records recovery and purge health while disabled collection leaves existing operations available', function (): void {
+    config([
+        'cache.default' => 'array',
+        'payments.skipcash.enabled' => false,
+    ]);
+    Cache::flush();
+    Queue::fake();
+    $pending = ($this->makeAttempt)([
+        'state' => 'pending',
+        'provider_create_outcome' => 'not_sent',
+        'last_error_code' => null,
+        'financial_intent' => null,
+        'expires_at' => now('UTC')->addMinutes(15),
+    ]);
+
+    $result = app(SkipCashRecoveryService::class)->recover();
+    expect($result['initiation_dispatched'])->toBe(0)
+        ->and($pending->fresh()->provider_create_outcome)->toBe('not_sent');
+    Queue::assertNotPushed(InitiateSkipCashCheckout::class);
+
+    $recoverable = ($this->makeAttempt)();
+    $provider = PaymentProviderTransaction::query()->create([
+        'attempt_id' => $recoverable->id,
+        'payment_source_id' => $this->source->id,
+        'provider_payment_id' => 'disabled-recovery-'.$recoverable->id,
+        'merchant_transaction_id' => str_replace('-', '', $recoverable->reference),
+        'amount_cents' => 6500,
+        'currency' => 'QAR',
+        'raw_status' => '2',
+        'normalized_status' => 'paid',
+        'classification' => 'pending',
+        'verified_paid_at' => now('UTC'),
+        'verified_amount_cents' => 6500,
+        'verified_currency' => 'QAR',
+        'verified_finished_at' => now('UTC'),
+    ]);
+    $recoverable->update(['financial_intent' => [
+        'provider_transaction_id' => $provider->id,
+        'allocation_date' => now('Asia/Qatar')->toDateString(),
+        'invoice_issue_date' => now('Asia/Qatar')->toDateString(),
+    ]]);
+    app(PaymentOperationsTrackingService::class)->recordProcessingFailure($recoverable->id, 'FINANCIAL_PERIOD_BLOCKED');
+
+    $staff = User::factory()->create(['status' => 'active']);
+    $staff->givePermissionTo(['payments.support.view', 'payments.support.recover']);
+    DB::table('user_branch_access')->insert([
+        'user_id' => $staff->id,
+        'branch_id' => $this->branch->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    expect(app(PaymentOperationsRecoveryService::class)
+        ->retry($recoverable->id, (string) Str::uuid(), $staff)['state'])->toBe('queued');
+    Queue::assertPushed(RetrySkipCashPaymentProcessing::class, 1);
+
+    $this->artisan('payments:recover-skipcash')->assertSuccessful();
+    $this->artisan('payments:purge-skipcash-provider-bodies')->assertSuccessful();
+    $health = app(PaymentOperationsHealthService::class)->summary($staff);
+
+    expect($health['collection_enabled'])->toBeFalse()
+        ->and($health['recovery']['freshness'])->toBe('healthy')
+        ->and($health['purge']['freshness'])->toBe('healthy')
+        ->and($health['recovery']['last_result'])->toBe('succeeded');
+
+    $this->actingAs($staff)
+        ->get(route('receivables.payments.skipcash.index'))
+        ->assertOk()
+        ->assertSee('Operations health')
+        ->assertSee('New collection disabled')
+        ->assertSee($recoverable->reference);
+
+    Carbon::setTestNow(now('UTC')->addHours(27));
+    try {
+        $stale = app(PaymentOperationsHealthService::class)->summary($staff);
+        expect($stale['recovery']['freshness'])->toBe('stale')
+            ->and($stale['purge']['freshness'])->toBe('stale');
+    } finally {
+        Carbon::setTestNow();
+    }
 });

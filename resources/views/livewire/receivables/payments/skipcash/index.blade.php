@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\Payments\PaymentOperationsQueryService;
+use App\Services\Payments\PaymentOperationsHealthService;
 use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
@@ -25,7 +26,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
-    public function with(PaymentOperationsQueryService $queries): array
+    public function with(
+        PaymentOperationsQueryService $queries,
+        PaymentOperationsHealthService $healthService,
+    ): array
     {
         return [
             'checkouts' => $queries->query(Auth::user(), [
@@ -35,6 +39,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'date_from' => $this->date_from,
                 'date_to' => $this->date_to,
             ])->paginate(15),
+            'health' => $healthService->summary(Auth::user()),
         ];
     }
 
@@ -59,13 +64,69 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div class="flex gap-2" role="tablist" aria-label="{{ __('SkipCash checkout view') }}">
-        <flux:button type="button" :variant="$view === 'attention' ? 'primary' : 'ghost'" wire:click="$set('view', 'attention')">
+        <flux:button type="button" :variant="$view === 'attention' ? 'primary' : 'ghost'" wire:click="$set('view', 'attention')" wire:loading.attr="disabled" wire:target="view">
             {{ __('Needs attention') }}
         </flux:button>
-        <flux:button type="button" :variant="$view === 'all' ? 'primary' : 'ghost'" wire:click="$set('view', 'all')">
+        <flux:button type="button" :variant="$view === 'all' ? 'primary' : 'ghost'" wire:click="$set('view', 'all')" wire:loading.attr="disabled" wire:target="view">
             {{ __('All checkouts') }}
         </flux:button>
     </div>
+
+    <section class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900" aria-labelledby="skipcash-health-heading">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+                <h2 id="skipcash-health-heading" class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Operations health') }}</h2>
+                <p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{{ __('Health reflects recorded command runs and overdue work; an idle queue alone is not treated as healthy.') }}</p>
+            </div>
+            <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $health['collection_enabled'] ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-100' : 'bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200' }}">
+                {{ $health['collection_enabled'] ? __('New collection enabled') : __('New collection disabled') }}
+            </span>
+        </div>
+
+        <dl class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            @foreach (['recovery' => __('Recovery scheduler'), 'purge' => __('Evidence purge')] as $healthKey => $healthLabel)
+                @php
+                    $healthItem = $health[$healthKey];
+                @endphp
+                <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
+                    <dt class="text-xs font-medium text-neutral-500 dark:text-neutral-400">{{ $healthLabel }}</dt>
+                    <dd class="mt-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ (string) str($healthItem['freshness'])->title() }}</dd>
+                    <dd class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                        {{ $healthItem['last_success_at'] ? __('Last success: :time', ['time' => \Illuminate\Support\Carbon::parse($healthItem['last_success_at'])->format('Y-m-d H:i:s')]) : __('No successful run recorded') }}
+                    </dd>
+                    @if (($healthItem['last_result'] ?? 'unknown') === 'failed')
+                        <dd class="mt-1 text-xs font-medium text-rose-700 dark:text-rose-300">{{ __('Latest run failed: :code', ['code' => $healthItem['error_code'] ?? 'COMMAND_FAILED']) }}</dd>
+                    @endif
+                </div>
+            @endforeach
+
+            <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
+                <dt class="text-xs font-medium text-neutral-500 dark:text-neutral-400">{{ __('Overdue work') }}</dt>
+                <dd class="mt-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $health['overdue_count'] }}</dd>
+                <dd class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                    {{ $health['oldest_overdue_at'] ? __('Oldest: :time', ['time' => \Illuminate\Support\Carbon::parse($health['oldest_overdue_at'])->format('Y-m-d H:i:s')]) : __('Nothing overdue') }}
+                </dd>
+            </div>
+
+            <div class="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
+                <dt class="text-xs font-medium text-neutral-500 dark:text-neutral-400">{{ __('Configuration') }}</dt>
+                <dd class="mt-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ $health['configuration_state'] === 'ready' ? __('Ready') : __('Not ready') }}</dd>
+                <dd class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                    {{ $health['configuration_codes'] === [] ? __('No setup issue detected') : implode(', ', $health['configuration_codes']) }}
+                </dd>
+            </div>
+        </dl>
+
+        @if ($health['last_worker_result'])
+            <p class="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
+                {{ __('Latest observed worker action: :kind · :state · :time', [
+                    'kind' => $health['last_worker_result']['kind'],
+                    'state' => $health['last_worker_result']['state'],
+                    'time' => \Illuminate\Support\Carbon::parse($health['last_worker_result']['observed_at'])->format('Y-m-d H:i:s'),
+                ]) }}
+            </p>
+        @endif
+    </section>
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
         <div class="app-filter-grid">
