@@ -37,6 +37,14 @@ class PaymentOperationsAccessService
         $this->assertPermission($actor, 'payments.support.resend');
     }
 
+    public function assertCanManageSettings(User $actor, int $companyId): void
+    {
+        $this->assertPermission($actor, 'payments.settings.manage');
+        if ($this->accountingContext->defaultCompanyId() !== $companyId) {
+            throw new AuthorizationException(__('These payment settings are outside your company.'));
+        }
+    }
+
     private function assertPermission(User $actor, string $permission): void
     {
         if (! $actor->isActive() || $actor->isCustomerPortalUser()

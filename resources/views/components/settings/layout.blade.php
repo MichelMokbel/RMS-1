@@ -10,6 +10,7 @@
             $user = auth()->user();
             $canManageFinanceSettings = $user && ($user->hasAnyRole(['admin', 'manager']) || $user->can('finance.access'));
             $canManagePosDevices = $canManageFinanceSettings || ($user && $user->can('settings.pos_terminals.manage'));
+            $canManagePaymentSettings = $user && ($user->hasRole('admin') || $user->can('payments.settings.manage'));
         @endphp
 
         <flux:navlist>
@@ -32,6 +33,9 @@
             @endif
             @if($canManagePosDevices)
                 <flux:navlist.item :href="route('settings.pos-terminals')" wire:navigate>{{ __('POS Devices') }}</flux:navlist.item>
+            @endif
+            @if($canManagePaymentSettings)
+                <flux:navlist.item :href="route('settings.payments')" wire:navigate>{{ __('Customer Payments') }}</flux:navlist.item>
             @endif
             @if(auth()->check() && (auth()->user()->hasAnyRole(['admin','manager']) || auth()->user()->can('help.manage')))
                 <flux:navlist.item :href="route('help.manage')" wire:navigate>{{ __('Manage Help') }}</flux:navlist.item>

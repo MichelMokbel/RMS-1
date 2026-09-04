@@ -50,7 +50,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Customer Payments · SkipCash') }}</h1>
             <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-300">{{ __('Verified payment, RMS completion, email, and settlement are shown separately.') }}</p>
         </div>
-        <flux:button :href="route('receivables.payments.index')" variant="ghost" wire:navigate>{{ __('Payment receipts') }}</flux:button>
+        <div class="flex flex-wrap gap-2">
+            @if(auth()->user()?->hasRole('admin') || auth()->user()?->can('payments.settings.manage'))
+                <flux:button :href="route('settings.payments')" variant="ghost" wire:navigate>{{ __('Payment settings') }}</flux:button>
+            @endif
+            <flux:button :href="route('receivables.payments.index')" variant="ghost" wire:navigate>{{ __('Payment receipts') }}</flux:button>
+        </div>
     </div>
 
     <div class="flex gap-2" role="tablist" aria-label="{{ __('SkipCash checkout view') }}">

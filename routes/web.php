@@ -1278,6 +1278,10 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|payments.support.
     Volt::route('receivables/payments/skipcash/{checkout}', 'receivables.payments.skipcash.show')->name('receivables.payments.skipcash.show');
 });
 
+Route::middleware(['auth', 'active', 'role_or_permission:admin|payments.settings.manage'])->group(function () {
+    Volt::route('settings/payments', 'settings.payments')->name('settings.payments');
+});
+
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|receivables.access'])->group(function () {
     Volt::route('receivables/payments', 'receivables.payments.index')->name('receivables.payments.index');
     Volt::route('receivables/payments/create', 'receivables.payments.create')->name('receivables.payments.create');

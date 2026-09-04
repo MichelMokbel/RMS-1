@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\Accounting\BankingController as AccountingBankingCo
 use App\Http\Controllers\Api\Accounting\BudgetController as AccountingBudgetController;
 use App\Http\Controllers\Api\Accounting\GatewaySettlementImportController;
 use App\Http\Controllers\Api\Accounting\JobController as AccountingJobController;
+use App\Http\Controllers\Api\Accounting\PaymentSettingsController;
 use App\Http\Controllers\Api\Accounting\PeriodCloseController as AccountingPeriodCloseController;
 use App\Http\Controllers\Api\Accounting\ReportController as AccountingReportController;
 use App\Http\Controllers\Api\AP\ApInvoiceController;
@@ -197,6 +198,13 @@ Route::middleware(['api', $apiAuthMiddleware, 'reject.customer.backoffice'])->gr
     Route::get('accounting/period-close', [AccountingPeriodCloseController::class, 'index'])->name('api.accounting.period-close.index');
     Route::get('accounting/period-close/{period}', [AccountingPeriodCloseController::class, 'show'])->name('api.accounting.period-close.show');
     Route::get('accounting/reports/summary', [AccountingReportController::class, 'summary'])->name('api.accounting.reports.summary');
+
+    Route::middleware(['active', 'role_or_permission:admin|payments.settings.manage'])->group(function () {
+        Route::get('accounting/payment-settings', [PaymentSettingsController::class, 'show'])
+            ->name('api.accounting.payment-settings.show');
+        Route::put('accounting/payment-settings', [PaymentSettingsController::class, 'update'])
+            ->name('api.accounting.payment-settings.update');
+    });
 
     Route::middleware(['active', 'can:gateway_settlements.review'])->group(function () {
         Route::get('accounting/gateway-settlement-imports', [GatewaySettlementImportController::class, 'index'])

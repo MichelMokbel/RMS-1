@@ -2,17 +2,20 @@
 
 namespace App\Services\Payments;
 
+use App\Models\AccountingAuditLog;
 use App\Models\AccountingCompany;
 use App\Models\PaymentSetting;
 use App\Models\User;
 use App\Services\Accounting\AccountingAuditLogService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class PaymentSettingsService
 {
     public function __construct(
         private readonly AccountingAuditLogService $auditLog,
+        private readonly PaymentOperationsAccessService $access,
     ) {}
 
     public function forCompany(int $companyId): ?PaymentSetting
@@ -20,10 +23,62 @@ class PaymentSettingsService
         return PaymentSetting::query()->where('company_id', $companyId)->first();
     }
 
+    /** @return array<string, mixed> */
+    public function payload(PaymentSetting $settings): array
+    {
+        return [
+            'company_id' => (int) $settings->company_id,
+            'checkout_duration_minutes' => (int) $settings->checkout_duration_minutes,
+            'booking_cutoff_time' => substr((string) $settings->booking_cutoff_time, 0, 5),
+            'timezone' => (string) $settings->timezone,
+            'order_support_phone' => (string) $settings->order_support_phone,
+            'updated_at' => $settings->updated_at?->toISOString(),
+            'version' => $this->version($settings),
+        ];
+    }
+
+    public function version(PaymentSetting $settings): string
+    {
+        return hash('sha256', json_encode([
+            'company_id' => (int) $settings->company_id,
+            'checkout_duration_minutes' => (int) $settings->checkout_duration_minutes,
+            'booking_cutoff_time' => substr((string) $settings->booking_cutoff_time, 0, 8),
+            'timezone' => (string) $settings->timezone,
+            'order_support_phone' => (string) $settings->order_support_phone,
+            'updated_at' => $settings->updated_at?->format('Y-m-d H:i:s.u'),
+        ], JSON_THROW_ON_ERROR));
+    }
+
     /**
      * @param  array<string, mixed>  $data
      */
     public function save(int $companyId, array $data, int $actorId): PaymentSetting
+    {
+        return $this->persist($companyId, $data, $actorId)['settings'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{settings: PaymentSetting, audit_id: int}
+     */
+    public function saveVersioned(int $companyId, array $data, User $actor, string $expectedVersion): array
+    {
+        $this->access->assertCanManageSettings($actor, $companyId);
+
+        if (! Schema::hasTable('accounting_audit_logs')) {
+            throw ValidationException::withMessages([
+                'settings' => __('Payment settings cannot be changed while audit storage is unavailable.'),
+            ]);
+        }
+
+        return $this->persist($companyId, $data, (int) $actor->id, $expectedVersion);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{settings: PaymentSetting, audit_id: int}
+     */
+    private function persist(int $companyId, array $data, int $actorId, ?string $expectedVersion = null): array
     {
         $company = AccountingCompany::query()->find($companyId);
         $actor = User::query()->find($actorId);
@@ -74,12 +129,17 @@ class PaymentSettingsService
             $duration,
             $cutoff,
             $timezone,
-            $supportPhone
-        ): PaymentSetting {
+            $supportPhone,
+            $expectedVersion,
+        ): array {
             $settings = PaymentSetting::query()
                 ->where('company_id', $companyId)
                 ->lockForUpdate()
                 ->first();
+
+            if ($expectedVersion !== null && (! $settings || ! hash_equals($this->version($settings), $expectedVersion))) {
+                throw new PaymentSettingsConflictException($settings ? $this->payload($settings) : []);
+            }
 
             $before = $settings?->only([
                 'checkout_duration_minutes',
@@ -117,7 +177,18 @@ class PaymentSettingsService
                 $companyId,
             );
 
-            return $settings->refresh();
+            $auditId = (int) AccountingAuditLog::query()
+                ->where('action', 'payment.settings.updated')
+                ->where('actor_id', $actorId)
+                ->where('subject_type', PaymentSetting::class)
+                ->where('subject_id', $settings->id)
+                ->latest('id')
+                ->value('id');
+
+            return [
+                'settings' => $settings->refresh(),
+                'audit_id' => $auditId,
+            ];
         });
     }
 }

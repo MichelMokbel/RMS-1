@@ -12,6 +12,7 @@ use App\Models\Payment;
 use App\Models\PaymentCheckoutAttempt;
 use App\Models\PaymentProviderEvent;
 use App\Models\PaymentProviderTransaction;
+use App\Models\PaymentSetting;
 use App\Models\PaymentSource;
 use App\Models\User;
 use App\Services\Accounting\AccountingAuditLogService;
@@ -19,6 +20,7 @@ use App\Services\Payments\PaymentOperationsEvidenceService;
 use App\Services\Payments\PaymentOperationsQueryService;
 use App\Services\Payments\PaymentOperationsRecoveryService;
 use App\Services\Payments\PaymentOperationsTrackingService;
+use App\Services\Payments\PaymentSettingsService;
 use App\Services\Payments\SkipCashRecoveryService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -27,6 +29,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Livewire\Volt\Volt;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -406,4 +409,154 @@ it('accepts an exact processing retry once without creating another payment', fu
     ]);
     app(PaymentOperationsTrackingService::class)->observeOutstanding();
     Queue::assertPushed(RetrySkipCashPaymentProcessing::class, 3);
+});
+
+it('returns and updates versioned payment settings without changing an active checkout snapshot', function (): void {
+    $staff = User::factory()->create(['status' => 'active']);
+    $staff->givePermissionTo('payments.settings.manage');
+    $settings = PaymentSetting::query()->create([
+        'company_id' => $this->company->id,
+        'checkout_duration_minutes' => 15,
+        'booking_cutoff_time' => '23:00:00',
+        'timezone' => PaymentSetting::TIMEZONE,
+        'order_support_phone' => '+974 5555 0000',
+        'created_by' => $staff->id,
+        'updated_by' => $staff->id,
+    ]);
+    $attempt = ($this->makeAttempt)([
+        'state' => 'pending',
+        'last_error_code' => null,
+        'expires_at' => now('UTC')->addMinutes(15),
+        'terms_snapshot' => [
+            'checkout_duration_minutes' => 15,
+            'booking_cutoff_time' => '23:00',
+            'timezone' => PaymentSetting::TIMEZONE,
+        ],
+    ]);
+    $originalExpiry = $attempt->expires_at->toISOString();
+    $originalSnapshot = $attempt->terms_snapshot;
+
+    $response = $this->actingAs($staff)
+        ->getJson(route('api.accounting.payment-settings.show'))
+        ->assertOk()
+        ->assertJsonPath('settings.checkout_duration_minutes', 15)
+        ->assertJsonPath('settings.timezone', PaymentSetting::TIMEZONE);
+    $version = (string) $response->json('settings.version');
+
+    $updated = $this->actingAs($staff)
+        ->putJson(route('api.accounting.payment-settings.update'), [
+            'checkout_duration_minutes' => 25,
+            'booking_cutoff_time' => '22:15',
+            'order_support_phone' => '+974 4444 0000',
+            'expected_version' => $version,
+        ])
+        ->assertOk()
+        ->assertJsonPath('settings.checkout_duration_minutes', 25)
+        ->assertJsonPath('settings.booking_cutoff_time', '22:15')
+        ->assertJsonPath('settings.order_support_phone', '+974 4444 0000');
+
+    expect($updated->json('settings.version'))->not->toBe($version)
+        ->and($updated->json('audit_id'))->toBeInt()
+        ->and((int) $updated->json('audit_id'))->toBeGreaterThan(0)
+        ->and($settings->fresh()->checkout_duration_minutes)->toBe(25)
+        ->and($attempt->fresh()->expires_at->toISOString())->toBe($originalExpiry)
+        ->and($attempt->fresh()->terms_snapshot)->toBe($originalSnapshot)
+        ->and(AccountingAuditLog::query()->where('action', 'payment.settings.updated')->count())->toBe(1);
+});
+
+it('rejects stale payment settings edits and returns the current version', function (): void {
+    $admin = User::factory()->create(['status' => 'active']);
+    $admin->assignRole('admin');
+    $settings = PaymentSetting::query()->create([
+        'company_id' => $this->company->id,
+        'checkout_duration_minutes' => 15,
+        'booking_cutoff_time' => '23:00:00',
+        'timezone' => PaymentSetting::TIMEZONE,
+        'order_support_phone' => '+974 5555 0000',
+        'created_by' => $admin->id,
+        'updated_by' => $admin->id,
+    ]);
+    $service = app(PaymentSettingsService::class);
+    $staleVersion = $service->version($settings);
+    $service->saveVersioned($this->company->id, [
+        'checkout_duration_minutes' => 20,
+        'booking_cutoff_time' => '22:30',
+        'timezone' => PaymentSetting::TIMEZONE,
+        'order_support_phone' => '+974 5555 0000',
+    ], $admin, $staleVersion);
+
+    $this->actingAs($admin)
+        ->putJson(route('api.accounting.payment-settings.update'), [
+            'checkout_duration_minutes' => 30,
+            'booking_cutoff_time' => '21:30',
+            'order_support_phone' => '+974 3333 0000',
+            'expected_version' => $staleVersion,
+        ])
+        ->assertStatus(409)
+        ->assertJsonPath('code', 'PAYMENT_SETTINGS_STALE')
+        ->assertJsonPath('settings.checkout_duration_minutes', 20);
+
+    expect($settings->fresh()->checkout_duration_minutes)->toBe(20)
+        ->and(AccountingAuditLog::query()->where('action', 'payment.settings.updated')->count())->toBe(1);
+});
+
+it('keeps payment settings unavailable to unauthorized staff and customer accounts', function (): void {
+    $settings = PaymentSetting::query()->create([
+        'company_id' => $this->company->id,
+        'checkout_duration_minutes' => 15,
+        'booking_cutoff_time' => '23:00:00',
+        'timezone' => PaymentSetting::TIMEZONE,
+        'order_support_phone' => '+974 5555 0000',
+    ]);
+    $staff = User::factory()->create(['status' => 'active']);
+    $customerUser = User::factory()->create(['status' => 'active']);
+    Role::findOrCreate('customer', 'web');
+    $customerUser->assignRole('customer');
+    $customerUser->givePermissionTo('payments.settings.manage');
+
+    $this->actingAs($staff)
+        ->getJson(route('api.accounting.payment-settings.show'))
+        ->assertForbidden();
+    $this->actingAs($staff)
+        ->get(route('settings.payments'))
+        ->assertForbidden();
+    $this->actingAs($customerUser)
+        ->getJson(route('api.accounting.payment-settings.show'))
+        ->assertForbidden();
+
+    expect($settings->fresh()->checkout_duration_minutes)->toBe(15)
+        ->and(AccountingAuditLog::query()->where('action', 'payment.settings.updated')->count())->toBe(0);
+});
+
+it('renders the payment settings form for an authorized operator', function (): void {
+    $staff = User::factory()->create(['status' => 'active']);
+    $staff->givePermissionTo('payments.settings.manage');
+    PaymentSetting::query()->create([
+        'company_id' => $this->company->id,
+        'checkout_duration_minutes' => 15,
+        'booking_cutoff_time' => '23:00:00',
+        'timezone' => PaymentSetting::TIMEZONE,
+        'order_support_phone' => '+974 5555 0000',
+        'created_by' => $staff->id,
+        'updated_by' => $staff->id,
+    ]);
+
+    $this->actingAs($staff)
+        ->get(route('settings.payments'))
+        ->assertOk()
+        ->assertSee('Checkout duration')
+        ->assertSee('Membership booking change cutoff')
+        ->assertSee('SkipCash credentials and signing secrets');
+
+    Volt::test('settings.payments')
+        ->set('checkout_duration_minutes', 35)
+        ->set('booking_cutoff_time', '21:45')
+        ->set('order_support_phone', '+974 2222 0000')
+        ->call('save')
+        ->assertHasNoErrors()
+        ->assertSet('checkout_duration_minutes', 35)
+        ->assertSet('booking_cutoff_time', '21:45')
+        ->assertSet('order_support_phone', '+974 2222 0000');
+
+    expect(PaymentSetting::query()->where('company_id', $this->company->id)->value('checkout_duration_minutes'))->toBe(35);
 });
