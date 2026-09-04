@@ -7,6 +7,7 @@ use App\Mail\DailyDishOrderCustomerMail;
 use App\Models\Order;
 use App\Models\PaymentCheckoutAttempt;
 use App\Services\Mail\EmailLogService;
+use App\Services\Payments\PaymentOperationsTrackingService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -35,7 +36,7 @@ class SendSkipCashOrderConfirmation implements ShouldQueue
         };
     }
 
-    public function handle(EmailLogService $emailLogs): void
+    public function handle(EmailLogService $emailLogs, PaymentOperationsTrackingService $operations): void
     {
         $slotKey = self::slotForAudience($this->audience);
         if ($slotKey === null) {
@@ -71,7 +72,7 @@ class SendSkipCashOrderConfirmation implements ShouldQueue
             ? array_values(array_filter([(string) ($snapshot['customer_email'] ?? '')]))
             : array_values(array_filter((array) ($snapshot['admin_emails'] ?? [])));
         if ($recipients === []) {
-            $this->markFailed($this->audience === 'admin' ? 'ADMIN_RECIPIENT_MISSING' : 'CUSTOMER_RECIPIENT_MISSING', false);
+            $this->markFailed($this->audience === 'admin' ? 'ADMIN_RECIPIENT_MISSING' : 'CUSTOMER_RECIPIENT_MISSING', false, $operations);
 
             return;
         }
@@ -80,7 +81,7 @@ class SendSkipCashOrderConfirmation implements ShouldQueue
             ->orderBy('scheduled_date')
             ->get();
         if ($orders->isEmpty()) {
-            $this->markFailed('ORDERS_UNAVAILABLE');
+            $this->markFailed('ORDERS_UNAVAILABLE', true, $operations);
 
             return;
         }
@@ -106,7 +107,7 @@ class SendSkipCashOrderConfirmation implements ShouldQueue
                 );
             }
         } catch (\Throwable) {
-            $this->markFailed('EMAIL_SEND_FAILED');
+            $this->markFailed('EMAIL_SEND_FAILED', true, $operations);
 
             return;
         }
@@ -125,19 +126,20 @@ class SendSkipCashOrderConfirmation implements ShouldQueue
             ];
             $attempt->update(['notification_dispatch' => $dispatch]);
         });
+        $operations->resolveConfirmationIssue($this->attemptId, $this->audience);
     }
 
-    private function markFailed(string $code, bool $canRetry = true): void
+    private function markFailed(string $code, bool $canRetry, PaymentOperationsTrackingService $operations): void
     {
         $slotKey = self::slotForAudience($this->audience);
         if ($slotKey === null) {
             return;
         }
 
-        DB::transaction(function () use ($code, $canRetry, $slotKey): void {
+        $terminal = DB::transaction(function () use ($code, $canRetry, $slotKey): bool {
             $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->find($this->attemptId);
             if (! $attempt) {
-                return;
+                return false;
             }
             $dispatch = is_array($attempt->notification_dispatch) ? $attempt->notification_dispatch : [];
             $slot = is_array($dispatch[$slotKey] ?? null) ? $dispatch[$slotKey] : [];
@@ -153,7 +155,12 @@ class SendSkipCashOrderConfirmation implements ShouldQueue
                 'failed_at' => now('UTC')->toIso8601String(),
             ];
             $attempt->update(['notification_dispatch' => $dispatch]);
+
+            return ! $retryable;
         });
+        if ($terminal) {
+            $operations->recordConfirmationFailure($this->attemptId, $this->audience, $code);
+        }
     }
 
     private function retryDelayMinutes(int $attempts): int

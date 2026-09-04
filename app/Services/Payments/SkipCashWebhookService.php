@@ -160,6 +160,7 @@ class SkipCashWebhookService
                 $context['signed'],
                 $details,
             );
+            $this->operations->resolveProviderEvidenceIssue((int) $context['attempt_id']);
             $this->activation->complete((int) $context['attempt_id'], $providerTransaction->id);
             $this->markEventProcessed((int) $context['event_id']);
             $this->operations->resolveProcessingIssue((int) $context['attempt_id']);
@@ -228,12 +229,16 @@ class SkipCashWebhookService
                 ]);
             }
         }, 3);
-        $this->operations->recordProcessingFailure($attemptId, $code);
+        if ($this->isProviderEvidenceFailure($code)) {
+            $this->operations->recordProviderEvidenceIssue($attemptId, $code);
+        } else {
+            $this->operations->recordProcessingFailure($attemptId, $code);
+        }
     }
 
     private function recordNonPaidEvent(int $attemptId, int $eventId, string $status): void
     {
-        DB::transaction(function () use ($attemptId, $eventId, $status): void {
+        $requiresReview = DB::transaction(function () use ($attemptId, $eventId, $status): bool {
             $event = PaymentProviderEvent::query()->lockForUpdate()->findOrFail($eventId);
             $event->update([
                 'processing_state' => 'processed',
@@ -242,12 +247,12 @@ class SkipCashWebhookService
                 'error_code' => null,
             ]);
             if (! in_array($status, ['3', '4', '5'], true)) {
-                return;
+                return false;
             }
 
             $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->findOrFail($attemptId);
             if ($attempt->state === 'completed' || is_array($attempt->financial_intent) && $attempt->financial_intent !== []) {
-                return;
+                return true;
             }
             $attempt->update([
                 'state' => 'declined',
@@ -262,7 +267,12 @@ class SkipCashWebhookService
                     'hold_state' => 'released',
                     'released_at' => now('UTC'),
                 ]);
+
+            return false;
         }, 3);
+        if ($requiresReview) {
+            $this->operations->recordProviderEvidenceIssue($attemptId, 'PROVIDER_REVERSAL_REVIEW');
+        }
     }
 
     /** @param array<string, mixed> $context
@@ -329,7 +339,7 @@ class SkipCashWebhookService
     {
         $status = (string) ($details['status_id'] ?? '');
         $normalized = $this->normalizedStatus($status);
-        DB::transaction(function () use ($context, $status, $normalized): void {
+        $requiresReview = DB::transaction(function () use ($context, $status, $normalized): bool {
             $transaction = PaymentProviderTransaction::query()->lockForUpdate()
                 ->where('attempt_id', $context['attempt_id'])
                 ->where('provider_payment_id', $context['provider_payment_id'])
@@ -349,17 +359,27 @@ class SkipCashWebhookService
             }
 
             if (in_array($status, ['3', '4', '5'], true)) {
+                if ($attempt->state === 'completed' || is_array($attempt->financial_intent) && $attempt->financial_intent !== []) {
+                    return true;
+                }
                 $this->declineAttemptIfUnpaid((int) $context['attempt_id']);
             }
+
+            return false;
         }, 3);
+        if ($requiresReview) {
+            $this->operations->recordProviderEvidenceIssue((int) $context['attempt_id'], 'PROVIDER_REVERSAL_REVIEW');
+        } else {
+            $this->operations->resolveProviderEvidenceIssue((int) $context['attempt_id']);
+        }
     }
 
     private function recordKnownTransactionError(int $attemptId, string $code): void
     {
-        DB::transaction(function () use ($attemptId, $code): void {
+        $exhausted = DB::transaction(function () use ($attemptId, $code): bool {
             $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->find($attemptId);
             if (! $attempt || $attempt->state === 'completed') {
-                return;
+                return false;
             }
             $attempts = (int) $attempt->provider_detail_recovery_attempts + 1;
             $retryable = $attempts < (int) config('payments.skipcash.recovery_max_attempts', 5);
@@ -370,7 +390,12 @@ class SkipCashWebhookService
                     ? now('UTC')->addMinutes((int) config('payments.skipcash.detail_recheck_minutes', 5))
                     : null,
             ]);
+
+            return ! $retryable;
         }, 3);
+        if ($exhausted) {
+            $this->operations->recordProviderEvidenceIssue($attemptId, $code);
+        }
     }
 
     private function declineAttemptIfUnpaid(int $attemptId): void
@@ -398,6 +423,20 @@ class SkipCashWebhookService
     {
         return ! in_array($code, [
             'CAPTURE_MISMATCH',
+            'FINISH_TIME_MISSING',
+            'FINISH_TIME_INVALID',
+            'FINISH_TIME_FUTURE',
+            'WEBHOOK_AMOUNT_INVALID',
+            'WEBHOOK_REFERENCE_INVALID',
+            'WEBHOOK_REFERENCE_UNKNOWN',
+        ], true);
+    }
+
+    private function isProviderEvidenceFailure(string $code): bool
+    {
+        return in_array($code, [
+            'CAPTURE_MISMATCH',
+            'ADDITIONAL_CAPTURE_REVIEW',
             'FINISH_TIME_MISSING',
             'FINISH_TIME_INVALID',
             'FINISH_TIME_FUTURE',

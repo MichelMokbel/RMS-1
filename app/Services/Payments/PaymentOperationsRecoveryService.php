@@ -3,6 +3,7 @@
 namespace App\Services\Payments;
 
 use App\Jobs\RetrySkipCashPaymentProcessing;
+use App\Models\AccountingAuditLog;
 use App\Models\PaymentCheckoutAttempt;
 use App\Models\PaymentProviderTransaction;
 use App\Models\User;
@@ -44,6 +45,34 @@ class PaymentOperationsRecoveryService
             if (($current['operation_uuid'] ?? null) === $operationUuid) {
                 return ['operation_uuid' => $operationUuid, 'state' => (string) ($current['state'] ?? 'queued')];
             }
+            $fingerprint = hash('sha256', 'payment_processing_retry|'.$attempt->id);
+            $accepted = AccountingAuditLog::query()
+                ->where('subject_type', PaymentCheckoutAttempt::class)
+                ->where('subject_id', $attempt->id)
+                ->where('action', 'payment.operations.recovery_accepted')
+                ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.operation_uuid')) = ?", [$operationUuid])
+                ->latest('id')
+                ->first();
+            if ($accepted) {
+                if (($accepted->payload['input_fingerprint'] ?? null) !== $fingerprint
+                    || ($accepted->payload['kind'] ?? null) !== 'payment_processing_retry') {
+                    throw ValidationException::withMessages(['operation_uuid' => __('This operation identifier was used for different input.')]);
+                }
+                $outcome = AccountingAuditLog::query()
+                    ->where('subject_type', PaymentCheckoutAttempt::class)
+                    ->where('subject_id', $attempt->id)
+                    ->whereIn('action', [
+                        'payment.operations.recovery_succeeded',
+                        'payment.operations.recovery_blocked',
+                        'payment.operations.recovery_failed',
+                    ])
+                    ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.operation_uuid')) = ?", [$operationUuid])
+                    ->latest('id')
+                    ->first();
+                $state = $outcome ? (string) str($outcome->action)->afterLast('_') : 'queued';
+
+                return ['operation_uuid' => $operationUuid, 'state' => $state];
+            }
             if (in_array((string) ($current['state'] ?? ''), ['queued', 'running'], true)) {
                 throw ValidationException::withMessages(['retry' => __('Payment recovery is already in progress.')]);
             }
@@ -60,7 +89,6 @@ class PaymentOperationsRecoveryService
                 throw ValidationException::withMessages(['retry' => __('This checkout has no eligible verified processing work to retry.')]);
             }
 
-            $fingerprint = hash('sha256', 'payment_processing_retry|'.$attempt->id);
             $tracking['recovery'] = [
                 'operation_uuid' => $operationUuid,
                 'kind' => 'payment_processing_retry',

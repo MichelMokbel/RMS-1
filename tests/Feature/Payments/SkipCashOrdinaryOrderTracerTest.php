@@ -5,6 +5,7 @@ use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\DailyDishMenu;
 use App\Models\DailyDishMenuItem;
+use App\Models\EmailLog;
 use App\Models\LedgerAccount;
 use App\Models\MealSubscription;
 use App\Models\MenuItem;
@@ -21,6 +22,7 @@ use App\Services\AR\ArInvoiceService;
 use App\Services\Customers\CustomerMergeService;
 use App\Services\Payments\FakeSkipCashProvider;
 use App\Services\Payments\PaymentOperationsRecoveryService;
+use App\Services\Payments\PaymentOperationsResendService;
 use App\Services\Payments\SkipCashProvider;
 use App\Services\Payments\SkipCashRecoveryService;
 use Carbon\Carbon;
@@ -228,6 +230,44 @@ it('creates a paid ordinary SkipCash order only after verified provider evidence
         ->and(DB::table('bank_transactions')->where('source_type', 'ar_payment')->where('source_id', $payment->id)->count())->toBe(0)
         ->and($attempt->notification_dispatch['customer_confirmation']['state'])->toBe('sent')
         ->and($attempt->notification_dispatch['admin_confirmation']['state'])->toBe('sent');
+
+    $admin = User::factory()->create(['status' => 'active']);
+    $admin->assignRole(Role::findOrCreate('admin', 'web'));
+    $resends = app(PaymentOperationsResendService::class);
+    $resendUuid = (string) Str::uuid();
+    $snapshotHash = $resends->snapshotHash($attempt);
+    $before = [
+        'orders' => DB::table('orders')->count(),
+        'invoices' => DB::table('ar_invoices')->count(),
+        'payments' => Payment::query()->count(),
+        'allocations' => DB::table('payment_allocations')->count(),
+    ];
+    $resends->resend($attempt->id, $resendUuid, (string) $snapshotHash, false, $admin);
+    $resendReplay = $resends->resend($attempt->id, $resendUuid, (string) $snapshotHash, false, $admin);
+
+    $attempt->refresh();
+    expect($attempt->operations_tracking['resend']['state'])->toBe('sent')
+        ->and($resendReplay['state'])->toBe('sent')
+        ->and($attempt->notification_dispatch['customer_confirmation']['state'])->toBe('sent')
+        ->and(EmailLog::query()->where('category', 'skipcash_order_confirmation_resend')->count())->toBe(1)
+        ->and(DB::table('orders')->count())->toBe($before['orders'])
+        ->and(DB::table('ar_invoices')->count())->toBe($before['invoices'])
+        ->and(Payment::query()->count())->toBe($before['payments'])
+        ->and(DB::table('payment_allocations')->count())->toBe($before['allocations']);
+
+    $unknownDispatch = $attempt->notification_dispatch;
+    $unknownDispatch['customer_confirmation'] = ['state' => 'unknown'];
+    $attempt->update(['notification_dispatch' => $unknownDispatch]);
+    expect(fn () => $resends->resend(
+        $attempt->id,
+        (string) Str::uuid(),
+        (string) $snapshotHash,
+        false,
+        $admin,
+    ))->toThrow(ValidationException::class);
+    $resends->resend($attempt->id, (string) Str::uuid(), (string) $snapshotHash, true, $admin);
+    expect($attempt->fresh()->notification_dispatch['customer_confirmation']['state'])->toBe('unknown')
+        ->and(EmailLog::query()->where('category', 'skipcash_order_confirmation_resend')->count())->toBe(2);
 
     $attempt->update([
         'notification_dispatch' => [

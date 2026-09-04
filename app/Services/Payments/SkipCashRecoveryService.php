@@ -178,6 +178,9 @@ class SkipCashRecoveryService
                     'next_recovery_at' => null,
                 ]);
             $changed += $updated;
+            if ($updated) {
+                $this->operations->recordProviderEvidenceIssue((int) $id, 'PROVIDER_CREATE_UNKNOWN');
+            }
         }
 
         return $changed;

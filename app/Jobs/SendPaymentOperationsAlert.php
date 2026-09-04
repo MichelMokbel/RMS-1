@@ -21,6 +21,7 @@ class SendPaymentOperationsAlert implements ShouldQueue
 
     public function __construct(
         public readonly int $attemptId,
+        public readonly string $slot,
         public readonly string $episodeUuid,
     ) {}
 
@@ -32,15 +33,16 @@ class SendPaymentOperationsAlert implements ShouldQueue
         $context = DB::transaction(function () use ($trackingService): ?array {
             $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->find($this->attemptId);
             $tracking = is_array($attempt?->operations_tracking) ? $attempt->operations_tracking : [];
-            $issue = $tracking['issues']['processing'] ?? null;
-            if (! $attempt || ! is_array($issue) || ($issue['episode_uuid'] ?? null) !== $this->episodeUuid) {
+            $issue = $tracking['issues'][$this->slot] ?? null;
+            if (! $attempt || ! in_array($this->slot, PaymentOperationsTrackingService::ISSUE_SLOTS, true)
+                || ! is_array($issue) || ($issue['episode_uuid'] ?? null) !== $this->episodeUuid) {
                 return null;
             }
             if (! empty($issue['resolved_at'])) {
                 $issue['alert']['state'] = 'suppressed';
                 $issue['alert']['suppressed_at'] = now('UTC')->toIso8601String();
                 $issue['alert']['next_attempt_at'] = null;
-                $tracking['issues']['processing'] = $issue;
+                $tracking['issues'][$this->slot] = $issue;
                 $attempt->update([
                     'operations_tracking' => $tracking,
                     'operations_next_action_at' => $trackingService->nextActionAt($tracking),
@@ -69,7 +71,7 @@ class SendPaymentOperationsAlert implements ShouldQueue
             $alert['attempts'] = max(0, (int) ($alert['attempts'] ?? 0)) + 1;
             $alert['next_attempt_at'] = null;
             $issue['alert'] = $alert;
-            $tracking['issues']['processing'] = $issue;
+            $tracking['issues'][$this->slot] = $issue;
             $attempt->update([
                 'operations_tracking' => $tracking,
                 'operations_next_action_at' => $trackingService->nextActionAt($tracking),
@@ -112,6 +114,7 @@ class SendPaymentOperationsAlert implements ShouldQueue
                     context: [
                         'checkout_attempt_id' => $this->attemptId,
                         'issue_episode_uuid' => $this->episodeUuid,
+                        'issue_slot' => $this->slot,
                         'notification_kind' => 'admin_issue_alert',
                         'reason' => 'mail_delivery_disabled',
                     ],
@@ -124,6 +127,7 @@ class SendPaymentOperationsAlert implements ShouldQueue
                     context: [
                         'checkout_attempt_id' => $this->attemptId,
                         'issue_episode_uuid' => $this->episodeUuid,
+                        'issue_slot' => $this->slot,
                         'notification_kind' => 'admin_issue_alert',
                     ],
                 );
@@ -137,7 +141,7 @@ class SendPaymentOperationsAlert implements ShouldQueue
         DB::transaction(function () use ($emailLog, $trackingService, $auditLog): void {
             $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->find($this->attemptId);
             $tracking = is_array($attempt?->operations_tracking) ? $attempt->operations_tracking : [];
-            $issue = $tracking['issues']['processing'] ?? null;
+            $issue = $tracking['issues'][$this->slot] ?? null;
             if (! $attempt || ! is_array($issue) || ($issue['episode_uuid'] ?? null) !== $this->episodeUuid) {
                 return;
             }
@@ -150,13 +154,14 @@ class SendPaymentOperationsAlert implements ShouldQueue
             $alert['email_log_id'] = (int) $emailLog->id;
             unset($alert['claim_uuid'], $alert['claimed_at']);
             $issue['alert'] = $alert;
-            $tracking['issues']['processing'] = $issue;
+            $tracking['issues'][$this->slot] = $issue;
             $attempt->update([
                 'operations_tracking' => $tracking,
                 'operations_next_action_at' => $trackingService->nextActionAt($tracking),
             ]);
             $auditLog->log('payment.operations.alert_sent', null, $attempt, [
                 'episode_uuid' => $this->episodeUuid,
+                'slot' => $this->slot,
                 'email_log_id' => (int) $emailLog->id,
             ], (int) $attempt->company_id);
         }, 3);
@@ -171,7 +176,7 @@ class SendPaymentOperationsAlert implements ShouldQueue
         DB::transaction(function () use ($code, $canRetry, $trackingService, $auditLog): void {
             $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->find($this->attemptId);
             $tracking = is_array($attempt?->operations_tracking) ? $attempt->operations_tracking : [];
-            $issue = $tracking['issues']['processing'] ?? null;
+            $issue = $tracking['issues'][$this->slot] ?? null;
             if (! $attempt || ! is_array($issue) || ($issue['episode_uuid'] ?? null) !== $this->episodeUuid) {
                 return;
             }
@@ -185,15 +190,16 @@ class SendPaymentOperationsAlert implements ShouldQueue
             $alert['next_attempt_at'] = $retryable
                 ? now('UTC')->addMinutes($delays[min($attempts - 1, count($delays) - 1)])->toIso8601String()
                 : null;
-            unset($alert['claim_uuid'], $alert['claimed_at']);
+            unset($alert['claim_uuid'], $alert['claimed_at'], $alert['queued_at']);
             $issue['alert'] = $alert;
-            $tracking['issues']['processing'] = $issue;
+            $tracking['issues'][$this->slot] = $issue;
             $attempt->update([
                 'operations_tracking' => $tracking,
                 'operations_next_action_at' => $trackingService->nextActionAt($tracking),
             ]);
             $auditLog->log('payment.operations.alert_'.$alert['state'], null, $attempt, [
                 'episode_uuid' => $this->episodeUuid,
+                'slot' => $this->slot,
                 'reason_code' => $code,
             ], (int) $attempt->company_id);
         }, 3);

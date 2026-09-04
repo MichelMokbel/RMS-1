@@ -10,11 +10,16 @@ use App\Models\EmailLog;
 use App\Models\LedgerAccount;
 use App\Models\Payment;
 use App\Models\PaymentCheckoutAttempt;
+use App\Models\PaymentProviderEvent;
 use App\Models\PaymentProviderTransaction;
 use App\Models\PaymentSource;
 use App\Models\User;
+use App\Services\Accounting\AccountingAuditLogService;
+use App\Services\Payments\PaymentOperationsEvidenceService;
+use App\Services\Payments\PaymentOperationsQueryService;
 use App\Services\Payments\PaymentOperationsRecoveryService;
 use App\Services\Payments\PaymentOperationsTrackingService;
+use App\Services\Payments\SkipCashRecoveryService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -130,7 +135,7 @@ it('records one immediate alert intent for a finance blocked verified payment', 
         ->and($attempt->notification_snapshots['operations_alerts'][$issue['episode_uuid']]['admin_emails'])->toBe(['ops@example.test'])
         ->and(AccountingAuditLog::query()->where('action', 'payment.operations.issue_opened')->count())->toBe(1)
         ->and(AccountingAuditLog::query()->where('action', 'payment.operations.alert_intended')->count())->toBe(1);
-    Queue::assertPushed(SendPaymentOperationsAlert::class, 1);
+    Queue::assertPushed(SendPaymentOperationsAlert::class, fn ($job): bool => $job->slot === 'processing');
 });
 
 it('sends one administrator alert for an unresolved immediate issue', function (): void {
@@ -162,11 +167,104 @@ it('waits fifteen minutes before alerting on a temporary processing issue', func
 
         Carbon::setTestNow('2026-09-04 10:15:00 UTC');
         $service->observeOutstanding();
-        Queue::assertPushed(SendPaymentOperationsAlert::class, 1);
+        Queue::assertPushed(SendPaymentOperationsAlert::class, fn ($job): bool => $job->slot === 'processing');
         expect(data_get($attempt->fresh()->operations_tracking, 'issues.processing.alert.state'))->toBe('pending');
     } finally {
         Carbon::setTestNow();
     }
+});
+
+it('keeps simultaneous payment issues independent', function (): void {
+    Queue::fake([SendPaymentOperationsAlert::class]);
+    $attempt = ($this->makeAttempt)();
+    $service = app(PaymentOperationsTrackingService::class);
+
+    $service->recordProcessingFailure($attempt->id, 'FINANCIAL_PERIOD_BLOCKED');
+    $service->recordProviderEvidenceIssue($attempt->id, 'PROVIDER_REVERSAL_REVIEW');
+    $service->recordConfirmationFailure($attempt->id, 'customer', 'CUSTOMER_RECIPIENT_MISSING');
+    $service->resolveProcessingIssue($attempt->id);
+
+    $issues = $attempt->fresh()->operations_tracking['issues'];
+    expect($issues['processing']['resolved_at'])->not->toBeNull()
+        ->and($issues['provider_evidence']['resolved_at'])->toBeNull()
+        ->and($issues['customer_confirmation']['resolved_at'])->toBeNull()
+        ->and($issues['provider_evidence']['episode_uuid'])->not->toBe($issues['customer_confirmation']['episode_uuid']);
+    Queue::assertPushed(SendPaymentOperationsAlert::class, 3);
+});
+
+it('surfaces an unknown provider create outcome without creating another checkout', function (): void {
+    Queue::fake([SendPaymentOperationsAlert::class]);
+    $attempt = ($this->makeAttempt)([
+        'state' => 'pending',
+        'provider_create_outcome' => 'in_flight',
+        'provider_dispatched_at' => now('UTC')->subMinutes(2),
+        'last_error_code' => null,
+        'financial_intent' => null,
+    ]);
+
+    $result = app(SkipCashRecoveryService::class)->recover();
+
+    expect($result['marked_unknown'])->toBe(1)
+        ->and($attempt->fresh()->provider_create_outcome)->toBe('unknown')
+        ->and(data_get($attempt->fresh()->operations_tracking, 'issues.provider_evidence.reason_code'))->toBe('PROVIDER_CREATE_UNKNOWN')
+        ->and(PaymentCheckoutAttempt::query()->count())->toBe(1)
+        ->and(PaymentProviderTransaction::query()->count())->toBe(0);
+    Queue::assertPushed(SendPaymentOperationsAlert::class, 1);
+});
+
+it('returns only scoped normalized provider evidence and audits the inspection', function (): void {
+    $staff = User::factory()->create(['status' => 'active']);
+    $staff->givePermissionTo('payments.support.view');
+    DB::table('user_branch_access')->insert([
+        'user_id' => $staff->id,
+        'branch_id' => $this->branch->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    $attempt = ($this->makeAttempt)();
+    $event = PaymentProviderEvent::query()->create([
+        'payment_source_id' => $this->source->id,
+        'provider_payment_id' => 'provider-evidence',
+        'payload_hash' => hash('sha256', 'provider-evidence'),
+        'merchant_transaction_id' => str_replace('-', '', $attempt->reference),
+        'amount_cents' => 6500,
+        'raw_status' => '2',
+        'normalized_status' => 'paid',
+        'normalized_snapshot' => [
+            'payment_id' => 'provider-evidence',
+            'amount_cents' => 6500,
+            'currency' => 'QAR',
+            'status_id' => '2',
+            'provider_secret' => 'must-not-be-returned',
+        ],
+        'signature_key_reference' => 'test-key',
+        'processing_state' => 'retryable',
+        'error_code' => 'FINANCIAL_PERIOD_BLOCKED',
+        'received_at' => now('UTC'),
+        'raw_body' => '{"token":"must-not-be-returned"}',
+    ]);
+
+    $result = app(PaymentOperationsEvidenceService::class)->inspect($attempt->id, $event->id, $staff);
+
+    expect($result['raw_evidence'])->toBe('retained_private')
+        ->and($result['normalized'])->toMatchArray(['amount_cents' => 6500, 'currency' => 'QAR'])
+        ->and($result['normalized'])->not->toHaveKey('provider_secret')
+        ->and(json_encode($result))->not->toContain('must-not-be-returned')
+        ->and(AccountingAuditLog::query()->where('action', 'payment.operations.evidence_inspected')->count())->toBe(1);
+
+    $unrelated = PaymentProviderEvent::query()->create([
+        'payment_source_id' => $this->source->id,
+        'provider_payment_id' => 'unrelated',
+        'payload_hash' => hash('sha256', 'unrelated'),
+        'merchant_transaction_id' => 'another-checkout',
+        'normalized_status' => 'unknown',
+        'normalized_snapshot' => [],
+        'signature_key_reference' => 'test-key',
+        'processing_state' => 'pending',
+        'received_at' => now('UTC'),
+    ]);
+    expect(fn () => app(PaymentOperationsEvidenceService::class)->inspect($attempt->id, $unrelated->id, $staff))
+        ->toThrow(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
 });
 
 it('shows only company and branch scoped SkipCash operations to support staff', function (): void {
@@ -211,6 +309,35 @@ it('shows only company and branch scoped SkipCash operations to support staff', 
     $this->actingAs($unauthorized)
         ->get(route('receivables.payments.skipcash.index'))
         ->assertForbidden();
+});
+
+it('searches and displays the current customer after an existing customer merge', function (): void {
+    $staff = User::factory()->create(['status' => 'active']);
+    $staff->givePermissionTo('payments.support.view');
+    DB::table('user_branch_access')->insert([
+        'user_id' => $staff->id,
+        'branch_id' => $this->branch->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    $attempt = ($this->makeAttempt)(['state' => 'completed', 'last_error_code' => null]);
+    $destination = Customer::factory()->create(['name' => 'Canonical Operations Customer']);
+    $this->customer->forceFill([
+        'is_active' => false,
+        'merged_into_customer_id' => $destination->id,
+    ])->save();
+
+    $results = app(PaymentOperationsQueryService::class)->query($staff, [
+        'view' => 'all',
+        'search' => 'Canonical Operations',
+    ])->get();
+
+    expect($results)->toHaveCount(1)
+        ->and($results->first()->id)->toBe($attempt->id);
+    $this->actingAs($staff)
+        ->get(route('receivables.payments.skipcash.show', $attempt))
+        ->assertOk()
+        ->assertSee('Canonical Operations Customer');
 });
 
 it('accepts an exact processing retry once without creating another payment', function (): void {
@@ -258,4 +385,25 @@ it('accepts an exact processing retry once without creating another payment', fu
         ->and(PaymentCheckoutAttempt::query()->count())->toBe(1)
         ->and(AccountingAuditLog::query()->where('action', 'payment.operations.recovery_accepted')->count())->toBe(1);
     Queue::assertPushed(RetrySkipCashPaymentProcessing::class, 1);
+
+    $tracking = $attempt->fresh()->operations_tracking;
+    $tracking['recovery']['state'] = 'blocked';
+    $attempt->update(['operations_tracking' => $tracking]);
+    app(AccountingAuditLogService::class)->log('payment.operations.recovery_blocked', $staff->id, $attempt, [
+        'operation_uuid' => $operationUuid,
+        'reason_code' => 'FINANCIAL_PERIOD_BLOCKED',
+    ], $attempt->company_id);
+    $nextOperationUuid = (string) Str::uuid();
+    expect($service->retry($attempt->id, $nextOperationUuid, $staff)['state'])->toBe('queued')
+        ->and($service->retry($attempt->id, $operationUuid, $staff)['state'])->toBe('blocked');
+    Queue::assertPushed(RetrySkipCashPaymentProcessing::class, 2);
+
+    $tracking = $attempt->fresh()->operations_tracking;
+    $tracking['recovery']['queued_at'] = now('UTC')->subMinutes(3)->toIso8601String();
+    $attempt->update([
+        'operations_tracking' => $tracking,
+        'operations_next_action_at' => now('UTC')->subMinute(),
+    ]);
+    app(PaymentOperationsTrackingService::class)->observeOutstanding();
+    Queue::assertPushed(RetrySkipCashPaymentProcessing::class, 3);
 });

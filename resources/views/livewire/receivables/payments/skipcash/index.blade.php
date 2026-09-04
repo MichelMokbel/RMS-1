@@ -107,8 +107,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @forelse ($checkouts as $checkout)
                     @php
                         $provider = $checkout->providerTransactions->first();
-                        $issue = $checkout->operations_tracking['issues']['processing'] ?? null;
-                        $needsAttention = is_array($issue) && empty($issue['resolved_at']) && \Illuminate\Support\Carbon::parse($issue['attention_at'])->isPast();
+                        $customer = $checkout->customer?->mergedIntoCustomer ?? $checkout->customer;
+                        $attentionIssues = collect((array) data_get($checkout->operations_tracking, 'issues', []))->filter(
+                            fn ($issue) => is_array($issue) && empty($issue['resolved_at']) && \Illuminate\Support\Carbon::parse($issue['attention_at'])->isPast()
+                        );
                     @endphp
                     <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
                         <td class="px-3 py-3 text-sm text-neutral-900 dark:text-neutral-100">
@@ -116,18 +118,22 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <div class="text-xs text-neutral-500">{{ $checkout->created_at?->format('Y-m-d H:i') }}</div>
                         </td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">
-                            <div>{{ $checkout->customer?->name ?? __('Unavailable') }}</div>
-                            <div class="text-xs text-neutral-500">{{ $checkout->customer?->phone ? str($checkout->customer->phone)->mask('•', 3, max(0, strlen($checkout->customer->phone) - 6)) : '—' }}</div>
+                            <div>{{ $customer?->name ?? __('Unavailable') }}</div>
+                            <div class="text-xs text-neutral-500">{{ $customer?->phone ? str($customer->phone)->mask('•', 3, max(0, strlen($customer->phone) - 6)) : '—' }}</div>
                         </td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">
                             {{ $provider?->verified_paid_at ? __('Paid verified') : ($provider?->normalized_status ? (string) str($provider->normalized_status)->title() : __('Not recorded')) }}
                         </td>
                         <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ (string) str($checkout->state)->replace('_', ' ')->title() }}</td>
                         <td class="px-3 py-3 text-sm">
-                            @if ($needsAttention)
-                                <span class="inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-100">
-                                    {{ (string) str($issue['reason_code'])->replace('_', ' ')->title() }}
-                                </span>
+                            @if ($attentionIssues->isNotEmpty())
+                                <div class="flex flex-wrap gap-1">
+                                    @foreach ($attentionIssues as $issue)
+                                        <span class="inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-100">
+                                            {{ (string) str($issue['reason_code'])->replace('_', ' ')->title() }}
+                                        </span>
+                                    @endforeach
+                                </div>
                             @else
                                 <span class="text-neutral-500">{{ __('None') }}</span>
                             @endif

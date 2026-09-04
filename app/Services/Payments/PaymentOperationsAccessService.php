@@ -31,6 +31,12 @@ class PaymentOperationsAccessService
         $this->assertPermission($actor, 'payments.support.recover');
     }
 
+    public function assertCanResend(User $actor, PaymentCheckoutAttempt $attempt): void
+    {
+        $this->assertCanView($actor, $attempt);
+        $this->assertPermission($actor, 'payments.support.resend');
+    }
+
     private function assertPermission(User $actor, string $permission): void
     {
         if (! $actor->isActive() || $actor->isCustomerPortalUser()
