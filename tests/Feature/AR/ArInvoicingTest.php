@@ -1,24 +1,27 @@
 <?php
 
-use App\Models\AccountingCompany;
 use App\Models\AccountingAuditLog;
+use App\Models\AccountingCompany;
 use App\Models\ArInvoice;
 use App\Models\Branch;
 use App\Models\Customer;
+use App\Models\Job;
 use App\Models\Order;
 use App\Models\PastryOrder;
-use App\Models\PaymentTerm;
-use App\Models\Job;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
+use App\Models\PaymentTerm;
 use App\Models\User;
 use App\Services\AR\ArAllocationIntegrityService;
 use App\Services\AR\ArAllocationService;
 use App\Services\AR\ArInvoiceService;
 use App\Services\AR\ArPaymentService;
+use App\Services\Payments\SavedCreditAllocationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -27,6 +30,8 @@ beforeEach(function () {
     Role::findOrCreate('admin');
     Role::findOrCreate('manager');
     Role::findOrCreate('cashier');
+    Permission::findOrCreate('payments.credit.allocate', 'web');
+    Permission::findOrCreate('finance.write', 'web');
 });
 
 it('issues invoices with one global INV sequence across branches', function () {
@@ -390,7 +395,8 @@ it('allows overpayment and stores remainder as advance', function () {
 
 it('creates advance payment and applies it later', function () {
     $user = User::factory()->create();
-    $user->assignRole('manager');
+    $user->assignRole('admin');
+    $user->givePermissionTo(['payments.credit.allocate', 'finance.write']);
 
     $customer = Customer::factory()->corporate()->create();
 
@@ -422,7 +428,10 @@ it('creates advance payment and applies it later', function () {
     expect($payment->allocations()->count())->toBe(0);
     expect($payment->unallocatedCents())->toBe(5000);
 
-    $payments->applyExistingPaymentToInvoice($payment->id, $inv->id, 3000, $user->id);
+    app(SavedCreditAllocationService::class)->allocate($payment->id, [[
+        'invoice_id' => $inv->id,
+        'amount_cents' => 3000,
+    ]], $user, (string) Str::uuid());
 
     $inv = ArInvoice::findOrFail($inv->id);
     expect($inv->balance_cents)->toBe(5000);
@@ -431,7 +440,7 @@ it('creates advance payment and applies it later', function () {
     expect($payment->unallocatedCents())->toBe(2000);
 });
 
-it('auto-allocates available same-company customer advance when issuing a credit invoice', function () {
+it('does not auto-allocate discretionary customer credit when issuing a credit invoice', function () {
     $user = User::factory()->create();
     $user->assignRole('manager');
 
@@ -463,15 +472,15 @@ it('auto-allocates available same-company customer advance when issuing a credit
     );
     $invoice = $invoices->issue($invoice, $user->id);
 
-    expect($invoice->status)->toBe('partially_paid');
-    expect($invoice->paid_total_cents)->toBe(5000);
-    expect($invoice->balance_cents)->toBe(3000);
+    expect($invoice->status)->toBe('issued');
+    expect($invoice->paid_total_cents)->toBe(0);
+    expect($invoice->balance_cents)->toBe(8000);
 
     $advance = Payment::findOrFail($advance->id);
-    expect($advance->unallocatedCents())->toBe(0);
+    expect($advance->unallocatedCents())->toBe(5000);
 });
 
-it('defaults blank payment type to credit and auto-allocates available advance on issue', function () {
+it('defaults blank payment type to credit without auto-allocating discretionary credit', function () {
     $user = User::factory()->create();
     $user->assignRole('manager');
 
@@ -504,12 +513,12 @@ it('defaults blank payment type to credit and auto-allocates available advance o
     $invoice = $invoices->issue($invoice, $user->id);
 
     expect($invoice->payment_type)->toBe('credit');
-    expect($invoice->status)->toBe('partially_paid');
-    expect($invoice->paid_total_cents)->toBe(5000);
-    expect($invoice->balance_cents)->toBe(3000);
+    expect($invoice->status)->toBe('issued');
+    expect($invoice->paid_total_cents)->toBe(0);
+    expect($invoice->balance_cents)->toBe(8000);
 
     $advance = Payment::findOrFail($advance->id);
-    expect($advance->unallocatedCents())->toBe(0);
+    expect($advance->unallocatedCents())->toBe(5000);
 });
 
 it('does not auto-allocate advances from another accounting company', function () {

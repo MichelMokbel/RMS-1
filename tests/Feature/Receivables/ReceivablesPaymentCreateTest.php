@@ -6,6 +6,7 @@ use App\Models\Payment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -16,6 +17,20 @@ function makeReceivablesManager(): User
     app(PermissionRegistrar::class)->forgetCachedPermissions();
 
     $role = Role::firstOrCreate(['name' => 'manager'], ['guard_name' => 'web']);
+
+    $user = User::factory()->create(['status' => 'active']);
+    $user->assignRole($role);
+
+    return $user;
+}
+
+function makeReceivablesCreditAdmin(): User
+{
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    Permission::findOrCreate('payments.credit.allocate', 'web');
+    $role = Role::findOrCreate('admin', 'web');
+    $role->givePermissionTo('payments.credit.allocate');
 
     $user = User::factory()->create(['status' => 'active']);
     $user->assignRole($role);
@@ -99,7 +114,7 @@ it('loads payment create invoices from oldest to newest', function () {
 });
 
 it('prefills customer invoices from query params on payment create', function () {
-    $user = makeReceivablesManager();
+    $user = makeReceivablesCreditAdmin();
     $customer = Customer::factory()->create([
         'name' => 'Prefill Customer',
         'phone' => '55110022',
@@ -124,7 +139,7 @@ it('prefills customer invoices from query params on payment create', function ()
 });
 
 it('loads payment view allocations from oldest to newest', function () {
-    $user = makeReceivablesManager();
+    $user = makeReceivablesCreditAdmin();
     $customer = Customer::factory()->create();
 
     $newerInvoice = ArInvoice::factory()->create([
@@ -173,8 +188,7 @@ it('loads payment view allocations from oldest to newest', function () {
     Volt::actingAs($user);
 
     Volt::test('receivables.payments.show', ['payment' => $payment])
-        ->assertSet('allocations.0.invoice_number', 'INV-OLD-002')
-        ->assertSet('allocations.1.invoice_number', 'INV-NEW-002');
+        ->assertSeeInOrder(['INV-OLD-002', 'INV-NEW-002']);
 });
 
 it('creates and applies a credit note from payment create', function () {
@@ -206,7 +220,7 @@ it('creates and applies a credit note from payment create', function () {
     expect(Payment::query()->where('method', 'voucher')->count())->toBe(1);
 });
 
-it('shows create new payment action on payment show page', function () {
+it('shows payment actions according to saved credit authority', function () {
     $user = makeReceivablesManager();
     $payment = Payment::factory()->create([
         'customer_id' => Customer::factory()->create()->id,
@@ -217,13 +231,20 @@ it('shows create new payment action on payment show page', function () {
     $this->actingAs($user)
         ->get(route('receivables.payments.show', $payment))
         ->assertOk()
-        ->assertSee('Allocate Payment')
+        ->assertDontSee('Allocate Payment')
         ->assertSee('Create New Payment')
-        ->assertSee(route('receivables.payments.create', ['customer_id' => $payment->customer_id, 'branch_id' => $payment->branch_id]), false);
+        ->assertSee(route('receivables.payments.create', ['customer_id' => $payment->customer_id, 'branch_id' => $payment->branch_id]));
+
+    $admin = makeReceivablesCreditAdmin();
+
+    $this->actingAs($admin)
+        ->get(route('receivables.payments.show', $payment))
+        ->assertOk()
+        ->assertSee('Allocate Payment');
 });
 
 it('allocates an existing payment to an invoice from payment show', function () {
-    $user = makeReceivablesManager();
+    $user = makeReceivablesCreditAdmin();
     $customer = Customer::factory()->create();
 
     $payment = Payment::factory()->create([
@@ -260,7 +281,7 @@ it('allocates an existing payment to an invoice from payment show', function () 
 });
 
 it('blocks allocation changes on a voided payment', function () {
-    $user = makeReceivablesManager();
+    $user = makeReceivablesCreditAdmin();
     $customer = Customer::factory()->create();
 
     $payment = Payment::factory()->create([

@@ -324,7 +324,7 @@ it('shows voided status and hides mutation actions for a voided payment', functi
         ->assertDontSeeText('Delete Payment')
         ->assertDontSeeText('Allocate Payment')
         ->assertDontSeeText('Apply Allocations')
-        ->assertDontSeeText('Link')
+        ->assertDontSee('wire:click="linkSubscription"', false)
         ->assertDontSeeText('Create Subscription');
 });
 

@@ -19,6 +19,7 @@ use App\Services\Accounting\AccountingContextService;
 use App\Services\Accounting\AccountingPeriodGateService;
 use App\Services\Accounting\JobCostingService;
 use App\Services\Ledger\SubledgerService;
+use App\Services\Payments\PaymentCreditProjectionService;
 use App\Services\Sequences\DocumentSequenceService;
 use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\DB;
@@ -34,6 +35,7 @@ class ArInvoiceService
         protected JobCostingService $jobCostingService,
         protected ArAllocationIntegrityService $allocationIntegrity,
         protected AccountingPeriodGateService $periodGate,
+        protected PaymentCreditProjectionService $creditProjection,
     ) {}
 
     public function createDraft(
@@ -560,7 +562,7 @@ class ArInvoiceService
             $this->subledgerService->recordArInvoiceIssued($locked->fresh(), $actorId);
             $this->recordJobRevenue($locked->fresh(), $actorId);
 
-            // Auto-allocate same-company customer advances for normal credit-term invoices.
+            // Auto-allocate only funding committed to the matching membership invoice.
             // Must happen BEFORE dispatching InvoiceIssued so listeners see the final allocation state.
             $issued = $locked->fresh(['items']);
             if ($autoAllocateAvailableAdvances) {
@@ -894,15 +896,17 @@ class ArInvoiceService
             return;
         }
 
-        // Subscription-linked payments (source_payment_id on meal_subscriptions) are sorted first
-        // so that the intended subscription advance is consumed before other advances.
+        // Saved credit is administrator allocated. This automatic path considers only
+        // the committed payment that funds a matching subscription invoice.
         $payments = Payment::query()
             ->where('customer_id', (int) $invoice->customer_id)
             ->where('branch_id', (int) $invoice->branch_id)
             ->where('company_id', $invoiceCompanyId)
             ->where('source', 'ar')
             ->whereNull('voided_at')
-            ->orderByRaw('(SELECT COUNT(*) FROM meal_subscriptions WHERE meal_subscriptions.source_payment_id = payments.id) DESC')
+            ->whereHas('mealSubscriptions', fn ($query) => $query
+                ->whereIn('status', ['active', 'paused'])
+                ->where('uses_invoice_tracking', true))
             ->orderBy('received_at', 'asc')
             ->orderBy('id', 'asc')
             ->get();
@@ -933,11 +937,20 @@ class ArInvoiceService
                 continue;
             }
 
+            $committedAvailable = $this->creditProjection->committedAvailableForInvoice(
+                $lockedPayment,
+                $invoice,
+                true,
+            );
+            if ($committedAvailable <= 0) {
+                continue;
+            }
+
             if ($lockedPayment->currency && $invoice->currency && $lockedPayment->currency !== $invoice->currency) {
                 continue;
             }
 
-            $allocateAmount = min($unallocated, $remainingBalance);
+            $allocateAmount = min($unallocated, $committedAvailable, $remainingBalance);
             if ($allocateAmount <= 0) {
                 continue;
             }

@@ -2,10 +2,9 @@
 
 namespace App\Services\POS;
 
-use App\Models\ArInvoice;
-use App\Models\ArInvoiceItem;
 use App\Models\ApInvoice;
 use App\Models\ApInvoiceItem;
+use App\Models\ArInvoice;
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\ExpenseProfile;
@@ -17,13 +16,13 @@ use App\Models\PosSyncEvent;
 use App\Models\RestaurantArea;
 use App\Models\RestaurantTable;
 use App\Models\RestaurantTableSession;
-use App\Services\POS\Exceptions\PosSyncException;
 use App\Services\AP\ApAllocationService;
 use App\Services\AP\ApInvoiceTotalsService;
 use App\Services\AR\ArAllocationService;
 use App\Services\AR\ArInvoiceService;
 use App\Services\AR\ArPaymentService;
 use App\Services\Ledger\SubledgerService;
+use App\Services\POS\Exceptions\PosSyncException;
 use App\Services\Spend\ExpenseWorkflowService;
 use App\Support\Money\MinorUnits;
 use Illuminate\Database\QueryException;
@@ -35,14 +34,21 @@ use Illuminate\Validation\ValidationException;
 class PosSyncService
 {
     private const STATUS_PENDING = 'pending';
+
     private const STATUS_PROCESSING = 'processing';
+
     private const STATUS_APPLIED = 'applied';
+
     private const STATUS_FAILED = 'failed'; // retryable
+
     private const STATUS_REJECTED = 'rejected'; // terminal (deterministic)
 
     private const ERROR_INCOMPLETE_PROCESSING = 'INCOMPLETE_PROCESSING';
+
     private const ERROR_VALIDATION = 'VALIDATION_ERROR';
+
     private const ERROR_UNSUPPORTED_TYPE = 'UNSUPPORTED_TYPE';
+
     private const ERROR_SERVER = 'SERVER_ERROR';
 
     public function __construct(
@@ -54,8 +60,7 @@ class PosSyncService
         protected ExpenseWorkflowService $expenseWorkflow,
         protected SubledgerService $subledger,
         protected PosBootstrapService $bootstrap,
-    ) {
-    }
+    ) {}
 
     public function sync($terminal, $user, string $deviceId, ?string $lastPulledAt, array $events): array
     {
@@ -199,7 +204,6 @@ class PosSyncService
                     'category.upsert',
                     'customer.payment.create',
                     'customer.advance.create',
-                    'customer.advance.apply',
                     'supplier.payment.create',
                     'restaurant_area.upsert',
                     'restaurant_table.upsert',
@@ -244,7 +248,6 @@ class PosSyncService
                     'category.upsert' => $this->handleCategoryUpsert($terminal, $user, $payload),
                     'customer.payment.create' => $this->handleCustomerPaymentCreate($terminal, $user, $deviceId, $payload),
                     'customer.advance.create' => $this->handleCustomerAdvanceCreate($terminal, $user, $deviceId, $payload),
-                    'customer.advance.apply' => $this->handleCustomerAdvanceApply($terminal, $user, $payload),
                     'supplier.payment.create' => $this->handleSupplierPaymentCreate($terminal, $user, $payload),
                     'restaurant_area.upsert' => $this->handleAreaUpsert($terminal, $user, $payload),
                     'restaurant_table.upsert' => $this->handleTableUpsert($terminal, $user, $payload),
@@ -484,7 +487,7 @@ class PosSyncService
                     ->first();
 
                 if (! $row) {
-                    $row = new PosSyncEvent();
+                    $row = new PosSyncEvent;
                     $row->terminal_id = $terminalId;
                     $row->event_id = $eventId;
                     $row->client_uuid = $clientUuid;
@@ -626,13 +629,6 @@ class PosSyncService
                     'payment.pos_shift_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
                 ])->validate(),
 
-                'customer.advance.apply' => Validator::make($payload, [
-                    'payment_id' => ['required_without:payment_client_uuid', 'integer', 'min:1'],
-                    'payment_client_uuid' => ['required_without:payment_id', 'uuid'],
-                    'invoice_id' => ['required', 'integer', 'min:1'],
-                    'amount_cents' => ['required', 'integer', 'min:1'],
-                ])->validate(),
-
                 'supplier.payment.create' => Validator::make($payload, [
                     'supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
                     'payment_date' => ['required', 'date'],
@@ -681,6 +677,7 @@ class PosSyncService
                 return (string) $messages[0];
             }
         }
+
         return 'Validation error.';
     }
 
@@ -1367,32 +1364,6 @@ class PosSyncService
         );
 
         return ['entity_type' => 'payment', 'entity_id' => (int) $payment->id];
-    }
-
-    private function handleCustomerAdvanceApply($terminal, $user, array $payload): array
-    {
-        $v = Validator::make($payload, [
-            'payment_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
-            'payment_client_uuid' => ['sometimes', 'nullable', 'uuid'],
-            'invoice_id' => ['required', 'integer', 'min:1'],
-            'amount_cents' => ['required', 'integer', 'min:1'],
-        ])->validate();
-
-        $paymentId = isset($v['payment_id']) ? (int) $v['payment_id'] : 0;
-        $paymentClientUuid = isset($v['payment_client_uuid']) ? (string) $v['payment_client_uuid'] : null;
-        if ($paymentId <= 0 && ! $paymentClientUuid) {
-            throw ValidationException::withMessages(['payment_id' => 'Payment identifier is required.']);
-        }
-
-        $allocation = $this->arPayments->applyExistingPaymentToInvoice(
-            paymentId: $paymentId,
-            invoiceId: (int) $v['invoice_id'],
-            amountCents: (int) $v['amount_cents'],
-            actorId: (int) $user->id,
-            paymentClientUuid: $paymentClientUuid,
-        );
-
-        return ['entity_type' => 'payment_allocation', 'entity_id' => (int) $allocation->id];
     }
 
     private function handleSupplierPaymentCreate($terminal, $user, array $payload): array

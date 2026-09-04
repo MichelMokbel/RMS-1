@@ -592,7 +592,6 @@ POS sync supported event types:
 - `category.upsert`
 - `customer.payment.create`
 - `customer.advance.create`
-- `customer.advance.apply`
 - `supplier.payment.create`
 - `restaurant_area.upsert`
 - `restaurant_table.upsert`

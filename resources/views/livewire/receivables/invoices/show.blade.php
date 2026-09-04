@@ -1,12 +1,10 @@
 <?php
 
 use App\Models\ArInvoice;
-use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Services\AR\ArAllocationService;
 use App\Services\AR\ArInvoiceService;
 use App\Services\AR\ArPaymentDeleteService;
-use App\Services\AR\ArPaymentService;
 use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
@@ -23,25 +21,19 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $credit_amount = '0.00';
 
-    public ?int $advance_payment_id = null;
-    public string $advance_amount = '0.00';
-    public array $available_advances = [];
-
     public function mount(ArInvoice $invoice): void
     {
         $this->invoice = $invoice->load(['items', 'customer', 'job', 'paymentAllocations.payment']);
         $this->payment_amount = $this->moneyZero();
         $this->credit_amount = $this->moneyZero();
-        $this->advance_amount = $this->moneyZero();
         $this->active_tab = in_array($this->invoice->status, ['issued', 'partially_paid'], true)
             ? 'receive-payment'
             : 'allocations';
-        $this->loadAdvances();
     }
 
     public function selectTab(string $tab): void
     {
-        $allowed = ['receive-payment', 'credit-note', 'apply-advance', 'allocations'];
+        $allowed = ['receive-payment', 'credit-note', 'allocations'];
 
         if (in_array($tab, $allowed, true)) {
             $this->active_tab = $tab;
@@ -151,7 +143,6 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->invoice = ArInvoice::with(['items', 'customer', 'job', 'paymentAllocations.payment'])->findOrFail($this->invoice->id);
         $this->payment_amount = $this->moneyZero();
-        $this->loadAdvances();
         $applied = (int) ($result['allocated_cents'] ?? 0);
         $remainder = (int) ($result['remainder_cents'] ?? 0);
         if ($remainder > 0) {
@@ -219,7 +210,6 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->invoice = ArInvoice::with(['items', 'customer', 'job', 'paymentAllocations.payment'])->findOrFail($this->invoice->id);
         $this->credit_amount = $this->moneyZero();
-        $this->loadAdvances();
         session()->flash('status', __('Credit note applied.'));
     }
 
@@ -244,45 +234,6 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->invoice = ArInvoice::with(['items', 'customer', 'job', 'paymentAllocations.payment'])->findOrFail($this->invoice->id);
         session()->flash('status', __('Allocation removed.'));
-    }
-
-    public function applyAdvance(ArPaymentService $payments): void
-    {
-        abort_unless(Auth::user()?->can('finance.write'), 403);
-        $this->resetErrorBag();
-        $userId = Auth::id();
-        if (! $userId) {
-            abort(403);
-        }
-
-        if (! $this->advance_payment_id) {
-            $this->addError('advance_payment_id', __('Select a payment.'));
-            return;
-        }
-
-        try {
-            $amountCents = MinorUnits::parsePos($this->advance_amount);
-        } catch (\InvalidArgumentException $e) {
-            $this->addError('advance_amount', __('Invalid amount.'));
-            return;
-        }
-
-        try {
-            $payments->applyExistingPaymentToInvoice($this->advance_payment_id, $this->invoice->id, $amountCents, $userId);
-        } catch (ValidationException $e) {
-            foreach ($e->errors() as $field => $messages) {
-                foreach ($messages as $m) {
-                    $this->addError($field, $m);
-                }
-            }
-            return;
-        }
-
-        $this->invoice = ArInvoice::with(['items', 'customer', 'job', 'paymentAllocations.payment'])->findOrFail($this->invoice->id);
-        $this->advance_amount = $this->moneyZero();
-        $this->advance_payment_id = null;
-        $this->loadAdvances();
-        session()->flash('status', __('Advance applied.'));
     }
 
     public function formatMoney(?int $cents): string
@@ -315,39 +266,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         return '0.'.str_repeat('0', $digits);
     }
 
-    public function loadAdvances(): void
-    {
-        $customerId = (int) ($this->invoice->customer_id ?? 0);
-        if ($customerId <= 0) {
-            $this->available_advances = [];
-            return;
-        }
-
-        $payments = Payment::query()
-            ->where('source', 'ar')
-            ->where('customer_id', $customerId)
-            ->whereNull('voided_at')
-            ->withSum('allocations as allocated_sum', 'amount_cents')
-            ->orderByDesc('received_at')
-            ->get();
-
-        $this->available_advances = $payments->map(function (Payment $payment) {
-            $allocated = (int) ($payment->allocated_sum ?? 0);
-            $remaining = (int) $payment->amount_cents - $allocated;
-            if ($remaining <= 0) {
-                return null;
-            }
-
-            return [
-                'id' => $payment->id,
-                'received_at' => $payment->received_at?->format('Y-m-d'),
-                'method' => $payment->method,
-                'amount_cents' => (int) $payment->amount_cents,
-                'allocated_cents' => $allocated,
-                'remaining_cents' => $remaining,
-            ];
-        })->filter()->values()->toArray();
-    }
 }; ?>
 
 <div class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
@@ -524,9 +442,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <flux:button type="button" wire:click="selectTab('credit-note')" :variant="$active_tab === 'credit-note' ? 'primary' : 'ghost'">
                                 {{ __('Credit Note') }}
                             </flux:button>
-                            <flux:button type="button" wire:click="selectTab('apply-advance')" :variant="$active_tab === 'apply-advance' ? 'primary' : 'ghost'">
-                                {{ __('Apply Advance') }}
-                            </flux:button>
                         @endif
                     @endcan
                     <flux:button type="button" wire:click="selectTab('allocations')" :variant="$active_tab === 'allocations' ? 'primary' : 'ghost'">
@@ -579,59 +494,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </div>
                     </div>
                     @error('credit_amount') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
-                </div>
-            @endif
-            @endcan
-
-            @can('finance.write')
-            @if ($active_tab === 'apply-advance' && in_array($invoice->status, ['issued', 'partially_paid'], true))
-                <div class="space-y-3">
-                    <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Apply Advance') }}</h2>
-                    <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-                        <div>
-                            <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Advance Payment') }}</label>
-                            <select wire:model="advance_payment_id" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                                <option value="">{{ __('Select') }}</option>
-                                @foreach ($available_advances as $adv)
-                                    <option value="{{ $adv['id'] }}">#{{ $adv['id'] }} • {{ $adv['received_at'] }} • {{ $this->formatMoney($adv['remaining_cents']) }}</option>
-                                @endforeach
-                            </select>
-                            @error('advance_payment_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
-                        </div>
-                        <flux:input wire:model="advance_amount" type="number" step="{{ $this->moneyStep() }}" :label="__('Amount')" />
-                        <div class="flex items-end justify-end">
-                            <flux:button type="button" wire:click="applyAdvance" variant="primary">{{ __('Apply Advance') }}</flux:button>
-                        </div>
-                    </div>
-                    @error('advance_amount') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
-
-                    <div class="mt-2">
-                        <div class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Available Advances') }}</div>
-                        <div class="mt-2 overflow-x-auto">
-                            <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
-                                <thead class="bg-neutral-50 dark:bg-neutral-800/90">
-                                    <tr>
-                                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Payment #') }}</th>
-                                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Date') }}</th>
-                                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Method') }}</th>
-                                        <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Remaining') }}</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                                    @forelse ($available_advances as $adv)
-                                        <tr>
-                                            <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">#{{ $adv['id'] }}</td>
-                                            <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $adv['received_at'] }}</td>
-                                            <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ strtoupper($adv['method'] ?? '—') }}</td>
-                                            <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney($adv['remaining_cents']) }}</td>
-                                        </tr>
-                                    @empty
-                                        <tr><td colspan="4" class="px-3 py-3 text-sm text-neutral-600 dark:text-neutral-300 text-center">{{ __('No available advances.') }}</td></tr>
-                                    @endforelse
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
                 </div>
             @endif
             @endcan

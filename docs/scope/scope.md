@@ -291,7 +291,7 @@ Give finance and support staff a safe view of pending, successful, failed, expir
   * [x] Checkout tracking, permissions, scoped operations view, one administrator alert, and safe recovery from a locked period with audit (AC-1, AC-2, AC-3, AC-4, AC-6, AC-7).
   * [x] Alert timing, simultaneous issues, provider and mail uncertainty, safe action retries, search, private history, merge, and settlement links (AC-1, AC-2, AC-3, AC-4, AC-6, AC-7, AC-10, AC-11).
   * [x] Saved customer confirmation resend and audited company settings, with current access checks and unchanged purchase snapshots (AC-5, AC-6, AC-7, AC-8, AC-11).
-  * [ ] Administrator saved credit allocation guards, committed membership funding protection, exact action replay, and canonical balance projections (AC-6, AC-9, AC-10, AC-11).
+  * [x] Administrator saved credit allocation guards, committed membership funding protection, exact action replay, and canonical balance projections (AC-6, AC-9, AC-10, AC-11).
   * [ ] Basic consistency reporting, recovery and queue health, safe shutdown, retention, responsive UI, and both applications' release verification (AC-1, AC-2, AC-4, AC-5, AC-6, AC-9, AC-10, AC-11, AC-12).
 * [ ] Verify it: `/check verify payment exceptions and operations`
 * [ ] Test it: `/test payment exceptions and operations`

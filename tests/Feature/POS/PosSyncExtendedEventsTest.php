@@ -133,7 +133,7 @@ test('category.upsert creates, updates, and rejects cycles', function () {
     expect($resp3['acks'][0]['error_code'])->toBe('VALIDATION_ERROR');
 });
 
-test('customer payment and advance flows create payments and allocations', function () {
+test('customer payment and advance creation work while POS saved credit allocation is rejected', function () {
     $user = User::factory()->create(['status' => 'active']);
     $terminal = seedPosTerminalForExtendedSync('DEV-A', 'T01', 1);
     $token = posTokenForExtendedDevice($user, 'DEV-A');
@@ -272,11 +272,12 @@ test('customer payment and advance flows create payments and allocations', funct
         ],
     ])->assertOk()->json();
 
-    expect($resp3['acks'][0]['ok'])->toBeTrue();
-    expect(PaymentAllocation::query()->where('payment_id', $advancePaymentId)->count())->toBe(1);
+    expect($resp3['acks'][0]['ok'])->toBeFalse()
+        ->and($resp3['acks'][0]['error_code'])->toBe('UNSUPPORTED_TYPE')
+        ->and(PaymentAllocation::query()->where('payment_id', $advancePaymentId)->count())->toBe(0);
 
     $advanceInvoice->refresh();
-    expect($advanceInvoice->status)->toBe('partially_paid');
+    expect($advanceInvoice->status)->toBe('issued');
 });
 
 test('supplier payment create records AP payment and allocations', function () {

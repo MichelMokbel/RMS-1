@@ -1042,38 +1042,12 @@ Evidence:
 - Handler: `app/Services/POS/PosSyncService.php::handleCustomerAdvanceCreate()`
 - AR payment service: `app/Services/AR/ArPaymentService.php::createAdvancePayment()`
 
-### customer.advance.apply
+### Retired: `customer.advance.apply`
 
-When POS sends it:
-- When applying an existing advance payment to a specific invoice.
-
-Payload JSON schema:
-```json
-{
-  "payment_id": "int|null (required if payment_client_uuid missing)",
-  "payment_client_uuid": "uuid|null (required if payment_id missing)",
-  "invoice_id": "int (required, min 1)",
-  "amount_cents": "int (required, min 1)"
-}
-```
-
-Validation rules / business rules:
-- Requires either `payment_id` or `payment_client_uuid`.
-- Payment must be an AR payment and match the invoice customer.
-
-Server side effects:
-- Inserts into `payment_allocations` to apply the advance.
-- Recalculates invoice balances and status.
-
-Idempotency keys:
-- Sync-level: `events[*].client_uuid`
-
-Common errors:
-- `VALIDATION_ERROR` on bad schema or mismatched payment/invoice.
-
-Evidence:
-- Handler: `app/Services/POS/PosSyncService.php::handleCustomerAdvanceApply()`
-- AR payment service: `app/Services/AR/ArPaymentService.php::applyExistingPaymentToInvoice()`
+The POS sync API no longer accepts this event. It returns `UNSUPPORTED_TYPE` without
+creating an allocation. Applying saved customer credit is restricted to an authorized
+administrator in the audited RMS payment-detail workflow.
+The legacy AR method remains a deny-only server guard for outdated callers.
 
 ### supplier.payment.create
 
@@ -1494,27 +1468,12 @@ Expected ACK: `server_entity_type="payment"`, `server_entity_id>0`.
 DB expectations:
 - `payments` row created with `source='ar'`, unallocated balance remains.
 
-### Step 11) Apply advance to credit invoice
+### Step 11) Verify retired advance allocation is rejected
 
-Request event:
-```json
-{
-  "event_id": "evt-adv-apply-001",
-  "type": "customer.advance.apply",
-  "client_uuid": "99999999-9999-9999-9999-999999999999",
-  "payload": {
-    "payment_client_uuid": "88888888-8888-8888-8888-888888888888",
-    "invoice_id": 200,
-    "amount_cents": 2500
-  }
-}
-```
-
-Expected ACK: `server_entity_type="payment_allocation"`, `server_entity_id>0`.
-
-DB expectations:
-- `payment_allocations` row created allocating the advance to the invoice.
-- `ar_invoices` balance reduced.
+Send a `customer.advance.apply` event and expect `ok=false` with
+`error_code="UNSUPPORTED_TYPE"`. Verify that no payment allocation or invoice balance
+change occurs. Saved customer credit is applied only by an authorized administrator
+in RMS.
 
 ### Step 12) Create customer payment (with allocations)
 

@@ -5,10 +5,12 @@ use App\Models\MealSubscription;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Services\AR\ArPaymentDeleteService;
-use App\Services\AR\ArPaymentService;
+use App\Services\Payments\PaymentCreditProjectionService;
+use App\Services\Payments\SavedCreditAllocationService;
 use App\Services\Subscriptions\SubscriptionPaymentLinkService;
 use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -21,9 +23,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $invoice_date_to = '';
     public ?int $link_subscription_id = null;
     public string $new_subscription_plan = '';
+    public array $credit_projection = [];
+    public string $allocation_operation_uuid = '';
 
     public function mount(Payment $payment): void
     {
+        $this->allocation_operation_uuid = (string) Str::uuid();
         $this->refreshPayment($payment);
         $this->loadInvoices();
     }
@@ -120,6 +125,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         return $this->payment->voided_at === null;
     }
 
+    public function canAllocateSavedCredit(): bool
+    {
+        $user = Auth::user();
+
+        return (bool) ($user?->isActive() && $user->isAdmin()
+            && $user->can('payments.credit.allocate') && $user->can('finance.write'));
+    }
+
     public function moneyScaleDigits(): int
     {
         return MinorUnits::scaleDigits(MinorUnits::posScale());
@@ -147,11 +160,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function loadInvoices(): void
     {
+        $this->allocation_operation_uuid = (string) Str::uuid();
+
         if (
-            $this->payment->voided_at !== null
+            ! $this->canAllocateSavedCredit()
+            || $this->payment->voided_at !== null
             || $this->payment->source !== 'ar'
             || ! $this->payment->customer_id
-            || $this->payment->unallocatedCents() <= 0
+            || (int) ($this->credit_projection['available_cents'] ?? 0) <= 0
         ) {
             $this->allocations = [];
             $this->select_all_allocations = false;
@@ -216,6 +232,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function updatedSelectAllAllocations(bool $selected): void
     {
+        $this->allocation_operation_uuid = (string) Str::uuid();
+
         foreach ($this->allocations as $idx => $allocation) {
             $this->allocations[$idx]['selected'] = $selected;
         }
@@ -224,13 +242,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function updated($property): void
     {
         if (str_starts_with((string) $property, 'allocations.')) {
+            $this->allocation_operation_uuid = (string) Str::uuid();
             $this->syncSelectAllAllocations();
         }
     }
 
-    public function allocateInvoices(ArPaymentService $payments): void
+    public function allocateInvoices(SavedCreditAllocationService $credits): void
     {
-        abort_unless(Auth::user()?->can('finance.write'), 403);
+        abort_unless($this->canAllocateSavedCredit(), 403);
         $this->resetErrorBag();
 
         if ($this->payment->voided_at) {
@@ -238,13 +257,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
-        $userId = Auth::id();
-        if (! $userId) {
-            abort(403);
-        }
-
-        if ($this->payment->unallocatedCents() <= 0) {
-            $this->addError('allocations', __('This payment has no remaining balance to allocate.'));
+        if ((int) ($this->credit_projection['available_cents'] ?? 0) <= 0) {
+            $this->addError('allocations', __('This payment has no discretionary saved credit available.'));
             return;
         }
 
@@ -279,13 +293,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
-        if ($requestedTotal > $this->payment->unallocatedCents()) {
-            $this->addError('allocations', __('Allocations exceed remaining payment amount.'));
+        if ($requestedTotal > (int) ($this->credit_projection['available_cents'] ?? 0)) {
+            $this->addError('allocations', __('Allocations exceed available saved credit.'));
             return;
         }
 
         try {
-            $payments->applyExistingPaymentAllocations($this->payment->id, $rows, $userId);
+            $credits->allocate(
+                $this->payment->id,
+                $rows,
+                Auth::user(),
+                $this->allocation_operation_uuid,
+            );
         } catch (ValidationException $e) {
             foreach ($e->errors() as $field => $messages) {
                 $target = in_array($field, ['amount_cents', 'invoice', 'payment'], true) ? 'allocations' : $field;
@@ -297,6 +316,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $this->refreshPayment();
+        $this->allocation_operation_uuid = (string) Str::uuid();
         $this->loadInvoices();
         session()->flash('status', __('Payment allocated.'));
     }
@@ -336,6 +356,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->payment = Payment::query()
             ->with(['customer', 'allocations.allocatable'])
             ->findOrFail($model->id);
+        $this->credit_projection = app(PaymentCreditProjectionService::class)->project($this->payment);
     }
 
     private function syncSelectAllAllocations(): void
@@ -369,7 +390,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </form>
             @endif
             @can('finance.write')
-                <flux:button :href="route('receivables.payments.create', ['branch_id' => $payment->branch_id])" wire:navigate variant="ghost">{{ __('Create New Payment') }}</flux:button>
+                <flux:button :href="route('receivables.payments.create', ['customer_id' => $payment->customer_id, 'branch_id' => $payment->branch_id])" wire:navigate variant="ghost">{{ __('Create New Payment') }}</flux:button>
             @endcan
             <flux:button :href="route('receivables.payments.print', $payment)" target="_blank" variant="ghost">{{ __('Print Receipt') }}</flux:button>
             <flux:button :href="route('receivables.payments.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
@@ -412,7 +433,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         · <a href="{{ route('accounting.ar-clearing-show', $settlementItem->settlement_id) }}" wire:navigate class="underline">{{ __('View Settlement') }}</a>
                     @endif
                 </p>
-            @elseif(in_array($payment->method, ['card', 'cheque']) && ! $payment->voided_at)
+            @elseif(in_array($payment->method, ['card', 'cheque', 'skipcash']) && ! $payment->voided_at)
                 <p class="text-sm text-amber-700 dark:text-amber-300">
                     {{ __('Pending clearing') }} ·
                     <a href="{{ route('accounting.ar-clearing') }}" wire:navigate class="underline">{{ __('Go to Clearing Workbench') }}</a>
@@ -423,14 +444,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Amount') }}: {{ $this->formatMoney($payment->amount_cents) }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Allocated') }}: {{ $this->formatMoney($allocated) }}</p>
             <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Unallocated') }}: {{ $this->formatMoney($remaining) }}</p>
+            <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Committed to memberships') }}: {{ $credit_projection['state'] === 'unavailable' ? __('Unavailable') : $this->formatMoney((int) ($credit_projection['committed_cents'] ?? 0)) }}</p>
+            <p class="text-sm font-medium text-neutral-800 dark:text-neutral-100">{{ __('Available saved credit') }}: {{ $credit_projection['state'] === 'unavailable' ? __('Unavailable') : $this->formatMoney((int) ($credit_projection['available_cents'] ?? 0)) }}</p>
         </div>
     </div>
 
-    @if($this->canMutatePayment() && $payment->source === 'ar' && $payment->customer_id && $payment->unallocatedCents() > 0)
+    @if($this->canAllocateSavedCredit() && $this->canMutatePayment() && $payment->source === 'ar' && $payment->customer_id && (int) ($credit_projection['available_cents'] ?? 0) > 0)
         <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
             <div class="flex items-center justify-between">
                 <h3 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Allocate Payment') }}</h3>
-                <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Remaining') }}: {{ $this->formatMoney($payment->unallocatedCents()) }}</p>
+                <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('Available saved credit') }}: {{ $this->formatMoney((int) ($credit_projection['available_cents'] ?? 0)) }}</p>
             </div>
 
             <div class="grid grid-cols-1 gap-3 md:grid-cols-3 items-end">
@@ -491,9 +514,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
 
             <div class="flex justify-end">
-                @can('finance.write')
-                    <flux:button type="button" wire:click="allocateInvoices" variant="primary">{{ __('Apply Allocations') }}</flux:button>
-                @endcan
+                <flux:button type="button" wire:click="allocateInvoices" wire:loading.attr="disabled" wire:target="allocateInvoices" variant="primary">{{ __('Apply Allocations') }}</flux:button>
             </div>
         </div>
     @endif

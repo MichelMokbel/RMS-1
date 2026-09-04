@@ -7,6 +7,9 @@ use App\Models\User;
 use App\Services\AR\ArInvoiceService;
 use App\Services\AR\ArPaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -14,11 +17,13 @@ uses(RefreshDatabase::class);
 beforeEach(function () {
     Role::findOrCreate('admin');
     Role::findOrCreate('manager');
+    Permission::findOrCreate('payments.credit.allocate', 'web');
+    Permission::findOrCreate('finance.write', 'web');
     $this->user = User::factory()->create();
     $this->user->assignRole('manager');
 });
 
-it('applyExistingPaymentToInvoice is idempotent when called twice with the same amount', function () {
+it('blocks the legacy direct saved credit writer', function () {
     $customer = Customer::factory()->corporate()->create();
 
     /** @var ArInvoiceService $invoiceSvc */
@@ -44,16 +49,14 @@ it('applyExistingPaymentToInvoice is idempotent when called twice with the same 
     /** @var ArPaymentService $svc */
     $svc = app(ArPaymentService::class);
 
-    $first = $svc->applyExistingPaymentToInvoice($payment->id, $invoice->id, 10000, $this->user->id);
-    $second = $svc->applyExistingPaymentToInvoice($payment->id, $invoice->id, 10000, $this->user->id);
-
-    expect($second->id)->toBe($first->id);
-    expect(PaymentAllocation::query()
-        ->where('payment_id', $payment->id)
-        ->where('allocatable_id', $invoice->id)
-        ->whereNull('voided_at')
-        ->count()
-    )->toBe(1);
+    expect(fn () => $svc->applyExistingPaymentToInvoice($payment->id, $invoice->id, 10000, $this->user->id))
+        ->toThrow(ValidationException::class)
+        ->and(PaymentAllocation::query()
+            ->where('payment_id', $payment->id)
+            ->where('allocatable_id', $invoice->id)
+            ->whereNull('voided_at')
+            ->count()
+        )->toBe(0);
 });
 
 it('applyExistingPaymentAllocations is idempotent when called twice with the same rows', function () {
@@ -95,11 +98,16 @@ it('applyExistingPaymentAllocations is idempotent when called twice with the sam
         ['invoice_id' => $inv2->id, 'amount_cents' => 3000],
     ];
 
+    $admin = User::factory()->create(['status' => 'active']);
+    $admin->assignRole('admin');
+    $admin->givePermissionTo(['payments.credit.allocate', 'finance.write']);
+
     /** @var ArPaymentService $svc */
     $svc = app(ArPaymentService::class);
+    $operationUuid = (string) Str::uuid();
 
-    $svc->applyExistingPaymentAllocations($payment->id, $rows, $this->user->id);
-    $svc->applyExistingPaymentAllocations($payment->id, $rows, $this->user->id);
+    $svc->applyExistingPaymentAllocations($payment->id, $rows, $admin->id, operationUuid: $operationUuid);
+    $svc->applyExistingPaymentAllocations($payment->id, $rows, $admin->id, operationUuid: $operationUuid);
 
     expect(PaymentAllocation::query()
         ->where('payment_id', $payment->id)

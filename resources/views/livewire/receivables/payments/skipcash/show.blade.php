@@ -4,6 +4,7 @@ use App\Models\AccountingAuditLog;
 use App\Models\PaymentCheckoutAttempt;
 use App\Models\PaymentProviderEvent;
 use App\Services\Payments\PaymentOperationsEvidenceService;
+use App\Services\Payments\PaymentCreditProjectionService;
 use App\Services\Payments\PaymentOperationsQueryService;
 use App\Services\Payments\PaymentOperationsRecoveryService;
 use App\Services\Payments\PaymentOperationsResendService;
@@ -62,14 +63,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             : __('Customer confirmation resend is :state.', ['state' => $result['state']]));
     }
 
-    public function with(PaymentOperationsQueryService $queries): array
+    public function with(
+        PaymentOperationsQueryService $queries,
+        PaymentCreditProjectionService $creditProjection,
+    ): array
     {
         $checkout = $queries->find(Auth::user(), $this->attemptId);
         $providerTransactionIds = $checkout->providerTransactions->pluck('id');
         $merchantReference = str_replace('-', '', (string) $checkout->reference);
+        $payment = $checkout->providerTransactions->first()?->payment;
 
         return [
             'checkout' => $checkout,
+            'creditProjection' => $payment ? $creditProjection->project($payment) : null,
             'providerEvents' => PaymentProviderEvent::query()
                 ->where('payment_source_id', $checkout->payment_source_id)
                 ->where(function ($query) use ($providerTransactionIds, $merchantReference): void {
@@ -144,6 +150,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div><dt class="text-neutral-500">{{ __('Receipt') }}</dt><dd>{{ $payment ? '#'.$payment->id : __('Not recorded') }}</dd></div>
                 <div><dt class="text-neutral-500">{{ __('Receipt amount') }}</dt><dd>{{ $payment ? $this->formatMoney($payment->amount_cents) : __('Not recorded') }}</dd></div>
                 <div><dt class="text-neutral-500">{{ __('Allocated') }}</dt><dd>{{ $payment ? $this->formatMoney((int) $allocated) : __('Not recorded') }}</dd></div>
+                <div><dt class="text-neutral-500">{{ __('Unallocated') }}</dt><dd>{{ $payment ? $this->formatMoney((int) ($creditProjection['unallocated_cents'] ?? 0)) : __('Not recorded') }}</dd></div>
+                <div><dt class="text-neutral-500">{{ __('Committed to memberships') }}</dt><dd>{{ $creditProjection === null ? __('Not recorded') : ($creditProjection['state'] === 'unavailable' ? __('Unavailable') : $this->formatMoney((int) $creditProjection['committed_cents'])) }}</dd></div>
+                <div><dt class="text-neutral-500">{{ __('Available saved credit') }}</dt><dd>{{ $creditProjection === null ? __('Not recorded') : ($creditProjection['state'] === 'unavailable' ? __('Unavailable') : $this->formatMoney((int) $creditProjection['available_cents'])) }}</dd></div>
             </dl>
         </section>
 
