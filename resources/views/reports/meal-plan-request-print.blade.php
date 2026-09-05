@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meal Plan Request Report</title>
+    <title>{{ ($isCombined ?? false) ? __('Combined Meal Plan Orders') : __('Meal Plan Request Report') }}</title>
     <style>
         :root { color-scheme: light; }
         body { font-family: Arial, sans-serif; color: #111827; margin: 24px; background: #f8fafc; }
@@ -11,7 +11,7 @@
         h2 { margin: 0; font-size: 17px; }
         .meta { font-size: 12px; color: #4b5563; margin-bottom: 16px; }
         .toolbar { margin-bottom: 12px; }
-        .btn { display: inline-block; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; color: #111827; text-decoration: none; font-size: 13px; cursor: pointer; }
+        .btn { display: inline-flex; align-items: center; min-height: 44px; box-sizing: border-box; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; color: #111827; text-decoration: none; font-size: 13px; cursor: pointer; }
         .btn:hover { background: #f3f4f6; }
         .no-print { display: inline-block; }
         .summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 20px; margin: 18px 0; padding: 16px; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; }
@@ -28,17 +28,35 @@
         th, td { border: 1px solid #e5e7eb; padding: 10px; font-size: 13px; text-align: left; vertical-align: top; }
         th { background: #f8fafc; font-weight: 600; color: #374151; }
         .muted { color: #6b7280; font-size: 12px; }
+        .table-scroll { overflow-x: auto; }
+        @media (max-width: 640px) {
+            body { margin: 12px; }
+            .summary { grid-template-columns: 1fr; }
+            .day-head { flex-wrap: wrap; }
+            .table-scroll table { min-width: 600px; }
+        }
         @include('reports.print-header-styles')
+        @media screen { .print-footer { position: static; margin-top: 20px; } }
+        @media screen and (max-width: 640px) {
+            .report-header-top { grid-template-columns: 60px minmax(0, 1fr); }
+            .report-meta { grid-column: 1 / -1; text-align: left; white-space: normal; }
+            .report-header-bottom { flex-direction: column; }
+            .report-header-bottom .left, .report-header-bottom .right { width: 100%; text-align: left; }
+            .report-header-bottom .row { white-space: normal; }
+        }
         @media print {
             .no-print { display: none !important; }
             body { margin: 12px; background: #fff; }
             th, td { font-size: 12px; }
             .day-card { break-inside: avoid; }
+            .table-scroll { overflow: visible; }
+            .table-scroll table { min-width: 0; }
         }
     </style>
 </head>
 <body>
     @php
+        $isCombined = $isCombined ?? false;
         $displayItemName = function ($item): string {
             $name = trim((string) ($item->menuItem?->name ?? ''));
             if ($name !== '') {
@@ -60,40 +78,59 @@
 
     <div class="toolbar no-print">
         <button class="btn" onclick="window.print()">Print</button>
-        <a class="btn" href="{{ route('meal-plan-requests.show', $mealPlanRequest) }}">Back to Request</a>
+        <a class="btn" href="{{ $isCombined ? route('meal-plan-requests.print-selection') : route('meal-plan-requests.show', $mealPlanRequest) }}">{{ $isCombined ? __('Back to Selection') : __('Back to Request') }}</a>
     </div>
 
-    @include('reports.print-header', ['reportTitle' => 'Meal Plan Request Report'])
+    @include('reports.print-header', ['reportTitle' => $isCombined ? __('Combined Meal Plan Orders') : __('Meal Plan Request Report')])
 
     <div class="meta">
         Generated: {{ $generatedAt->format('Y-m-d H:i') }} |
-        Request: #{{ $mealPlanRequest->id }} |
-        Customer: {{ $mealPlanRequest->customer_name }} |
-        Plan: {{ $mealPlanRequest->plan_meals > 0 ? $mealPlanRequest->plan_meals . ' meals' : 'No plan' }}
+        @if ($isCombined)
+            {{ __('Requests: :requests', ['requests' => $mealPlanRequests->map(fn ($request) => '#'.$request->id)->join(', ')]) }} |
+            {{ __('Customer: :customer', ['customer' => $reportCustomer->name]) }}
+        @else
+            Request: #{{ $mealPlanRequest->id }} |
+            Customer: {{ $mealPlanRequest->customer_name }} |
+            Plan: {{ $mealPlanRequest->plan_meals > 0 ? $mealPlanRequest->plan_meals . ' meals' : 'No plan' }}
+        @endif
     </div>
 
     <div class="summary">
         <div>
             <strong>Customer Name</strong>
-            {{ $mealPlanRequest->customer_name ?: '—' }}
+            {{ ($isCombined ? $reportCustomer->name : $mealPlanRequest->customer_name) ?: '—' }}
         </div>
         <div>
             <strong>Phone</strong>
-            {{ $mealPlanRequest->customer_phone ?: '—' }}
+            {{ ($isCombined ? $reportCustomer->phone : $mealPlanRequest->customer_phone) ?: '—' }}
         </div>
         <div>
             <strong>Email</strong>
-            {{ $mealPlanRequest->customer_email ?: '—' }}
+            {{ ($isCombined ? $reportCustomer->email : $mealPlanRequest->customer_email) ?: '—' }}
         </div>
         <div>
             <strong>Delivery Address</strong>
-            {{ $mealPlanRequest->delivery_address ?: '—' }}
+            {{ ($isCombined ? $reportCustomer->delivery_address : $mealPlanRequest->delivery_address) ?: '—' }}
         </div>
         <div>
             <strong>Notes</strong>
-            {{ $mealPlanRequest->notes ?: '—' }}
+            {{ ($isCombined ? $mealPlanRequests->map(fn ($request) => $request->notes ? '#'.$request->id.': '.$request->notes : null)->filter()->join(' | ') : $mealPlanRequest->notes) ?: '—' }}
         </div>
     </div>
+
+    @if ($isCombined)
+        <h2>{{ __('Selected Requests') }}</h2>
+        <div class="table-scroll">
+            <table>
+                <thead><tr><th>{{ __('Request') }}</th><th>{{ __('Requested') }}</th><th>{{ __('Plan') }}</th><th>{{ __('Status') }}</th></tr></thead>
+                <tbody>
+                    @foreach ($mealPlanRequests as $selectedRequest)
+                        <tr><td>#{{ $selectedRequest->id }}</td><td>{{ $selectedRequest->created_at?->format('Y-m-d') }}</td><td>{{ __(':count meals', ['count' => $selectedRequest->plan_meals]) }}</td><td>{{ ucfirst($selectedRequest->status) }}</td></tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    @endif
 
     @forelse ($days as $day)
         <section class="day-card">
@@ -115,6 +152,7 @@
                 <div class="day-total">Day Total: {{ number_format((float) $day['day_total'], 3) }}</div>
             </div>
 
+            <div class="table-scroll">
             <table>
                 <thead>
                     <tr>
@@ -127,6 +165,9 @@
                 </thead>
                 <tbody>
                     @foreach ($day['orders'] as $order)
+                        @if ($isCombined)
+                            <tr><th colspan="5">{{ $order->order_number ?: '#'.$order->id }} · {{ __('Requests: :requests', ['requests' => $orderRequestIds->get($order->id, collect())->map(fn ($id) => '#'.$id)->join(', ')]) }} · {{ $order->status }}</th></tr>
+                        @endif
                         @forelse ($order->items as $item)
                             <tr>
                                 <td>{{ $displayItemName($item) }}</td>
@@ -143,9 +184,10 @@
                     @endforeach
                 </tbody>
             </table>
+            </div>
         </section>
     @empty
-        <p>No orders are attached to this meal plan request.</p>
+        <p>{{ $isCombined ? __('No orders are attached to the selected requests.') : __('No orders are attached to this meal plan request.') }}</p>
     @endforelse
 
     <div class="grand-total">
