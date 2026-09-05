@@ -1,11 +1,13 @@
 <?php
 
 use App\Models\MealPlanRequest;
+use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
@@ -21,6 +23,8 @@ it('prints a meal plan request report with daily totals and grand total', functi
     seedMealPlanRequestReportBranch(1);
 
     $user = User::factory()->create();
+    Role::findOrCreate('manager');
+    $user->assignRole('manager');
     $this->actingAs($user);
 
     $request = MealPlanRequest::create([
@@ -63,6 +67,7 @@ it('prints a meal plan request report with daily totals and grand total', functi
 
     OrderItem::create([
         'order_id' => $order1->id,
+        'menu_item_id' => MenuItem::factory()->create(['name' => 'Chicken Biryani'])->id,
         'description_snapshot' => 'Daily Dish (Main) - Chicken Biryani',
         'quantity' => 1,
         'unit_price' => 20.000,
@@ -74,6 +79,7 @@ it('prints a meal plan request report with daily totals and grand total', functi
     ]);
     OrderItem::create([
         'order_id' => $order1->id,
+        'menu_item_id' => MenuItem::factory()->create(['name' => 'Cake'])->id,
         'description_snapshot' => 'Daily Dish (Dessert) - Cake',
         'quantity' => 1,
         'unit_price' => 20.000,
@@ -85,6 +91,7 @@ it('prints a meal plan request report with daily totals and grand total', functi
     ]);
     OrderItem::create([
         'order_id' => $order2->id,
+        'menu_item_id' => MenuItem::factory()->create(['name' => 'Fish Fillet'])->id,
         'description_snapshot' => 'Daily Dish (Main) - Fish Fillet',
         'quantity' => 1,
         'unit_price' => 42.300,
@@ -96,6 +103,7 @@ it('prints a meal plan request report with daily totals and grand total', functi
     ]);
     OrderItem::create([
         'order_id' => $order3->id,
+        'menu_item_id' => MenuItem::factory()->create(['name' => 'Salad Plate'])->id,
         'description_snapshot' => 'Daily Dish (Main) - Salad Plate',
         'quantity' => 1,
         'unit_price' => 18.000,

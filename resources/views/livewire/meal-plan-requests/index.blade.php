@@ -392,8 +392,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 <div>
 <div class="w-full max-w-6xl mx-auto px-4 space-y-6">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-wrap items-center justify-between gap-3">
         <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Meal Plan Requests') }}</h1>
+        <flux:button :href="route('meal-plan-requests.print-selection')" wire:navigate variant="primary" class="touch-target">{{ __('Print Multiple Plans') }}</flux:button>
     </div>
 
     @if (session('status'))
