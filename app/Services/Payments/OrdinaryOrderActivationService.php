@@ -12,6 +12,8 @@ use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\AR\ArInvoiceService;
 use App\Services\AR\ArPaymentService;
 use App\Services\Customers\CustomerOwnershipService;
+use App\Services\Mail\MailConfigurationUnavailableException;
+use App\Services\Mail\MailSettingsService;
 use App\Services\Orders\OrderNumberService;
 use Illuminate\Support\Facades\DB;
 
@@ -23,6 +25,7 @@ class OrdinaryOrderActivationService
         private readonly ArPaymentService $payments,
         private readonly AccountingAuditLogService $auditLog,
         private readonly CustomerOwnershipService $customerOwnership,
+        private readonly MailSettingsService $mailSettings,
     ) {}
 
     public function complete(int $attemptId, int $providerTransactionId): PaymentCheckoutAttempt
@@ -140,7 +143,7 @@ class OrdinaryOrderActivationService
             ]);
             $notificationSnapshots = [
                 'customer_email' => $attempt->customer_snapshot['email'] ?? null,
-                'admin_emails' => array_values(array_filter((array) config('mail.daily_dish_admin_emails', []))),
+                'admin_emails' => $this->adminRecipients((int) $attempt->company_id),
                 'order_ids' => $targets->pluck('order_id')->map(fn ($id): int => (int) $id)->all(),
                 'amount_cents' => (int) $attempt->payable_amount_cents,
                 'reference' => $attempt->reference,
@@ -238,5 +241,15 @@ class OrdinaryOrderActivationService
         $cents = abs($cents);
 
         return $sign.intdiv($cents, 100).'.'.str_pad((string) ($cents % 100), 2, '0', STR_PAD_LEFT).'0';
+    }
+
+    /** @return array<int, string> */
+    private function adminRecipients(int $companyId): array
+    {
+        try {
+            return $this->mailSettings->adminRecipientsForCompany($companyId);
+        } catch (MailConfigurationUnavailableException) {
+            return [];
+        }
     }
 }

@@ -12,6 +12,8 @@ use App\Services\Customers\CustomerPhoneVerificationService;
 use App\Services\Customers\CustomerPortalAccountService;
 use App\Services\Customers\CustomerPortalRegistrationService;
 use App\Services\Customers\PhoneNumberService;
+use App\Services\Mail\MailConfigurationUnavailableException;
+use App\Services\Mail\MailSettingsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +29,7 @@ class CustomerPortalAuthController extends Controller
         private readonly PhoneNumberService $phoneNumbers,
         private readonly CustomerPortalAccountService $accounts,
         private readonly CustomerIdentityResolver $identities,
+        private readonly MailSettingsService $mailSettings,
     ) {}
 
     public function registerStart(Request $request): JsonResponse
@@ -185,7 +188,18 @@ class CustomerPortalAuthController extends Controller
 
         if ($user && $user->isCustomerPortalUser()) {
             $token = Password::broker()->createToken($user);
-            $user->notify(new CustomerPortalResetPassword($token));
+            try {
+                $this->mailSettings->prepareForDelivery();
+                $user->notify(new CustomerPortalResetPassword($token));
+            } catch (MailConfigurationUnavailableException $exception) {
+                logger()->warning('customer_portal_password_reset_mail_unavailable', [
+                    'reason_code' => $exception->reasonCode,
+                ]);
+            } catch (\Throwable) {
+                logger()->warning('customer_portal_password_reset_mail_failed', [
+                    'reason_code' => 'EMAIL_SEND_FAILED',
+                ]);
+            }
         }
 
         return response()->json([

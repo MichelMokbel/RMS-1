@@ -7,6 +7,8 @@ use App\Mail\DailyDishOrderCustomerMail;
 use App\Models\Order;
 use App\Models\PaymentCheckoutAttempt;
 use App\Services\Mail\EmailLogService;
+use App\Services\Mail\MailConfigurationUnavailableException;
+use App\Services\Mail\MailSettingsService;
 use App\Services\Payments\PaymentOperationsTrackingService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -36,8 +38,11 @@ class SendSkipCashOrderConfirmation implements ShouldQueue
         };
     }
 
-    public function handle(EmailLogService $emailLogs, PaymentOperationsTrackingService $operations): void
-    {
+    public function handle(
+        EmailLogService $emailLogs,
+        PaymentOperationsTrackingService $operations,
+        MailSettingsService $mailSettings,
+    ): void {
         $slotKey = self::slotForAudience($this->audience);
         if ($slotKey === null) {
             return;
@@ -89,9 +94,9 @@ class SendSkipCashOrderConfirmation implements ShouldQueue
         $mail = $this->audience === 'customer'
             ? new DailyDishOrderCustomerMail($orders, null, null)
             : new DailyDishOrderAdminMail($orders, null, null);
-        $mailer = (string) config('mail.default', 'log');
-
         try {
+            $mailSettings->prepareForDelivery();
+            $mailer = (string) config('mail.default', 'log');
             if (in_array($mailer, ['log', 'array'], true)) {
                 $emailLogs->log(
                     'skipcash_order_confirmation', $this->audience, 'skipped', $mail, $recipients,
@@ -106,6 +111,10 @@ class SendSkipCashOrderConfirmation implements ShouldQueue
                     context: ['checkout_attempt_id' => $attempt->id],
                 );
             }
+        } catch (MailConfigurationUnavailableException) {
+            $this->markFailed('MAIL_CONFIGURATION_UNAVAILABLE', true, $operations);
+
+            return;
         } catch (\Throwable) {
             $this->markFailed('EMAIL_SEND_FAILED', true, $operations);
 

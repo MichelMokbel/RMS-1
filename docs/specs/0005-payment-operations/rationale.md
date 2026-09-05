@@ -8,6 +8,8 @@ The existing receipt list cannot show a checkout before its AR payment exists. F
 
 The approved accounting, identity, checkout, and settlement designs constrain recovery. Staff must not initiate another charge, substitute a posting date, silently allocate credit, or recreate records after a correction. Operations also needs current customer ownership after merge without rewriting original evidence. These are planned integration contracts, not claims that SkipCash runtime code already exists.
 
+On 2026-09-05 the owner replaced the earlier deployment only mail configuration boundary. One operator needs to configure SMTP delivery and administrator recipients without editing environment files or restarting long lived workers. The configuration contains secrets and personal recipient addresses, so browser exposure and audit content must stay limited.
+
 ## Options considered
 
 ### Option 1: Derive the entire support view from existing records and logs
@@ -52,8 +54,18 @@ Choose option 2. The owner needs trustworthy exception handling, not a support d
 | Permissions | Separate inspect, recover, resend, settings, and admin credit rights | A single broad finance permission is simpler but gives support staff unnecessary money mutation authority |
 | Settings concurrency | Compare the loaded row version before saving | Last writer wins is simpler but silently overwrites a later administrator edit |
 | Health | Existing command success markers, scoped due work, and explicit Unknown state | A new monitoring service is unnecessary for this slice; cache markers alone cannot prove an idle worker is healthy |
+| Mail configuration | One encrypted global singleton with environment fallback until first save | Rewriting environment files from the browser would mix application and deployment ownership, require filesystem write access, and still leave long lived workers stale |
+| Credential lifecycle | First save inherits omitted installation credentials and recipients; later empty replacements preserve saved values; explicit confirmed clearing removes both authentication fields | Per field fallback is convenient but makes a saved row's authority ambiguous and can unexpectedly combine credentials from different revisions |
+| Transport security | `implicit_tls` and required `starttls` are production modes with certificate verification; unauthenticated `none` is local or test only | Free form schemes are flexible but let unsafe or unsupported combinations reach the runtime |
+| Runtime refresh | Resolve one coherent saved revision at every delivery boundary and rebuild the cached SMTP transport | Restarting every worker after each edit is simpler in code but defeats the requested backoffice setup flow and is easy for one operator to miss |
+| Secret editing | Show only configured flags and counts and accept write only credential and complete recipient replacements | Decrypting the current values into the form is convenient but exposes them to browser state and page inspection |
+| Mail settings concurrency | Unique singleton insert plus expected integer revision and row lock | Last writer wins or timestamp only checks can lose simultaneous edits, especially on the first save |
+| Mail settings audit | Default company owns a safe fact only audit written atomically with the setting | Logging before and after values is more detailed but would retain credentials or recipient personal data |
+| Saved configuration failure | An unreadable authoritative row blocks sending but not the application, while preserving retry intent | Silent environment fallback can deliver through obsolete credentials without the operator knowing |
 
 These picks follow the approved stack and security rules. They refine implementation rather than change payment, membership, or customer journeys. (basis: `AGENTS.md`, 0001 through 0004, parent row locking, and durable intent with idempotent actions)
+
+The owner selected the independent design cross check on 2026-09-05 and accepted all recommended resolutions. The review closed first save inheritance, explicit authentication clearing, browser state wording, transport security, global audit ownership, concurrent save handling, delivery activation timing, saved row failure behavior, and default company recipient routing before implementation acceptance.
 
 ### Source observations
 

@@ -4,12 +4,14 @@ use App\Models\Customer;
 use App\Models\DailyDishMenu;
 use App\Models\DailyDishMenuItem;
 use App\Models\EmailLog;
+use App\Models\MailSetting;
 use App\Models\MenuItem;
 use App\Models\OpsEvent;
 use App\Models\Order;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\Sanctum;
@@ -799,11 +801,23 @@ it('rejects conflicting duplicate keys when the same client uuid is reused for a
     expect(\App\Models\MealPlanRequest::query()->count())->toBe(1);
 });
 
-it('sends admin email to multiple configured recipients and logs sent emails', function () {
+it('uses saved administrator recipients for order mail and logs sent emails', function () {
     Config::set('mail.default', 'smtp');
-    Config::set('mail.daily_dish_admin_emails', [
-        'ops1@example.com',
-        'ops2@example.com',
+    Config::set('mail.daily_dish_admin_emails', ['deployment@example.com']);
+    MailSetting::query()->create([
+        'id' => MailSetting::SINGLETON_ID,
+        'smtp_host' => 'smtp.saved.example',
+        'smtp_port' => 587,
+        'security_mode' => 'starttls',
+        'smtp_username' => null,
+        'smtp_password' => null,
+        'from_address' => 'orders@example.com',
+        'from_name' => 'Layla Kitchen',
+        'daily_dish_admin_emails' => Crypt::encryptString(json_encode([
+            'ops1@example.com',
+            'ops2@example.com',
+        ], JSON_THROW_ON_ERROR)),
+        'revision' => 1,
     ]);
     Mail::fake();
 
@@ -840,7 +854,9 @@ it('sends admin email to multiple configured recipients and logs sent emails', f
     ]);
 
     Mail::assertSent(\App\Mail\DailyDishOrderAdminMail::class, function ($mail): bool {
-        return $mail->hasTo('ops1@example.com') && $mail->hasTo('ops2@example.com');
+        return $mail->hasTo('ops1@example.com')
+            && $mail->hasTo('ops2@example.com')
+            && ! $mail->hasTo('deployment@example.com');
     });
 
     Mail::assertSent(\App\Mail\DailyDishOrderCustomerMail::class, function ($mail): bool {

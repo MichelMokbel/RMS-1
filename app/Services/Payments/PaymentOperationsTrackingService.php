@@ -8,6 +8,8 @@ use App\Jobs\SendPaymentOperationsAlert;
 use App\Models\PaymentCheckoutAttempt;
 use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\Accounting\AccountingContextService;
+use App\Services\Mail\MailConfigurationUnavailableException;
+use App\Services\Mail\MailSettingsService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -38,6 +40,7 @@ class PaymentOperationsTrackingService
     public function __construct(
         private readonly AccountingAuditLogService $auditLog,
         private readonly AccountingContextService $accountingContext,
+        private readonly MailSettingsService $mailSettings,
     ) {}
 
     public function recordProcessingFailure(int $attemptId, string $reasonCode): void
@@ -401,13 +404,10 @@ class PaymentOperationsTrackingService
     {
         $snapshots = is_array($attempt->notification_snapshots) ? $attempt->notification_snapshots : [];
         $alerts = is_array($snapshots['operations_alerts'] ?? null) ? $snapshots['operations_alerts'] : [];
-        $recipients = [];
-        if ((int) $attempt->company_id === (int) $this->accountingContext->defaultCompanyId()) {
-            $recipients = collect((array) config('mail.daily_dish_admin_emails', []))
-                ->filter(fn ($email): bool => is_string($email) && filter_var($email, FILTER_VALIDATE_EMAIL) !== false)
-                ->unique()
-                ->values()
-                ->all();
+        try {
+            $recipients = $this->mailSettings->adminRecipientsForCompany((int) $attempt->company_id);
+        } catch (MailConfigurationUnavailableException) {
+            $recipients = [];
         }
         $alerts[$episodeUuid] = [
             'admin_emails' => $recipients,

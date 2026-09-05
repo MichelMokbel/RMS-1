@@ -6,6 +6,8 @@ use App\Mail\PaymentOperationsAlertMail;
 use App\Models\PaymentCheckoutAttempt;
 use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\Mail\EmailLogService;
+use App\Services\Mail\MailConfigurationUnavailableException;
+use App\Services\Mail\MailSettingsService;
 use App\Services\Payments\PaymentOperationsTrackingService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -29,6 +31,7 @@ class SendPaymentOperationsAlert implements ShouldQueue
         EmailLogService $emailLogs,
         PaymentOperationsTrackingService $trackingService,
         AccountingAuditLogService $auditLog,
+        MailSettingsService $mailSettings,
     ): void {
         $context = DB::transaction(function () use ($trackingService): ?array {
             $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->find($this->attemptId);
@@ -104,9 +107,9 @@ class SendPaymentOperationsAlert implements ShouldQueue
             (string) ($snapshot['reason_code'] ?? 'PAYMENT_PROCESSING_FAILED'),
             (string) ($snapshot['url'] ?? ''),
         );
-        $mailer = (string) config('mail.default', 'log');
-
         try {
+            $mailSettings->prepareForDelivery();
+            $mailer = (string) config('mail.default', 'log');
             if (in_array($mailer, ['log', 'array'], true)) {
                 $emailLog = $emailLogs->log(
                     'payment_operations_alert', 'admin', 'skipped', $mail, $recipients,
@@ -132,6 +135,10 @@ class SendPaymentOperationsAlert implements ShouldQueue
                     ],
                 );
             }
+        } catch (MailConfigurationUnavailableException) {
+            $this->markFailed('MAIL_CONFIGURATION_UNAVAILABLE', true, $trackingService, $auditLog);
+
+            return;
         } catch (\Throwable) {
             $this->markFailed('EMAIL_SEND_FAILED', true, $trackingService, $auditLog);
 

@@ -10,7 +10,10 @@ use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
+use App\Services\Accounting\AccountingContextService;
 use App\Services\Mail\EmailLogService;
+use App\Services\Mail\MailConfigurationUnavailableException;
+use App\Services\Mail\MailSettingsService;
 use App\Services\Pricing\MealPlanPricingService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +30,8 @@ class CustomerDailyDishOrderService
         private readonly MealPlanPricingService $pricingService,
         private readonly CustomerPortalOrderAuditService $auditService,
         private readonly EmailLogService $emailLogs,
+        private readonly AccountingContextService $accountingContext,
+        private readonly MailSettingsService $mailSettings,
     ) {}
 
     /**
@@ -582,11 +587,25 @@ class CustomerDailyDishOrderService
             ->orderBy('scheduled_date')
             ->get();
 
-        $defaultMailer = (string) config('mail.default', 'log');
+        $mailConfigurationError = null;
+        try {
+            $this->mailSettings->prepareForDelivery();
+        } catch (MailConfigurationUnavailableException $exception) {
+            $mailConfigurationError = $exception;
+        }
+
+        $defaultMailer = $mailConfigurationError ? 'unavailable' : (string) config('mail.default', 'log');
         $mailDeliveryDisabled = in_array($defaultMailer, ['log', 'array'], true);
-        $emailSentAdmin = ! $mailDeliveryDisabled;
-        $emailSentCustomer = ! $mailDeliveryDisabled;
-        $adminRecipients = $this->resolveAdminRecipients();
+        $emailSentAdmin = ! $mailDeliveryDisabled && ! $mailConfigurationError;
+        $emailSentCustomer = ! $mailDeliveryDisabled && ! $mailConfigurationError;
+        try {
+            $adminRecipients = $this->mailSettings->adminRecipientsForCompany(
+                $this->accountingContext->resolveCompanyId($branchId),
+            );
+        } catch (MailConfigurationUnavailableException $exception) {
+            $mailConfigurationError ??= $exception;
+            $adminRecipients = [];
+        }
         $customerRecipients = $this->resolveCustomerRecipients($payload, $user);
         $firstOrderId = $createdOrderIds[0] ?? null;
         $mealPlanMeals = filled($payload['mealPlan'] ?? null) ? (int) $payload['mealPlan'] : null;
@@ -605,13 +624,38 @@ class CustomerDailyDishOrderService
             'meal_plan_request_id' => $leadId,
         ];
 
-        if ($mailDeliveryDisabled) {
+        if ($mailConfigurationError) {
+            $emailSentAdmin = false;
+            $emailSentCustomer = false;
+
+            logger()->warning('daily_dish_order_mail_configuration_unavailable', [
+                'reason_code' => $mailConfigurationError->reasonCode,
+                'order_ids' => $createdOrderIds,
+                'meal_plan_request_id' => $leadId,
+            ]);
+
+            if ($customerRecipients !== []) {
+                $this->emailLogs->log(
+                    category: 'daily_dish_order',
+                    recipientType: 'customer',
+                    status: 'failed',
+                    mailable: $customerMail,
+                    toRecipients: $customerRecipients,
+                    userId: $user->id,
+                    orderId: $firstOrderId,
+                    mealPlanRequestId: $leadId,
+                    mailer: $defaultMailer,
+                    context: $emailContext + ['reason' => $mailConfigurationError->reasonCode],
+                    exception: $mailConfigurationError,
+                );
+            }
+        } elseif ($mailDeliveryDisabled) {
             logger()->warning('daily_dish_order_mail_delivery_disabled', [
                 'mailer' => $defaultMailer,
                 'order_ids' => $createdOrderIds,
                 'meal_plan_request_id' => $leadId,
-                'admin_emails' => $adminRecipients,
-                'customer_emails' => $customerRecipients,
+                'admin_recipient_count' => count($adminRecipients),
+                'customer_recipient_count' => count($customerRecipients),
             ]);
 
             if ($adminRecipients !== []) {
@@ -667,17 +711,14 @@ class CustomerDailyDishOrderService
                         mailer: $defaultMailer,
                         context: $emailContext
                     );
-                } catch (\Throwable $e) {
+                } catch (\Throwable) {
                     $emailSentAdmin = false;
-                    report($e);
 
                     logger()->error('daily_dish_admin_email_failed', [
                         'mailer' => $defaultMailer,
-                        'admin_emails' => $adminRecipients,
                         'order_ids' => $createdOrderIds,
                         'meal_plan_request_id' => $leadId,
-                        'exception' => $e::class,
-                        'message' => $e->getMessage(),
+                        'reason_code' => 'EMAIL_SEND_FAILED',
                     ]);
 
                     $this->emailLogs->log(
@@ -691,7 +732,7 @@ class CustomerDailyDishOrderService
                         mealPlanRequestId: $leadId,
                         mailer: $defaultMailer,
                         context: $emailContext,
-                        exception: $e
+                        exception: new \RuntimeException('Mail delivery failed.')
                     );
                 }
             }
@@ -720,18 +761,15 @@ class CustomerDailyDishOrderService
                         mailer: $defaultMailer,
                         context: $emailContext
                     );
-                } catch (\Throwable $e) {
+                } catch (\Throwable) {
                     $emailSentCustomer = false;
-                    report($e);
 
                     logger()->error('daily_dish_customer_email_failed', [
                         'mailer' => $defaultMailer,
-                        'customer_emails' => $customerRecipients,
                         'user_id' => $user->id,
                         'order_ids' => $createdOrderIds,
                         'meal_plan_request_id' => $leadId,
-                        'exception' => $e::class,
-                        'message' => $e->getMessage(),
+                        'reason_code' => 'EMAIL_SEND_FAILED',
                     ]);
 
                     $this->emailLogs->log(
@@ -745,7 +783,7 @@ class CustomerDailyDishOrderService
                         mealPlanRequestId: $leadId,
                         mailer: $defaultMailer,
                         context: $emailContext,
-                        exception: $e
+                        exception: new \RuntimeException('Mail delivery failed.')
                     );
                 }
             }
@@ -866,23 +904,6 @@ class CustomerDailyDishOrderService
         }
 
         return round((float) $row['day_total'], 3);
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function resolveAdminRecipients(): array
-    {
-        $configured = config('mail.daily_dish_admin_emails', []);
-
-        if (is_string($configured)) {
-            $configured = preg_split('/[,;]+/', $configured) ?: [];
-        }
-
-        return array_values(array_filter(array_map(
-            static fn (mixed $email): string => trim((string) $email),
-            is_array($configured) ? $configured : []
-        )));
     }
 
     /**

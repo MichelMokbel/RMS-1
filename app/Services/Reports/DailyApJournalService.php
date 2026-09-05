@@ -8,6 +8,7 @@ use App\Models\AccountingCompany;
 use App\Models\ApDailyJournalReport;
 use App\Models\FinanceSetting;
 use App\Services\Mail\EmailLogService;
+use App\Services\Mail\MailSettingsService;
 use App\Services\Sequences\DocumentSequenceService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +23,7 @@ class DailyApJournalService
         private readonly ApReportService $reports,
         private readonly EmailLogService $emailLogs,
         private readonly DocumentSequenceService $sequences,
+        private readonly MailSettingsService $mailSettings,
     ) {}
 
     public function generate(int $companyId, string $date): ApDailyJournalReport
@@ -108,6 +110,7 @@ class DailyApJournalService
         $mail = new DailyApJournalMail($claimed->snapshot, $date, $claimed->revision, $claimed->generated_at, $claimed->document_number);
         try {
             // No external side effects inside the database transaction.
+            $this->mailSettings->prepareForDelivery();
             Mail::to($claimed->recipient)->send($mail);
         } catch (\Throwable $exception) {
             $claimed->update(['email_status' => 'failed']);
@@ -232,6 +235,7 @@ class DailyApJournalService
         );
 
         try {
+            $this->mailSettings->prepareForDelivery();
             Mail::to($settings->ap_report_email)->send($mail);
         } catch (\Throwable $exception) {
             ApDailyJournalReport::query()->whereIn('id', collect($payload)->pluck('id'))->where('email_status', 'sending')->update([

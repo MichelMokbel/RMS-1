@@ -8,6 +8,8 @@ use App\Models\PaymentCheckoutAttempt;
 use App\Models\User;
 use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\Mail\EmailLogService;
+use App\Services\Mail\MailConfigurationUnavailableException;
+use App\Services\Mail\MailSettingsService;
 use App\Services\Payments\PaymentOperationsAccessService;
 use App\Services\Payments\PaymentOperationsResendService;
 use App\Services\Payments\PaymentOperationsTrackingService;
@@ -34,6 +36,7 @@ class ResendSkipCashOrderConfirmation implements ShouldQueue
         PaymentOperationsTrackingService $trackingService,
         AccountingAuditLogService $auditLog,
         EmailLogService $emailLogs,
+        MailSettingsService $mailSettings,
     ): void {
         $context = DB::transaction(function () use ($resends, $access, $trackingService): ?array {
             $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->find($this->attemptId);
@@ -92,8 +95,9 @@ class ResendSkipCashOrderConfirmation implements ShouldQueue
         }
 
         $mail = new DailyDishOrderCustomerMail($orders, null, null);
-        $mailer = (string) config('mail.default', 'log');
         try {
+            $mailSettings->prepareForDelivery();
+            $mailer = (string) config('mail.default', 'log');
             if (in_array($mailer, ['log', 'array'], true)) {
                 $emailLog = $emailLogs->log(
                     'skipcash_order_confirmation_resend', 'customer', 'skipped', $mail, [$context['recipient']],
@@ -117,6 +121,10 @@ class ResendSkipCashOrderConfirmation implements ShouldQueue
                     ],
                 );
             }
+        } catch (MailConfigurationUnavailableException) {
+            $this->markOutcome('blocked', 'MAIL_CONFIGURATION_UNAVAILABLE', null, $trackingService, $auditLog);
+
+            return;
         } catch (\Throwable) {
             $this->markOutcome('unknown', 'EMAIL_DELIVERY_UNKNOWN', null, $trackingService, $auditLog);
 

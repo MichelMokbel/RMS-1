@@ -10,6 +10,7 @@ use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\EmailLog;
 use App\Models\LedgerAccount;
+use App\Models\MailSetting;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
@@ -32,6 +33,7 @@ use App\Services\Payments\SkipCashRecoveryService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
@@ -132,6 +134,19 @@ it('adds compact operations tracking and seeds the dedicated administrator permi
 
 it('records one immediate alert intent for a finance blocked verified payment', function (): void {
     Queue::fake([SendPaymentOperationsAlert::class]);
+    config(['mail.daily_dish_admin_emails' => ['deployment@example.test']]);
+    MailSetting::query()->create([
+        'id' => MailSetting::SINGLETON_ID,
+        'smtp_host' => 'smtp.saved.example',
+        'smtp_port' => 587,
+        'security_mode' => 'starttls',
+        'smtp_username' => null,
+        'smtp_password' => null,
+        'from_address' => 'orders@example.test',
+        'from_name' => 'Layla Kitchen',
+        'daily_dish_admin_emails' => Crypt::encryptString(json_encode(['saved-ops@example.test'], JSON_THROW_ON_ERROR)),
+        'revision' => 1,
+    ]);
     $attempt = ($this->makeAttempt)();
     $service = app(PaymentOperationsTrackingService::class);
 
@@ -143,7 +158,7 @@ it('records one immediate alert intent for a finance blocked verified payment', 
     expect($issue['reason_code'])->toBe('FINANCIAL_PERIOD_BLOCKED')
         ->and($issue['resolved_at'])->toBeNull()
         ->and($issue['alert']['state'])->toBe('pending')
-        ->and($attempt->notification_snapshots['operations_alerts'][$issue['episode_uuid']]['admin_emails'])->toBe(['ops@example.test'])
+        ->and($attempt->notification_snapshots['operations_alerts'][$issue['episode_uuid']]['admin_emails'])->toBe(['saved-ops@example.test'])
         ->and(AccountingAuditLog::query()->where('action', 'payment.operations.issue_opened')->count())->toBe(1)
         ->and(AccountingAuditLog::query()->where('action', 'payment.operations.alert_intended')->count())->toBe(1);
     Queue::assertPushed(SendPaymentOperationsAlert::class, fn ($job): bool => $job->slot === 'processing');

@@ -7,6 +7,7 @@ use App\Services\Ai\AiProviderInterface;
 use App\Services\Ai\GeminiProvider;
 use App\Services\Customers\AwsSnsPhoneVerificationProvider;
 use App\Services\Finance\FinanceSettingsService;
+use App\Services\Mail\MailSettingsService;
 use App\Services\Payments\FakeSkipCashProvider;
 use App\Services\Payments\HttpSkipCashProvider;
 use App\Services\Payments\SkipCashProvider;
@@ -23,6 +24,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->singleton(MailSettingsService::class);
         $this->app->bind(AiProviderInterface::class, GeminiProvider::class);
         $this->app->singleton(SkipCashProvider::class, function ($app) {
             return (string) config('payments.skipcash.driver', 'http') === 'fake'
