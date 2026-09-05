@@ -3,8 +3,6 @@
 namespace Database\Seeders;
 
 use App\Models\User;
-use Database\Seeders\PaymentTermSeeder;
-use Database\Seeders\HelpContentSeeder;
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -21,7 +19,9 @@ class DatabaseSeeder extends Seeder
             ['email' => 'test@example.com'],
             [
                 'name' => 'Test User',
+                'username' => 'test.user',
                 'password' => 'password',
+                'status' => 'active',
                 'email_verified_at' => now(),
             ]
         );

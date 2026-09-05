@@ -1,0 +1,78 @@
+name: layla-dev
+
+x-rms-service: &rms-service
+  image: ${RMS_IMAGE:-layla-rms-dev:latest}
+  env_file:
+    - /opt/layla-dev/env/rms.env
+  environment:
+    DB_HOST: database
+  depends_on:
+    database:
+      condition: service_healthy
+  volumes:
+    - rms-storage:/var/www/html/storage
+  restart: unless-stopped
+  init: true
+
+services:
+  database:
+    image: mysql:8.4
+    env_file:
+      - /opt/layla-dev/env/mysql.env
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --performance-schema=OFF
+      - --innodb-buffer-pool-size=128M
+      - --max-connections=40
+      - --log-bin-trust-function-creators=1
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - mysql-data:/var/lib/mysql
+    restart: unless-stopped
+    mem_limit: 384m
+
+  rms:
+    <<: *rms-service
+    ports:
+      - 127.0.0.1:8099:80
+    mem_limit: 512m
+
+  queue:
+    <<: *rms-service
+    command: php artisan queue:work --sleep=1 --tries=3 --timeout=120 --max-time=3600
+    user: www-data
+    healthcheck:
+      disable: true
+    mem_limit: 384m
+
+  scheduler:
+    <<: *rms-service
+    command: php artisan schedule:work
+    user: www-data
+    healthcheck:
+      disable: true
+    mem_limit: 192m
+
+  orders:
+    image: ${ORDERS_IMAGE:-layla-orders-dev:latest}
+    env_file:
+      - /opt/layla-dev/env/orders.env
+    ports:
+      - 127.0.0.1:8098:80
+    volumes:
+      - orders-data:/var/www/html/data
+      - orders-logs:/var/www/html/forms/logs
+    restart: unless-stopped
+    init: true
+    mem_limit: 192m
+
+volumes:
+  mysql-data:
+  orders-data:
+  orders-logs:
+  rms-storage:

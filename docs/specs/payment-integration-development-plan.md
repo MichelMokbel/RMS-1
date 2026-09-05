@@ -56,7 +56,7 @@ No new decision is needed about refunds, recurring charges, tax, meal expiry, de
 
 ### Required before live enablement, not before writing code
 
-* Confirm the customer contact number. Current website evidence is 55683442; do not silently treat it as the approved production contact.
+* Keep the confirmed customer contact number, `55683442`, consistent across RMS settings, customer messages and deployed configuration.
 * Supply final T&C content, canonical URL and approved immutable version for retention.
 * Provide SkipCash sandbox and production configuration, callback/return domains, verified timestamp/currency evidence and provider/report identifier mappings through secret configuration, not repository files.
 * Confirm the existing default company/bank, SkipCash clearing account, commission and settlement fee expense mappings, and active system actor through the setup screen/runbook. No new owner choice of a different bank is implied.

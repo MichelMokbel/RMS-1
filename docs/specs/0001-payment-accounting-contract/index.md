@@ -398,7 +398,7 @@ These are shared contracts for the linked implementation specifications, not per
 * [x] Customer matching design accepted on 2026-08-30 in [0002](../0002-customer-matching-signup/index.md). Its temporary bypass, account continuity, names only AI, and merge evidence rules refine this identity boundary; implementation is still pending.
 * [ ] Write the remaining linked specifications already listed in scope for paid order checkout, settlement, operations, consistency checks, membership purchase, existing membership booking, promotion administration, and promotion redemption before their respective slices begin.
 * [ ] Finance must confirm the requested invoice issue revenue policy for advance ordinary orders before production use.
-* [ ] Confirm that `55683442` is the production support number and publish one Terms and Conditions version covering no expiry, cutoff, no refunds, and administrator only credit allocation.
+* [x] Use `55683442` as the customer support number and publish one Terms and Conditions version covering no expiry, cutoff, no refunds, and administrator only credit allocation.
 * [ ] Confirm the deployed default company, active default bank, `Asia/Qatar` behavior, system actor, ledger mappings, and SkipCash sandbox and production credentials before live collection.
 * [ ] Confirm hosted checkout PCI DSS responsibilities with SkipCash and the merchant acquirer before production use.
 

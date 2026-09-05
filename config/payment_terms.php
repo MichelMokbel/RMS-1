@@ -10,7 +10,7 @@ return [
         [
             'version' => '2026-09-05-v1',
             'effective_at' => '2026-09-05T00:00:00+00:00',
-            'url' => 'https://layla-kitchen.com/terms-and-conditions',
+            'url' => env('PAYMENT_TERMS_URL', 'https://layla-kitchen.com/terms-and-conditions'),
             'content_path' => 'resources/legal/payment-terms/2026-09-05-v1.md',
             'content_hash' => '5903d1af3e27b31f822f6d38e2be977fd62ae4151352160eef23b1cbb282aa54',
         ],
