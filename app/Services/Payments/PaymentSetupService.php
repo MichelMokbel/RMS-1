@@ -181,11 +181,18 @@ class PaymentSetupService
             }
         }
 
-        foreach (['base_url', 'return_url', 'webhook_url'] as $key) {
-            if (! $this->isHttpsUrl((string) config('payments.skipcash.'.$key))) {
-                $this->addError($errors, 'SKIPCASH_URLS_INVALID', __('SkipCash URLs must be valid HTTPS URLs.'));
-                break;
-            }
+        $baseUrl = (string) config('payments.skipcash.base_url');
+        $returnUrl = (string) config('payments.skipcash.return_url');
+        $webhookUrl = (string) config('payments.skipcash.webhook_url');
+
+        if (! $this->isHttpsUrl($baseUrl)
+            || ! $this->isAllowedCallbackUrl($returnUrl)
+            || ! $this->isAllowedCallbackUrl($webhookUrl)) {
+            $this->addError(
+                $errors,
+                'SKIPCASH_URLS_INVALID',
+                __('SkipCash requires an HTTPS API URL and HTTPS callbacks, except for loopback callbacks in the local sandbox environment.')
+            );
         }
 
         $hosts = config('payments.skipcash.pay_url_hosts', []);
@@ -244,6 +251,27 @@ class PaymentSetupService
     {
         return filter_var($url, FILTER_VALIDATE_URL) !== false
             && strtolower((string) parse_url($url, PHP_URL_SCHEME)) === 'https';
+    }
+
+    private function isAllowedCallbackUrl(string $url): bool
+    {
+        if ($this->isHttpsUrl($url)) {
+            return true;
+        }
+
+        if (! app()->environment('local')
+            || config('payments.skipcash.environment') !== 'sandbox'
+            || filter_var($url, FILTER_VALIDATE_URL) === false
+            || strtolower((string) parse_url($url, PHP_URL_SCHEME)) !== 'http'
+            || parse_url($url, PHP_URL_USER) !== null
+            || parse_url($url, PHP_URL_PASS) !== null) {
+            return false;
+        }
+
+        return in_array(strtolower((string) parse_url($url, PHP_URL_HOST)), [
+            '127.0.0.1',
+            'localhost',
+        ], true);
     }
 
     private function isHost(string $host): bool

@@ -14,6 +14,7 @@ use App\Models\PaymentSource;
 use App\Models\User;
 use App\Services\Payments\PaymentSettingsService;
 use App\Services\Payments\PaymentSetupService;
+use App\Services\Payments\PaymentTermsService;
 use Database\Seeders\SkipCashPaymentSourceSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -389,4 +390,63 @@ it('fails closed until every live setup value has a valid source', function (): 
         ->and(array_column($blocked['errors'], 'code'))->toContain('SKIPCASH_SOURCE_INVALID')
         ->and(PaymentCheckoutAttempt::query()->count())->toBe(0)
         ->and(PaymentProviderTransaction::query()->count())->toBe(0);
+});
+
+it('publishes the current payment terms from retained hash checked content', function (): void {
+    $terms = app(PaymentTermsService::class)->inspect(now('UTC'));
+
+    expect($terms['valid'])->toBeTrue()
+        ->and($terms['errors'])->toBe([])
+        ->and($terms['current']['version'])->toBe('2026-09-05-v1')
+        ->and($terms['current']['url'])->toBe('https://layla-kitchen.com/terms-and-conditions')
+        ->and($terms['current']['content_hash'])->toBe(
+            hash_file('sha256', base_path('resources/legal/payment-terms/2026-09-05-v1.md'))
+        );
+});
+
+it('allows loopback http callbacks only for a local sandbox', function (): void {
+    config([
+        'payments.system_user_id' => $this->actor->id,
+        'payments.skipcash.clearing_account_id' => $this->clearingAccount->id,
+        'payments.defaults.order_support_phone' => '+974 5555 0000',
+    ]);
+    app(SkipCashPaymentSourceSeeder::class)->run();
+
+    config([
+        'payments.skipcash.enabled' => true,
+        'payments.customer_direct_order_enabled' => false,
+        'payments.skipcash.environment' => 'sandbox',
+        'payments.skipcash.base_url' => 'https://api.sandbox.skipcash.test',
+        'payments.skipcash.client_id' => 'client-id',
+        'payments.skipcash.key_id' => 'key-id',
+        'payments.skipcash.secret_key' => 'secret-key',
+        'payments.skipcash.webhook_secret' => 'webhook-secret',
+        'payments.skipcash.return_url' => 'http://127.0.0.1:8098/orders/payment',
+        'payments.skipcash.webhook_url' => 'http://localhost:8099/api/integrations/skipcash/webhook',
+        'payments.skipcash.pay_url_hosts' => ['pay.skipcash.test'],
+    ]);
+    $this->app['env'] = 'local';
+
+    $setup = app(PaymentSetupService::class);
+
+    expect($setup->inspectForNewCheckout($this->branch->id)['ready'])->toBeTrue();
+
+    config(['payments.skipcash.return_url' => 'http://192.168.1.10:8098/orders/payment']);
+    expect(array_column($setup->inspectForNewCheckout($this->branch->id)['errors'], 'code'))
+        ->toContain('SKIPCASH_URLS_INVALID');
+
+    config([
+        'payments.skipcash.environment' => 'production',
+        'payments.skipcash.return_url' => 'http://127.0.0.1:8098/orders/payment',
+    ]);
+    expect(array_column($setup->inspectForNewCheckout($this->branch->id)['errors'], 'code'))
+        ->toContain('SKIPCASH_URLS_INVALID');
+
+    config([
+        'payments.skipcash.environment' => 'sandbox',
+        'queue.default' => 'database',
+    ]);
+    $this->app['env'] = 'production';
+    expect(array_column($setup->inspectForNewCheckout($this->branch->id)['errors'], 'code'))
+        ->toContain('SKIPCASH_URLS_INVALID');
 });
