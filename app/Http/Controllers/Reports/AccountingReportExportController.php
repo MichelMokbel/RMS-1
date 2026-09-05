@@ -27,7 +27,7 @@ class AccountingReportExportController extends Controller
             'vendor-ledger' => $this->vendorLedger($service, (int) $companyId, $request),
             'expense-analysis' => $this->expenseAnalysis($service, (int) $companyId, $request),
             'job-profitability' => $this->jobProfitability($service, (int) $companyId, $dateTo),
-            default => $this->genericSummary($service, $report, (int) $companyId, $dateTo),
+            default => $this->genericSummary($service, $report, (int) $companyId, $dateTo, $request->input('date_from')),
         };
     }
 
@@ -289,10 +289,10 @@ class AccountingReportExportController extends Controller
         );
     }
 
-    private function genericSummary(AccountingReportService $service, string $report, int $companyId, string $dateTo): StreamedResponse
+    private function genericSummary(AccountingReportService $service, string $report, int $companyId, string $dateTo, ?string $dateFrom = null): StreamedResponse
     {
         $summary = match ($report) {
-            'profit-loss' => $service->profitAndLoss($companyId, $dateTo)['rows'],
+            'profit-loss' => $service->profitAndLoss($companyId, $dateTo, $dateFrom)['rows'],
             'balance-sheet' => $service->balanceSheet($companyId, $dateTo)['rows'],
             'cash-flow' => [['type' => 'net_cash_flow', 'amount' => $service->cashFlow($companyId, $dateTo)['net_cash_flow']]],
             'bank-reconciliation' => $service->bankReconciliationSummary($companyId)['runs'],

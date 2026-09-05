@@ -99,7 +99,7 @@
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-700">
                     @forelse ($paginator as $row)
-                        <tr>@foreach ($row as $index => $cell)<td @class(['px-4 py-3', 'max-w-64 whitespace-normal' => $reportKey === 'ap-journal' && in_array($index, [3, 4, 5], true), 'text-right whitespace-nowrap' => $reportKey === 'ap-journal' && $index === count($row) - 1])>{{ $cell }}</td>@endforeach</tr>
+                        <tr>@foreach ($row as $index => $cell)<td @class(['px-4 py-3', 'max-w-64 whitespace-normal' => $reportKey === 'ap-journal' && in_array($index, [3, 4, 5, 6], true), 'text-right whitespace-nowrap' => $reportKey === 'ap-journal' && $index === count($row) - 1])>{{ $cell }}</td>@endforeach</tr>
                     @empty
                         <tr><td class="px-4 py-8 text-center" colspan="{{ count($headers) }}">{{ __('No matching records.') }}</td></tr>
                     @endforelse

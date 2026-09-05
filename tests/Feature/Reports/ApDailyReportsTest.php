@@ -98,11 +98,12 @@ it('includes every AP source and reversal without including other dates companie
     }
     $response = $this->actingAs($this->manager)->get(route('reports.ap-journal', $this->filters))->assertOk();
     $response->assertSee('Original remains visible')->assertSee('Reversal remains visible')->assertDontSee('Excluded journal');
-    expect($response->viewData('headers'))->toBe(['Date / time', 'Transaction', 'Reference', 'Supplier / branch', 'Debit account', 'Credit account', 'Amount'])
+    expect($response->viewData('headers'))->toBe(['Date / time', 'Transaction', 'Reference', 'Supplier / branch', 'Category', 'Debit account', 'Credit account', 'Amount'])
         ->and($response->viewData('rows'))->toHaveCount(6)
-        ->and($response->viewData('rows')[0])->toHaveCount(7)
+        ->and($response->viewData('rows')[0])->toHaveCount(8)
         ->and(collect($response->viewData('rows'))->where(1, 'VOID - Supplier invoice'))->toHaveCount(1)
-        ->and($response->viewData('totals')[0])->toBe(['Total journal movement', '', '', '', '', '', 'QAR 74.040']);
+        ->and($response->viewData('totals')[0])->toBe(['Net Supplier invoice', '', '', '', '', '', '', 'QAR 12.340'])
+        ->and(collect($response->viewData('totals'))->last())->toBe(['Gross journal movement', '', '', '', '', '', '', 'QAR 74.040']);
     $this->get(route('reports.ap-journal.print', $this->filters))->assertOk()->assertDontSee('Excluded journal');
     $csv = $this->get(route('reports.ap-journal.csv', $this->filters))->assertOk()->streamedContent();
     expect($csv)->toContain('QAR 74.040')->not->toContain('Excluded journal')->not->toContain('ap_invoice:');
@@ -115,6 +116,7 @@ it('shows business references and supplier names instead of internal AP source i
         'branch_id' => $this->branch->id,
         'supplier_id' => $supplier->id,
         'invoice_number' => 'INV-READABLE-42',
+        'category_id' => ExpenseCategory::factory()->create(['name' => 'Utilities'])->id,
     ]);
     apDailyTestEntry($this, ['source_id' => $invoice->id, 'description' => 'Internal posting description']);
 
@@ -123,9 +125,35 @@ it('shows business references and supplier names instead of internal AP source i
     expect($row[1])->toBe('Supplier invoice')
         ->and($row[2])->toBe('INV-READABLE-42')
         ->and($row[3])->toContain('Readable Supplier')->toContain('Report Branch')
-        ->and($row[4])->toContain($this->accounts[0]->code)
-        ->and($row[5])->toContain($this->accounts[1]->code)
-        ->and($row[6])->toBe('QAR 12.340');
+        ->and($row[4])->toBe('Utilities')
+        ->and($row[5])->toContain($this->accounts[0]->code)
+        ->and($row[6])->toContain($this->accounts[1]->code)
+        ->and($row[7])->toBe('QAR 12.340');
+    $this->get(route('reports.ap-journal.print', $this->filters))->assertOk()->assertSee('Utilities');
+    expect($this->get(route('reports.ap-journal.csv', $this->filters))->assertOk()->streamedContent())->toContain('Category')->toContain('Utilities');
+});
+
+it('separates net invoices payments and currencies while preserving reversal rows in every output', function () {
+    apDailyTestEntry($this, ['source_type' => 'ap_invoice'], '100.0000');
+    apDailyTestEntry($this, ['source_type' => 'ap_payment', 'event' => 'payment'], '100.0000');
+    apDailyTestEntry($this, ['source_type' => 'ap_invoice', 'event' => 'void'], '25.0000');
+    apDailyTestEntry($this, ['source_type' => 'ap_payment', 'event' => 'void_payment'], '20.0000');
+    apDailyTestEntry($this, ['source_type' => 'ap_invoice', 'event' => 'void', 'currency_code' => 'USD'], '3.1200');
+    $expected = [
+        ['Net Supplier invoice', '', '', '', '', '', '', 'QAR 75.000'],
+        ['Net Supplier payment', '', '', '', '', '', '', 'QAR 80.000'],
+        ['Gross journal movement', '', '', '', '', '', '', 'QAR 245.000'],
+        ['Net Supplier invoice', '', '', '', '', '', '', 'USD -3.120'],
+        ['Gross journal movement', '', '', '', '', '', '', 'USD 3.120'],
+    ];
+
+    $this->actingAs($this->manager)->get(route('reports.ap-journal', $this->filters))
+        ->assertOk()->assertViewHas('totals', $expected)->assertSee('VOID - Supplier invoice')->assertSee('VOID - Supplier payment');
+    $this->get(route('reports.ap-journal.print', $this->filters))->assertOk()->assertViewHas('totals', $expected);
+    $csv = $this->get(route('reports.ap-journal.csv', $this->filters))->assertOk()->streamedContent();
+    expect($csv)->toContain('QAR 75.000')->toContain('QAR 80.000')->toContain('USD -3.120');
+    $snapshot = app(DailyApJournalService::class)->generate($this->company->id, '2026-08-31')->snapshot;
+    expect($snapshot['totals'])->toBe($expected);
 });
 
 it('keeps a multi account journal entry on one row and shows each split amount', function () {
@@ -148,10 +176,10 @@ it('keeps a multi account journal entry on one row and shows each split amount',
 
     $row = $this->actingAs($this->manager)->get(route('reports.ap-journal', $this->filters))->assertOk()->viewData('rows')[0];
 
-    expect($row[4])->toContain($this->accounts[0]->code.' '.$this->accounts[0]->name.' (10.000)')
+    expect($row[5])->toContain($this->accounts[0]->code.' '.$this->accounts[0]->name.' (10.000)')
         ->toContain($taxAccount->code.' '.$taxAccount->name.' (2.340)')
-        ->and($row[5])->toBe($this->accounts[1]->code.' '.$this->accounts[1]->name)
-        ->and($row[6])->toBe('QAR 12.340');
+        ->and($row[6])->toBe($this->accounts[1]->code.' '.$this->accounts[1]->name)
+        ->and($row[7])->toBe('QAR 12.340');
 });
 
 it('protects every report output and rejects unauthorized company and branch filters', function (string $report, string $suffix) {

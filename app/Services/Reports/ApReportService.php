@@ -19,7 +19,7 @@ class ApReportService
 {
     public const JOURNAL_SOURCES = ['ap_invoice', 'ap_payment', 'ap_payment_allocation', 'ap_cheque_clearance'];
 
-    public const JOURNAL_LAYOUT_VERSION = 2;
+    public const JOURNAL_LAYOUT_VERSION = 3;
 
     public function __construct(private readonly BranchAccessService $branchAccess) {}
 
@@ -93,11 +93,14 @@ class ApReportService
             return [
                 'currency' => $entry->currency_code,
                 'amount' => $amount,
+                'source_type' => $entry->source_type,
+                'net_amount' => str_contains(strtolower($entry->event), 'void') ? -$amount : $amount,
                 'row' => [
                     trim($entry->entry_date.' '.$postedTime),
                     $this->journalType($entry->source_type, $entry->event),
                     $details['reference'] ?? $this->journalFallbackReference($entry->source_type, (int) $entry->source_id, (string) $entry->description),
                     $context,
+                    $details['category'] ?? '',
                     $this->journalAccounts($entryLines, 'debit'),
                     $this->journalAccounts($entryLines, 'credit'),
                     $entry->currency_code.' '.$this->journalAmount($amount),
@@ -107,28 +110,36 @@ class ApReportService
 
         return [
             'title' => __('AP Journal Entries'),
-            'description' => __('Each row is one AP accounting event. Debit and credit accounts are the two sides of that event. VOID rows reverse an earlier event.'),
-            'headers' => [__('Date / time'), __('Transaction'), __('Reference'), __('Supplier / branch'), __('Debit account'), __('Credit account'), __('Amount')],
+            'description' => __('Each row is one AP accounting event. Debit and credit accounts are the two sides of that event. VOID rows reverse an earlier event. Net totals subtract reversals separately for each transaction type; gross movement includes all events and is not an expense or outstanding balance.'),
+            'headers' => [__('Date / time'), __('Transaction'), __('Reference'), __('Supplier / branch'), __('Category'), __('Debit account'), __('Credit account'), __('Amount')],
             'rows' => $entries->pluck('row')->all(),
-            'totals' => $entries->groupBy('currency')->map(fn ($group, $currency) => [__('Total journal movement'), '', '', '', '', '',
-                $currency.' '.$this->journalAmount($group->sum('amount'))])->values()->all(),
+            'totals' => $entries->groupBy('currency')->flatMap(function (Collection $group, string $currency) {
+                $totals = $group->groupBy('source_type')->map(fn (Collection $events, string $sourceType) => [
+                    __('Net :transaction', ['transaction' => $this->journalType($sourceType, 'post')]), '', '', '', '', '', '',
+                    $currency.' '.$this->journalAmount($events->sum('net_amount')),
+                ])->values();
+                $totals->push([__('Gross journal movement'), '', '', '', '', '', '', $currency.' '.$this->journalAmount($group->sum('amount'))]);
+
+                return $totals;
+            })->values()->all(),
             'entryCount' => $entries->count(),
             'layoutVersion' => self::JOURNAL_LAYOUT_VERSION,
         ];
     }
 
-    /** @return array<string, array<int, array{reference: string, details: string}>> */
+    /** @return array<string, array<int, array{reference: string, details: string, category?: string}>> */
     private function journalSourceDetails(Collection $lines, int $companyId): array
     {
         $ids = $lines->groupBy('source_type')->map(fn (Collection $rows) => $rows->pluck('source_id')->map(fn ($id) => (int) $id)->unique()->values());
         $details = [];
 
         if ($invoiceIds = $ids->get('ap_invoice')) {
-            ApInvoice::query()->with('supplier:id,name')->where('company_id', $companyId)->whereKey($invoiceIds)->get()
+            ApInvoice::query()->with(['supplier:id,name', 'category:id,name'])->where('company_id', $companyId)->whereKey($invoiceIds)->get()
                 ->each(function (ApInvoice $invoice) use (&$details) {
                     $details['ap_invoice'][$invoice->id] = [
                         'reference' => $invoice->invoice_number ?: __('Invoice #:id', ['id' => $invoice->id]),
                         'details' => (string) ($invoice->supplier?->name ?? ''),
+                        'category' => $invoice->category?->name ?? ($invoice->is_expense ? __('Uncategorized') : ''),
                     ];
                 });
         }
@@ -145,7 +156,7 @@ class ApReportService
         }
 
         if ($allocationIds = $ids->get('ap_payment_allocation')) {
-            ApPaymentAllocation::query()->with(['payment.supplier:id,name', 'invoice:id,invoice_number'])
+            ApPaymentAllocation::query()->with(['payment.supplier:id,name', 'invoice:id,invoice_number,category_id,is_expense', 'invoice.category:id,name'])
                 ->whereKey($allocationIds)
                 ->whereHas('payment', fn ($query) => $query->where('company_id', $companyId))
                 ->get()->each(function (ApPaymentAllocation $allocation) use (&$details) {
@@ -153,6 +164,7 @@ class ApReportService
                     $details['ap_payment_allocation'][$allocation->id] = [
                         'reference' => collect([$payment?->voucherNumber(), $allocation->invoice?->invoice_number])->filter()->implode(' / '),
                         'details' => (string) ($payment?->supplier?->name ?? ''),
+                        'category' => $allocation->invoice?->category?->name ?? ($allocation->invoice?->is_expense ? __('Uncategorized') : ''),
                     ];
                 });
         }

@@ -29,7 +29,7 @@
             <p class="meta">{{ __('Report generated') }}: {{ $report['generated_at']->format('Y-m-d H:i') }} · {{ __('Combined PDF generated') }}: {{ $generatedAt->format('Y-m-d H:i') }} ({{ config('app.timezone') }})</p>
             <table>
                 <colgroup>
-                    @foreach ([12, 13, 14, 14, 18, 18, 11] as $width)
+                    @foreach ((count($snapshot['headers']) === 7 ? [12, 13, 14, 14, 18, 18, 11] : [10, 12, 13, 13, 12, 16, 16, 8]) as $width)
                         <col style="width: {{ $width }}%">
                     @endforeach
                 </colgroup>

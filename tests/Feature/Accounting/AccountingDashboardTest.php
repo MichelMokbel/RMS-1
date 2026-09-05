@@ -311,3 +311,25 @@ it('returns zero payment activity when no companies are selected', function () {
     expect(app(DashboardCashActivityService::class)->forRange([], '2026-08-01', '2026-08-31'))
         ->toBe(['inflow_total' => 0.0, 'outflow_total' => 0.0, 'net_cash_flow' => 0.0]);
 });
+
+it('limits payment method mixes to business dates through today and uses the configured receipt scale', function () {
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+    config(['pos.money_scale' => 1000]);
+    $company = dashboardCashCompany('MIX');
+    $inactive = dashboardCashCompany('MIX-INACTIVE', false);
+    $receipt = ['company_id' => $company->id, 'source' => 'ar', 'method' => 'cash', 'amount_cents' => 123450, 'received_at' => '2026-08-01', 'created_at' => '2026-01-01'];
+    $payment = ['company_id' => $company->id, 'posted_at' => now(), 'amount' => 25, 'payment_method' => 'cash', 'payment_date' => '2026-08-01', 'created_at' => '2026-01-01'];
+    Payment::factory()->create($receipt);
+    ApPayment::factory()->create($payment);
+    foreach ([['received_at' => '2026-08-27'], ['received_at' => '2026-06-01'], ['voided_at' => now()], ['company_id' => $inactive->id]] as $excluded) {
+        Payment::factory()->create([...$receipt, ...$excluded]);
+    }
+    foreach ([['payment_date' => '2026-08-27'], ['payment_date' => '2026-06-01'], ['posted_at' => null], ['voided_at' => now()], ['company_id' => $inactive->id]] as $excluded) {
+        ApPayment::factory()->create([...$payment, ...$excluded]);
+    }
+
+    Volt::actingAs($user)->test('accounting.dashboard')
+        ->assertViewHas('arPaymentMix', fn (Collection $mix) => $mix->sum('total') === 123.45)
+        ->assertViewHas('apPaymentMix', fn (Collection $mix) => $mix->sum('total') === 25.0);
+});
