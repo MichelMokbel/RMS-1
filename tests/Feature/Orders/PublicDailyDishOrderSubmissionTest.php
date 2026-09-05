@@ -61,6 +61,7 @@ function createPublishedMenuForDate(string $date, int $branchId, MenuItem $main,
 }
 
 beforeEach(function () {
+    Config::set('payments.customer_direct_order_enabled', true);
     Config::set('subscriptions.default_appetizer_code', 'APP-DEFAULT');
     Role::findOrCreate('customer', 'web');
     seedActiveBranch(1);
