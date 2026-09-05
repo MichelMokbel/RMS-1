@@ -63,6 +63,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             : __('Customer confirmation resend is :state.', ['state' => $result['state']]));
     }
 
+    public function retryAdminConfirmation(PaymentOperationsResendService $resends): void
+    {
+        $result = $resends->retryAdminConfirmation(
+            $this->attemptId,
+            (string) Str::uuid(),
+            Auth::user(),
+        );
+        session()->flash('status', $result['state'] === 'queued'
+            ? __('Administrator confirmation retry queued.')
+            : __('Administrator confirmation retry is :state.', ['state' => $result['state']]));
+    }
+
     public function with(
         PaymentOperationsQueryService $queries,
         PaymentCreditProjectionService $creditProjection,
@@ -113,6 +125,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     $customer = $checkout->customer?->mergedIntoCustomer ?? $checkout->customer;
     $originalCustomerConfirmation = (string) data_get($checkout->notification_dispatch, 'customer_confirmation.state', '');
     $canResend = $confirmationSnapshotHash !== '' && in_array($originalCustomerConfirmation, ['sent', 'failed', 'unknown'], true);
+    $adminConfirmationState = (string) data_get($checkout->notification_dispatch, 'admin_confirmation.state', '');
+    $adminConfirmationError = (string) data_get($checkout->notification_dispatch, 'admin_confirmation.error_code', '');
+    $adminSnapshotRecipients = array_values(array_filter((array) data_get($checkout->notification_snapshots, 'admin_emails', [])));
+    $canRetryAdminConfirmation = $adminConfirmationState === 'failed'
+        && $adminConfirmationError === 'ADMIN_RECIPIENT_MISSING'
+        && $adminSnapshotRecipients === [];
 @endphp
 
 <div class="app-page space-y-6">
@@ -175,6 +193,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <flux:button class="mt-3" size="sm" type="button" variant="ghost" wire:click="resendConfirmation" wire:loading.attr="disabled" wire:target="resendConfirmation">{{ __('Resend customer confirmation') }}</flux:button>
                 @error('resend')<p class="mt-2 text-sm text-rose-700 dark:text-rose-300">{{ $message }}</p>@enderror
                 @error('acknowledge_unknown')<p class="mt-2 text-sm text-rose-700 dark:text-rose-300">{{ $message }}</p>@enderror
+            @endif
+            @if ($canRetryAdminConfirmation && (Auth::user()?->isAdmin() || Auth::user()?->can('payments.support.resend')))
+                <flux:button class="mt-3 min-h-11" type="button" variant="ghost" wire:click="retryAdminConfirmation" wire:loading.attr="disabled" wire:target="retryAdminConfirmation">{{ __('Retry administrator confirmation') }}</flux:button>
+                @error('admin_confirmation')<p class="mt-2 text-sm text-rose-700 dark:text-rose-300">{{ $message }}</p>@enderror
             @endif
         </section>
 

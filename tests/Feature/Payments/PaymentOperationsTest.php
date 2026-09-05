@@ -3,6 +3,7 @@
 use App\Jobs\InitiateSkipCashCheckout;
 use App\Jobs\RetrySkipCashPaymentProcessing;
 use App\Jobs\SendPaymentOperationsAlert;
+use App\Jobs\SendSkipCashOrderConfirmation;
 use App\Models\AccountingAuditLog;
 use App\Models\AccountingCompany;
 use App\Models\ArInvoice;
@@ -22,11 +23,14 @@ use App\Models\PaymentSetting;
 use App\Models\PaymentSource;
 use App\Models\User;
 use App\Services\Accounting\AccountingAuditLogService;
+use App\Services\Mail\EmailLogService;
+use App\Services\Mail\MailSettingsService;
 use App\Services\Payments\PaymentOperationsConsistencyService;
 use App\Services\Payments\PaymentOperationsEvidenceService;
 use App\Services\Payments\PaymentOperationsHealthService;
 use App\Services\Payments\PaymentOperationsQueryService;
 use App\Services\Payments\PaymentOperationsRecoveryService;
+use App\Services\Payments\PaymentOperationsResendService;
 use App\Services\Payments\PaymentOperationsTrackingService;
 use App\Services\Payments\PaymentSettingsService;
 use App\Services\Payments\SkipCashRecoveryService;
@@ -35,6 +39,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
@@ -176,6 +181,113 @@ it('sends one administrator alert for an unresolved immediate issue', function (
     expect($issue['alert']['state'])->toBe('sent')
         ->and(EmailLog::query()->where('category', 'payment_operations_alert')->count())->toBe(1)
         ->and(AccountingAuditLog::query()->where('action', 'payment.operations.alert_sent')->count())->toBe(1);
+});
+
+it('repairs an empty administrator confirmation snapshot after mail recipients are configured', function (): void {
+    Queue::fake([SendSkipCashOrderConfirmation::class]);
+    $admin = User::factory()->create(['status' => 'active']);
+    $admin->assignRole('admin');
+    $order = Order::factory()->create([
+        'branch_id' => $this->branch->id,
+        'customer_id' => $this->customer->id,
+    ]);
+    $attempt = ($this->makeAttempt)([
+        'state' => 'completed',
+        'completed_at' => now('UTC'),
+        'last_error_code' => null,
+        'notification_snapshots' => [
+            'customer_email' => $this->customer->email,
+            'admin_emails' => [],
+            'order_ids' => [$order->id],
+            'amount_cents' => 6500,
+            'reference' => 'missing-admin-recipient',
+        ],
+        'notification_dispatch' => [
+            'customer_confirmation' => ['state' => 'sent'],
+            'admin_confirmation' => [
+                'state' => 'failed',
+                'error_code' => 'ADMIN_RECIPIENT_MISSING',
+                'attempts' => 1,
+            ],
+        ],
+        'operations_tracking' => [
+            'issues' => [
+                'admin_confirmation' => [
+                    'episode_uuid' => (string) Str::uuid(),
+                    'reason_code' => 'ADMIN_RECIPIENT_MISSING',
+                    'first_seen_at' => now('UTC')->toIso8601String(),
+                    'last_seen_at' => now('UTC')->toIso8601String(),
+                    'attention_at' => now('UTC')->toIso8601String(),
+                    'resolved_at' => null,
+                    'alert' => ['state' => 'failed'],
+                ],
+            ],
+        ],
+    ]);
+    MailSetting::query()->create([
+        'id' => MailSetting::SINGLETON_ID,
+        'smtp_host' => 'smtp.saved.example',
+        'smtp_port' => 587,
+        'security_mode' => 'starttls',
+        'smtp_username' => null,
+        'smtp_password' => null,
+        'from_address' => 'orders@example.test',
+        'from_name' => 'Layla Kitchen',
+        'daily_dish_admin_emails' => Crypt::encryptString(json_encode(['admin@example.test'], JSON_THROW_ON_ERROR)),
+        'revision' => 1,
+        'updated_by' => $admin->id,
+    ]);
+    $operationUuid = (string) Str::uuid();
+
+    $this->actingAs($admin)
+        ->get(route('receivables.payments.skipcash.show', $attempt))
+        ->assertOk()
+        ->assertSee('Retry administrator confirmation');
+
+    $service = app(PaymentOperationsResendService::class);
+    $result = $service->retryAdminConfirmation(
+        $attempt->id,
+        $operationUuid,
+        $admin,
+    );
+    $replay = $service->retryAdminConfirmation($attempt->id, $operationUuid, $admin);
+
+    $attempt->refresh();
+    expect($result)->toBe(['operation_uuid' => $operationUuid, 'state' => 'queued'])
+        ->and($replay)->toBe(['operation_uuid' => $operationUuid, 'state' => 'pending'])
+        ->and($attempt->notification_snapshots['admin_emails'])->toBe(['admin@example.test'])
+        ->and($attempt->notification_dispatch['admin_confirmation']['state'])->toBe('pending')
+        ->and(AccountingAuditLog::query()->where('action', 'payment.operations.admin_confirmation_requeued')->count())->toBe(1)
+        ->and(json_encode(AccountingAuditLog::query()->where('action', 'payment.operations.admin_confirmation_requeued')->value('payload')))->not->toContain('admin@example.test');
+    Queue::assertPushed(SendSkipCashOrderConfirmation::class, 1);
+    Queue::assertPushed(SendSkipCashOrderConfirmation::class, fn ($job): bool => $job->attemptId === $attempt->id && $job->audience === 'admin');
+
+    $staff = User::factory()->create(['status' => 'active']);
+    $staff->givePermissionTo('payments.support.view');
+    DB::table('user_branch_access')->insert([
+        'user_id' => $staff->id,
+        'branch_id' => $this->branch->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    expect(fn () => $service->retryAdminConfirmation($attempt->id, (string) Str::uuid(), $staff))
+        ->toThrow(\Illuminate\Auth\Access\AuthorizationException::class);
+
+    Mail::fake();
+    (new SendSkipCashOrderConfirmation($attempt->id, 'admin'))->handle(
+        app(EmailLogService::class),
+        app(PaymentOperationsTrackingService::class),
+        app(MailSettingsService::class),
+    );
+    $attempt->refresh();
+    expect($attempt->notification_dispatch['admin_confirmation']['state'])->toBe('sent')
+        ->and($attempt->operations_tracking['issues']['admin_confirmation']['resolved_at'])->not->toBeNull();
+    Mail::assertSent(\App\Mail\DailyDishOrderAdminMail::class, fn ($mail): bool => $mail->hasTo('admin@example.test'));
+
+    $this->actingAs($admin)
+        ->get(route('receivables.payments.skipcash.show', $attempt))
+        ->assertOk()
+        ->assertDontSee('Retry administrator confirmation');
 });
 
 it('waits fifteen minutes before alerting on a temporary processing issue', function (): void {

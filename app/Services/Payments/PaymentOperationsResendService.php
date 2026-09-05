@@ -3,10 +3,13 @@
 namespace App\Services\Payments;
 
 use App\Jobs\ResendSkipCashOrderConfirmation;
+use App\Jobs\SendSkipCashOrderConfirmation;
 use App\Models\AccountingAuditLog;
 use App\Models\PaymentCheckoutAttempt;
 use App\Models\User;
 use App\Services\Accounting\AccountingAuditLogService;
+use App\Services\Mail\MailConfigurationUnavailableException;
+use App\Services\Mail\MailSettingsService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
@@ -19,6 +22,7 @@ class PaymentOperationsResendService
         private readonly PaymentOperationsAccessService $access,
         private readonly AccountingAuditLogService $auditLog,
         private readonly PaymentOperationsTrackingService $trackingService,
+        private readonly MailSettingsService $mailSettings,
     ) {}
 
     public function snapshotHash(PaymentCheckoutAttempt $attempt): ?string
@@ -135,6 +139,93 @@ class PaymentOperationsResendService
         return $result;
     }
 
+    /** @return array{operation_uuid:string,state:string} */
+    public function retryAdminConfirmation(int $attemptId, string $operationUuid, User $actor): array
+    {
+        if (! Str::isUuid($operationUuid) || strtolower($operationUuid) !== $operationUuid) {
+            throw ValidationException::withMessages(['admin_confirmation' => __('A valid operation identifier is required.')]);
+        }
+        if (RateLimiter::tooManyAttempts($this->adminConfirmationRateLimitKey($actor, $attemptId), 5)) {
+            throw ValidationException::withMessages(['admin_confirmation' => __('Too many confirmation retry requests. Please wait a minute.')]);
+        }
+        RateLimiter::hit($this->adminConfirmationRateLimitKey($actor, $attemptId), 60);
+        if (! Schema::hasTable('accounting_audit_logs')) {
+            throw ValidationException::withMessages(['admin_confirmation' => __('Administrator confirmation retry is unavailable because audit storage is unavailable.')]);
+        }
+
+        $dispatch = false;
+        $result = DB::transaction(function () use ($attemptId, $operationUuid, $actor, &$dispatch): array {
+            $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->findOrFail($attemptId);
+            $this->access->assertCanResend($actor, $attempt);
+
+            $accepted = AccountingAuditLog::query()
+                ->where('subject_type', PaymentCheckoutAttempt::class)
+                ->where('subject_id', $attempt->id)
+                ->where('action', 'payment.operations.admin_confirmation_requeued')
+                ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.operation_uuid')) = ?", [$operationUuid])
+                ->first();
+            if ($accepted) {
+                return [
+                    'operation_uuid' => $operationUuid,
+                    'state' => (string) data_get($attempt->notification_dispatch, 'admin_confirmation.state', 'queued'),
+                ];
+            }
+
+            $snapshot = is_array($attempt->notification_snapshots) ? $attempt->notification_snapshots : [];
+            $dispatchState = is_array($attempt->notification_dispatch) ? $attempt->notification_dispatch : [];
+            $adminDispatch = is_array($dispatchState['admin_confirmation'] ?? null)
+                ? $dispatchState['admin_confirmation']
+                : [];
+            $existingRecipients = array_values(array_filter((array) ($snapshot['admin_emails'] ?? [])));
+            if ($attempt->purpose !== 'ordinary_order' || $attempt->state !== 'completed'
+                || ($adminDispatch['state'] ?? null) !== 'failed'
+                || ($adminDispatch['error_code'] ?? null) !== 'ADMIN_RECIPIENT_MISSING'
+                || $existingRecipients !== []) {
+                throw ValidationException::withMessages([
+                    'admin_confirmation' => __('Only an administrator confirmation that failed before obtaining a recipient can be retried here.'),
+                ]);
+            }
+
+            try {
+                $recipients = $this->mailSettings->adminRecipientsForCompany((int) $attempt->company_id);
+            } catch (MailConfigurationUnavailableException) {
+                throw ValidationException::withMessages([
+                    'admin_confirmation' => __('The saved mail configuration is unavailable. Repair it in Mail Settings and try again.'),
+                ]);
+            }
+            if ($recipients === []) {
+                throw ValidationException::withMessages([
+                    'admin_confirmation' => __('Add at least one administrator recipient in Mail Settings before retrying.'),
+                ]);
+            }
+
+            $snapshot['admin_emails'] = $recipients;
+            $dispatchState['admin_confirmation'] = [
+                'state' => 'pending',
+                'attempts' => max(1, (int) ($adminDispatch['attempts'] ?? 0)),
+                'requeued_at' => now('UTC')->toIso8601String(),
+            ];
+            $attempt->update([
+                'notification_snapshots' => $snapshot,
+                'notification_dispatch' => $dispatchState,
+            ]);
+            $this->auditLog->log('payment.operations.admin_confirmation_requeued', (int) $actor->id, $attempt, [
+                'operation_uuid' => $operationUuid,
+                'previous_error_code' => 'ADMIN_RECIPIENT_MISSING',
+                'recipient_count' => count($recipients),
+            ], (int) $attempt->company_id);
+            $dispatch = true;
+
+            return ['operation_uuid' => $operationUuid, 'state' => 'queued'];
+        }, 3);
+
+        if ($dispatch) {
+            SendSkipCashOrderConfirmation::dispatch($attemptId, 'admin');
+        }
+
+        return $result;
+    }
+
     public function assertEligible(PaymentCheckoutAttempt $attempt, string $snapshotHash, bool $acknowledgeUnknown): void
     {
         $attempt->loadMissing(['targets.invoice']);
@@ -161,5 +252,10 @@ class PaymentOperationsResendService
     private function rateLimitKey(User $actor, int $attemptId): string
     {
         return 'payment-operations-resend:'.$actor->id.':'.$attemptId;
+    }
+
+    private function adminConfirmationRateLimitKey(User $actor, int $attemptId): string
+    {
+        return 'payment-operations-admin-confirmation:'.$actor->id.':'.$attemptId;
     }
 }
