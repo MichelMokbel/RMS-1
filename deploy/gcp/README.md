@@ -21,3 +21,13 @@ The normal deployment sequence is:
 4. Start the RMS, queue, scheduler, and orders containers.
 5. Install the Nginx development site, obtain one certificate for both hostnames, and enable the HTTPS configuration.
 6. Run setup diagnostics, public endpoint checks, customer registration, quote, hosted checkout, return, webhook, accounting, and idempotency checks.
+
+## Automatic development deployment
+
+The `develop` branch in each repository deploys only its own development image. The RMS workflow restarts `rms`, `queue`, and `scheduler` after a successful migration. The customer website workflow restarts only `orders`. Both workflows keep the private database, environment files, and persistent volumes unchanged.
+
+Each workflow authenticates to Google Cloud through GitHub OIDC and a repository and branch restricted Workload Identity provider. The temporary identity may deploy only to the development VM. No permanent Google Cloud or SSH credential is stored in GitHub.
+
+The workflows stream their built image to a fixed root owned deployment script. The scripts serialize deployments, retain the prior image tag for a basic rollback, preserve runtime secrets outside Git, and require an HTTP health check before reporting success.
+
+The workflows do not run for `main` and do not modify either production deployment.

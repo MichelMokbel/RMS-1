@@ -7,6 +7,7 @@
 /storage/pail
 /vendor
 .env
+gha-creds-*.json
 .env.backup
 .env.production
 /config/app_key.php

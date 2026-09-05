@@ -1,0 +1,69 @@
+name: Deploy development
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: rms-development-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy RMS development
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      GCP_PROJECT_ID: mad-intelligence-prod
+      GCP_ZONE: europe-west1-b
+      GCP_INSTANCE: crm-prod
+      GCP_WORKLOAD_IDENTITY_PROVIDER: projects/138305886862/locations/global/workloadIdentityPools/github-layla-dev/providers/rms-develop
+      GCP_SERVICE_ACCOUNT: github-rms-develop@mad-intelligence-prod.iam.gserviceaccount.com
+      DEV_RMS_URL: https://rms-dev.34-156-128-236.sslip.io
+
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v5
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer:v2
+          coverage: none
+
+      - name: Install production dependencies
+        run: composer install --no-dev --no-interaction --no-progress --prefer-dist --optimize-autoloader
+
+      - name: Build RMS image
+        run: docker build --tag layla-rms-dev:latest .
+
+      - name: Deploy RMS image
+        run: |
+          docker save layla-rms-dev:latest \
+            | gzip -1 \
+            | gcloud compute ssh "$GCP_INSTANCE" \
+                --project="$GCP_PROJECT_ID" \
+                --zone="$GCP_ZONE" \
+                --quiet \
+                --command='sudo /usr/local/sbin/deploy-layla-rms-dev'
+
+      - name: Verify public RMS API
+        run: curl --fail --silent --show-error "$DEV_RMS_URL/api/public/daily-dish/menus" > /dev/null
