@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\PaymentCheckoutAttempt;
 use App\Services\Customers\CustomerOwnershipService;
 use App\Services\Payments\CheckoutStatusPresenter;
+use App\Services\Payments\MembershipCheckoutService;
+use App\Services\Payments\MembershipQuoteService;
 use App\Services\Payments\OrdinaryOrderCheckoutService;
 use App\Services\Payments\OrdinaryOrderQuoteService;
 use App\Services\Payments\PaymentCheckoutException;
@@ -14,8 +16,10 @@ use Illuminate\Http\Request;
 class CustomerCheckoutController extends Controller
 {
     public function __construct(
-        private readonly OrdinaryOrderQuoteService $quotes,
-        private readonly OrdinaryOrderCheckoutService $checkouts,
+        private readonly OrdinaryOrderQuoteService $ordinaryQuotes,
+        private readonly OrdinaryOrderCheckoutService $ordinaryCheckouts,
+        private readonly MembershipQuoteService $membershipQuotes,
+        private readonly MembershipCheckoutService $membershipCheckouts,
         private readonly CheckoutStatusPresenter $statuses,
         private readonly CustomerOwnershipService $customerOwnership,
     ) {}
@@ -23,13 +27,27 @@ class CustomerCheckoutController extends Controller
     public function quote(Request $request)
     {
         try {
-            $this->assertExactKeys($request->all(), ['purpose', 'cart']);
-            $payload = $request->validate([
-                'purpose' => ['required', 'in:ordinary_order'],
-                'cart' => ['required', 'array'],
-            ]);
-            $quote = $this->quotes->quote($request->user(), $payload);
-            unset($quote['_context'], $quote['_priced_days'], $quote['_pricing_version'], $quote['_canonical_days']);
+            $purpose = (string) $request->input('purpose');
+            if ($purpose === 'membership') {
+                $this->assertExactKeys($request->all(), ['purpose', 'selected_branch_id', 'plan_code', 'selections', 'promo_code']);
+                $payload = $request->validate([
+                    'purpose' => ['required', 'in:membership'],
+                    'selected_branch_id' => ['required', 'integer', 'min:1'],
+                    'plan_code' => ['required', 'string', 'max:20'],
+                    'selections' => ['present', 'array'],
+                    'promo_code' => ['nullable', 'string', 'max:80'],
+                ]);
+                $quote = $this->membershipQuotes->quote($request->user(), $payload);
+                unset($quote['_context'], $quote['_plan']);
+            } else {
+                $this->assertExactKeys($request->all(), ['purpose', 'cart']);
+                $payload = $request->validate([
+                    'purpose' => ['required', 'in:ordinary_order'],
+                    'cart' => ['required', 'array'],
+                ]);
+                $quote = $this->ordinaryQuotes->quote($request->user(), $payload);
+                unset($quote['_context'], $quote['_priced_days'], $quote['_pricing_version'], $quote['_canonical_days']);
+            }
 
             return response()->json($quote);
         } catch (PaymentCheckoutException $exception) {
@@ -40,23 +58,48 @@ class CustomerCheckoutController extends Controller
     public function store(Request $request)
     {
         try {
-            $this->assertExactKeys($request->all(), [
-                'client_uuid',
-                'purpose',
-                'cart',
-                'quote_fingerprint',
-                'accepted_terms_version',
-                'separate_purchase_from',
-            ]);
-            $payload = $request->validate([
-                'client_uuid' => ['required', 'uuid'],
-                'purpose' => ['required', 'in:ordinary_order'],
-                'cart' => ['required', 'array'],
-                'quote_fingerprint' => ['required', 'string', 'size:64'],
-                'accepted_terms_version' => ['required', 'string', 'max:80'],
-                'separate_purchase_from' => ['nullable', 'uuid'],
-            ]);
-            $result = $this->checkouts->create($request->user(), $payload);
+            $purpose = (string) $request->input('purpose');
+            if ($purpose === 'membership') {
+                $this->assertExactKeys($request->all(), [
+                    'client_uuid',
+                    'purpose',
+                    'selected_branch_id',
+                    'plan_code',
+                    'selections',
+                    'promo_code',
+                    'quote_fingerprint',
+                    'accepted_terms_version',
+                ]);
+                $payload = $request->validate([
+                    'client_uuid' => ['required', 'uuid'],
+                    'purpose' => ['required', 'in:membership'],
+                    'selected_branch_id' => ['required', 'integer', 'min:1'],
+                    'plan_code' => ['required', 'string', 'max:20'],
+                    'selections' => ['present', 'array'],
+                    'promo_code' => ['nullable', 'string', 'max:80'],
+                    'quote_fingerprint' => ['required', 'string', 'size:64'],
+                    'accepted_terms_version' => ['required', 'string', 'max:80'],
+                ]);
+                $result = $this->membershipCheckouts->create($request->user(), $payload);
+            } else {
+                $this->assertExactKeys($request->all(), [
+                    'client_uuid',
+                    'purpose',
+                    'cart',
+                    'quote_fingerprint',
+                    'accepted_terms_version',
+                    'separate_purchase_from',
+                ]);
+                $payload = $request->validate([
+                    'client_uuid' => ['required', 'uuid'],
+                    'purpose' => ['required', 'in:ordinary_order'],
+                    'cart' => ['required', 'array'],
+                    'quote_fingerprint' => ['required', 'string', 'size:64'],
+                    'accepted_terms_version' => ['required', 'string', 'max:80'],
+                    'separate_purchase_from' => ['nullable', 'uuid'],
+                ]);
+                $result = $this->ordinaryCheckouts->create($request->user(), $payload);
+            }
 
             return response()->json($result['result'] + ['replayed' => $result['replayed']], $result['status']);
         } catch (PaymentCheckoutException $exception) {

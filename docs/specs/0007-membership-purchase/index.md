@@ -1,8 +1,8 @@
 # 0007. Membership purchase and sequential funding
 
 **Date**: 2026-08-31
-**Status**: Proposed
-**Scope**: Feature 7. Design confirmed on 2026-09-01; not implemented.
+**Status**: In Progress
+**Scope**: Feature 7. Design confirmed on 2026-09-01. The positive empty purchase tracer, repeat queue funding and late payment credit path are implemented behind disabled launch flags. Initial booking, promotions, legacy opening and release gates remain pending.
 
 ## Summary
 

@@ -11,6 +11,11 @@ return [
     'system_user_id' => env('SYSTEM_USER_ID'),
     'customer_direct_order_enabled' => (bool) env('CUSTOMER_DIRECT_ORDER_ENABLED', true),
 
+    'membership' => [
+        'checkout_enabled' => (bool) env('MEMBERSHIP_CHECKOUT_ENABLED', false),
+        'queue_enabled' => (bool) env('MEMBERSHIP_QUEUE_ENABLED', false),
+    ],
+
     'defaults' => [
         'checkout_duration_minutes' => 15,
         'booking_cutoff_time' => '23:00:00',

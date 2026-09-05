@@ -15,6 +15,7 @@ class SkipCashWebhookService
     public function __construct(
         private readonly SkipCashProvider $provider,
         private readonly OrdinaryOrderActivationService $activation,
+        private readonly MembershipCheckoutActivationService $membershipActivation,
         private readonly PaymentOperationsTrackingService $operations,
     ) {}
 
@@ -163,7 +164,16 @@ class SkipCashWebhookService
                 $details,
             );
             $this->operations->resolveProviderEvidenceIssue((int) $context['attempt_id']);
-            $this->activation->complete((int) $context['attempt_id'], $providerTransaction->id);
+            $attempt = PaymentCheckoutAttempt::query()->findOrFail((int) $context['attempt_id']);
+            match ($attempt->purpose) {
+                'ordinary_order' => $this->activation->complete($attempt->id, $providerTransaction->id),
+                'membership' => $this->membershipActivation->complete($attempt->id, $providerTransaction->id),
+                default => throw new PaymentCheckoutException(
+                    'CHECKOUT_PURPOSE_INVALID',
+                    409,
+                    __('This payment purpose is not supported.'),
+                ),
+            };
             $this->markEventProcessed((int) $context['event_id']);
             $this->operations->resolveProcessingIssue((int) $context['attempt_id']);
 

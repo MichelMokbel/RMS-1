@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Mail\DailyDishOrderAdminMail;
 use App\Mail\DailyDishOrderCustomerMail;
+use App\Mail\MembershipPurchaseConfirmationMail;
 use App\Models\Order;
 use App\Models\PaymentCheckoutAttempt;
 use App\Services\Mail\EmailLogService;
@@ -81,33 +82,48 @@ class SendSkipCashOrderConfirmation implements ShouldQueue
 
             return;
         }
-        $orders = Order::query()
-            ->whereIn('id', array_map('intval', (array) ($snapshot['order_ids'] ?? [])))
-            ->orderBy('scheduled_date')
-            ->get();
-        if ($orders->isEmpty()) {
-            $this->markFailed('ORDERS_UNAVAILABLE', true, $operations);
+        $orders = collect();
+        if ($attempt->purpose === 'membership') {
+            if (! (int) ($snapshot['meal_plan_request_id'] ?? 0)
+                || ! (int) ($snapshot['subscription_id'] ?? 0)
+                || ! (int) ($snapshot['purchase_block_id'] ?? 0)) {
+                $this->markFailed('MEMBERSHIP_CONFIRMATION_UNAVAILABLE', true, $operations);
 
-            return;
+                return;
+            }
+            $mail = new MembershipPurchaseConfirmationMail($snapshot, $this->audience);
+        } else {
+            $orders = Order::query()
+                ->whereIn('id', array_map('intval', (array) ($snapshot['order_ids'] ?? [])))
+                ->orderBy('scheduled_date')
+                ->get();
+            if ($orders->isEmpty()) {
+                $this->markFailed('ORDERS_UNAVAILABLE', true, $operations);
+
+                return;
+            }
+            $mail = $this->audience === 'customer'
+                ? new DailyDishOrderCustomerMail($orders, null, null)
+                : new DailyDishOrderAdminMail($orders, null, null);
         }
-
-        $mail = $this->audience === 'customer'
-            ? new DailyDishOrderCustomerMail($orders, null, null)
-            : new DailyDishOrderAdminMail($orders, null, null);
         try {
             $mailSettings->prepareForDelivery();
             $mailer = (string) config('mail.default', 'log');
             if (in_array($mailer, ['log', 'array'], true)) {
                 $emailLogs->log(
-                    'skipcash_order_confirmation', $this->audience, 'skipped', $mail, $recipients,
-                    userId: $attempt->portal_user_id, orderId: $orders->first()->id, mailer: $mailer,
+                    $attempt->purpose === 'membership' ? 'skipcash_membership_confirmation' : 'skipcash_order_confirmation',
+                    $this->audience, 'skipped', $mail, $recipients,
+                    userId: $attempt->portal_user_id, orderId: $orders->first()?->id,
+                    mealPlanRequestId: $snapshot['meal_plan_request_id'] ?? null, mailer: $mailer,
                     context: ['checkout_attempt_id' => $attempt->id, 'reason' => 'mail_delivery_disabled'],
                 );
             } else {
                 Mail::to($recipients)->send($mail);
                 $emailLogs->log(
-                    'skipcash_order_confirmation', $this->audience, 'sent', $mail, $recipients,
-                    userId: $attempt->portal_user_id, orderId: $orders->first()->id, mailer: $mailer,
+                    $attempt->purpose === 'membership' ? 'skipcash_membership_confirmation' : 'skipcash_order_confirmation',
+                    $this->audience, 'sent', $mail, $recipients,
+                    userId: $attempt->portal_user_id, orderId: $orders->first()?->id,
+                    mealPlanRequestId: $snapshot['meal_plan_request_id'] ?? null, mailer: $mailer,
                     context: ['checkout_attempt_id' => $attempt->id],
                 );
             }

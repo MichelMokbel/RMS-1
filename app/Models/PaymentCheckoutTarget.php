@@ -20,6 +20,7 @@ class PaymentCheckoutTarget extends Model
         'released_at',
         'intended_invoice_issue_date',
         'order_id',
+        'meal_plan_request_id',
         'invoice_id',
     ];
 
@@ -34,6 +35,7 @@ class PaymentCheckoutTarget extends Model
         'released_at' => 'datetime',
         'intended_invoice_issue_date' => 'date',
         'order_id' => 'integer',
+        'meal_plan_request_id' => 'integer',
         'invoice_id' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
@@ -52,5 +54,10 @@ class PaymentCheckoutTarget extends Model
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(ArInvoice::class, 'invoice_id');
+    }
+
+    public function mealPlanRequest(): BelongsTo
+    {
+        return $this->belongsTo(MealPlanRequest::class, 'meal_plan_request_id');
     }
 }

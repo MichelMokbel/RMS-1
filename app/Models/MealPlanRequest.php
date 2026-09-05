@@ -24,12 +24,21 @@ class MealPlanRequest extends Model
         'notes',
         'plan_meals',
         'status',
+        'checkout_id',
+        'converted_subscription_id',
+        'submission_kind',
+        'submission_snapshot',
+        'converted_at',
     ];
 
     protected $casts = [
         'customer_id' => 'integer',
         'user_id' => 'integer',
         'plan_meals' => 'integer',
+        'checkout_id' => 'integer',
+        'converted_subscription_id' => 'integer',
+        'submission_snapshot' => 'encrypted:array',
+        'converted_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -47,6 +56,16 @@ class MealPlanRequest extends Model
     public function orders(): BelongsToMany
     {
         return $this->belongsToMany(Order::class, 'meal_plan_request_orders', 'meal_plan_request_id', 'order_id');
+    }
+
+    public function checkout(): BelongsTo
+    {
+        return $this->belongsTo(PaymentCheckoutAttempt::class, 'checkout_id');
+    }
+
+    public function convertedSubscription(): BelongsTo
+    {
+        return $this->belongsTo(MealSubscription::class, 'converted_subscription_id');
     }
 
     public function linkedOrderIds(): array

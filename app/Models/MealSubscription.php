@@ -2,12 +2,11 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use App\Models\Payment;
 use Illuminate\Support\Facades\DB;
 
 class MealSubscription extends Model
@@ -37,6 +36,10 @@ class MealSubscription extends Model
         'created_by',
         'source_payment_id',
         'uses_invoice_tracking',
+        'fulfillment_mode',
+        'queue_company_id',
+        'queue_currency',
+        'queue_revision',
     ];
 
     protected $casts = [
@@ -50,6 +53,8 @@ class MealSubscription extends Model
         'source_payment_id' => 'integer',
         'renewal_subscription_id' => 'integer',
         'uses_invoice_tracking' => 'boolean',
+        'queue_company_id' => 'integer',
+        'queue_revision' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -72,6 +77,11 @@ class MealSubscription extends Model
     public function subscriptionOrders(): HasMany
     {
         return $this->hasMany(MealSubscriptionOrder::class, 'subscription_id');
+    }
+
+    public function purchaseBlocks(): HasMany
+    {
+        return $this->hasMany(MembershipPurchaseBlock::class, 'subscription_id')->orderBy('queue_position');
     }
 
     public function days(): HasMany
@@ -170,6 +180,7 @@ class MealSubscription extends Model
         }
         // Weekday enabled
         $weekday = (int) $date->format('N'); // 1-7
+
         return $this->weekdayEnabled($weekday);
     }
 
