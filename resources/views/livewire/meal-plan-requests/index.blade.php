@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
 use Illuminate\Validation\ValidationException;
@@ -18,6 +19,10 @@ use Illuminate\Validation\ValidationException;
 new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
 
+    #[Url]
+    public string $search = '';
+
+    #[Url]
     public string $status = 'all';
 
     public ?int $convertRequestId = null;
@@ -39,6 +44,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $convertIncludeDessert = true;
     public string $convertDefaultOrderType = 'Delivery';
     public ?string $convertDeliveryTime = null;
+
+    public function updatingSearch(): void
+    {
+        $this->resetPage();
+    }
 
     public function updatingStatus(): void
     {
@@ -354,6 +364,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             $query->where('status', $this->status);
         }
 
+        if (trim($this->search) !== '') {
+            $term = '%'.trim($this->search).'%';
+            $query->where(function ($query) use ($term) {
+                $query->where('customer_name', 'like', $term)
+                    ->orWhere('customer_phone', 'like', $term)
+                    ->orWhere('customer_email', 'like', $term);
+            });
+        }
+
         $requests = $query->paginate(25);
         $requestIds = collect($requests->items())->pluck('id')->all();
         $subscriptionsByRequestId = empty($requestIds)
@@ -385,6 +404,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
         <div class="app-filter-grid">
+            <flux:input wire:model.live.debounce.300ms="search" :label="__('Search')" :placeholder="__('Customer name, phone, or email')" />
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Status') }}</label>
                 <select wire:model.live="status" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">

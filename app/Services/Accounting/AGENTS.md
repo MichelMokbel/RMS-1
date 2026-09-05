@@ -22,6 +22,7 @@ This area owns accounting context, period controls, journal workflows, reporting
 - Check accounting periods and finance lock dates before posting, reversing, or mutating dated financial records.
 - Treat posted journals as immutable. Correct them through the established reversal or correction workflow.
 - Keep general-ledger, subledger, source-document, and audit effects consistent in one workflow.
+- P&L screens and CSV use an inclusive business date range. `profitAndLoss` and `summary` accept an optional start date; omitting it preserves cumulative service behavior, and the summary start date affects only P&L.
 
 ## Gotchas
 

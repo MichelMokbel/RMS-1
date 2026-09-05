@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\PaymentTerm;
 use App\Models\User;
 use App\Services\AR\ArInvoiceService;
+use App\Services\AR\CustomerItemPriceHistoryService;
 use App\Services\Menu\MenuItemCodeService;
 use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\Auth;
@@ -305,6 +306,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
                 : collect(),
             'unitOptions' => MenuItem::unitOptions(),
+            'lastItemPrices' => Auth::user()
+                ? app(CustomerItemPriceHistoryService::class)->latest(
+                    Auth::user(),
+                    $this->branch_id,
+                    (int) $this->customer_id,
+                    array_values(array_filter(array_column($this->selected_items, 'menu_item_id'))),
+                    $this->editing_invoice_id,
+                )
+                : [],
         ];
     }
 
@@ -1024,9 +1034,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-wrap items-center justify-between gap-3">
             <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Line Items') }}</h2>
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
                 <flux:button type="button" wire:click="addItemRow">{{ __('Add line') }}</flux:button>
                 <flux:button
                     type="button"
@@ -1135,6 +1145,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         </div>
                                     </template>
                                 </div>
+                                @if ($lastPrice = $lastItemPrices[$row['menu_item_id'] ?? 0] ?? null)
+                                    <p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                                        {{ __('Last unit price: :price :currency', ['price' => MinorUnits::format($lastPrice['unit_price_cents']), 'currency' => $lastPrice['currency']]) }}
+                                        @if ($lastPrice['unit'])
+                                            {{ __('per :unit', ['unit' => $lastPrice['unit']]) }}
+                                        @endif
+                                        ({{ $lastPrice['issue_date'] }})
+                                    </p>
+                                @elseif ($customer_id && ($row['menu_item_id'] ?? null))
+                                    <p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{{ __('No previous invoice price.') }}</p>
+                                @endif
                             </td>
                             <td class="px-3 py-3 text-sm">
                                 <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.quantity" type="number" step="1" class="w-20" />
