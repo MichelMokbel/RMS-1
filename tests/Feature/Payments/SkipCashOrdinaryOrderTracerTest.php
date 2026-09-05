@@ -193,7 +193,11 @@ it('creates a paid ordinary SkipCash order only after verified provider evidence
 
     $provider = app(SkipCashProvider::class);
     expect($provider)->toBeInstanceOf(FakeSkipCashProvider::class);
-    $provider->markPaid($providerTransaction->provider_payment_id);
+    $provider->markPaid(
+        $providerTransaction->provider_payment_id,
+        visaId: 'fake-visa',
+        cardType: 'Credit Card',
+    );
     $payload = [
         'PaymentId' => $providerTransaction->provider_payment_id,
         'Amount' => '65.00',
@@ -225,6 +229,8 @@ it('creates a paid ordinary SkipCash order only after verified provider evidence
         ->and($payment->method)->toBe('skipcash')
         ->and((int) $payment->amount_cents)->toBe(6500)
         ->and((int) $payment->payment_source_id)->toBe((int) $this->source->id)
+        ->and($providerTransaction->fresh()->visa_id)->toBe('fake-visa')
+        ->and($providerTransaction->fresh()->card_type)->toBe('Credit Card')
         ->and((int) $payment->allocations()->sum('amount_cents'))->toBe(6500)
         ->and(Payment::query()->where('customer_id', $customer->id)->where('amount_cents', 30000)->firstOrFail()->unallocatedCents())->toBe(30000)
         ->and(DB::table('bank_transactions')->where('source_type', 'ar_payment')->where('source_id', $payment->id)->count())->toBe(0)
@@ -285,6 +291,57 @@ it('creates a paid ordinary SkipCash order only after verified provider evidence
         ->and($attempt->fresh()->notification_dispatch['customer_confirmation']['state'])->toBe('sent')
         ->and($attempt->fresh()->notification_dispatch['admin_confirmation']['state'])->toBe('sent')
         ->and(Payment::query()->where('payment_source_id', $this->source->id)->count())->toBe(1);
+});
+
+it('rejects conflicting signed and authenticated SkipCash reconciliation identifiers', function (): void {
+    createSkipCashTracerCustomer();
+    [$date, $main] = createSkipCashTracerMenu($this->branch->id);
+    $quote = $this->postJson('/api/customer/checkouts/quote', [
+        'purpose' => 'ordinary_order',
+        'cart' => skipCashTracerCart($date, $main->id),
+    ])->assertOk();
+
+    $this->postJson('/api/customer/checkouts', [
+        'client_uuid' => (string) Str::uuid(),
+        'purpose' => 'ordinary_order',
+        'cart' => skipCashTracerCart($date, $main->id),
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertStatus(202);
+
+    $attempt = PaymentCheckoutAttempt::query()->firstOrFail();
+    $transaction = PaymentProviderTransaction::query()->firstOrFail();
+    app(SkipCashProvider::class)->markPaid(
+        $transaction->provider_payment_id,
+        visaId: 'authenticated-visa',
+    );
+    $payload = [
+        'PaymentId' => $transaction->provider_payment_id,
+        'Amount' => '65.00',
+        'StatusId' => '2',
+        'TransactionId' => str_replace('-', '', $attempt->reference),
+        'Custom1' => '',
+        'VisaId' => 'different-signed-visa',
+    ];
+    $signature = base64_encode(hash_hmac(
+        'sha256',
+        'PaymentId='.$payload['PaymentId'].',Amount=65.00,StatusId=2,TransactionId='.$payload['TransactionId'].',VisaId=different-signed-visa',
+        'webhook-secret',
+        true,
+    ));
+
+    $this->postJson('/api/integrations/skipcash/webhook', $payload, ['Authorization' => $signature])
+        ->assertStatus(503)
+        ->assertJsonPath('code', 'PAYMENT_PROCESSING_FAILED');
+
+    expect($attempt->fresh()->state)->not->toBe('completed')
+        ->and($attempt->fresh()->last_error_code)->toBe('CAPTURE_MISMATCH')
+        ->and(PaymentProviderEvent::query()->firstOrFail()->processing_state)->toBe('quarantined')
+        ->and(PaymentProviderEvent::query()->firstOrFail()->error_code)->toBe('CAPTURE_MISMATCH')
+        ->and($transaction->fresh()->payment_id)->toBeNull()
+        ->and(Payment::query()->count())->toBe(0)
+        ->and(DB::table('orders')->count())->toBe(0)
+        ->and(DB::table('ar_invoices')->count())->toBe(0);
 });
 
 it('creates and fully allocates one paid invoice for every future service date', function (): void {

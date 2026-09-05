@@ -84,7 +84,20 @@ class HttpSkipCashProvider implements SkipCashProvider
             'currency' => (string) ($result['currency'] ?? ''),
             'status_id' => (string) ($result['statusId'] ?? ''),
             'finished_at' => $this->normalizeFinishedAt($result['finishedDate'] ?? null),
+            'visa_id' => $this->nullableString($result['visaId'] ?? null),
+            'card_type' => $this->nullableString($result['cardType'] ?? null),
         ];
+    }
+
+    private function nullableString(mixed $value): ?string
+    {
+        if (! is_scalar($value)) {
+            return null;
+        }
+
+        $value = trim((string) $value);
+
+        return $value !== '' ? $value : null;
     }
 
     private function normalizeFinishedAt(mixed $value): mixed

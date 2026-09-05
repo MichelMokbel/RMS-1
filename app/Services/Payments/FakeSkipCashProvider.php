@@ -39,13 +39,19 @@ class FakeSkipCashProvider implements SkipCashProvider
         return $this->payments[$providerPaymentId];
     }
 
-    public function markPaid(string $providerPaymentId, ?CarbonImmutable $finishedAt = null): void
-    {
+    public function markPaid(
+        string $providerPaymentId,
+        ?CarbonImmutable $finishedAt = null,
+        ?string $visaId = null,
+        ?string $cardType = null,
+    ): void {
         if (! isset($this->payments[$providerPaymentId])) {
             throw new \RuntimeException('Unknown fake SkipCash payment.');
         }
 
         $this->payments[$providerPaymentId]['status_id'] = '2';
         $this->payments[$providerPaymentId]['finished_at'] = ($finishedAt ?? now('Asia/Qatar'))->toIso8601String();
+        $this->payments[$providerPaymentId]['visa_id'] = $visaId;
+        $this->payments[$providerPaymentId]['card_type'] = $cardType;
     }
 }

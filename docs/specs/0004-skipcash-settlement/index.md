@@ -263,6 +263,8 @@ Use the repository Tracer Bullet approach. The first path includes a real import
 
 **Rollback**: Disable new settlement mutations while preserving code able to read posted SkipCash records. Do not roll back away financial columns or delete imports. Correct an actual posting through the authorized void/reversal path, never by migration rollback. Checkout recovery remains available independently.
 
+The deployment readiness, controlled reconciliation, routine operation, and rollback procedure is recorded in the [SkipCash settlement operations runbook](../../skipcash-settlement-operations.md). Keep the mutation flag disabled until its controlled evidence gates pass in the target environment.
+
 **Risks**: The existing writers silently return null in some configurations, clearing uses gross bank amounts, the reader converts numeric values, and current bank matching can replace existing pairs. This slice must explicitly guard those boundaries for SkipCash without changing unrelated behavior.
 
 ## Consequences

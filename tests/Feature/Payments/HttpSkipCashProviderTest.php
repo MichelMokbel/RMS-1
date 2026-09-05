@@ -19,6 +19,8 @@ it('normalizes a SkipCash Qatar wall clock timestamp that carries a UTC suffix',
                 'currency' => 'QAR',
                 'statusId' => 2,
                 'finishedDate' => '2026-09-04T07:52:37Z',
+                'visaId' => 'SC123456789012345',
+                'cardType' => 'Credit Card',
             ],
         ]),
     ]);
@@ -26,7 +28,9 @@ it('normalizes a SkipCash Qatar wall clock timestamp that carries a UTC suffix',
     try {
         $details = app(HttpSkipCashProvider::class)->details('payment-1');
 
-        expect($details['finished_at'])->toBe('2026-09-04T04:52:37+00:00');
+        expect($details['finished_at'])->toBe('2026-09-04T04:52:37+00:00')
+            ->and($details['visa_id'])->toBe('SC123456789012345')
+            ->and($details['card_type'])->toBe('Credit Card');
     } finally {
         Carbon::setTestNow();
     }

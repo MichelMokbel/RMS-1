@@ -135,6 +135,7 @@ class SkipCashWebhookService
                 'processing_state' => 'processing',
                 'processing_started_at' => now('UTC'),
             ]);
+            $snapshot = is_array($event->normalized_snapshot) ? $event->normalized_snapshot : [];
 
             return [
                 'event_id' => $event->id,
@@ -145,6 +146,7 @@ class SkipCashWebhookService
                     'amount_cents' => (int) $event->amount_cents,
                     'status_id' => (string) $event->raw_status,
                     'transaction_id' => (string) $event->merchant_transaction_id,
+                    'visa_id' => trim((string) ($snapshot['visa_id'] ?? '')),
                 ],
             ];
         }, 3);
@@ -303,6 +305,8 @@ class SkipCashWebhookService
             'currency' => 'QAR',
             'status_id' => $status,
             'finished_at' => (string) ($details['finished_at'] ?? ''),
+            'visa_id' => trim((string) ($details['visa_id'] ?? '')),
+            'card_type' => trim((string) ($details['card_type'] ?? '')),
         ];
         $payloadHash = hash('sha256', json_encode($snapshot, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
 
@@ -486,6 +490,10 @@ class SkipCashWebhookService
             $this->assertDetailsMatch($attempt, $signed, $details);
             $finishedAt = $this->finishedAt($details['finished_at'] ?? null);
             $receiptDate = $finishedAt->setTimezone('Asia/Qatar')->toDateString();
+            $detailsVisaId = trim((string) ($details['visa_id'] ?? ''));
+            $signedVisaId = trim((string) ($signed['visa_id'] ?? ''));
+            $visaId = $detailsVisaId !== '' ? $detailsVisaId : $signedVisaId;
+            $cardType = trim((string) ($details['card_type'] ?? ''));
             $event = PaymentProviderEvent::query()->lockForUpdate()->findOrFail($eventId);
             $event->update([
                 'provider_transaction_id' => $transaction->id,
@@ -515,6 +523,8 @@ class SkipCashWebhookService
                 'details_checked_at' => now('UTC'),
                 'receipt_date' => $receiptDate,
                 'receipt_client_uuid' => (string) Str::uuid(),
+                'visa_id' => $visaId !== '' ? $visaId : null,
+                'card_type' => $cardType !== '' ? $cardType : null,
             ]);
             $attempt->update([
                 'state' => 'paid_processing',
@@ -537,12 +547,15 @@ class SkipCashWebhookService
     private function assertDetailsMatch(PaymentCheckoutAttempt $attempt, array $signed, array $details): void
     {
         $amount = $this->amountToCents($details['amount'] ?? null);
+        $signedVisaId = trim((string) ($signed['visa_id'] ?? ''));
+        $detailsVisaId = trim((string) ($details['visa_id'] ?? ''));
         if ((string) ($details['provider_payment_id'] ?? '') !== $signed['payment_id']
             || (string) ($details['merchant_transaction_id'] ?? '') !== $signed['transaction_id']
             || (string) ($details['status_id'] ?? '') !== '2'
             || $amount !== (int) $attempt->payable_amount_cents
             || $signed['amount_cents'] !== (int) $attempt->payable_amount_cents
-            || strtoupper((string) ($details['currency'] ?? '')) !== 'QAR') {
+            || strtoupper((string) ($details['currency'] ?? '')) !== 'QAR'
+            || ($signedVisaId !== '' && $detailsVisaId !== '' && ! hash_equals($signedVisaId, $detailsVisaId))) {
             throw new PaymentCheckoutException('CAPTURE_MISMATCH', 409, __('The payment evidence does not match this checkout.'));
         }
     }
@@ -576,6 +589,7 @@ class SkipCashWebhookService
                         'amount_cents' => $signed['amount_cents'],
                         'status_id' => $signed['status_id'],
                         'merchant_transaction_id' => $signed['transaction_id'],
+                        'visa_id' => trim((string) ($signed['visa_id'] ?? '')),
                     ],
                     'signature_key_reference' => 'webhook-current',
                     'processing_state' => 'pending',
@@ -586,7 +600,7 @@ class SkipCashWebhookService
         }, 3);
     }
 
-    /** @return array{payment_id:string,amount_cents:int,status_id:string,transaction_id:string} */
+    /** @return array{payment_id:string,amount_cents:int,status_id:string,transaction_id:string,visa_id:string} */
     private function verifiedFields(array $payload, ?string $authorization): array
     {
         $fields = ['PaymentId', 'Amount', 'StatusId', 'TransactionId', 'Custom1', 'VisaId'];
@@ -625,6 +639,7 @@ class SkipCashWebhookService
             'amount_cents' => $this->amountToCents($payload['Amount'] ?? null),
             'status_id' => $statusId,
             'transaction_id' => $transactionId,
+            'visa_id' => trim((string) ($payload['VisaId'] ?? '')),
         ];
     }
 
