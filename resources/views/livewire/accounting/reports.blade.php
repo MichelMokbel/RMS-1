@@ -8,18 +8,20 @@ use Livewire\Volt\Component;
 new #[Layout('components.layouts.app')] class extends Component {
     public ?int $company_id = null;
     public ?string $date_to = null;
+    public ?string $date_from = null;
 
     public function mount(): void
     {
         $this->company_id = AccountingCompany::query()->where('is_default', true)->value('id');
         $this->date_to = now()->toDateString();
+        $this->date_from = now()->startOfMonth()->toDateString();
     }
 
     public function with(AccountingReportService $service): array
     {
         return [
             'companies' => AccountingCompany::query()->orderBy('name')->get(),
-            'report' => $service->summary($this->company_id, $this->date_to),
+            'report' => $service->summary($this->company_id, $this->date_to, $this->date_from),
         ];
     }
 }; ?>
@@ -42,6 +44,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endforeach
             </select>
         </div>
+        <flux:input wire:model.live="date_from" type="date" :label="__('P&L From')" />
         <flux:input wire:model.live="date_to" type="date" :label="__('As Of')" />
     </div>
 

@@ -48,7 +48,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="w-full max-w-5xl mx-auto px-4 space-y-6">
 
     {{-- Back link + header --}}
-    <div class="flex items-center justify-between">
+    <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
             <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
                 {{ __('Clearance') }} #{{ $clearance->id }}
@@ -66,7 +66,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{ __('AP Cheque Clearance') }}
             </p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+            @can('finance.write')
+                <flux:button :href="route('accounting.ap-cheque-clearance')" wire:navigate variant="primary" class="touch-target">{{ __('Create New Clearance') }}</flux:button>
+            @endcan
             @if (! $clearance->voided_at)
                 <flux:button
                     type="button"

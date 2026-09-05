@@ -83,7 +83,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
 <div class="w-full max-w-6xl mx-auto px-4 space-y-6">
 
-    <div class="flex items-center justify-between">
+    <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
             <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
                 {{ __('Settlement') }} #{{ $settlement->id }}
@@ -102,7 +102,10 @@ new #[Layout('components.layouts.app')] class extends Component
             </p>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+            @can('finance.write')
+                <flux:button :href="route('accounting.ar-clearing')" wire:navigate variant="primary" class="touch-target">{{ __('Create New Settlement') }}</flux:button>
+            @endcan
             @if (! $settlement->voided_at && ($settlement->settlement_method !== 'skipcash' || Auth::user()?->can('gateway_settlements.void')))
                 <flux:button type="button" wire:click="$set('confirm_void', true)" variant="ghost">
                     {{ __('Void') }}

@@ -62,7 +62,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'job_id' => $this->job_id,
             ])],
             'trial_balance' => ['trial_balance' => $service->trialBalance((int) $this->company_id, (string) $this->date_to)],
-            'profit_and_loss' => ['profit_and_loss' => $service->profitAndLoss((int) $this->company_id, (string) $this->date_to)],
+            'profit_and_loss' => ['profit_and_loss' => $service->profitAndLoss((int) $this->company_id, (string) $this->date_to, $this->date_from)],
             'balance_sheet' => ['balance_sheet' => $service->balanceSheet((int) $this->company_id, (string) $this->date_to)],
             'cash_flow' => ['cash_flow' => $service->cashFlow((int) $this->company_id, (string) $this->date_to)],
             'bank_reconciliation' => ['bank_reconciliation' => $service->bankReconciliationSummary((int) $this->company_id)],
@@ -114,7 +114,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ],
             'reports.accounting-profit-loss' => [
                 'title' => __('Profit & Loss'),
-                'description' => __('Review revenue, expenses, and net income through the selected date.'),
+                'description' => __('Review revenue, expenses, and net income by business date for the selected period.'),
                 'section' => 'profit_and_loss',
             ],
             'reports.accounting-balance-sheet' => [
@@ -187,12 +187,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 }; ?>
 
 <div class="app-page space-y-6">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
             <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ $meta['title'] }}</h1>
             <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ $meta['description'] }}</p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap gap-2">
             <flux:button :href="route('reports.index', ['category' => 'accounting'])" wire:navigate variant="ghost">{{ __('Back to Reports') }}</flux:button>
             <flux:button :href="route('accounting.dashboard')" wire:navigate variant="ghost">{{ __('Accounting') }}</flux:button>
             <flux:button :href="route('reports.accounting.export.csv', ['report' => str_replace('reports.accounting-', '', request()->route()?->getName() ?? 'trial-balance'), 'company_id' => $company_id, 'date_from' => $date_from, 'date_to' => $date_to, 'supplier_id' => $supplier_id, 'branch_id' => $branch_id, 'department_id' => $department_id, 'job_id' => $job_id])" variant="ghost">{{ __('Export CSV') }}</flux:button>
@@ -208,10 +208,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endforeach
             </select>
         </div>
-        @if(in_array($meta['section'], ['daily_general_ledger', 'vendor_ledger', 'expense_analysis'], true))
+        @if(in_array($meta['section'], ['daily_general_ledger', 'profit_and_loss', 'vendor_ledger', 'expense_analysis'], true))
             <flux:input wire:model.live="date_from" type="date" :label="__('Date From')" />
         @endif
-        <flux:input wire:model.live="date_to" type="date" :label="__('As Of')" />
+        <flux:input wire:model.live="date_to" type="date" :label="$meta['section'] === 'profit_and_loss' ? __('Date To') : __('As Of')" />
         @if(in_array($meta['section'], ['ap_aging', 'vendor_ledger', 'expense_analysis', 'purchase_accruals'], true))
             <div>
                 <label class="mb-1 block text-sm font-medium text-neutral-800 dark:text-neutral-200">{{ __('Supplier') }}</label>

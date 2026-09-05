@@ -56,14 +56,17 @@ new #[Layout('components.layouts.app')] class extends Component {
 }; ?>
 
 <div class="w-full max-w-6xl mx-auto px-4 space-y-6">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
             <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('GL Batch') }} #{{ $batch->id }}</h1>
             <p class="text-sm text-neutral-600 dark:text-neutral-300">
                 {{ $batch->period_start?->format('Y-m-d') }} – {{ $batch->period_end?->format('Y-m-d') }}
             </p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+            @if(auth()->user()?->hasAnyRole(['admin', 'manager']) || auth()->user()?->can('finance.access'))
+                <flux:button :href="route('ledger.batches.index')" wire:navigate variant="primary" class="touch-target">{{ __('Create New Batch') }}</flux:button>
+            @endif
             <flux:button :href="route('ledger.batches.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
         </div>
     </div>

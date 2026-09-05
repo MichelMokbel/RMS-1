@@ -318,8 +318,8 @@ return [
             'label' => 'Profit & Loss',
             'category' => 'accounting',
             'route' => 'reports.accounting-profit-loss',
-            'filters' => ['company', 'as_of'],
-            'outputs' => ['screen'],
+            'filters' => ['company', 'date_range'],
+            'outputs' => ['screen', 'csv'],
         ],
         'accounting-balance-sheet' => [
             'key' => 'accounting-balance-sheet',

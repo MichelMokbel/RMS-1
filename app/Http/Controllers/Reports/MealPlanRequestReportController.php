@@ -3,11 +3,25 @@
 namespace App\Http\Controllers\Reports;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Reports\PrintMealPlanRequestsRequest;
+use App\Models\Customer;
 use App\Models\MealPlanRequest;
 use App\Models\Order;
+use App\Services\Reports\MealPlanRequestReportService;
 
 class MealPlanRequestReportController extends Controller
 {
+    public function printSelected(PrintMealPlanRequestsRequest $request, MealPlanRequestReportService $service)
+    {
+        $data = $request->validated();
+
+        return view('reports.meal-plan-request-print', $service->combined(
+            $request->user(),
+            Customer::findOrFail($data['customer_id']),
+            $data['request_ids'],
+        ));
+    }
+
     public function print(MealPlanRequest $mealPlanRequest)
     {
         $orderIds = $mealPlanRequest->linkedOrderIds();

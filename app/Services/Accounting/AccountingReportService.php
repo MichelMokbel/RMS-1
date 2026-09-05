@@ -4,18 +4,18 @@ namespace App\Services\Accounting;
 
 use App\Models\AccountingCompany;
 use App\Models\ApChequeClearance;
-use App\Models\ArInvoice;
-use App\Models\ArClearingSettlement;
-use App\Models\ApPayment;
 use App\Models\ApInvoice;
-use App\Models\LedgerAccount;
-use App\Models\Payment;
-use App\Models\SubledgerEntry;
-use App\Models\Branch;
+use App\Models\ApPayment;
+use App\Models\ArClearingSettlement;
+use App\Models\ArInvoice;
 use App\Models\BankReconciliationRun;
+use App\Models\Branch;
 use App\Models\BudgetVersion;
 use App\Models\Department;
 use App\Models\Job;
+use App\Models\LedgerAccount;
+use App\Models\Payment;
+use App\Models\SubledgerEntry;
 use App\Models\Supplier;
 use App\Services\AP\PurchaseOrderInvoiceMatchingService;
 use App\Services\AR\ArAllocationIntegrityService;
@@ -35,10 +35,9 @@ class AccountingReportService
         protected SpendReportService $spendReportService,
         protected ArAllocationIntegrityService $allocationIntegrity,
         protected LedgerAccountMappingService $mappingService,
-    ) {
-    }
+    ) {}
 
-    public function summary(?int $companyId = null, ?string $dateTo = null): array
+    public function summary(?int $companyId = null, ?string $dateTo = null, ?string $dateFrom = null): array
     {
         $companyId = $companyId ?: $this->context->defaultCompanyId();
         $dateTo = $dateTo ?: now()->toDateString();
@@ -57,7 +56,7 @@ class AccountingReportService
 
         return [
             'trial_balance' => $this->trialBalance($companyId, $dateTo),
-            'profit_and_loss' => $this->profitAndLoss($companyId, $dateTo),
+            'profit_and_loss' => $this->profitAndLoss($companyId, $dateTo, $dateFrom),
             'balance_sheet' => $this->balanceSheet($companyId, $dateTo),
             'cash_flow' => $this->cashFlow($companyId, $dateTo),
             'bank_reconciliation' => $this->bankReconciliationSummary($companyId),
@@ -112,7 +111,7 @@ class AccountingReportService
         ];
     }
 
-    public function profitAndLoss(int $companyId, string $dateTo): array
+    public function profitAndLoss(int $companyId, string $dateTo, ?string $dateFrom = null): array
     {
         $rows = DB::table('subledger_lines as sl')
             ->join('subledger_entries as se', 'se.id', '=', 'sl.entry_id')
@@ -120,6 +119,7 @@ class AccountingReportService
             ->where('se.company_id', $companyId)
             ->where('se.status', 'posted')
             ->whereNull('se.voided_at')
+            ->when($dateFrom, fn ($query) => $query->whereDate('se.entry_date', '>=', $dateFrom))
             ->whereDate('se.entry_date', '<=', $dateTo)
             ->whereIn('la.type', ['income', 'revenue', 'expense'])
             ->selectRaw('la.id, la.code, la.name, la.type, SUM(sl.debit) as debit_total, SUM(sl.credit) as credit_total')
@@ -144,6 +144,7 @@ class AccountingReportService
         $expenses = round((float) $rows->where('type', 'expense')->sum('amount'), 2);
 
         return [
+            'date_from' => $dateFrom,
             'as_of' => $dateTo,
             'revenue_total' => $revenue,
             'expense_total' => $expenses,

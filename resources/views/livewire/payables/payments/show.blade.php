@@ -32,12 +32,15 @@ new #[Layout('components.layouts.app')] class extends Component
 }; ?>
 
 <div class="w-full max-w-5xl mx-auto px-4 space-y-6">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
             <h1 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Payment') }} #{{ $payment->id }}</h1>
             <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ $payment->payment_date?->format('Y-m-d') }}</p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+            @can('finance.write')
+                <flux:button :href="route('payables.payments.create')" wire:navigate variant="primary" class="touch-target">{{ __('Create New Payment') }}</flux:button>
+            @endcan
             <flux:button :href="route('payables.payments.voucher', $payment)" target="_blank" variant="primary" icon="printer">{{ __('Print Voucher') }}</flux:button>
             @if(! $payment->voided_at)
                 <flux:button type="button" wire:click="voidPayment" variant="ghost">{{ __('Void') }}</flux:button>

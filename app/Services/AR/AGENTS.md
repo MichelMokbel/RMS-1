@@ -21,6 +21,7 @@ This area owns customer invoices, credit notes, payment allocation, voids, and c
 * Invoice recalculation and allocation status changes belong to the services. Payments can leave unapplied customer credit.
 * Credit note application uses a zero amount voucher payment with positive and negative allocations. It is not an ordinary incoming cash receipt.
 * Allocation company checks use `ArAllocationIntegrityService`. You can trace the specific payment entry point because replay and validation behavior vary by method.
+* `CustomerItemPriceHistoryService` returns advisory unit prices from issued invoices, ordered by business date and scoped to the actor, branch, company, customer, and currency. Drafts, voids, and credit notes are excluded; price hints never replace entered prices.
 
 ## Gotchas
 

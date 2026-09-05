@@ -9,6 +9,7 @@ use App\Models\JournalEntry;
 use App\Models\Job;
 use App\Models\Payment;
 use App\Services\Accounting\DashboardCashActivityService;
+use App\Support\Money\MinorUnits;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -119,13 +120,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             $arPaymentMix = Payment::query()
                 ->selectRaw('method, SUM(amount_cents) AS total_cents')
                 ->where('source', 'ar')
+                ->whereIn('company_id', $activeCompanyIds)
+                ->whereNull('voided_at')
+                ->whereDate('received_at', '<=', $today->toDateString())
                 ->whereDate('received_at', '>=', $today->copy()->subDays(59)->toDateString())
                 ->groupBy('method')
                 ->orderByDesc('total_cents')
                 ->get()
                 ->map(fn ($row) => [
                     'method' => strtoupper((string) ($row->method ?? 'unknown')),
-                    'total' => (float) $row->total_cents / 100,
+                    'total' => (float) $row->total_cents / MinorUnits::posScale(),
                 ]);
         }
 
@@ -133,6 +137,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (Schema::hasTable('ap_payments')) {
             $apPaymentMix = ApPayment::query()
                 ->selectRaw('payment_method, SUM(amount) AS total_amount')
+                ->whereIn('company_id', $activeCompanyIds)
+                ->whereNotNull('posted_at')
+                ->whereNull('voided_at')
+                ->whereDate('payment_date', '<=', $today->toDateString())
                 ->whereDate('payment_date', '>=', $today->copy()->subDays(59)->toDateString())
                 ->groupBy('payment_method')
                 ->orderByDesc('total_amount')
@@ -186,6 +194,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (Schema::hasTable('bank_transactions')) {
             $bankStatusMix = BankTransaction::query()
                 ->selectRaw('status, COUNT(*) as total_rows')
+                ->whereDate('transaction_date', '<=', $today->toDateString())
                 ->whereDate('transaction_date', '>=', $today->copy()->subDays(89)->toDateString())
                 ->groupBy('status')
                 ->orderByDesc('total_rows')

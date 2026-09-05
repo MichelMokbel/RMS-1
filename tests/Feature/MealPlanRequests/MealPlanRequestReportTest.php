@@ -23,8 +23,8 @@ it('prints a meal plan request report with daily totals and grand total', functi
     seedMealPlanRequestReportBranch(1);
 
     $user = User::factory()->create(['status' => 'active']);
-    Role::findOrCreate('admin', 'web');
-    $user->assignRole('admin');
+    Role::findOrCreate('manager', 'web');
+    $user->assignRole('manager');
     $this->actingAs($user);
 
     $request = MealPlanRequest::create([
