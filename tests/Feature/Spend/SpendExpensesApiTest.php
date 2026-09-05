@@ -42,7 +42,7 @@ beforeEach(function () {
         'balance' => 500,
     ]);
 
-    Storage::fake('public');
+    Storage::fake('s3');
 });
 
 function createDraftExpense(User $user, array $overrides = []): array

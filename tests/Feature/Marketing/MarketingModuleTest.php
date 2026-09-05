@@ -197,16 +197,16 @@ it('syncs google campaigns and ad groups through the bound google ads api servic
         ->and($existingCampaign->status)->toBe('ENABLED')
         ->and($existingCampaign->objective)->toBe('SEARCH')
         ->and($existingCampaign->daily_budget_micro)->toBe(2_500_000)
-        ->and($existingCampaign->platform_data)->toBe($fakeGoogleAdsApi->campaigns[0])
+        ->and($existingCampaign->platform_data)->toEqual($fakeGoogleAdsApi->campaigns[0])
         ->and($updatedCampaign->name)->toBe('Display')
         ->and($updatedCampaign->objective)->toBe('DISPLAY')
         ->and($updatedCampaign->daily_budget_micro)->toBe(1_000_000)
         ->and($updatedAdSet->name)->toBe('Search Ad Group Updated')
         ->and($updatedAdSet->status)->toBe('ENABLED')
-        ->and($updatedAdSet->platform_data)->toBe($fakeGoogleAdsApi->adGroups[0])
+        ->and($updatedAdSet->platform_data)->toEqual($fakeGoogleAdsApi->adGroups[0])
         ->and($newAdSet->name)->toBe('Display Ad Group')
         ->and($newAdSet->campaign_id)->toBe($updatedCampaign->id)
-        ->and($newAdSet->platform_data)->toBe($fakeGoogleAdsApi->adGroups[1]);
+        ->and($newAdSet->platform_data)->toEqual($fakeGoogleAdsApi->adGroups[1]);
 });
 
 it('syncs google campaign spend snapshots at campaign level', function (): void {
@@ -284,13 +284,13 @@ it('syncs google campaign spend snapshots at campaign level', function (): void 
         ->and($campaignOneSnapshot->clicks)->toBe(12)
         ->and($campaignOneSnapshot->spend_micro)->toBe(1_230_000)
         ->and($campaignOneSnapshot->conversions)->toBe(3)
-        ->and($campaignOneSnapshot->platform_data)->toBe($fakeGoogleAdsApi->dailySpend[0])
+        ->and($campaignOneSnapshot->platform_data)->toEqual($fakeGoogleAdsApi->dailySpend[0])
         ->and($campaignOneSnapshot->ad_set_id)->toBeNull()
         ->and($campaignTwoSnapshot->impressions)->toBe(220)
         ->and($campaignTwoSnapshot->clicks)->toBe(22)
         ->and($campaignTwoSnapshot->spend_micro)->toBe(2_340_000)
         ->and($campaignTwoSnapshot->conversions)->toBe(4)
-        ->and($campaignTwoSnapshot->platform_data)->toBe($fakeGoogleAdsApi->dailySpend[1])
+        ->and($campaignTwoSnapshot->platform_data)->toEqual($fakeGoogleAdsApi->dailySpend[1])
         ->and($campaignTwoSnapshot->ad_set_id)->toBeNull();
 });
 
@@ -497,6 +497,8 @@ it('blocks non-admin marketing managers from marketing settings', function (): v
 });
 
 it('sorts marketing campaigns by supported performance columns', function (): void {
+    $this->travelTo(Carbon::parse('2026-04-15 12:00:00'));
+
     $metaAccount = MarketingPlatformAccount::query()->create([
         'platform' => 'meta',
         'external_account_id' => 'act_meta_1',
@@ -580,7 +582,7 @@ it('sorts marketing campaigns by supported performance columns', function (): vo
             direction: $direction,
         )->getCollection()->pluck('name')->all();
 
-        expect($names)->toBe($expected);
+        expect($names)->toBe($expected, "{$sort} {$direction}");
     }
 });
 

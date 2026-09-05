@@ -1,7 +1,6 @@
 <?php
 
 use App\Models\DailyDishMenu;
-use App\Models\DailyDishMenuItem;
 use App\Models\MenuItem;
 use App\Models\User;
 use App\Services\DailyDish\DailyDishMenuService;
@@ -19,6 +18,7 @@ function dd_admin(): User
 {
     $user = User::factory()->create(['status' => 'active']);
     $user->assignRole('admin');
+
     return $user;
 }
 
@@ -40,19 +40,23 @@ it('enforces unique branch-date', function () {
         ],
     ], $user->id);
 
-    expect(DailyDishMenu::where('branch_id',1)->whereDate('service_date','2025-01-01')->count())->toBe(1);
-    $menu = DailyDishMenu::where('branch_id',1)->whereDate('service_date','2025-01-01')->first();
+    expect(DailyDishMenu::where('branch_id', 1)->whereDate('service_date', '2025-01-01')->count())->toBe(1);
+    $menu = DailyDishMenu::where('branch_id', 1)->whereDate('service_date', '2025-01-01')->first();
     expect($menu->items()->count())->toBe(1);
 });
 
 it('blocks editing when published', function () {
     $user = dd_admin();
     $service = app(DailyDishMenuService::class);
-    $mi = MenuItem::factory()->create(['status' => 'active']);
+    $items = MenuItem::factory()->count(5)->create(['status' => 'active']);
 
     $menu = $service->upsertMenu(1, '2025-01-02', [
         'items' => [
-            ['menu_item_id' => $mi->id, 'role' => 'main', 'sort_order' => 0, 'is_required' => false],
+            ['menu_item_id' => $items[0]->id, 'role' => 'main', 'sort_order' => 0, 'is_required' => false],
+            ['menu_item_id' => $items[1]->id, 'role' => 'main', 'sort_order' => 1, 'is_required' => false],
+            ['menu_item_id' => $items[2]->id, 'role' => 'main', 'sort_order' => 2, 'is_required' => false],
+            ['menu_item_id' => $items[3]->id, 'role' => 'salad', 'sort_order' => 3, 'is_required' => false],
+            ['menu_item_id' => $items[4]->id, 'role' => 'dessert', 'sort_order' => 4, 'is_required' => false],
         ],
     ], $user->id);
 
@@ -60,7 +64,7 @@ it('blocks editing when published', function () {
 
     expect(fn () => $service->upsertMenu(1, '2025-01-02', [
         'items' => [
-            ['menu_item_id' => $mi->id, 'role' => 'main', 'sort_order' => 1, 'is_required' => false],
+            ['menu_item_id' => $items[0]->id, 'role' => 'main', 'sort_order' => 1, 'is_required' => false],
         ],
     ], $user->id))->toThrow(ValidationException::class);
 });
@@ -77,4 +81,3 @@ it('publish requires at least one item', function () {
 
     expect(fn () => $service->publish($menu, $user->id))->toThrow(ValidationException::class);
 });
-

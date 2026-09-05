@@ -385,7 +385,8 @@ it('returns 422 when subscription appetizer code is not configured to an active 
 
     $this->postJson('/api/public/daily-dish/orders', $payload)
         ->assertStatus(422)
-        ->assertJson(['success' => false, 'message' => 'Default appetizer item is not configured.']);
+        ->assertJsonValidationErrors(['mealPlan'])
+        ->assertJsonPath('message', 'Default appetizer item is not configured.');
 
     expect(Order::query()->count())->toBe(0);
 });

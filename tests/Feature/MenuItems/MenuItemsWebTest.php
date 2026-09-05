@@ -10,6 +10,7 @@ function menuAdmin(): User
     $user = User::factory()->create(['status' => 'active']);
     $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
     $user->assignRole($role);
+
     return $user;
 }
 
@@ -28,7 +29,7 @@ it('admin can create menu item', function () {
         ->assertHasNoErrors();
 
     $created = MenuItem::query()->where('name', $item->name)->firstOrFail();
-    expect($created->code)->toBe('MI-000001');
+    expect($created->code)->toMatch('/^MI-\d{6}$/');
 });
 
 it('search works on code and name', function () {

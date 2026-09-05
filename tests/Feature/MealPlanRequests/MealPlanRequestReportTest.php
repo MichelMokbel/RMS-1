@@ -1,11 +1,13 @@
 <?php
 
 use App\Models\MealPlanRequest;
+use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
@@ -20,7 +22,9 @@ function seedMealPlanRequestReportBranch(int $id = 1): void
 it('prints a meal plan request report with daily totals and grand total', function () {
     seedMealPlanRequestReportBranch(1);
 
-    $user = User::factory()->create();
+    $user = User::factory()->create(['status' => 'active']);
+    Role::findOrCreate('admin', 'web');
+    $user->assignRole('admin');
     $this->actingAs($user);
 
     $request = MealPlanRequest::create([
@@ -61,8 +65,16 @@ it('prints a meal plan request report with daily totals and grand total', functi
         ]);
     }
 
+    $menuItems = collect([
+        'Chicken Biryani',
+        'Cake',
+        'Fish Fillet',
+        'Salad Plate',
+    ])->map(fn (string $name) => MenuItem::factory()->create(['name' => $name]));
+
     OrderItem::create([
         'order_id' => $order1->id,
+        'menu_item_id' => $menuItems[0]->id,
         'description_snapshot' => 'Daily Dish (Main) - Chicken Biryani',
         'quantity' => 1,
         'unit_price' => 20.000,
@@ -74,6 +86,7 @@ it('prints a meal plan request report with daily totals and grand total', functi
     ]);
     OrderItem::create([
         'order_id' => $order1->id,
+        'menu_item_id' => $menuItems[1]->id,
         'description_snapshot' => 'Daily Dish (Dessert) - Cake',
         'quantity' => 1,
         'unit_price' => 20.000,
@@ -85,6 +98,7 @@ it('prints a meal plan request report with daily totals and grand total', functi
     ]);
     OrderItem::create([
         'order_id' => $order2->id,
+        'menu_item_id' => $menuItems[2]->id,
         'description_snapshot' => 'Daily Dish (Main) - Fish Fillet',
         'quantity' => 1,
         'unit_price' => 42.300,
@@ -96,6 +110,7 @@ it('prints a meal plan request report with daily totals and grand total', functi
     ]);
     OrderItem::create([
         'order_id' => $order3->id,
+        'menu_item_id' => $menuItems[3]->id,
         'description_snapshot' => 'Daily Dish (Main) - Salad Plate',
         'quantity' => 1,
         'unit_price' => 18.000,

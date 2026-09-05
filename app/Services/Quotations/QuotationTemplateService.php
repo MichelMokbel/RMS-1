@@ -106,7 +106,7 @@ class QuotationTemplateService
             'table_columns' => $version->table_columns,
             'blocks' => $version->blocks,
         ] : null;
-        if ($current !== $layout) {
+        if ($current != $layout) {
             $this->createVersion($template, $layout, $actor);
         }
 

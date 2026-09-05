@@ -12,6 +12,7 @@ use App\Services\Quotations\QuotationLifecycleService;
 use App\Services\Quotations\QuotationTemplateService;
 use App\Services\Quotations\Storage\QuotationAssetService;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -22,6 +23,8 @@ use function Pest\Laravel\actingAs;
 use function Pest\Laravel\get;
 
 beforeEach(function () {
+    $this->travelTo(Carbon::parse('2026-07-21 12:00:00'));
+
     Storage::fake('s3');
     config()->set('quotations.storage.disk', 's3');
 

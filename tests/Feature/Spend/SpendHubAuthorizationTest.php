@@ -39,7 +39,7 @@ beforeEach(function () {
     $this->supplier = Supplier::factory()->create();
     $this->category = ExpenseCategory::factory()->create();
 
-    Storage::fake('public');
+    Storage::fake('s3');
 });
 
 function createAndSubmitApprovedCandidate(User $creator): int

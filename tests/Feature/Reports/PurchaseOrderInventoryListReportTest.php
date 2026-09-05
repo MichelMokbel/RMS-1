@@ -16,6 +16,8 @@ beforeEach(function () {
 });
 
 it('shows aggregated purchase-order item quantities without purchase-order columns', function () {
+    $this->travelTo('2026-04-15 12:00:00');
+
     $supplier = Supplier::factory()->create(['name' => 'Fresh Source']);
     $item = InventoryItem::factory()->create([
         'item_code' => 'ITEM-100',

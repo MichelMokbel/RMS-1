@@ -15,6 +15,8 @@ beforeEach(function () {
 
 it('excludes voided supplier payments from the supplier statement', function () {
     $supplier = Supplier::factory()->create();
+    $user = User::factory()->create(['status' => 'active']);
+    $user->assignRole('manager');
 
     ApInvoice::factory()->create([
         'supplier_id' => $supplier->id,
@@ -33,11 +35,8 @@ it('excludes voided supplier payments from the supplier statement', function () 
         'amount' => 100,
         'reference' => 'VOID-AP-PAY',
         'voided_at' => now(),
-        'voided_by' => 1,
+        'voided_by' => $user->id,
     ]);
-
-    $user = User::factory()->create(['status' => 'active']);
-    $user->assignRole('manager');
 
     $response = $this->actingAs($user)->get(route('reports.supplier-statement.print', [
         'supplier_id' => $supplier->id,

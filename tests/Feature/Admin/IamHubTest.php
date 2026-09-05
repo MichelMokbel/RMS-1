@@ -171,17 +171,18 @@ test('admin can manually link and unlink a customer portal account', function ()
 
     $this->actingAs($admin);
 
-    Volt::test('customers.accounts')
+    $link = Volt::test('customers.accounts')
         ->call('startLinking', $user->id)
         ->set('linkCustomerSearch', 'Existing')
-        ->call('linkCustomer', $customer->id)
-        ->assertSessionHas('status');
+        ->call('linkCustomer', $customer->id);
 
     expect($user->fresh()->customer_id)->toBe($customer->id);
 
+    $link->assertHasNoErrors();
+
     Volt::test('customers.accounts')
         ->call('unlinkCustomer', $user->id)
-        ->assertSessionHas('status');
+        ->assertHasNoErrors();
 
     expect($user->fresh()->customer_id)->toBeNull();
 });

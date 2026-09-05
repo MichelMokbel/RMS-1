@@ -132,7 +132,10 @@ it('purchase receiving and supplier purchases reports render received purchase o
         '2026-03-11 09:00:00',
     );
 
-    $receivingResponse = $this->actingAs($this->manager)->get(route('reports.purchase-order-receiving.print'));
+    $receivingResponse = $this->actingAs($this->manager)->get(route('reports.purchase-order-receiving.print', [
+        'date_from' => '2026-03-01',
+        'date_to' => '2026-03-31',
+    ]));
     $receivingResponse->assertOk();
     $receivingResponse->assertSeeText('PO-RPT-1');
     $receivingResponse->assertSeeText('Fresh Farm');
@@ -141,6 +144,8 @@ it('purchase receiving and supplier purchases reports render received purchase o
     $supplierResponse = $this->actingAs($this->manager)->get(route('reports.supplier-purchases.print', [
         'supplier_id' => $supplier->id,
         'item_id' => $item->id,
+        'date_from' => '2026-03-01',
+        'date_to' => '2026-03-31',
     ]));
     $supplierResponse->assertOk();
     $supplierResponse->assertSeeText('Fresh Farm');

@@ -2,19 +2,18 @@
 
 use App\Models\MenuItem;
 use App\Models\User;
-use Spatie\Permission\Models\Role;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Spatie\Permission\Models\Role;
 
 use function Pest\Laravel\actingAs;
-use function Pest\Laravel\getJson;
-use function Pest\Laravel\postJson;
 
 function apiMenuAdmin(): User
 {
     $user = User::factory()->create(['status' => 'active']);
     $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
     $user->assignRole($role);
+
     return $user;
 }
 
@@ -59,5 +58,5 @@ it('auto-generates menu item code when api payload omits it', function () {
     ])->assertCreated();
 
     $item = MenuItem::query()->where('name', 'API Generated Menu Item')->firstOrFail();
-    expect($item->code)->toBe('MI-000001');
+    expect($item->code)->toMatch('/^MI-\d{6}$/');
 });

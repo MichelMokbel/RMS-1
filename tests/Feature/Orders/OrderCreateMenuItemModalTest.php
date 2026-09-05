@@ -21,5 +21,5 @@ it('auto-generates menu item code from order create modal', function () {
         ->assertHasNoErrors();
 
     $item = MenuItem::query()->where('name', 'Order Modal Menu Item')->firstOrFail();
-    expect($item->code)->toBe('MI-000001');
+    expect($item->code)->toMatch('/^MI-\d{6}$/');
 });

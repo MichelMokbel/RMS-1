@@ -91,6 +91,6 @@ it('renders the simplified editor without notes and with visible action buttons'
         ->get(route('daily-dish.menus.edit', [1, '2026-04-03']))
         ->assertOk()
         ->assertDontSee('Notes')
-        ->assertSee('Create Item')
+        ->assertSee('Create Menu Item')
         ->assertSee('Clear');
 });

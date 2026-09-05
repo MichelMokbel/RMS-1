@@ -2,6 +2,8 @@
 
 use App\Support\Reports\ReportRegistry;
 
+uses(Tests\TestCase::class);
+
 it('registers an inventory report category', function () {
     $categories = ReportRegistry::categories();
 
@@ -16,13 +18,15 @@ it('groups inventory-related reports under the inventory category', function () 
         'costing',
         'inventory',
         'inventory-transactions',
+        'purchase-order-inventory-list',
     ]);
 });
 
-it('leaves only expense reports in the expenses category', function () {
+it('groups expense reports under the expenses category', function () {
     $reports = ReportRegistry::allInCategory('expenses');
 
     expect($reports->pluck('key')->all())->toBe([
         'expenses',
+        'expenses-by-category',
     ]);
 });
