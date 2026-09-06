@@ -64,6 +64,14 @@ jobs:
             --command='sudo /bin/sh -s' \
             < deploy/gcp/scripts/enable-membership-development.sh
 
+      - name: Reclaim obsolete development image layers
+        run: |
+          gcloud compute ssh "$GCP_INSTANCE" \
+            --project="$GCP_PROJECT_ID" \
+            --zone="$GCP_ZONE" \
+            --quiet \
+            --command="sudo flock -w 300 /run/lock/layla-dev-deploy.lock sh -c 'docker image rm layla-orders-dev:previous layla-rms-dev:previous 2>/dev/null || true; docker image prune --force'"
+
       - name: Deploy RMS image
         run: |
           docker save layla-rms-dev:latest \
