@@ -364,13 +364,13 @@ Reconcile legacy end dates and expired labels against the confirmed no time base
 Let admins generate and manage company wide membership payment codes with a fixed QAR or percentage value, required start and end dates, a required total redemption limit, a configurable per customer limit, package eligibility, purchase eligibility, status, and audit history. Admins share the generated codes manually outside RMS. Apply the confirmed repeat purchase rule and merged customer history. Do not add automatic code distribution, recipient assignment, branch specific rules, or a new messaging provider.
 **Done when:** admins can create, activate, pause, expire, and inspect fixed or percentage codes for the 20 meal plan, the 26 meal plan, or both, then copy and share them manually; every code has valid dates and a positive total limit, the per customer limit defaults to one, and a 100 percent code locks that limit to one; a partial discount reduces the completed purchase price without changing allowance, while a 100 percent discount creates only a pending meal plan request and never creates credit; the customer's combined completed membership and redemption history after an approved merge determines eligibility, completed discounts are never clawed back, ordinary order discounts are not enabled implicitly, and every rule change, request, and redemption remains explainable.
 
-**Spec:** [0009 promotion administration](../specs/0009-promotion-administration/index.md). Design accepted on 2026-09-01. Activated offer terms stay fixed, with a copied new code for a changed offer. The specification remains `Proposed` until implementation and verification are complete.
+**Spec:** [0009 promotion administration](../specs/0009-promotion-administration/index.md). Design accepted on 2026-09-01. Activated offer terms stay fixed, with a copied new code for a changed offer. Administration is implemented and deployed on development; customer reservation and redemption projections remain disabled until 0010 is implemented.
 
 * [x] Design it (spec): `/architect promotion rules and dashboard`
 * [ ] Build it: `/develop promotion rules and dashboard`
-  * [ ] Promotion schema, generated codes, validation, permissions and complete audit conventions (AC-1, AC-2, AC-3, AC-4).
-  * [ ] Draft, activation, pause, expiry and limit actions with immutable offer snapshots, action replay and revision checks (AC-2, AC-5, AC-7).
-  * [ ] Scoped and responsive admin forms, manual copy, eligibility examples and history (AC-1, AC-3, AC-4, AC-6).
+  * [x] Promotion schema, generated codes, validation, permissions and complete audit conventions (AC-1, AC-2, AC-3, AC-4).
+  * [x] Draft, activation, pause, expiry and limit actions with immutable offer snapshots, action replay and revision checks (AC-2, AC-5, AC-7).
+  * [x] Scoped and responsive admin forms, manual copy, eligibility examples and history (AC-1, AC-3, AC-4, AC-6).
   * [ ] Reservation and redemption projections with 0010, merged history, diagnostics and the complete release verification matrix (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7).
 * [ ] Verify it: `/check verify promotion rules and dashboard`
 * [ ] Test it: `/test promotion rules and dashboard`

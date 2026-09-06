@@ -1,8 +1,8 @@
 # 0009. Membership promotion administration
 
 **Date**: 2026-08-31
-**Status**: Proposed
-**Scope**: Feature 5. Design confirmed on 2026-09-01; not implemented.
+**Status**: In Progress
+**Scope**: Feature 5. Design confirmed on 2026-09-01. Promotion administration is implemented and deployed on development; reservation and redemption projections remain pending 0010.
 
 ## Summary
 
