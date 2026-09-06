@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\RunPromotionPaymentConsistency;
 use App\Models\AccountingAuditLog;
 use App\Models\AccountingCompany;
 use App\Models\Branch;
@@ -12,8 +13,11 @@ use App\Models\PaymentConsistencyFinding;
 use App\Models\PaymentConsistencyRun;
 use App\Models\User;
 use App\Services\Payments\PaymentConsistencyService;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
@@ -195,4 +199,59 @@ it('opens one promotion finding episode and resolves it without changing money',
             ->where('action', 'payment_consistency.finding_resolved')
             ->count())->toBe(1)
         ->and(consistencyFinancialSnapshot())->toBe($correctedFinancialState);
+});
+
+it('keeps sweeps disabled until configured and queues bounded catchup and full work', function (): void {
+    ['promotion' => $promotion, 'request' => $request] = createConsistencyZeroPromotionUse($this);
+    Queue::fake([RunPromotionPaymentConsistency::class]);
+
+    Config::set('payment_consistency.enabled', false);
+    $this->artisan('payments:check-consistency', [
+        '--mode' => 'catchup',
+        '--company' => $this->company->id,
+    ])->assertSuccessful();
+    Queue::assertNothingPushed();
+
+    Config::set('payment_consistency.enabled', true);
+    $request->touch();
+    $this->artisan('payments:check-consistency', [
+        '--mode' => 'catchup',
+        '--company' => $this->company->id,
+    ])->assertSuccessful();
+    Queue::assertPushed(RunPromotionPaymentConsistency::class, function ($job) use ($promotion): bool {
+        return $job->promotionId === (int) $promotion->id
+            && $job->kind === PaymentConsistencyRun::KIND_CATCHUP
+            && str_starts_with($job->triggerKey, 'catchup:');
+    });
+
+    $this->artisan('payments:check-consistency', [
+        '--mode' => 'full',
+        '--company' => $this->company->id,
+    ])->assertSuccessful();
+    Queue::assertPushed(RunPromotionPaymentConsistency::class, function ($job) use ($promotion): bool {
+        return $job->promotionId === (int) $promotion->id
+            && $job->kind === PaymentConsistencyRun::KIND_FULL
+            && str_starts_with($job->triggerKey, 'full:');
+    });
+});
+
+it('registers Qatar full scans and fifteen minute catchup scans', function (): void {
+    $this->artisan('schedule:list')->assertSuccessful();
+    $events = collect(app(Schedule::class)->events());
+    $catchup = $events->first(fn ($event) => str_contains(
+        $event->command ?? '',
+        'payments:check-consistency --mode=catchup',
+    ));
+    $full = $events->first(fn ($event) => str_contains(
+        $event->command ?? '',
+        'payments:check-consistency --mode=full',
+    ));
+
+    expect($catchup)->not->toBeNull()
+        ->and($catchup->expression)->toBe('*/15 * * * *')
+        ->and($catchup->withoutOverlapping)->toBeTrue()
+        ->and($full)->not->toBeNull()
+        ->and($full->expression)->toBe('0 2 * * *')
+        ->and($full->timezone)->toBe('Asia/Qatar')
+        ->and($full->withoutOverlapping)->toBeTrue();
 });

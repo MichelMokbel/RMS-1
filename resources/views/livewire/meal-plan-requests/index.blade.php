@@ -1,22 +1,26 @@
 <?php
 
-use App\Models\MealPlanRequest;
 use App\Models\Customer;
+use App\Models\MealPlanRequest;
 use App\Models\MealSubscription;
 use App\Models\MealSubscriptionOrder;
+use App\Models\MembershipPromotion;
 use App\Models\Order;
+use App\Services\Accounting\AccountingAuditLogService;
+use App\Services\Payments\PaymentConsistencyDispatchService;
 use App\Services\Subscriptions\MealSubscriptionService;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
-use Illuminate\Validation\ValidationException;
 
-new #[Layout('components.layouts.app')] class extends Component {
+new #[Layout('components.layouts.app')] class extends Component
+{
     use WithPagination;
 
     #[Url]
@@ -26,23 +30,37 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $status = 'all';
 
     public ?int $convertRequestId = null;
+
     public ?int $convertCustomerId = null;
+
     public bool $convertAttachOrders = true;
+
     public bool $convertCreateCustomer = false;
+
     public bool $convertConfirmCreateCustomer = false;
 
     public string $convertCustomerName = '';
+
     public string $convertCustomerPhone = '';
+
     public ?string $convertCustomerEmail = null;
+
     public ?string $convertCustomerAddress = null;
 
     public int $convertBranchId = 1;
+
     public string $convertStartDate = '';
-    public array $convertWeekdays = [1,2,3,4,6,7]; // Mon-Thu, Sat-Sun (no Friday) by default
+
+    public array $convertWeekdays = [1, 2, 3, 4, 6, 7]; // Mon-Thu, Sat-Sun (no Friday) by default
+
     public string $convertPreferredRole = 'main';
+
     public bool $convertIncludeSalad = true;
+
     public bool $convertIncludeDessert = true;
+
     public string $convertDefaultOrderType = 'Delivery';
+
     public ?string $convertDeliveryTime = null;
 
     public function updatingSearch(): void
@@ -151,8 +169,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         return null;
     }
 
-    public function convertToSubscription(MealSubscriptionService $subscriptionService, \App\Services\Orders\OrderTotalsService $totalsService): void
-    {
+    public function convertToSubscription(
+        MealSubscriptionService $subscriptionService,
+        \App\Services\Orders\OrderTotalsService $totalsService,
+        AccountingAuditLogService $auditLog,
+        PaymentConsistencyDispatchService $consistency,
+    ): void {
         $reqId = $this->convertRequestId;
         if (! $reqId) {
             return;
@@ -165,15 +187,29 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         if ((int) $req->plan_meals <= 0) {
             session()->flash('status', __('This request has no meal plan to convert.'));
+
             return;
         }
 
         // Prevent double conversion
-        if (MealSubscription::where('meal_plan_request_id', $req->id)->exists()) {
-            $req->status = 'converted';
-            $req->save();
+        $existingSubscription = MealSubscription::where('meal_plan_request_id', $req->id)->first();
+        if ($existingSubscription) {
+            $req->forceFill([
+                'status' => 'converted',
+                'converted_subscription_id' => $existingSubscription->id,
+                'converted_at' => $req->converted_at ?? now('UTC'),
+            ])->save();
+            if ($req->promotion_id) {
+                $consistency->promotionAfterCommit(
+                    (int) $req->promotion_id,
+                    'meal_plan_request',
+                    (int) $req->id,
+                    'converted',
+                );
+            }
             $this->confirmRequestOrders($req);
             session()->flash('status', __('Already converted.'));
+
             return;
         }
 
@@ -200,7 +236,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            DB::transaction(function () use ($req, $subscriptionService, $actorId, $totalsService) {
+            DB::transaction(function () use (
+                $req,
+                $subscriptionService,
+                $actorId,
+                $totalsService,
+                $auditLog,
+                $consistency,
+            ) {
                 $customer = null;
                 if ($this->convertCustomerId) {
                     $customer = Customer::find($this->convertCustomerId);
@@ -312,8 +355,28 @@ new #[Layout('components.layouts.app')] class extends Component {
 
                 // Conversion must not generate extra orders; only reclassify/link existing request orders.
 
-                $req->status = 'converted';
-                $req->save();
+                $req->forceFill([
+                    'status' => 'converted',
+                    'converted_subscription_id' => $sub->id,
+                    'converted_at' => now('UTC'),
+                ])->save();
+                if ($req->promotion_id) {
+                    $companyId = (int) MembershipPromotion::query()
+                        ->whereKey($req->promotion_id)
+                        ->value('company_id');
+                    $auditLog->log('membership_promotion.manual_converted', $actorId, $req, [
+                        'promotion_id' => (int) $req->promotion_id,
+                        'redemption_id' => $req->redemption_id ? (int) $req->redemption_id : null,
+                        'meal_plan_request_id' => (int) $req->id,
+                        'subscription_id' => (int) $sub->id,
+                    ], $companyId ?: null);
+                    $consistency->promotionAfterCommit(
+                        (int) $req->promotion_id,
+                        'meal_plan_request',
+                        (int) $req->id,
+                        'converted',
+                    );
+                }
                 $this->confirmRequestOrders($req);
             });
 
@@ -328,7 +391,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function markStatus(int $id, string $status): void
     {
-        if (! in_array($status, ['new','contacted','converted','closed'], true)) {
+        if (! in_array($status, ['new', 'contacted', 'converted', 'closed'], true)) {
             return;
         }
         $req = MealPlanRequest::find($id);

@@ -1,10 +1,10 @@
 <?php
 
+use App\Models\Customer;
 use App\Models\MealPlanRequest;
 use App\Models\MealSubscription;
 use App\Models\Order;
 use App\Models\User;
-use App\Models\Customer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
@@ -85,6 +85,9 @@ it('converting a meal plan request does not create extra orders', function () {
 
     $subscription = MealSubscription::query()->where('meal_plan_request_id', $request->id)->first();
     expect($subscription)->not->toBeNull();
+    $request->refresh();
+    expect((int) $request->converted_subscription_id)->toBe((int) $subscription->id)
+        ->and($request->converted_at)->not->toBeNull();
 
     $linkedCount = DB::table('meal_subscription_orders')
         ->where('subscription_id', $subscription->id)

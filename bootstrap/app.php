@@ -1,6 +1,7 @@
 <?php
 
 use App\Console\Commands\BackfillMenuItemBranches;
+use App\Console\Commands\CheckPaymentConsistency;
 use App\Console\Commands\ExpireQuotations;
 use App\Console\Commands\ExportMenuItemsMissingArabic;
 use App\Console\Commands\FinanceLockDate;
@@ -64,6 +65,7 @@ return Application::configure(basePath: dirname(__DIR__))
         HrRefreshAlerts::class,
         GenerateRecurringBills::class,
         RepairArCrossCompanyAllocations::class,
+        CheckPaymentConsistency::class,
     ])
     ->withSchedule(function (Schedule $schedule) {
         if (! (bool) config('subscriptions.auto_generate', false)) {
@@ -105,6 +107,15 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $schedule->command('payments:purge-skipcash-provider-bodies')
             ->dailyAt('02:00')
+            ->withoutOverlapping();
+
+        $schedule->command('payments:check-consistency --mode=catchup')
+            ->everyFifteenMinutes()
+            ->withoutOverlapping();
+
+        $schedule->command('payments:check-consistency --mode=full')
+            ->dailyAt('02:00')
+            ->timezone((string) config('payment_consistency.timezone', 'Asia/Qatar'))
             ->withoutOverlapping();
 
         $schedule->command('hr:refresh-alerts')->dailyAt('01:30')->withoutOverlapping();

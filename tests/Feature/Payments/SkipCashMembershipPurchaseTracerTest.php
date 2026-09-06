@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\RunPromotionPaymentConsistency;
 use App\Models\AccountingCompany;
 use App\Models\Branch;
 use App\Models\Customer;
@@ -27,6 +28,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Role;
@@ -389,6 +391,8 @@ it('keeps paid purchase selections and promotion paths closed without affecting 
 
 it('reserves and permanently redeems one partial membership promotion after verified payment', function (): void {
     Config::set('payments.membership.promotions_enabled', true);
+    Config::set('payment_consistency.enabled', true);
+    Queue::fake([RunPromotionPaymentConsistency::class]);
     $promotion = createMembershipCheckoutPromotion($this);
     $quotePayload = [
         ...membershipQuotePayload('20'),
@@ -471,6 +475,7 @@ it('reserves and permanently redeems one partial membership promotion after veri
     ])->assertOk()->assertJsonPath('replayed', true);
     expect($replay->json('promotion.code'))->toBe($promotion->code)
         ->and(MembershipPromotionRedemption::query()->count())->toBe(1);
+    Queue::assertPushed(RunPromotionPaymentConsistency::class, 2);
 });
 
 it('enforces first and renewal eligibility from completed membership history', function (): void {

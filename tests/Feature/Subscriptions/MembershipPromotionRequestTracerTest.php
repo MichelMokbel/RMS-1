@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\RunPromotionPaymentConsistency;
 use App\Jobs\SendMembershipPromotionRequestConfirmation;
 use App\Models\AccountingAuditLog;
 use App\Models\AccountingCompany;
@@ -33,6 +34,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
+use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -184,7 +186,11 @@ function quoteZeroMembershipPromotion($test, MembershipPromotion $promotion): ar
 }
 
 it('creates one permanent request only redemption and preserves exact replay', function (): void {
-    Queue::fake([SendMembershipPromotionRequestConfirmation::class]);
+    Queue::fake([
+        RunPromotionPaymentConsistency::class,
+        SendMembershipPromotionRequestConfirmation::class,
+    ]);
+    Config::set('payment_consistency.enabled', true);
     $promotion = createZeroMembershipPromotion($this);
     [, $quoteFingerprint] = quoteZeroMembershipPromotion($this, $promotion);
     $today = now('Asia/Qatar')->toDateString();
@@ -249,6 +255,11 @@ it('creates one permanent request only redemption and preserves exact replay', f
         ->and($usage['remaining'])->toBe(9)
         ->and(AccountingAuditLog::query()->where('action', 'membership_promotion.zero_redeemed')->count())->toBe(1);
     Queue::assertPushed(SendMembershipPromotionRequestConfirmation::class, 2);
+    Queue::assertPushed(RunPromotionPaymentConsistency::class, function ($job) use ($promotion): bool {
+        return $job->promotionId === (int) $promotion->id
+            && $job->kind === 'targeted'
+            && str_contains($job->triggerKey, 'zero_request');
+    });
 
     $this->getJson('/api/customer/membership-requests/'.$clientUuid)
         ->assertOk()
@@ -319,6 +330,64 @@ it('rejects a nonzero promotion from the request only endpoint without side effe
         ->and(MembershipPromotionRedemption::query()->count())->toBe(0)
         ->and(PaymentCheckoutAttempt::query()->count())->toBe(0)
         ->and(Payment::query()->count())->toBe(0);
+});
+
+it('records an explicit administrator conversion separately from the free request', function (): void {
+    Queue::fake([
+        RunPromotionPaymentConsistency::class,
+        SendMembershipPromotionRequestConfirmation::class,
+    ]);
+    Config::set('payment_consistency.enabled', true);
+    $promotion = createZeroMembershipPromotion($this);
+    [, $quoteFingerprint] = quoteZeroMembershipPromotion($this, $promotion);
+    $clientUuid = (string) Str::uuid();
+
+    $this->postJson('/api/customer/membership-requests', [
+        'client_uuid' => $clientUuid,
+        'selected_branch_id' => 1,
+        'plan_code' => '20',
+        'promo_code' => $promotion->code,
+        'selections' => [],
+        'quote_fingerprint' => $quoteFingerprint,
+        'accepted_terms_version' => 'v1',
+    ])->assertCreated();
+
+    $request = MealPlanRequest::query()->firstOrFail();
+    expect(MealSubscription::query()->count())->toBe(0)
+        ->and(Payment::query()->count())->toBe(0);
+
+    Role::findOrCreate('admin', 'web');
+    $this->systemActor->assignRole('admin');
+    Livewire::actingAs($this->systemActor)
+        ->test('meal-plan-requests.index')
+        ->call('openConvertModal', $request->id)
+        ->set('convertCustomerId', $this->customer->id)
+        ->set('convertAttachOrders', false)
+        ->set('convertBranchId', $this->branch->id)
+        ->set('convertStartDate', now('Asia/Qatar')->addDay()->toDateString())
+        ->call('convertToSubscription')
+        ->assertHasNoErrors();
+
+    $request->refresh();
+    $subscription = MealSubscription::query()->firstOrFail();
+    $check = app(\App\Services\Payments\PaymentConsistencyService::class)->checkPromotion(
+        $promotion,
+        triggerKey: 'test:promotion:manual-conversion',
+    );
+
+    expect($request->status)->toBe('converted')
+        ->and((int) $request->converted_subscription_id)->toBe((int) $subscription->id)
+        ->and($request->converted_at)->not->toBeNull()
+        ->and(AccountingAuditLog::query()
+            ->where('action', 'membership_promotion.manual_converted')
+            ->where('subject_id', $request->id)
+            ->count())->toBe(1)
+        ->and($check->open_count)->toBe(0)
+        ->and(Payment::query()->count())->toBe(0)
+        ->and(MembershipPurchaseBlock::query()->count())->toBe(0)
+        ->and(DB::table('orders')->count())->toBe(0)
+        ->and(DB::table('ar_invoices')->count())->toBe(0)
+        ->and(DB::table('payment_allocations')->count())->toBe(0);
 });
 
 it('sends the durable customer and administrator request confirmations from saved recipients', function (): void {

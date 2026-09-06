@@ -2,6 +2,7 @@
 
 namespace App\Services\Promotions;
 
+use App\Models\MealPlanRequest;
 use App\Models\MembershipPromotion;
 use App\Models\MembershipPromotionRedemption;
 use App\Models\MembershipPromotionReservation;
@@ -70,13 +71,13 @@ class PromotionUsageConsistencyRule
             'currency', 'voided_at',
         ]);
         $requestIds = $redemptions->pluck('meal_plan_request_id')->filter()->map(fn ($id): int => (int) $id);
-        $subscriptionCounts = $requestIds->isEmpty()
+        $subscriptions = $requestIds->isEmpty()
             ? collect()
             : DB::table('meal_subscriptions')
                 ->whereIn('meal_plan_request_id', $requestIds)
-                ->selectRaw('meal_plan_request_id, COUNT(*) AS aggregate')
-                ->groupBy('meal_plan_request_id')
-                ->pluck('aggregate', 'meal_plan_request_id');
+                ->orderBy('id')
+                ->get(['id', 'meal_plan_request_id', 'customer_id']);
+        $subscriptionsByRequest = $subscriptions->groupBy('meal_plan_request_id');
         $requestOrderCounts = $requestIds->isEmpty()
             ? collect()
             : DB::table('meal_plan_request_orders')
@@ -84,6 +85,15 @@ class PromotionUsageConsistencyRule
                 ->selectRaw('meal_plan_request_id, COUNT(*) AS aggregate')
                 ->groupBy('meal_plan_request_id')
                 ->pluck('aggregate', 'meal_plan_request_id');
+        $manualConversionAudits = $requestIds->isEmpty()
+            ? collect()
+            : DB::table('accounting_audit_logs')
+                ->where('action', 'membership_promotion.manual_converted')
+                ->where('subject_type', MealPlanRequest::class)
+                ->whereIn('subject_id', $requestIds)
+                ->orderBy('id')
+                ->get(['id', 'subject_id'])
+                ->groupBy('subject_id');
 
         $issues = [];
         $heldCount = $reservations->where('status', MembershipPromotionReservation::STATUS_HELD)->count();
@@ -147,8 +157,9 @@ class PromotionUsageConsistencyRule
                     $issues,
                     $redemption,
                     $request,
-                    (int) ($subscriptionCounts[(int) $redemption->meal_plan_request_id] ?? 0),
+                    $subscriptionsByRequest->get((int) $redemption->meal_plan_request_id, collect()),
                     (int) ($requestOrderCounts[(int) $redemption->meal_plan_request_id] ?? 0),
+                    $manualConversionAudits->get((int) $redemption->meal_plan_request_id, collect()),
                 );
             } else {
                 $this->issue($issues, 'PROMOTION_REDEMPTION_KIND_INVALID', 'membership_promotion_redemption', (int) $redemption->id);
@@ -172,8 +183,12 @@ class PromotionUsageConsistencyRule
             'requests' => $requests->values()->map(fn ($row): array => (array) $row)->all(),
             'blocks' => $blocks->values()->map(fn ($row): array => (array) $row)->all(),
             'payments' => $payments->values()->map(fn ($row): array => (array) $row)->all(),
-            'subscription_counts' => $subscriptionCounts->sortKeys()->all(),
+            'subscriptions' => $subscriptions->map(fn ($row): array => (array) $row)->all(),
             'request_order_counts' => $requestOrderCounts->sortKeys()->all(),
+            'manual_conversion_audits' => $manualConversionAudits
+                ->map(fn (Collection $audits): array => $audits->pluck('id')->map(fn ($id): int => (int) $id)->all())
+                ->sortKeys()
+                ->all(),
         ];
 
         return [
@@ -269,8 +284,9 @@ class PromotionUsageConsistencyRule
         array &$issues,
         object $redemption,
         ?object $request,
-        int $subscriptionCount,
+        Collection $subscriptions,
         int $requestOrderCount,
+        Collection $manualConversionAudits,
     ): void {
         $id = (int) $redemption->id;
         if ($redemption->checkout_id !== null
@@ -285,15 +301,29 @@ class PromotionUsageConsistencyRule
             || $request->submission_kind !== 'promo_request'
             || (int) $request->promotion_id !== (int) $redemption->promotion_id
             || (int) $request->redemption_id !== $id
-            || $request->checkout_id !== null) {
+            || $request->checkout_id !== null
+            || ! $this->sameCanonicalCustomer(
+                (int) $redemption->original_customer_id,
+                (int) $request->customer_id,
+            )) {
             $this->issue($issues, 'PROMOTION_ZERO_USE_REQUEST_MISMATCH', 'membership_promotion_redemption', $id);
 
             return;
         }
 
         $converted = $request->status === 'converted';
-        if ((! $converted && ($request->converted_subscription_id !== null || $subscriptionCount > 0 || $requestOrderCount > 0))
-            || ($converted && ($request->converted_subscription_id === null || $subscriptionCount !== 1))) {
+        $subscription = $subscriptions->count() === 1 ? $subscriptions->first() : null;
+        if ((! $converted && ($request->converted_subscription_id !== null || $subscriptions->isNotEmpty() || $requestOrderCount > 0))
+            || ($converted && (
+                $request->converted_subscription_id === null
+                || $subscriptions->count() !== 1
+                || (int) $subscription->id !== (int) $request->converted_subscription_id
+                || ! $this->sameCanonicalCustomer(
+                    (int) $redemption->original_customer_id,
+                    (int) $subscription->customer_id,
+                )
+                || $manualConversionAudits->isEmpty()
+            ))) {
             $this->issue($issues, 'PROMOTION_ZERO_USE_AUTOMATIC_EFFECT_MISMATCH', 'membership_promotion_redemption', $id);
         }
     }

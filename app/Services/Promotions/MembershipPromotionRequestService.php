@@ -16,6 +16,7 @@ use App\Services\Payments\CheckoutCanonicalizer;
 use App\Services\Payments\MembershipQuoteService;
 use App\Services\Payments\OrdinaryOrderQuoteService;
 use App\Services\Payments\PaymentCheckoutException;
+use App\Services\Payments\PaymentConsistencyDispatchService;
 use App\Services\Payments\SkipCashCustomerProfileService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -34,6 +35,7 @@ class MembershipPromotionRequestService
         private readonly MailSettingsService $mailSettings,
         private readonly CheckoutCanonicalizer $canonicalizer,
         private readonly AccountingAuditLogService $auditLog,
+        private readonly PaymentConsistencyDispatchService $consistency,
     ) {}
 
     /**
@@ -262,6 +264,12 @@ class MembershipPromotionRequestService
                 'terms_version' => (string) $quote['terms_version'],
                 'proposed_main_quantity' => (int) $proposed['main_quantity'],
             ], $companyId);
+            $this->consistency->promotionAfterCommit(
+                (int) $redemption->promotion_id,
+                'promotion_redemption',
+                (int) $redemption->id,
+                MembershipPromotionRedemption::KIND_ZERO_REQUEST,
+            );
 
             DB::afterCommit(function () use ($request): void {
                 SendMembershipPromotionRequestConfirmation::dispatch((int) $request->id, 'customer');

@@ -10,11 +10,13 @@ use App\Models\PaymentCheckoutAttempt;
 use App\Models\User;
 use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\Payments\PaymentCheckoutException;
+use App\Services\Payments\PaymentConsistencyDispatchService;
 
 class MembershipPromotionReservationService
 {
     public function __construct(
         private readonly AccountingAuditLogService $auditLog,
+        private readonly PaymentConsistencyDispatchService $consistency,
     ) {}
 
     /** @param array<string, mixed> $evaluation */
@@ -60,6 +62,12 @@ class MembershipPromotionReservationService
             'net_cents' => (int) $evaluation['net_cents'],
             'acceptance_fingerprint' => (string) $evaluation['acceptance_fingerprint'],
         ], (int) $attempt->company_id);
+        $this->consistency->promotionAfterCommit(
+            (int) $promotion->id,
+            'promotion_reservation',
+            (int) $reservation->id,
+            MembershipPromotionReservation::STATUS_HELD,
+        );
 
         return $reservation;
     }
@@ -88,6 +96,12 @@ class MembershipPromotionReservationService
             'promotion_id' => (int) $reservation->promotion_id,
             'reason' => $reason,
         ], (int) $reservation->company_id);
+        $this->consistency->promotionAfterCommit(
+            (int) $reservation->promotion_id,
+            'promotion_reservation',
+            (int) $reservation->id,
+            MembershipPromotionReservation::STATUS_RELEASED,
+        );
 
         return $reservation->fresh();
     }
@@ -155,6 +169,12 @@ class MembershipPromotionReservationService
             'purchase_block_id' => (int) $block->id,
             'payment_id' => (int) $block->payment_id,
         ], (int) $reservation->company_id);
+        $this->consistency->promotionAfterCommit(
+            (int) $redemption->promotion_id,
+            'promotion_redemption',
+            (int) $redemption->id,
+            MembershipPromotionRedemption::KIND_PAID_PURCHASE,
+        );
 
         return $redemption;
     }

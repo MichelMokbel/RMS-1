@@ -7,6 +7,7 @@ use App\Models\MembershipPlan;
 use App\Models\MembershipPromotion;
 use App\Models\User;
 use App\Services\Accounting\AccountingAuditLogService;
+use App\Services\Payments\PaymentConsistencyDispatchService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +25,7 @@ class MembershipPromotionService
         private readonly PromotionAccessService $access,
         private readonly PromotionUsageProjectionService $usage,
         private readonly AccountingAuditLogService $auditLog,
+        private readonly PaymentConsistencyDispatchService $consistency,
     ) {}
 
     /** @param array<string, mixed> $input */
@@ -600,6 +602,12 @@ class MembershipPromotionService
             'after' => $after,
             'result_revision' => (int) $promotion->revision,
         ] + $extra, (int) $promotion->company_id);
+        $this->consistency->promotionAfterCommit(
+            (int) $promotion->id,
+            'promotion',
+            (int) $promotion->id,
+            'revision_'.(int) $promotion->revision,
+        );
     }
 
     /** @return array<string, mixed> */
