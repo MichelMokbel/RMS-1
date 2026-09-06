@@ -156,9 +156,9 @@ function completeCoveredBookingMembership($test, string $planCode, ?string $prom
     return $attempt->fresh();
 }
 
-function createCoveredBookingPromotion($test): MembershipPromotion
+function createCoveredBookingPromotion($test, array $overrides = []): MembershipPromotion
 {
-    $promotion = MembershipPromotion::query()->create([
+    $promotion = MembershipPromotion::query()->create(array_merge([
         'company_id' => $test->company->id,
         'code' => 'SAVEQAR23456',
         'discount_type' => 'percentage',
@@ -173,7 +173,7 @@ function createCoveredBookingPromotion($test): MembershipPromotion
         'first_activated_at' => now('UTC'),
         'created_by' => $test->systemActor->id,
         'updated_by' => $test->systemActor->id,
-    ]);
+    ], $overrides));
     $promotion->plans()->attach(
         MembershipPlan::query()
             ->where('company_id', $test->company->id)
@@ -371,6 +371,66 @@ it('allocates a discounted membership exactly and keeps its promotion used after
         'selections' => [],
         'promo_code' => $promotion->code,
     ])->assertStatus(422)->assertJsonPath('code', 'PROMOTION_CUSTOMER_LIMIT');
+});
+
+it('reconciles a one cent membership across paid and zero value meal slices', function (): void {
+    Config::set('payments.membership.promotions_enabled', true);
+    $promotion = createCoveredBookingPromotion($this, [
+        'code' => 'NETCENT23456',
+        'discount_type' => 'fixed',
+        'fixed_amount_cents' => 89999,
+        'percentage_basis_points' => null,
+    ]);
+    completeCoveredBookingMembership($this, '20', $promotion->code);
+    $subscription = MealSubscription::query()->firstOrFail();
+    $payment = Payment::query()->where('payment_source_id', $this->source->id)->firstOrFail();
+
+    $book = function (string $date, int $quantity) use ($subscription): void {
+        $main = createCoveredBookingMenu($this->branch->id, $date);
+        $selections = [coveredBookingSelection($date, $main->id, $quantity)];
+        $quote = $this->postJson('/api/customer/membership-bookings/quote', [
+            'selected_branch_id' => 1,
+            'queue_reference' => $subscription->subscription_code,
+            'selections' => $selections,
+        ])->assertOk();
+        $this->postJson('/api/customer/membership-bookings', [
+            'client_uuid' => (string) Str::uuid(),
+            'selected_branch_id' => 1,
+            'queue_reference' => $subscription->subscription_code,
+            'queue_revision' => $quote->json('queue_revision'),
+            'selections' => $selections,
+            'quote_fingerprint' => $quote->json('quote_fingerprint'),
+            'accepted_terms_version' => 'v1',
+        ])->assertCreated();
+    };
+
+    $book(now('Asia/Qatar')->addDays(2)->toDateString(), 1);
+    $book(now('Asia/Qatar')->addDays(3)->toDateString(), 1);
+    $book(now('Asia/Qatar')->addDays(4)->toDateString(), 18);
+
+    $funding = MembershipBookingFunding::query()->orderBy('id')->get();
+    $invoices = ArInvoice::query()->orderBy('id')->get();
+    expect($funding)->toHaveCount(3)
+        ->and($funding[0]->position_ranges)->toBe([[1, 1]])
+        ->and((int) $funding[0]->invoice_gross_cents)->toBe(4500)
+        ->and((int) $funding[0]->invoice_discount_cents)->toBe(4499)
+        ->and((int) $funding[0]->invoice_net_cents)->toBe(1)
+        ->and($funding[1]->position_ranges)->toBe([[2, 2]])
+        ->and((int) $funding[1]->invoice_gross_cents)->toBe(4500)
+        ->and((int) $funding[1]->invoice_discount_cents)->toBe(4500)
+        ->and((int) $funding[1]->invoice_net_cents)->toBe(0)
+        ->and($funding[2]->position_ranges)->toBe([[3, 20]])
+        ->and((int) $funding->sum('invoice_gross_cents'))->toBe(90000)
+        ->and((int) $funding->sum('invoice_discount_cents'))->toBe(89999)
+        ->and((int) $funding->sum('invoice_net_cents'))->toBe(1)
+        ->and($invoices)->toHaveCount(3)
+        ->and($invoices->every(fn (ArInvoice $invoice): bool => $invoice->status === 'paid'))->toBeTrue()
+        ->and((int) $invoices->sum('total_cents'))->toBe(1)
+        ->and($invoices[1]->paymentAllocations()->count())->toBe(0)
+        ->and((int) $payment->fresh()->allocations()->whereNull('voided_at')->sum('amount_cents'))->toBe(1)
+        ->and((int) $payment->fresh()->unallocatedCents())->toBe(0)
+        ->and((int) $subscription->fresh()->meals_used)->toBe(20)
+        ->and((int) $subscription->fresh()->plan_meals_total)->toBe(20);
 });
 
 it('uses an original membership payment after its customer is merged into the surviving login', function (): void {

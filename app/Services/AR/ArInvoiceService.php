@@ -570,6 +570,10 @@ class ArInvoiceService
             if ($autoAllocateAvailableAdvances) {
                 $this->autoAllocateAvailableAdvancePayments($issued, $actorId);
             }
+            $issued = $issued->fresh(['items', 'paymentAllocations.payment']);
+            if ((int) $issued->total_cents === 0 && (int) $issued->balance_cents === 0) {
+                $issued->update(['status' => 'paid']);
+            }
 
             $this->auditLog->log('ar_invoice.issued', $actorId, $locked, [
                 'invoice_number' => (string) $locked->invoice_number,

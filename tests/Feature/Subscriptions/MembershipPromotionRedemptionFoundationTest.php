@@ -9,6 +9,7 @@ use App\Models\MembershipPlan;
 use App\Models\MembershipPromotion;
 use App\Models\MembershipPromotionRedemption;
 use App\Models\MembershipPurchaseBlock;
+use App\Models\Order;
 use App\Models\Payment;
 use App\Models\User;
 use App\Services\Customers\CustomerMergeService;
@@ -177,6 +178,34 @@ it('stores one immutable zero request redemption and enforces its kind shape', f
         'redeemed_at' => now('UTC'),
         'zero_subject_key' => hash('sha256', $zeroSubjectKey.':invalid'),
     ]))->toThrow(QueryException::class);
+
+    $duplicateRequest = MealPlanRequest::query()->create([
+        'customer_id' => $customer->id,
+        'user_id' => $user->id,
+        'customer_name' => $customer->name,
+        'customer_phone' => $customer->phone,
+        'plan_meals' => 20,
+        'status' => 'new',
+        'submission_kind' => 'promo_request',
+        'client_uuid' => (string) Str::uuid(),
+        'promotion_id' => $promotion->id,
+    ]);
+    expect(fn () => MembershipPromotionRedemption::query()->create([
+        'promotion_id' => $promotion->id,
+        'company_id' => $this->company->id,
+        'branch_id' => $this->branch->id,
+        'original_customer_id' => $customer->id,
+        'original_user_id' => $user->id,
+        'kind' => 'zero_request',
+        'meal_plan_request_id' => $duplicateRequest->id,
+        'offer_snapshot' => ['code' => $promotion->code],
+        'eligibility_snapshot' => ['kind' => 'first'],
+        'gross_cents' => 90000,
+        'discount_cents' => 90000,
+        'net_cents' => 0,
+        'redeemed_at' => now('UTC'),
+        'zero_subject_key' => $zeroSubjectKey,
+    ]))->toThrow(QueryException::class);
 });
 
 it('resolves paid blocks and legacy conversions once across a customer merge', function (): void {
@@ -230,4 +259,20 @@ it('resolves paid blocks and legacy conversions once across a customer merge', f
         ->and($history['evidence'][0]['cancelled'])->toBeTrue()
         ->and(app(MembershipPurchaseHistoryService::class)->hasCompletedPurchase($source->id, $this->company->id))
         ->toBeTrue();
+});
+
+it('does not treat an ordinary customer order as a completed membership purchase', function (): void {
+    $customer = Customer::factory()->create();
+    Order::factory()->create([
+        'branch_id' => $this->branch->id,
+        'customer_id' => $customer->id,
+        'source' => 'Website',
+        'status' => 'Confirmed',
+    ]);
+
+    $history = app(MembershipPurchaseHistoryService::class)->resolve($customer->id, $this->company->id);
+
+    expect($history['has_completed_purchase'])->toBeFalse()
+        ->and($history['completed_purchase_count'])->toBe(0)
+        ->and($history['evidence'])->toBe([]);
 });

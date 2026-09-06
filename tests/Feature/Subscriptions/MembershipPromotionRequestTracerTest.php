@@ -101,9 +101,9 @@ beforeEach(function (): void {
     Sanctum::actingAs($this->portalUser, ['customer:*']);
 });
 
-function createZeroMembershipPromotion($test, int $basisPoints = 10000): MembershipPromotion
+function createZeroMembershipPromotion($test, int $basisPoints = 10000, array $overrides = []): MembershipPromotion
 {
-    $promotion = MembershipPromotion::query()->create([
+    $promotion = MembershipPromotion::query()->create(array_merge([
         'company_id' => $test->company->id,
         'code' => 'FREEQAR23456',
         'discount_type' => 'percentage',
@@ -118,7 +118,7 @@ function createZeroMembershipPromotion($test, int $basisPoints = 10000): Members
         'first_activated_at' => now('UTC'),
         'created_by' => $test->systemActor->id,
         'updated_by' => $test->systemActor->id,
-    ]);
+    ], $overrides));
     $promotion->plans()->attach(
         MembershipPlan::query()
             ->where('company_id', $test->company->id)
@@ -302,6 +302,90 @@ it('creates one permanent request only redemption and preserves exact replay', f
         ->assertSee('No payment, subscription or meal allowance was created automatically.');
 });
 
+it('keeps all proposed meals on one fixed free request after the request is closed', function (): void {
+    Queue::fake([SendMembershipPromotionRequestConfirmation::class]);
+    $promotion = createZeroMembershipPromotion($this, 10000, [
+        'code' => 'FXEDQAR23456',
+        'discount_type' => 'fixed',
+        'fixed_amount_cents' => 90000,
+        'percentage_basis_points' => null,
+    ]);
+    [, $quoteFingerprint] = quoteZeroMembershipPromotion($this, $promotion);
+    $date = now('Asia/Qatar')->addDays(2)->toDateString();
+    $main = createPromotionRequestMenu($this->branch->id, $date);
+    $clientUuid = (string) Str::uuid();
+    $payload = [
+        'client_uuid' => $clientUuid,
+        'selected_branch_id' => 1,
+        'plan_code' => '20',
+        'promo_code' => $promotion->code,
+        'selections' => [promotionRequestSelection($date, $main->id, 20)],
+        'quote_fingerprint' => $quoteFingerprint,
+        'accepted_terms_version' => 'v1',
+    ];
+
+    $this->postJson('/api/customer/membership-requests', $payload)
+        ->assertCreated()
+        ->assertJsonPath('reference', strtolower($clientUuid))
+        ->assertJsonPath('main_quantity', 20)
+        ->assertJsonPath('payable_amount_cents', 0);
+    $request = MealPlanRequest::query()->firstOrFail();
+    $request->update(['status' => 'closed']);
+    $promotion->update(['status' => 'paused']);
+
+    $this->postJson('/api/customer/membership-requests', [
+        ...$payload,
+        'client_uuid' => (string) Str::uuid(),
+        'selections' => [],
+    ])->assertOk()
+        ->assertJsonPath('reference', strtolower($clientUuid))
+        ->assertJsonPath('status', 'closed')
+        ->assertJsonPath('main_quantity', 20)
+        ->assertJsonPath('replayed', true);
+
+    expect(MealPlanRequest::query()->count())->toBe(1)
+        ->and(MembershipPromotionRedemption::query()->count())->toBe(1)
+        ->and(PaymentCheckoutAttempt::query()->count())->toBe(0)
+        ->and(Payment::query()->count())->toBe(0)
+        ->and(MealSubscription::query()->count())->toBe(0)
+        ->and(MembershipPurchaseBlock::query()->count())->toBe(0)
+        ->and(DB::table('orders')->count())->toBe(0)
+        ->and(DB::table('ar_invoices')->count())->toBe(0)
+        ->and(DB::table('payment_allocations')->count())->toBe(0);
+});
+
+it('rejects multiple promotion and customer credit fields from a free request', function (): void {
+    Queue::fake([SendMembershipPromotionRequestConfirmation::class]);
+    $promotion = createZeroMembershipPromotion($this);
+    [, $quoteFingerprint] = quoteZeroMembershipPromotion($this, $promotion);
+    $payload = [
+        'client_uuid' => (string) Str::uuid(),
+        'selected_branch_id' => 1,
+        'plan_code' => '20',
+        'promo_code' => $promotion->code,
+        'selections' => [],
+        'quote_fingerprint' => $quoteFingerprint,
+        'accepted_terms_version' => 'v1',
+    ];
+
+    foreach ([
+        ['promo_codes' => [$promotion->code]],
+        ['customer_credit_cents' => 90000],
+        ['gross_amount_cents' => 0, 'discount_amount_cents' => 0, 'payable_amount_cents' => 0],
+    ] as $unsupported) {
+        $this->postJson('/api/customer/membership-requests', [
+            ...$payload,
+            ...$unsupported,
+        ])->assertStatus(422)
+            ->assertJsonPath('message', 'Unsupported membership request fields were submitted.');
+    }
+
+    expect(MealPlanRequest::query()->count())->toBe(0)
+        ->and(MembershipPromotionRedemption::query()->count())->toBe(0)
+        ->and(PaymentCheckoutAttempt::query()->count())->toBe(0)
+        ->and(Payment::query()->count())->toBe(0);
+});
+
 it('rejects a nonzero promotion from the request only endpoint without side effects', function (): void {
     Queue::fake([SendMembershipPromotionRequestConfirmation::class]);
     $promotion = createZeroMembershipPromotion($this, 1000);
@@ -355,6 +439,28 @@ it('records an explicit administrator conversion separately from the free reques
     $request = MealPlanRequest::query()->firstOrFail();
     expect(MealSubscription::query()->count())->toBe(0)
         ->and(Payment::query()->count())->toBe(0);
+    $firstPromotion = createZeroMembershipPromotion($this, 1000, [
+        'code' => 'STARTQA23456',
+        'purchase_eligibility' => 'first',
+    ]);
+    $renewalPromotion = createZeroMembershipPromotion($this, 1000, [
+        'code' => 'RENEWQA23456',
+        'purchase_eligibility' => 'renewal',
+    ]);
+    $this->postJson('/api/customer/checkouts/quote', [
+        'purpose' => 'membership',
+        'selected_branch_id' => 1,
+        'plan_code' => '20',
+        'selections' => [],
+        'promo_code' => $firstPromotion->code,
+    ])->assertOk()->assertJsonPath('promotion.purchase_eligibility', 'first');
+    $this->postJson('/api/customer/checkouts/quote', [
+        'purpose' => 'membership',
+        'selected_branch_id' => 1,
+        'plan_code' => '20',
+        'selections' => [],
+        'promo_code' => $renewalPromotion->code,
+    ])->assertStatus(422)->assertJsonPath('code', 'PROMOTION_PURCHASE_INELIGIBLE');
 
     Role::findOrCreate('admin', 'web');
     $this->systemActor->assignRole('admin');
@@ -388,6 +494,21 @@ it('records an explicit administrator conversion separately from the free reques
         ->and(DB::table('orders')->count())->toBe(0)
         ->and(DB::table('ar_invoices')->count())->toBe(0)
         ->and(DB::table('payment_allocations')->count())->toBe(0);
+    Sanctum::actingAs($this->portalUser, ['customer:*']);
+    $this->postJson('/api/customer/checkouts/quote', [
+        'purpose' => 'membership',
+        'selected_branch_id' => 1,
+        'plan_code' => '20',
+        'selections' => [],
+        'promo_code' => $firstPromotion->code,
+    ])->assertStatus(422)->assertJsonPath('code', 'PROMOTION_PURCHASE_INELIGIBLE');
+    $this->postJson('/api/customer/checkouts/quote', [
+        'purpose' => 'membership',
+        'selected_branch_id' => 1,
+        'plan_code' => '20',
+        'selections' => [],
+        'promo_code' => $renewalPromotion->code,
+    ])->assertOk()->assertJsonPath('promotion.purchase_eligibility', 'renewal');
 });
 
 it('sends the durable customer and administrator request confirmations from saved recipients', function (): void {

@@ -367,12 +367,12 @@ Let admins generate and manage company wide membership payment codes with a fixe
 **Spec:** [0009 promotion administration](../specs/0009-promotion-administration/index.md). Design accepted on 2026-09-01. Activated offer terms stay fixed, with a copied new code for a changed offer. Administration is implemented and deployed on development; customer reservation and redemption projections remain disabled until 0010 is implemented.
 
 * [x] Design it (spec): `/architect promotion rules and dashboard`
-* [ ] Build it: `/develop promotion rules and dashboard`
+* [x] Build it: `/develop promotion rules and dashboard`
   * [x] Promotion schema, generated codes, validation, permissions and complete audit conventions (AC-1, AC-2, AC-3, AC-4).
   * [x] Draft, activation, pause, expiry and limit actions with immutable offer snapshots, action replay and revision checks (AC-2, AC-5, AC-7).
   * [x] Scoped and responsive admin forms, manual copy, eligibility examples and history (AC-1, AC-3, AC-4, AC-6).
   * [x] Reservation and redemption projections with 0010 and combined completed history after approved customer merges (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7).
-  * [ ] Promotion consistency diagnostics and the complete release verification matrix (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7).
+  * [x] Promotion consistency diagnostics and the complete release verification matrix (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7).
 * [ ] Verify it: `/check verify promotion rules and dashboard`
 * [ ] Test it: `/test promotion rules and dashboard`
 * [ ] Review it (fresh model): `/check review promotion rules and dashboard`
@@ -387,12 +387,12 @@ Expose a stable API contract and website entry flow to quote a code, then apply 
 **Spec:** [0010 promotion redemption](../specs/0010-promotion-redemption/index.md). Design accepted on 2026-09-01. It covers eligibility, protected positive checkout uses, permanent redemption and the isolated zero amount request. The specification remains `Proposed` until implementation and verification are complete.
 
 * [x] Design it (spec): `/architect promotion validation and redemption API`
-* [ ] Build it: `/develop promotion validation and redemption API`
+* [x] Build it: `/develop promotion validation and redemption API`
   * [x] Reservation and permanent redemption schema, zero request fields and the shared completed history and merge resolver (AC-1, AC-3, AC-5, AC-6, AC-7, AC-8).
   * [x] Server quote, exact discount, capacity locks and positive checkout completion and release integration (AC-1, AC-2, AC-3, AC-4, AC-7, AC-8).
   * [x] Request only zero result, permanent replay, explicit manual handling boundary and durable request email (AC-5, AC-6, AC-7, AC-8, AC-9).
   * [x] Website code entry and requote, paid versus request result, reload and account recovery, and administrator usage projections (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9).
-  * [ ] Promotion consistency diagnostics and the complete cross application release verification matrix (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-10).
+  * [x] Promotion consistency diagnostics and the complete cross application release verification matrix (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-10).
 * [ ] Verify it: `/check verify promotion validation and redemption API`
 * [ ] Test it: `/test promotion validation and redemption API`
 * [ ] Review it (fresh model): `/check review promotion validation and redemption API`
