@@ -15,6 +15,7 @@ use App\Services\Accounting\AccountingPeriodGateService;
 use App\Services\Accounting\LedgerAccountMappingService;
 use App\Services\Banking\BankTransactionService;
 use App\Services\Ledger\SubledgerService;
+use App\Services\Payments\PaymentConsistencyDispatchService;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -28,6 +29,7 @@ class ArClearingSettlementService
         protected AccountingAuditLogService $auditLog,
         protected AccountingPeriodGateService $periodGate,
         protected BankTransactionService $bankTransactionService,
+        protected PaymentConsistencyDispatchService $paymentConsistency,
     ) {}
 
     public function settle(
@@ -140,7 +142,7 @@ class ArClearingSettlementService
         int $actorId,
         ?string $voidReason = null,
     ): ArClearingSettlement {
-        return DB::transaction(function () use ($settlement, $actorId, $voidReason) {
+        $voided = DB::transaction(function () use ($settlement, $actorId, $voidReason) {
             if ($settlement->settlement_method === 'skipcash' && $settlement->payment_source_id !== null) {
                 PaymentSource::query()->lockForUpdate()->findOrFail((int) $settlement->payment_source_id);
             }
@@ -248,5 +250,16 @@ class ArClearingSettlementService
 
             return $settlement->fresh();
         });
+
+        if ($voided->settlement_method === 'skipcash' && $voided->gateway_import_id !== null) {
+            $this->paymentConsistency->settlementAfterCommit(
+                (int) $voided->gateway_import_id,
+                'ar_clearing_settlement',
+                (int) $voided->id,
+                'voided',
+            );
+        }
+
+        return $voided;
     }
 }

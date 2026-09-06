@@ -8,10 +8,13 @@ use App\Models\Customer;
 use App\Models\MealSubscription;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
+use App\Models\PaymentConsistencyFinding;
 use App\Models\User;
+use App\Services\AR\ArAllocationService;
 use App\Services\AR\ArInvoiceService;
 use App\Services\AR\ArPaymentDeleteService;
 use App\Services\Finance\FinanceSettingsService;
+use App\Services\Payments\PaymentConsistencyService;
 use App\Services\Payments\PaymentCreditProjectionService;
 use App\Services\Payments\SavedCreditAllocationService;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -94,6 +97,12 @@ it('allocates discretionary saved credit once and exact replay does not reapply 
         ->and($invoice->fresh()->status)->toBe('paid')
         ->and(AccountingAuditLog::query()->where('action', 'payment.saved_credit_allocation.accepted')->count())->toBe(1)
         ->and(AccountingAuditLog::query()->where('action', 'payment.saved_credit_allocation.completed')->count())->toBe(1);
+    expect(app(PaymentConsistencyService::class)->check(
+        'saved_credit_v1',
+        'payment',
+        $payment->id,
+        triggerKey: 'test:saved-credit:admin-allocation',
+    )->open_count)->toBe(0);
 
     $allocation = PaymentAllocation::query()->whereKey($first['allocation_ids'][0])->firstOrFail();
     app(ArPaymentDeleteService::class)->removeAllocation($allocation, $this->admin->id);
@@ -106,6 +115,86 @@ it('allocates discretionary saved credit once and exact replay does not reapply 
         ->and(PaymentAllocation::query()->where('payment_id', $payment->id)->whereNull('voided_at')->count())->toBe(0)
         ->and(PaymentAllocation::query()->where('payment_id', $payment->id)->count())->toBe(1)
         ->and($invoice->fresh()->status)->toBe('issued');
+});
+
+it('reports a discretionary allocation that has no completed administrator audit', function (): void {
+    $invoice = ($this->issueInvoice)(5000);
+    $payment = ($this->makePayment)(10000);
+    $allocation = PaymentAllocation::query()->create([
+        'payment_id' => $payment->id,
+        'allocatable_type' => ArInvoice::class,
+        'allocatable_id' => $invoice->id,
+        'amount_cents' => 5000,
+    ]);
+
+    $run = app(PaymentConsistencyService::class)->check(
+        'saved_credit_v1',
+        'payment',
+        $payment->id,
+        triggerKey: 'test:saved-credit:missing-admin-audit',
+    );
+    $finding = PaymentConsistencyFinding::query()
+        ->where('rule_code', 'saved_credit_v1')
+        ->where('subject_type', 'payment')
+        ->where('subject_id', $payment->id)
+        ->firstOrFail();
+
+    expect($run->open_count)->toBe(1)
+        ->and(collect($finding->observed['issues'])->pluck('code')->all())
+        ->toContain('CREDIT_ALLOCATION_ADMIN_AUDIT_MISSING')
+        ->and($finding->observed['unaudited_allocation_ids'])->toBe([$allocation->id]);
+});
+
+it('accepts an allocation created as part of the original AR receipt workflow', function (): void {
+    $invoice = ($this->issueInvoice)(5000);
+    $result = app(ArAllocationService::class)->createPaymentAndAllocate([
+        'invoice_id' => $invoice->id,
+        'amount_cents' => 5000,
+        'method' => 'cash',
+        'currency' => 'QAR',
+    ], $this->admin->id);
+
+    $payment = $result['payment'];
+    $run = app(PaymentConsistencyService::class)->check(
+        'saved_credit_v1',
+        'payment',
+        $payment->id,
+        triggerKey: 'test:saved-credit:initial-receipt',
+    );
+
+    $audit = AccountingAuditLog::query()
+        ->where('action', 'ar_payment.created')
+        ->where('subject_id', $payment->id)
+        ->firstOrFail();
+    expect($run->open_count)->toBe(0)
+        ->and($audit->payload['allocation_ids'])->toHaveCount(1);
+});
+
+it('treats zero value vouchers and voided receipts as outside saved credit availability', function (): void {
+    $voucher = ($this->makePayment)(0);
+    DB::table('payments')->where('id', $voucher->id)->update([
+        'company_id' => null,
+        'method' => 'voucher',
+    ]);
+    $voided = ($this->makePayment)(5000);
+    DB::table('payments')->where('id', $voided->id)->update([
+        'voided_at' => now(),
+        'voided_by' => $this->admin->id,
+    ]);
+    $consistency = app(PaymentConsistencyService::class);
+
+    expect($consistency->check(
+        'saved_credit_v1',
+        'payment',
+        $voucher->id,
+        triggerKey: 'test:saved-credit:voucher-not-applicable',
+    )->open_count)->toBe(0)
+        ->and($consistency->check(
+            'saved_credit_v1',
+            'payment',
+            $voided->id,
+            triggerKey: 'test:saved-credit:voided-not-applicable',
+        )->open_count)->toBe(0);
 });
 
 it('requires the administrator role and both saved credit and finance permissions', function (): void {

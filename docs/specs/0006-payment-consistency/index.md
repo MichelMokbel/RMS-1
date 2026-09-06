@@ -1,12 +1,14 @@
 # 0006. Payment and membership consistency checks
 
 **Date**: 2026-08-31
-**Status**: Proposed
-**Scope**: Feature 9. Design confirmed on 2026-09-01; not implemented.
+**Status**: Implemented
+**Scope**: Feature 9. Design confirmed on 2026-09-01; implemented and independently reviewed on 2026-09-06.
 
 ## Summary
 
 RMS checks that payments, memberships, bookings, promotions and payouts agree with their supporting records. Checks run in the background and report problems without delaying customers or changing their money. Staff use the existing authorized workflows to correct a problem, then run the check again.
+
+The implementation includes the complete versioned rule registry, after-commit targeted dispatch, resumable keyset sweeps in batches of at most 100 subjects, durable deferred retries, scoped findings and manual rechecks, one alert intent per non-checkout finding episode, run-health recovery, and the scheduled 15-minute and 02:00 Asia/Qatar scans. The checker is diagnostic only and does not mutate accounting, payment, promotion, or membership balances.
 
 ## Requirements
 

@@ -50,6 +50,7 @@ CLAUDE.local.md
 /.swarm/
 /.playwright-cli/
 outputs/
+/test-preferences.json
 
 # Local generated and private artifacts
 **/.DS_Store

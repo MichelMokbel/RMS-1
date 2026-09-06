@@ -652,6 +652,8 @@ it('preserves two historical requests after a merge and returns the earliest one
         'status' => 'active',
     ]);
     $destinationUser->assignRole('customer');
+    Role::findOrCreate('admin', 'web');
+    $this->systemActor->assignRole('admin');
     Sanctum::actingAs($destinationUser, ['customer:*']);
     [, $destinationQuoteFingerprint] = quoteZeroMembershipPromotion($this, $promotion);
     $destinationReference = (string) Str::uuid();

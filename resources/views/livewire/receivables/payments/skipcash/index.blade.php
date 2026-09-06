@@ -59,6 +59,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             @if(auth()->user()?->hasRole('admin') || auth()->user()?->can('payments.settings.manage'))
                 <flux:button :href="route('settings.payments')" variant="ghost" wire:navigate>{{ __('Payment settings') }}</flux:button>
             @endif
+            <flux:button :href="route('receivables.payments.consistency.index')" variant="ghost" wire:navigate>{{ __('Consistency') }}</flux:button>
             <flux:button :href="route('receivables.payments.index')" variant="ghost" wire:navigate>{{ __('Payment receipts') }}</flux:button>
         </div>
     </div>

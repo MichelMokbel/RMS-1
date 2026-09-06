@@ -35,6 +35,7 @@ class GatewaySettlementPostingService
         private readonly SubledgerService $subledger,
         private readonly BankTransactionService $bankTransactions,
         private readonly AccountingAuditLogService $audit,
+        private readonly PaymentConsistencyDispatchService $paymentConsistency,
     ) {}
 
     public function post(
@@ -56,7 +57,7 @@ class GatewaySettlementPostingService
         }
 
         try {
-            return DB::transaction(function () use (
+            $settlement = DB::transaction(function () use (
                 $entryImport,
                 $payoutReference,
                 $reviewedFingerprint,
@@ -336,10 +337,20 @@ class GatewaySettlementPostingService
                 ->whereNull('voided_at')
                 ->first();
             if ($existing && hash_equals((string) $existing->reviewed_fingerprint, $reviewedFingerprint)) {
-                return $existing->fresh(['items', 'adjustments']);
+                $settlement = $existing->fresh(['items', 'adjustments']);
+            } else {
+                throw $exception;
             }
-            throw $exception;
         }
+
+        $this->paymentConsistency->settlementAfterCommit(
+            (int) $entryImport->id,
+            'ar_clearing_settlement',
+            (int) $settlement->id,
+            'posted',
+        );
+
+        return $settlement;
     }
 
     private function createAdjustment(

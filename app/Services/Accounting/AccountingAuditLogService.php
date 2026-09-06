@@ -10,8 +10,13 @@ class AccountingAuditLogService
 {
     public function log(string $action, ?int $actorId = null, Model|string|null $subject = null, array $payload = [], ?int $companyId = null): void
     {
+        $this->record($action, $actorId, $subject, $payload, $companyId);
+    }
+
+    public function record(string $action, ?int $actorId = null, Model|string|null $subject = null, array $payload = [], ?int $companyId = null): ?AccountingAuditLog
+    {
         if (! Schema::hasTable('accounting_audit_logs')) {
-            return;
+            return null;
         }
 
         $subjectType = null;
@@ -25,7 +30,7 @@ class AccountingAuditLogService
             $subjectType = $subject;
         }
 
-        AccountingAuditLog::query()->create([
+        return AccountingAuditLog::query()->create([
             'company_id' => $companyId,
             'actor_id' => $actorId,
             'action' => $action,

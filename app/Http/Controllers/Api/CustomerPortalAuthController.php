@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Exceptions\CustomerPortalConflictException;
 use App\Http\Controllers\Controller;
-use App\Models\CustomerPhoneVerificationChallenge;
 use App\Models\User;
 use App\Notifications\CustomerPortalResetPassword;
 use App\Services\Customers\CustomerIdentityResolver;
@@ -82,15 +81,13 @@ class CustomerPortalAuthController extends Controller
             'code' => ['required', 'string', 'size:'.(int) config('customers.verification_code_length', 6)],
         ]);
 
-        $result = DB::transaction(function () use ($data): array {
-            $challenge = $this->verification->resolveChallengeFromToken(
-                $data['registration_token'],
-                CustomerPhoneVerificationService::PURPOSE_SIGNUP
-            );
-            $challenge = CustomerPhoneVerificationChallenge::query()
-                ->lockForUpdate()
-                ->findOrFail($challenge->id);
-            $challenge = $this->verification->verifyChallenge($challenge, $data['code']);
+        $challenge = $this->verification->resolveChallengeFromToken(
+            $data['registration_token'],
+            CustomerPhoneVerificationService::PURPOSE_SIGNUP
+        );
+        $challenge = $this->verification->verifyChallenge($challenge, $data['code']);
+
+        $result = DB::transaction(function () use ($data, $challenge): array {
             $user = $challenge->user()->with('customer')->firstOrFail();
             $phoneRaw = $this->verification
                 ->decodeChallengeToken($data['registration_token'], CustomerPhoneVerificationService::PURPOSE_SIGNUP)['phone_raw'] ?? $user->portal_phone;
@@ -167,6 +164,8 @@ class CustomerPortalAuthController extends Controller
         if (! $user->isCustomerPortalUser()) {
             return response()->json(['message' => 'Customer portal access is not available for this account.'], 403);
         }
+
+        $user = $this->identities->resolveForLogin($user);
 
         $token = $user->createToken('customer:'.$user->id, ['customer:*']);
 

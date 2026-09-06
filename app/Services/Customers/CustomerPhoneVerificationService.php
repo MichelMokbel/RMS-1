@@ -16,12 +16,14 @@ use Illuminate\Validation\ValidationException;
 class CustomerPhoneVerificationService
 {
     public const PURPOSE_PHONE_CHANGE = 'phone_change';
+
+    public const PURPOSE_CURRENT_PHONE = 'portal_phone_verify';
+
     public const PURPOSE_SIGNUP = 'signup';
 
     public function __construct(
         private readonly PhoneVerificationProvider $provider,
-    ) {
-    }
+    ) {}
 
     public function createChallenge(
         User $user,
@@ -61,70 +63,82 @@ class CustomerPhoneVerificationService
 
     public function resendChallenge(CustomerPhoneVerificationChallenge $challenge): CustomerPhoneVerificationChallenge
     {
-        if ($challenge->verified_at !== null || $challenge->cancelled_at !== null) {
+        $result = DB::transaction(function () use ($challenge): array {
+            $locked = CustomerPhoneVerificationChallenge::query()->lockForUpdate()->findOrFail($challenge->id);
+            if ($locked->verified_at !== null || $locked->cancelled_at !== null) {
+                return ['message' => __('This verification challenge is no longer active.')];
+            }
+
+            $cooldownSeconds = (int) config('customers.verification_resend_cooldown_seconds', 60);
+            if ($locked->last_sent_at !== null && $locked->last_sent_at->addSeconds($cooldownSeconds)->isFuture()) {
+                return ['message' => __('Please wait before requesting another verification code.')];
+            }
+
+            if ((int) $locked->send_count >= (int) config('customers.verification_max_sends', 3)) {
+                $locked->forceFill(['cancelled_at' => now()])->save();
+
+                return ['message' => __('This verification challenge has expired. Start again to continue.')];
+            }
+
+            return ['challenge' => $this->dispatchCode($locked)];
+        }, 3);
+
+        if (isset($result['message'])) {
             throw ValidationException::withMessages([
-                'token' => __('This verification challenge is no longer active.'),
+                'token' => (string) $result['message'],
             ]);
         }
 
-        $cooldownSeconds = (int) config('customers.verification_resend_cooldown_seconds', 60);
-        if ($challenge->last_sent_at !== null && now()->diffInSeconds($challenge->last_sent_at) < $cooldownSeconds) {
-            throw ValidationException::withMessages([
-                'token' => __('Please wait before requesting another verification code.'),
-            ]);
-        }
-
-        if ((int) $challenge->send_count >= (int) config('customers.verification_max_sends', 3)) {
-            $challenge->forceFill([
-                'cancelled_at' => now(),
-            ])->save();
-
-            throw ValidationException::withMessages([
-                'token' => __('This verification challenge has expired. Start again to continue.'),
-            ]);
-        }
-
-        return $this->dispatchCode($challenge);
+        return $result['challenge'];
     }
 
     public function verifyChallenge(CustomerPhoneVerificationChallenge $challenge, string $code): CustomerPhoneVerificationChallenge
     {
-        if ($challenge->verified_at !== null || $challenge->cancelled_at !== null) {
-            throw ValidationException::withMessages([
-                'token' => __('This verification challenge is no longer active.'),
-            ]);
-        }
+        $result = DB::transaction(function () use ($challenge, $code): array {
+            $locked = CustomerPhoneVerificationChallenge::query()
+                ->lockForUpdate()
+                ->findOrFail($challenge->id);
 
-        if ($challenge->expires_at === null || $challenge->expires_at->isPast()) {
-            $challenge->forceFill([
-                'cancelled_at' => now(),
-            ])->save();
-
-            throw ValidationException::withMessages([
-                'code' => __('The verification code has expired.'),
-            ]);
-        }
-
-        if (! Hash::check($code, $challenge->code_hash)) {
-            $attempts = (int) $challenge->attempt_count + 1;
-            $updates = ['attempt_count' => $attempts];
-
-            if ($attempts >= (int) config('customers.verification_max_attempts', 5)) {
-                $updates['cancelled_at'] = now();
+            if ($locked->verified_at !== null || $locked->cancelled_at !== null) {
+                return ['field' => 'token', 'message' => __('This verification challenge is no longer active.')];
             }
 
-            $challenge->forceFill($updates)->save();
+            if ($locked->expires_at === null || $locked->expires_at->isPast()) {
+                $locked->forceFill(['cancelled_at' => now()])->save();
 
+                return ['field' => 'code', 'message' => __('The verification code has expired.')];
+            }
+
+            if (! Hash::check($code, $locked->code_hash)) {
+                $attempts = (int) $locked->attempt_count + 1;
+                $updates = ['attempt_count' => $attempts];
+
+                if ($attempts >= (int) config('customers.verification_max_attempts', 5)) {
+                    $updates['cancelled_at'] = now();
+                }
+
+                $locked->forceFill($updates)->save();
+
+                return [
+                    'field' => 'code',
+                    'message' => isset($updates['cancelled_at'])
+                        ? __('The verification code is invalid. Start again to continue.')
+                        : __('The verification code is invalid.'),
+                ];
+            }
+
+            $locked->forceFill(['verified_at' => now()])->save();
+
+            return ['challenge' => $locked->fresh()];
+        });
+
+        if (isset($result['field'], $result['message'])) {
             throw ValidationException::withMessages([
-                'code' => __('The verification code is invalid.'),
+                (string) $result['field'] => (string) $result['message'],
             ]);
         }
 
-        $challenge->forceFill([
-            'verified_at' => now(),
-        ])->save();
-
-        return $challenge->fresh();
+        return $result['challenge'];
     }
 
     /**

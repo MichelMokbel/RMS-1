@@ -26,10 +26,12 @@ use App\Services\Payments\GatewaySettlementEvidenceService;
 use App\Services\Payments\GatewaySettlementImportService;
 use App\Services\Payments\GatewaySettlementPostingService;
 use App\Services\Payments\GatewaySettlementReviewService;
+use App\Services\Payments\PaymentConsistencyService;
 use App\Services\Reports\UnsettledIncomingReceiptsReportService;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -949,6 +951,36 @@ it('matches reviews posts reconciles and voids one exact SkipCash payout', funct
         ->whereNull('statement_import_id')
         ->firstOrFail();
     expect($bookTransaction->amount)->toBe('4164.79');
+
+    $settlementConsistency = app(PaymentConsistencyService::class)->check(
+        'settlement_v1',
+        'gateway_settlement_import',
+        $reexport->id,
+        triggerKey: 'test:settlement:posted',
+    );
+    expect($settlementConsistency->open_count)->toBe(0)
+        ->and($settlementConsistency->deferred_count)->toBe(0);
+
+    $postedBank = BankAccount::query()->findOrFail($settlement->bank_account_id);
+    $postedBankState = $postedBank->only(['is_default', 'is_active']);
+    $postedBank->update(['is_default' => false, 'is_active' => false]);
+    expect(app(PaymentConsistencyService::class)->check(
+        'settlement_v1',
+        'gateway_settlement_import',
+        $reexport->id,
+        triggerKey: 'test:settlement:historical-bank-snapshot',
+    )->open_count)->toBe(0);
+    $postedBank->update($postedBankState);
+
+    $line = DB::table('subledger_lines')->where('entry_id', $settlementEntry->id)->orderBy('id')->first();
+    DB::table('subledger_lines')->where('id', $line->id)->update(['debit' => (float) $line->debit + 0.01]);
+    expect(app(PaymentConsistencyService::class)->check(
+        'settlement_v1',
+        'gateway_settlement_import',
+        $reexport->id,
+        triggerKey: 'test:settlement:incorrect-subledger',
+    )->open_count)->toBe(1);
+    DB::table('subledger_lines')->where('id', $line->id)->update(['debit' => $line->debit]);
 
     expect(fn () => app(BankReconciliationService::class)->match(
         $reconciliation['run'],

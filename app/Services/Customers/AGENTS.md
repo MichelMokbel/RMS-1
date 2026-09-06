@@ -2,14 +2,16 @@
 
 ## Overview
 
-This area owns customer imports, merging, customer codes, portal registration, phone normalization, and verification. A portal user may exist without a linked customer record, which matters when you expose orders or financial data.
+This area owns customer imports, merging, customer codes, portal registration, automatic identity resolution, review, phone normalization, and verification. Registration links one eligible exact name-and-phone match or creates an owned fallback customer immediately; uncertain candidates are reviewed later and never block checkout.
 
 ## Key files
 
 | File | Owns |
 |---|---|
-| `CustomerPortalRegistrationService.php` | Portal signup and the initial unlinked account. |
+| `CustomerPortalRegistrationService.php` | Portal signup profile validation before identity resolution. |
 | `CustomerPortalAccountService.php` | Linked account and verified phone state. |
+| `CustomerIdentityResolver.php`, `CustomerMatchingService.php` | Exact linking, fallback customer creation, bounded candidate discovery, and optional ranking. |
+| `CustomerMatchReviewService.php`, `CustomerIdentityIntegrityService.php` | Private review, recovery, and identity integrity diagnostics. |
 | `CustomerPhoneVerificationService.php` | Challenges, expiry, resend limits, and encrypted challenge tokens. |
 | `PhoneNumberService.php` | Phone normalization and masking. |
 | `CustomerImportService.php`, `CustomerUpsertMatcher.php` | CSV preview, import, and matching. |
@@ -18,7 +20,7 @@ This area owns customer imports, merging, customer codes, portal registration, p
 
 ## Conventions
 
-* Signup stores portal profile fields on `User` without automatically linking an existing customer. You can inspect `CustomerPortalAuthController` and the customer accounts UI for the separate linking workflow.
+* Signup stores portal profile fields on `User`, links one eligible exact normalized full-name and phone match when identity is proven, or creates a new owned customer. Low-confidence candidates remain a private review suggestion and do not hold the account or checkout.
 * `customer.portal` checks customer role and token ability. Phone verification is a further gate on selected routes, not a replacement for account ownership.
 * Verification stores hashed codes, expiry, attempt counts, resend limits, and challenge purpose. The provider is bound in `app/Providers/AppServiceProvider.php`.
 * Merge moves references across orders, subscriptions, AR, sales, pastry orders, and requests, then deactivates the source customer. A conflicting portal user is deactivated instead of violating the unique customer link.

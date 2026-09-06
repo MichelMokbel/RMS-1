@@ -12,6 +12,7 @@ use App\Services\Mail\MailConfigurationUnavailableException;
 use App\Services\Mail\MailSettingsService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class PaymentOperationsTrackingService
@@ -75,14 +76,14 @@ class PaymentOperationsTrackingService
         }
     }
 
-    public function recordConsistencyIssue(int $attemptId, string $reasonCode): void
+    public function recordConsistencyIssue(int $attemptId, string $reasonCode): bool
     {
-        $this->recordIssue($attemptId, 'processing', $reasonCode, 0, false);
+        return $this->recordIssue($attemptId, 'processing', $reasonCode, 0, false);
     }
 
-    public function resolveConsistencyIssue(int $attemptId): void
+    public function resolveConsistencyIssue(int $attemptId, string $reasonCode): void
     {
-        $this->resolveIssue($attemptId, 'processing', 'CONSISTENCY_');
+        $this->resolveIssue($attemptId, 'processing', exactReason: $this->boundedReason($reasonCode));
     }
 
     public function resolveProcessingIssue(int $attemptId): void
@@ -138,6 +139,14 @@ class PaymentOperationsTrackingService
             foreach ((array) ($tracking['issues'] ?? []) as $slot => $issue) {
                 $alert = is_array($issue) ? ($issue['alert'] ?? null) : null;
                 $alertState = (string) ($alert['state'] ?? '');
+                if ($alertState === 'sending'
+                    && ! empty($alert['claimed_at'])
+                    && CarbonImmutable::parse((string) $alert['claimed_at'])->addMinutes(10)->isPast()
+                ) {
+                    $this->markStaleAlertUnknown((int) $attempt->id, (string) $slot, (string) ($issue['episode_uuid'] ?? ''));
+
+                    continue;
+                }
                 $alertDue = $alertState === 'retryable'
                     || $alertState === 'pending' && (
                         empty($alert['queued_at'])
@@ -170,6 +179,8 @@ class PaymentOperationsTrackingService
                 $dates[] = CarbonImmutable::parse((string) ($alert['queued_at'] ?? now('UTC')))->addSeconds(120);
             } elseif (($alert['state'] ?? null) === 'retryable') {
                 $dates[] = CarbonImmutable::parse((string) ($alert['next_attempt_at'] ?? now('UTC')));
+            } elseif (($alert['state'] ?? null) === 'sending' && ! empty($alert['claimed_at'])) {
+                $dates[] = CarbonImmutable::parse((string) $alert['claimed_at'])->addMinutes(10);
             }
         }
 
@@ -190,17 +201,52 @@ class PaymentOperationsTrackingService
         return $dates === [] ? null : collect($dates)->sort()->first();
     }
 
+    private function markStaleAlertUnknown(int $attemptId, string $slot, string $episodeUuid): void
+    {
+        DB::transaction(function () use ($attemptId, $slot, $episodeUuid): void {
+            $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->find($attemptId);
+            $tracking = is_array($attempt?->operations_tracking) ? $attempt->operations_tracking : [];
+            $issue = is_array(data_get($tracking, "issues.{$slot}")) ? data_get($tracking, "issues.{$slot}") : [];
+            $alert = is_array($issue['alert'] ?? null) ? $issue['alert'] : [];
+            if (! $attempt
+                || ! hash_equals((string) ($issue['episode_uuid'] ?? ''), $episodeUuid)
+                || ($alert['state'] ?? null) !== 'sending'
+                || empty($alert['claimed_at'])
+                || ! CarbonImmutable::parse((string) $alert['claimed_at'])->addMinutes(10)->isPast()
+            ) {
+                return;
+            }
+            $alert['state'] = 'unknown';
+            $alert['error_code'] = 'ALERT_DELIVERY_OUTCOME_UNKNOWN';
+            $alert['unknown_at'] = now('UTC')->toIso8601String();
+            $alert['next_attempt_at'] = null;
+            unset($alert['claim_uuid'], $alert['claimed_at'], $alert['queued_at']);
+            $issue['alert'] = $alert;
+            $tracking['issues'][$slot] = $issue;
+            $attempt->update([
+                'operations_tracking' => $tracking,
+                'operations_next_action_at' => $this->nextActionAt($tracking),
+            ]);
+            $this->auditLog->log('payment.operations.alert_unknown', null, $attempt, [
+                'slot' => $slot,
+                'episode_uuid' => $episodeUuid,
+                'reason_code' => 'ALERT_DELIVERY_OUTCOME_UNKNOWN',
+            ], (int) $attempt->company_id);
+        }, 3);
+    }
+
     private function recordIssue(
         int $attemptId,
         string $slot,
         string $reasonCode,
         int $attentionDelayMinutes,
         bool $replaceOpenReason = true,
-    ): void {
+    ): bool {
         $dispatch = false;
         $episodeUuid = null;
+        $recorded = false;
 
-        DB::transaction(function () use ($attemptId, $slot, $reasonCode, $attentionDelayMinutes, $replaceOpenReason, &$dispatch, &$episodeUuid): void {
+        DB::transaction(function () use ($attemptId, $slot, $reasonCode, $attentionDelayMinutes, $replaceOpenReason, &$dispatch, &$episodeUuid, &$recorded): void {
             $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->find($attemptId);
             if (! $attempt || ! in_array($slot, self::ISSUE_SLOTS, true)) {
                 return;
@@ -214,6 +260,8 @@ class PaymentOperationsTrackingService
             $opened = ! $isOpen;
             $oldReason = $isOpen ? (string) ($issue['reason_code'] ?? '') : null;
             if ($isOpen && ! $replaceOpenReason) {
+                $recorded = hash_equals($oldReason, $this->boundedReason($reasonCode));
+
                 return;
             }
 
@@ -252,6 +300,7 @@ class PaymentOperationsTrackingService
             }
 
             $issues[$slot] = $issue;
+            $recorded = true;
             $tracking['issues'] = $issues;
             $attempt->update([
                 'operations_tracking' => $tracking,
@@ -284,13 +333,27 @@ class PaymentOperationsTrackingService
         }, 3);
 
         if ($dispatch && $episodeUuid) {
-            SendPaymentOperationsAlert::dispatch($attemptId, $slot, $episodeUuid);
+            try {
+                SendPaymentOperationsAlert::dispatch($attemptId, $slot, $episodeUuid);
+            } catch (\Throwable $exception) {
+                Log::warning('payment_operations_alert_dispatch_failed', [
+                    'attempt_id' => $attemptId,
+                    'slot' => $slot,
+                    'exception_class' => $exception::class,
+                ]);
+            }
         }
+
+        return $recorded;
     }
 
-    private function resolveIssue(int $attemptId, string $slot, ?string $reasonPrefix = null): void
-    {
-        DB::transaction(function () use ($attemptId, $slot, $reasonPrefix): void {
+    private function resolveIssue(
+        int $attemptId,
+        string $slot,
+        ?string $reasonPrefix = null,
+        ?string $exactReason = null,
+    ): void {
+        DB::transaction(function () use ($attemptId, $slot, $reasonPrefix, $exactReason): void {
             $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->find($attemptId);
             $tracking = is_array($attempt?->operations_tracking) ? $attempt->operations_tracking : [];
             $issues = is_array($tracking['issues'] ?? null) ? $tracking['issues'] : [];
@@ -299,6 +362,9 @@ class PaymentOperationsTrackingService
                 return;
             }
             if ($reasonPrefix !== null && ! str_starts_with((string) ($issue['reason_code'] ?? ''), $reasonPrefix)) {
+                return;
+            }
+            if ($exactReason !== null && ! hash_equals((string) ($issue['reason_code'] ?? ''), $exactReason)) {
                 return;
             }
 

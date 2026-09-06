@@ -16,8 +16,10 @@ use App\Console\Commands\IntegrityAudit;
 use App\Console\Commands\PrunePosPrintStreamEvents;
 use App\Console\Commands\PurgeSkipCashProviderBodies;
 use App\Console\Commands\ReapplySafeForeignKeys;
+use App\Console\Commands\RecoverCustomerMatching;
 use App\Console\Commands\RecoverSkipCashPayments;
 use App\Console\Commands\RepairArCrossCompanyAllocations;
+use App\Console\Commands\ReportCustomerIdentityIntegrity;
 use App\Console\Commands\RestoreDatabaseFromDump;
 use App\Console\Commands\UsersHashPasswords;
 use App\Http\Middleware\ApplyReportDateDefaults;
@@ -66,6 +68,8 @@ return Application::configure(basePath: dirname(__DIR__))
         GenerateRecurringBills::class,
         RepairArCrossCompanyAllocations::class,
         CheckPaymentConsistency::class,
+        RecoverCustomerMatching::class,
+        ReportCustomerIdentityIntegrity::class,
     ])
     ->withSchedule(function (Schedule $schedule) {
         if (! (bool) config('subscriptions.auto_generate', false)) {
@@ -116,6 +120,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('payments:check-consistency --mode=full')
             ->dailyAt('02:00')
             ->timezone((string) config('payment_consistency.timezone', 'Asia/Qatar'))
+            ->withoutOverlapping();
+
+        $schedule->command('customers:recover-matching')
+            ->everyFiveMinutes()
             ->withoutOverlapping();
 
         $schedule->command('hr:refresh-alerts')->dailyAt('01:30')->withoutOverlapping();

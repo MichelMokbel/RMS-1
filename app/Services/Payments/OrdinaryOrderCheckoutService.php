@@ -20,6 +20,7 @@ class OrdinaryOrderCheckoutService
         private readonly CheckoutCanonicalizer $canonicalizer,
         private readonly CheckoutStatusPresenter $statuses,
         private readonly CustomerOwnershipService $customerOwnership,
+        private readonly PaymentConsistencyDispatchService $paymentConsistency,
     ) {}
 
     /**
@@ -204,6 +205,12 @@ class OrdinaryOrderCheckoutService
             }
 
             DB::afterCommit(fn () => InitiateSkipCashCheckout::dispatch($attempt->id));
+            $this->paymentConsistency->checkoutGraphAfterCommit(
+                (int) $attempt->id,
+                'payment_checkout_attempt',
+                (int) $attempt->id,
+                'created',
+            );
 
             return ['attempt' => $attempt, 'recovered' => false];
         }, 3);

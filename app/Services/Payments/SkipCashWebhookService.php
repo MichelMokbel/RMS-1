@@ -19,6 +19,7 @@ class SkipCashWebhookService
         private readonly MembershipCheckoutActivationService $membershipActivation,
         private readonly PaymentOperationsTrackingService $operations,
         private readonly MembershipPromotionReservationService $promotionReservations,
+        private readonly PaymentConsistencyDispatchService $paymentConsistency,
     ) {}
 
     /**
@@ -89,6 +90,7 @@ class SkipCashWebhookService
             }
 
             return [
+                'transaction_id' => $transaction->id,
                 'attempt_id' => $attempt->id,
                 'source_id' => $attempt->payment_source_id,
                 'provider_payment_id' => $transaction->provider_payment_id,
@@ -178,6 +180,12 @@ class SkipCashWebhookService
             };
             $this->markEventProcessed((int) $context['event_id']);
             $this->operations->resolveProcessingIssue((int) $context['attempt_id']);
+            $this->paymentConsistency->checkoutGraphAfterCommit(
+                (int) $context['attempt_id'],
+                'payment_provider_event',
+                (int) $context['event_id'],
+                'processed',
+            );
 
             return true;
         } catch (PaymentCheckoutException $exception) {
@@ -248,6 +256,12 @@ class SkipCashWebhookService
         } else {
             $this->operations->recordProcessingFailure($attemptId, $code);
         }
+        $this->paymentConsistency->checkoutGraphAfterCommit(
+            $attemptId,
+            'payment_provider_event',
+            $eventId,
+            'processing_failed',
+        );
     }
 
     private function recordNonPaidEvent(int $attemptId, int $eventId, string $status): void
@@ -291,6 +305,12 @@ class SkipCashWebhookService
         if ($requiresReview) {
             $this->operations->recordProviderEvidenceIssue($attemptId, 'PROVIDER_REVERSAL_REVIEW');
         }
+        $this->paymentConsistency->checkoutGraphAfterCommit(
+            $attemptId,
+            'payment_provider_event',
+            $eventId,
+            'unpaid_processed',
+        );
     }
 
     /** @param array<string, mixed> $context
@@ -392,6 +412,12 @@ class SkipCashWebhookService
         } else {
             $this->operations->resolveProviderEvidenceIssue((int) $context['attempt_id']);
         }
+        $this->paymentConsistency->checkoutGraphAfterCommit(
+            (int) $context['attempt_id'],
+            'payment_provider_transaction',
+            (int) $context['transaction_id'],
+            'details_checked',
+        );
     }
 
     private function recordKnownTransactionError(int $attemptId, string $code): void

@@ -33,6 +33,7 @@ class SavedCreditAllocationService
         private readonly SubledgerService $subledger,
         private readonly PaymentCreditProjectionService $projection,
         private readonly MembershipBookingFundingService $membershipBookingFunding,
+        private readonly PaymentConsistencyDispatchService $paymentConsistency,
     ) {}
 
     /**
@@ -55,7 +56,7 @@ class SavedCreditAllocationService
             'rows' => $normalizedRows,
         ], JSON_THROW_ON_ERROR));
 
-        return DB::transaction(function () use ($paymentId, $normalizedRows, $actor, $operationUuid, $fingerprint): array {
+        $result = DB::transaction(function () use ($paymentId, $normalizedRows, $actor, $operationUuid, $fingerprint): array {
             $this->membershipBookingFunding->lockQueueForPaymentMutation($paymentId);
             $payment = Payment::query()->whereKey($paymentId)->lockForUpdate()->firstOrFail();
             $companyId = $this->integrity->resolvePaymentCompanyId($payment);
@@ -179,6 +180,14 @@ class SavedCreditAllocationService
                 'audit_id' => $completedAuditId ? (int) $completedAuditId : null,
             ];
         }, 3);
+        $this->paymentConsistency->paymentAfterCommit(
+            $paymentId,
+            'saved_credit_operation',
+            (int) ($result['audit_id'] ?: $paymentId),
+            'allocated',
+        );
+
+        return $result;
     }
 
     private function assertActor(User $actor): void

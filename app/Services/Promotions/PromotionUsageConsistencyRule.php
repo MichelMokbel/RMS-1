@@ -100,6 +100,20 @@ class PromotionUsageConsistencyRule
         if ($redemptions->count() + $heldCount > (int) $promotion->total_limit) {
             $this->issue($issues, 'PROMOTION_TOTAL_LIMIT_EXCEEDED', self::SUBJECT_TYPE, (int) $promotion->id);
         }
+        $canonicalUseCounts = [];
+        foreach ($redemptions->concat($reservations->where('status', MembershipPromotionReservation::STATUS_HELD)) as $use) {
+            try {
+                $canonicalCustomerId = $this->customerOwnership->canonicalCustomerId((int) $use->original_customer_id);
+                $canonicalUseCounts[$canonicalCustomerId] = ($canonicalUseCounts[$canonicalCustomerId] ?? 0) + 1;
+            } catch (Throwable) {
+                $this->issue($issues, 'PROMOTION_CUSTOMER_OWNERSHIP_INVALID', self::SUBJECT_TYPE, (int) $promotion->id);
+            }
+        }
+        foreach ($canonicalUseCounts as $canonicalCustomerId => $count) {
+            if ($count > (int) $promotion->per_customer_limit) {
+                $this->issue($issues, 'PROMOTION_CUSTOMER_LIMIT_EXCEEDED', 'customer', (int) $canonicalCustomerId);
+            }
+        }
 
         $redemptionsByReservation = $redemptions->whereNotNull('reservation_id')->keyBy('reservation_id');
         foreach ($reservations as $reservation) {
@@ -198,6 +212,7 @@ class PromotionUsageConsistencyRule
             'checkout_id' => $this->firstCheckoutId($issues, $reservations, $redemptions),
             'expected' => [
                 'completed_and_held_not_above_total_limit' => (int) $promotion->total_limit,
+                'completed_and_held_not_above_customer_limit' => (int) $promotion->per_customer_limit,
                 'paid_use_requires_matching_redeemed_hold_checkout_request_block_and_payment' => true,
                 'zero_use_requires_request_only_until_explicit_manual_conversion' => true,
                 'completed_use_survives_cancellation_and_merge' => true,
@@ -206,6 +221,7 @@ class PromotionUsageConsistencyRule
                 'held_count' => $heldCount,
                 'paid_use_count' => $redemptions->where('kind', MembershipPromotionRedemption::KIND_PAID_PURCHASE)->count(),
                 'zero_request_use_count' => $redemptions->where('kind', MembershipPromotionRedemption::KIND_ZERO_REQUEST)->count(),
+                'canonical_customer_use_counts' => collect($canonicalUseCounts)->sortKeys()->all(),
                 'issues' => $issues,
             ],
             'evidence_fingerprint' => hash('sha256', json_encode(

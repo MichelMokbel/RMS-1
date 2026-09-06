@@ -25,6 +25,7 @@ class MembershipCheckoutService
         private readonly CustomerOwnershipService $customerOwnership,
         private readonly MembershipPromotionQuoteService $promotionQuotes,
         private readonly MembershipPromotionReservationService $promotionReservations,
+        private readonly PaymentConsistencyDispatchService $paymentConsistency,
     ) {}
 
     /** @param array<string, mixed> $request
@@ -277,6 +278,12 @@ class MembershipCheckoutService
             }
 
             DB::afterCommit(fn () => InitiateSkipCashCheckout::dispatch($attempt->id));
+            $this->paymentConsistency->checkoutGraphAfterCommit(
+                (int) $attempt->id,
+                'payment_checkout_attempt',
+                (int) $attempt->id,
+                'created',
+            );
 
             return ['attempt' => $attempt, 'replayed' => false];
         }, 3);

@@ -76,6 +76,13 @@ Route::prefix('customer')->group(function () {
         Route::post('auth/logout', [CustomerPortalAuthController::class, 'logout']);
         Route::get('me', [CustomerPortalAuthController::class, 'me']);
 
+        Route::post('profile/phone/verify-current/start', [CustomerPortalProfileController::class, 'startCurrentPhoneVerification'])
+            ->middleware('throttle:5,1');
+        Route::post('profile/phone/verify-current/verify', [CustomerPortalProfileController::class, 'verifyCurrentPhone'])
+            ->middleware('throttle:5,1');
+        Route::post('profile/phone/verify-current/resend', [CustomerPortalProfileController::class, 'resendCurrentPhoneVerification'])
+            ->middleware('throttle:5,1');
+
         Route::get('dashboard', [CustomerPortalDashboardController::class, 'dashboard']);
         Route::get('orders', [CustomerPortalDashboardController::class, 'orders']);
         Route::get('subscriptions', [CustomerPortalDashboardController::class, 'subscriptions']);

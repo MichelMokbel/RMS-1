@@ -12,6 +12,8 @@ use App\Models\MenuItem;
 use App\Models\Payment;
 use App\Models\PaymentCheckoutAttempt;
 use App\Models\PaymentCheckoutTarget;
+use App\Models\PaymentConsistencyFinding;
+use App\Models\PaymentConsistencyRun;
 use App\Models\PaymentProviderEvent;
 use App\Models\PaymentProviderTransaction;
 use App\Models\PaymentSetting;
@@ -21,6 +23,7 @@ use App\Services\Accounting\AccountingPeriodGateService;
 use App\Services\AR\ArInvoiceService;
 use App\Services\Customers\CustomerMergeService;
 use App\Services\Payments\FakeSkipCashProvider;
+use App\Services\Payments\PaymentConsistencyService;
 use App\Services\Payments\PaymentOperationsRecoveryService;
 use App\Services\Payments\PaymentOperationsResendService;
 use App\Services\Payments\SkipCashProvider;
@@ -191,6 +194,20 @@ it('creates a paid ordinary SkipCash order only after verified provider evidence
         ->and(Payment::query()->count())->toBe(1)
         ->and($create->json('reference'))->toBe($attempt->reference);
 
+    $deferredRun = app(PaymentConsistencyService::class)->check(
+        'provider_checkout_v1',
+        'payment_checkout_attempt',
+        $attempt->id,
+        triggerKey: 'test:ordinary:pending-provider',
+    );
+    $retryRun = PaymentConsistencyRun::query()
+        ->where('trigger_key', 'like', 'deferred:%')
+        ->firstOrFail();
+    expect($deferredRun->deferred_count)->toBe(1)
+        ->and($retryRun->state)->toBe(PaymentConsistencyRun::STATE_QUEUED)
+        ->and($retryRun->not_before)->not->toBeNull()
+        ->and(data_get($deferredRun->cursors, 'deferred_retry_run_id'))->toBe($retryRun->id);
+
     $provider = app(SkipCashProvider::class);
     expect($provider)->toBeInstanceOf(FakeSkipCashProvider::class);
     $provider->markPaid(
@@ -236,6 +253,16 @@ it('creates a paid ordinary SkipCash order only after verified provider evidence
         ->and(DB::table('bank_transactions')->where('source_type', 'ar_payment')->where('source_id', $payment->id)->count())->toBe(0)
         ->and($attempt->notification_dispatch['customer_confirmation']['state'])->toBe('sent')
         ->and($attempt->notification_dispatch['admin_confirmation']['state'])->toBe('sent');
+
+    $consistency = app(PaymentConsistencyService::class);
+    $consistencyRuns = [
+        $consistency->check('provider_checkout_v1', 'payment_checkout_attempt', $attempt->id, triggerKey: 'test:ordinary:provider'),
+        $consistency->check('ordinary_accounting_v1', 'payment_checkout_target', $attempt->targets->firstOrFail()->id, triggerKey: 'test:ordinary:accounting'),
+        $consistency->check('saved_credit_v1', 'payment', $payment->id, triggerKey: 'test:ordinary:credit'),
+        $consistency->check('notification_operations_v1', 'payment_checkout_attempt', $attempt->id, triggerKey: 'test:ordinary:notifications'),
+    ];
+    expect(collect($consistencyRuns)->sum('open_count'))->toBe(0)
+        ->and(collect($consistencyRuns)->sum('deferred_count'))->toBe(0);
 
     $admin = User::factory()->create(['status' => 'active']);
     $admin->assignRole(Role::findOrCreate('admin', 'web'));
@@ -686,6 +713,33 @@ it('does not recreate a corrected invoice when the original provider callback is
         ->and(DB::table('ar_invoices')->count())->toBe(1)
         ->and(Payment::query()->where('payment_source_id', $this->source->id)->count())->toBe(1)
         ->and(Payment::query()->where('payment_source_id', $this->source->id)->firstOrFail()->unallocatedCents())->toBe(6500);
+
+    $consistency = app(PaymentConsistencyService::class);
+    expect($consistency->check(
+        'ordinary_accounting_v1',
+        'payment_checkout_target',
+        $target->id,
+        triggerKey: 'test:ordinary:voided-correction',
+    )->open_count)->toBe(0);
+
+    $voidEntryId = DB::table('subledger_entries')
+        ->where('source_type', 'ar_invoice')
+        ->where('source_id', $target->invoice_id)
+        ->where('event', 'void')
+        ->value('id');
+    DB::table('subledger_lines')->where('entry_id', $voidEntryId)->delete();
+    expect($consistency->check(
+        'ordinary_accounting_v1',
+        'payment_checkout_target',
+        $target->id,
+        triggerKey: 'test:ordinary:missing-void-ledger-lines',
+    )->open_count)->toBe(1);
+    $finding = PaymentConsistencyFinding::query()
+        ->where('rule_code', 'ordinary_accounting_v1')
+        ->where('subject_id', $target->id)
+        ->firstOrFail();
+    expect($finding->alert_dispatch['state'])->toBe('pending')
+        ->and(data_get($attempt->fresh()->operations_tracking, 'issues.processing'))->toBeNull();
 });
 
 it('keeps verified payment in processing without partial records while finance is locked, then recovers it', function (): void {
@@ -994,6 +1048,8 @@ it('lets the destination login recover and complete a source checkout after an a
         'status' => 'active',
     ]);
     $targetUser->assignRole('customer');
+    Role::findOrCreate('admin', 'web');
+    $this->systemActor->assignRole('admin');
     app(CustomerMergeService::class)->merge($sourceCustomer, $targetCustomer, $this->systemActor->id);
 
     Sanctum::actingAs($targetUser, ['customer:*']);

@@ -112,6 +112,7 @@ class ArAllocationService
                 'applied_cents' => (int) $allocated,
                 'unapplied_cents' => (int) ($amount - $allocated),
                 'invoice_id' => (int) $invoice->id,
+                'allocation_ids' => $payment->allocations()->pluck('id')->map(fn ($id): int => (int) $id)->all(),
                 'reference' => $payload['reference'] ?? null,
             ]);
 

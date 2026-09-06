@@ -23,6 +23,7 @@ class GatewaySettlementImportService
         private readonly SkipCashSettlementReportParser $parser,
         private readonly AccountingContextService $accountingContext,
         private readonly AccountingAuditLogService $audit,
+        private readonly PaymentConsistencyDispatchService $paymentConsistency,
     ) {}
 
     public function stage(UploadedFile $workbook, PaymentSource $source, User $actor): GatewaySettlementImport
@@ -81,7 +82,7 @@ class GatewaySettlementImportService
         }
 
         try {
-            return DB::transaction(function () use ($workbook, $source, $actor, $fileHash, $parsed, $profile, $disk, $objectKey): GatewaySettlementImport {
+            $import = DB::transaction(function () use ($workbook, $source, $actor, $fileHash, $parsed, $profile, $disk, $objectKey): GatewaySettlementImport {
                 PaymentSource::query()->lockForUpdate()->findOrFail($source->id);
                 $currency = strtoupper(trim((string) ($profile['currency'] ?? '')));
                 $timezone = trim((string) ($profile['timezone'] ?? ''));
@@ -167,6 +168,14 @@ class GatewaySettlementImportService
 
                 return $import->fresh(['rows']);
             });
+            $this->paymentConsistency->settlementAfterCommit(
+                (int) $import->id,
+                'gateway_settlement_import',
+                (int) $import->id,
+                'staged',
+            );
+
+            return $import;
         } catch (QueryException $exception) {
             Storage::disk($disk)->delete($objectKey);
             $existing = GatewaySettlementImport::query()

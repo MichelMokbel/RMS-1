@@ -118,7 +118,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 2 | SkipCash paid order tracer | Slice 1 | in-progress |
 | 3 | Gateway settlement and fee clearing | Slice 2 | in-progress |
 | 4 | Payment exceptions and operations | Slice 3 | in-progress |
-| 9 | Automated consistency checks | Slice 3 | in-progress |
+| 9 | Automated consistency checks | Slice 3 | done |
 | 7 | Membership purchase and renewal checkout | Slice 4 | in-progress |
 | 10 | Existing membership meal selection | Slice 4 | in-progress |
 | 5 | Promotion rules and dashboard | Slice 5 | in-progress |
@@ -301,22 +301,22 @@ Give finance and support staff a safe view of pending, successful, failed, expir
 * [ ] Review it (fresh model): `/check review payment exceptions and operations`
 * [ ] Document it: `/document payment exceptions and operations`
 
-### 9. Automated consistency checks · in-progress
+### 9. Automated consistency checks · done
 Run checks after processing and scheduled sweeps that compare provider results, customer ownership, approved customer merges, inactive source customer references, portal ownership, company and branch alignment, payments, paid invoice fulfillment, retained credit and authorized admin allocations, daily invoice allocations, each queued purchase block's funding links, sequence, used and reserved meals, released reservations, available quota, request conversion, promotions, company wide booking cutoff decisions and per booking snapshots, pause periods and their booking, invoice, allocation, and balance effects, imported report totals, and payout clearing against bank evidence. Do not require routine order state transitions for fulfillment. A voided linked daily invoice is the confirmed exception and must agree with a cancelled subscription order. Include duplicate bookings, duplicate credit restoration, a late customer change, an incomplete customer merge, two active portal accounts after merge, a moved payment without its allocation or purchase block, an inconsistent branch cutoff, a booking whose snapshot changed after confirmation, a future pause invoice that remained active, a voided invoice whose order or allocation remained active, incorrect queue order, premature use of a later block, and invoices or payments attributed to the wrong purchase block. Extend the checks as later slices land, with basic payment and credit checks ready before live collection.
 **Done when:** missing or duplicate records, amount differences, stale processing, invalid links, incomplete customer merges, references still owned by an inactive merged customer, unauthorized credit use, conversion, sequence, usage, restoration, cutoff, pause, invoice driven subscription order cancellation, or funding discrepancies, restored promo uses after membership cancellation or customer merge, and any time based expiry of unused meals or paid credit produce traceable exceptions without delaying correct purchases; repeated runs do not duplicate alerts or money movements, failed runs are visible, and authorized recovery uses existing financial workflows instead of silently rewriting posted records. A valid 100 percent discount submission requires one pending meal plan request and must not have a subscription, purchase block, allowance, order, booking, invoice, payment, payment link, allocation, gateway event, settlement row, meal use, fulfillment, or conversion. Checks and recovery cannot allocate saved credit without an admin action, apply one customer merge or invoice void twice, leave an order or allocation active for a voided linked invoice, treat an invoice edit as cancellation, allow a customer change at or after cutoff, use a later block before an earlier block is exhausted, or create membership effects from a pending request; normal daily allocation from the completed purchase block that supplies the meal remains intact.
 
-**Spec:** [0006 payment consistency](../specs/0006-payment-consistency/index.md). Design accepted on 2026-09-01. It includes the approved after commit, every 15 minutes and nightly 02:00 Qatar check schedule plus the exact rule registry from the independent review. The specification remains `Proposed` until implementation and verification are complete.
+**Spec:** [0006 payment consistency](../specs/0006-payment-consistency/index.md). Design accepted on 2026-09-01. The approved after-commit, every-15-minute, and nightly 02:00 Qatar checks, complete rule registry, resumable bounded scans, durable retries, scoped operations UI, and alert handling were implemented and independently reviewed on 2026-09-06.
 
 * [x] Design it (spec): `/architect automated payment and membership consistency checks`
-* [ ] Build it: `/develop automated payment and membership consistency checks`
-  * [ ] Diagnostic schema, scoped ownership and the complete versioned rule registry with missing reader contract checks (AC-2, AC-3, AC-4, AC-5, AC-8).
-  * [ ] Targeted dispatch, ordinary payment, ownership, credit and settlement adapters, resumable sweeps and full scans (AC-1, AC-2, AC-4, AC-6).
-  * [ ] Scoped diagnostics, manual recheck, one issue episode, alerts and visible run health (AC-3, AC-4, AC-5, AC-7).
-  * [ ] Membership, booking and promotion adapters plus the complete synthetic and release verification matrix (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8).
-* [ ] Verify it: `/check verify automated payment and membership consistency checks`
-* [ ] Test it: `/test automated payment and membership consistency checks`
-* [ ] Review it (fresh model): `/check review automated payment and membership consistency checks`
-* [ ] Document it: `/document automated payment and membership consistency checks`
+* [x] Build it: `/develop automated payment and membership consistency checks`
+  * [x] Diagnostic schema, scoped ownership and the complete versioned rule registry with missing reader contract checks (AC-2, AC-3, AC-4, AC-5, AC-8).
+  * [x] Targeted dispatch, ordinary payment, ownership, credit and settlement adapters, resumable sweeps and full scans (AC-1, AC-2, AC-4, AC-6).
+  * [x] Scoped diagnostics, manual recheck, one issue episode, alerts and visible run health (AC-3, AC-4, AC-5, AC-7).
+  * [x] Membership, booking and promotion adapters plus the complete synthetic and release verification matrix (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8).
+* [x] Verify it: `/check verify automated payment and membership consistency checks`
+* [x] Test it: `/test automated payment and membership consistency checks`
+* [x] Review it (fresh model): `/check review automated payment and membership consistency checks`
+* [x] Document it: `/document automated payment and membership consistency checks`
 
 ## Slice 4: Purchase and use memberships
 
@@ -412,6 +412,6 @@ Expose a stable API contract and website entry flow to quote a code, then apply 
 
 **Feature lifecycle:** `planned` becomes `in-progress` when design or build starts, then `done` when you accept the verified result. `existing` describes work that predates this workflow.
 
-**Next step:** implement the promotion consistency diagnostics from 0006, complete the remaining isolated release matrix for 0010, then run formal verification. The shared accounting contract and final feature designs are accepted; do not restart that requirements discussion.
+**Next step:** deploy the completed development branches and run the controlled provider-facing validation. Before live enablement, prove one real SkipCash payout against the retained report and bank evidence, and replace the accepted phone-verification bypass with the configured SMS provider when available. These are operational activation gates, not missing application flows.
 
 **Workflow:** GA means payment features normally run `/architect`, `/develop`, `/check verify`, `/test`, a fresh `/check review`, and `/document`.

@@ -8,6 +8,7 @@ use App\Models\MembershipBookingFunding;
 use App\Models\MembershipPurchaseBlock;
 use App\Models\PaymentAllocation;
 use App\Services\Customers\CustomerOwnershipService;
+use App\Services\Payments\PaymentConsistencyDispatchService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -16,6 +17,7 @@ class MembershipBookingFundingService
     public function __construct(
         private readonly CustomerOwnershipService $customerOwnership,
         private readonly MembershipQueueService $queues,
+        private readonly PaymentConsistencyDispatchService $paymentConsistency,
     ) {}
 
     /**
@@ -210,7 +212,7 @@ class MembershipBookingFundingService
 
     public function transitionIssuedInvoice(ArInvoice $invoice, int $actorId): bool
     {
-        return DB::transaction(function () use ($invoice): bool {
+        $transitioned = DB::transaction(function () use ($invoice): bool {
             $rows = MembershipBookingFunding::query()
                 ->with(['purchaseBlock', 'subscriptionOrder'])
                 ->where('invoice_id', $invoice->id)
@@ -277,11 +279,17 @@ class MembershipBookingFundingService
 
             return true;
         });
+
+        if ($transitioned) {
+            $this->dispatchInvoiceGraph($invoice->id, 'issued');
+        }
+
+        return $transitioned;
     }
 
     public function releaseVoidedInvoice(ArInvoice $invoice, int $actorId): bool
     {
-        return DB::transaction(function () use ($invoice, $actorId): bool {
+        $released = DB::transaction(function () use ($invoice, $actorId): bool {
             $rows = MembershipBookingFunding::query()
                 ->with(['purchaseBlock', 'subscriptionOrder.order'])
                 ->where('invoice_id', $invoice->id)
@@ -319,6 +327,34 @@ class MembershipBookingFundingService
 
             return true;
         });
+
+        if ($released) {
+            $this->dispatchInvoiceGraph($invoice->id, 'voided');
+        }
+
+        return $released;
+    }
+
+    private function dispatchInvoiceGraph(int $invoiceId, string $transition): void
+    {
+        MembershipBookingFunding::query()
+            ->where('invoice_id', $invoiceId)
+            ->orderBy('id')
+            ->get(['id', 'purchase_block_id', 'subscription_order_id'])
+            ->each(function (MembershipBookingFunding $row) use ($invoiceId, $transition): void {
+                $subscriptionId = MembershipPurchaseBlock::query()
+                    ->whereKey($row->purchase_block_id)
+                    ->value('subscription_id');
+                if ($subscriptionId) {
+                    $this->paymentConsistency->bookingAfterCommit(
+                        (int) $row->subscription_order_id,
+                        (int) $subscriptionId,
+                        'ar_invoice',
+                        $invoiceId,
+                        $transition,
+                    );
+                }
+            });
     }
 
     /** @return array{gross_cents:int,discount_cents:int,net_cents:int} */

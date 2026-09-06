@@ -59,6 +59,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="flex gap-2">
             @if (auth()->user()?->isAdmin() || auth()->user()?->can('payments.support.view'))
                 <flux:button :href="route('receivables.payments.skipcash.index')" variant="ghost" wire:navigate>{{ __('SkipCash') }}</flux:button>
+                <flux:button :href="route('receivables.payments.consistency.index')" variant="ghost" wire:navigate>{{ __('Consistency') }}</flux:button>
             @endif
             @can('finance.write')
                 <flux:button :href="route('receivables.payments.create')" wire:navigate>{{ __('New Payment') }}</flux:button>

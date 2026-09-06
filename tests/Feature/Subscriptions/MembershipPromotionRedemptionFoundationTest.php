@@ -18,6 +18,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Spatie\Permission\Models\Role;
 
 beforeEach(function (): void {
     $this->company = AccountingCompany::query()->where('is_default', true)->firstOrFail();
@@ -212,6 +213,7 @@ it('resolves paid blocks and legacy conversions once across a customer merge', f
     $source = Customer::factory()->create(['name' => 'Original Member']);
     $target = Customer::factory()->create(['name' => 'Surviving Member']);
     $actor = User::factory()->create(['status' => 'active']);
+    $actor->assignRole(Role::findOrCreate('admin', 'web'));
     $paid = createCompletedLegacyMembership($source, $this->branch, $this->company);
     createCompletedLegacyMembership($source, $this->branch);
     $payment = Payment::factory()->create([

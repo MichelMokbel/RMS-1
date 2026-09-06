@@ -6,6 +6,7 @@ use App\Mail\MembershipBookingConfirmationMail;
 use App\Models\MealSubscriptionOrder;
 use App\Services\Mail\EmailLogService;
 use App\Services\Mail\MailSettingsService;
+use App\Services\Payments\PaymentConsistencyDispatchService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -23,8 +24,11 @@ class SendMembershipBookingConfirmation implements ShouldQueue
         public readonly string $kind,
     ) {}
 
-    public function handle(EmailLogService $emailLogs, MailSettingsService $mailSettings): void
-    {
+    public function handle(
+        EmailLogService $emailLogs,
+        MailSettingsService $mailSettings,
+        PaymentConsistencyDispatchService $paymentConsistency,
+    ): void {
         $slotKey = $this->slotKey();
         if ($slotKey === null) {
             return;
@@ -67,7 +71,7 @@ class SendMembershipBookingConfirmation implements ShouldQueue
         $recipient = trim((string) ($snapshot['customer_email'] ?? ''));
         $mail = new MembershipBookingConfirmationMail($snapshot, $this->kind);
         if ($recipient === '') {
-            $this->finish('failed', 'CUSTOMER_RECIPIENT_MISSING');
+            $this->finish('failed', 'CUSTOMER_RECIPIENT_MISSING', $paymentConsistency);
 
             return;
         }
@@ -114,24 +118,27 @@ class SendMembershipBookingConfirmation implements ShouldQueue
                 context: ['subscription_order_id' => $mapping->id, 'kind' => $this->kind],
                 exception: $exception,
             );
-            $this->finish('failed', 'EMAIL_SEND_FAILED');
+            $this->finish('failed', 'EMAIL_SEND_FAILED', $paymentConsistency);
 
             return;
         }
 
-        $this->finish('sent');
+        $this->finish('sent', null, $paymentConsistency);
     }
 
-    private function finish(string $state, ?string $errorCode = null): void
-    {
+    private function finish(
+        string $state,
+        ?string $errorCode,
+        PaymentConsistencyDispatchService $paymentConsistency,
+    ): void {
         $slotKey = $this->slotKey();
         if ($slotKey === null) {
             return;
         }
-        DB::transaction(function () use ($slotKey, $state, $errorCode): void {
+        $updated = DB::transaction(function () use ($slotKey, $state, $errorCode): bool {
             $mapping = MealSubscriptionOrder::query()->lockForUpdate()->find($this->subscriptionOrderId);
             if (! $mapping) {
-                return;
+                return false;
             }
             $dispatch = is_array($mapping->notification_dispatch) ? $mapping->notification_dispatch : [];
             $dispatch[$slotKey] = [
@@ -140,7 +147,18 @@ class SendMembershipBookingConfirmation implements ShouldQueue
                 'error_code' => $errorCode,
             ];
             $mapping->update(['notification_dispatch' => $dispatch]);
+
+            return true;
         });
+        if ($updated) {
+            $paymentConsistency->notificationAfterCommit(
+                'meal_subscription_order',
+                $this->subscriptionOrderId,
+                'membership_booking_notification',
+                $this->subscriptionOrderId,
+                $state,
+            );
+        }
     }
 
     private function slotKey(): ?string

@@ -100,6 +100,7 @@ class ArPaymentService
                 $this->auditLog->log('ar_payment.created', $actorId, $payment, [
                     'applied_cents' => 0,
                     'unapplied_cents' => (int) $amountCents,
+                    'allocation_ids' => [],
                     'reference' => $reference,
                 ]);
 
@@ -327,6 +328,7 @@ class ArPaymentService
                 $this->auditLog->log('ar_payment.created', $actorId, $payment, [
                     'applied_cents' => (int) $applied,
                     'unapplied_cents' => (int) ($amount - $applied),
+                    'allocation_ids' => $payment->allocations()->pluck('id')->map(fn ($id): int => (int) $id)->all(),
                     'reference' => $reference,
                 ]);
 

@@ -9,6 +9,26 @@ use Throwable;
 
 class PaymentOperationsConsistencyService
 {
+    private const REASON_CODES = [
+        'CONSISTENCY_VERIFIED_PAYMENT_MISSING',
+        'CONSISTENCY_PROVIDER_SOURCE_MISMATCH',
+        'CONSISTENCY_PROVIDER_AMOUNT_MISMATCH',
+        'CONSISTENCY_PROVIDER_CURRENCY_MISMATCH',
+        'CONSISTENCY_RECEIPT_MISSING',
+        'CONSISTENCY_RECEIPT_SOURCE_MISMATCH',
+        'CONSISTENCY_RECEIPT_AMOUNT_MISMATCH',
+        'CONSISTENCY_RECEIPT_CURRENCY_MISMATCH',
+        'CONSISTENCY_RECEIPT_SCOPE_MISMATCH',
+        'CONSISTENCY_RECEIPT_CUSTOMER_MISMATCH',
+        'CONSISTENCY_TARGET_TOTAL_MISMATCH',
+        'CONSISTENCY_TARGET_LINK_MISSING',
+        'CONSISTENCY_TARGET_SCOPE_MISMATCH',
+        'CONSISTENCY_TARGET_CUSTOMER_MISMATCH',
+        'CONSISTENCY_TARGET_AMOUNT_MISMATCH',
+        'CONSISTENCY_TARGET_ALLOCATION_MISMATCH',
+        'CONSISTENCY_ALLOCATION_EXCESS',
+    ];
+
     public function __construct(
         private readonly CustomerOwnershipService $customerOwnership,
         private readonly PaymentOperationsTrackingService $tracking,
@@ -53,7 +73,10 @@ class PaymentOperationsConsistencyService
         if ($reasonCode) {
             $this->tracking->recordConsistencyIssue($attempt->id, $reasonCode);
         } else {
-            $this->tracking->resolveConsistencyIssue($attempt->id);
+            $trackedReason = (string) data_get($attempt->operations_tracking, 'issues.processing.reason_code', '');
+            if (in_array($trackedReason, self::REASON_CODES, true)) {
+                $this->tracking->resolveConsistencyIssue($attempt->id, $trackedReason);
+            }
         }
 
         return $reasonCode;

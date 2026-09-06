@@ -26,6 +26,7 @@ class RunPromotionPaymentConsistency implements ShouldBeUnique, ShouldQueue
         public readonly string $kind,
         public readonly string $triggerKey,
         public readonly ?int $requestedBy = null,
+        public readonly ?int $parentRunId = null,
     ) {}
 
     public function handle(PaymentConsistencyService $consistency): void
@@ -44,6 +45,7 @@ class RunPromotionPaymentConsistency implements ShouldBeUnique, ShouldQueue
             $this->kind,
             $this->requestedBy,
             $this->triggerKey,
+            $this->parentRunId,
         );
     }
 

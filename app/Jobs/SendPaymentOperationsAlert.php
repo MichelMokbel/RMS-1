@@ -109,8 +109,15 @@ class SendPaymentOperationsAlert implements ShouldQueue
         );
         try {
             $mailSettings->prepareForDelivery();
-            $mailer = (string) config('mail.default', 'log');
-            if (in_array($mailer, ['log', 'array'], true)) {
+        } catch (MailConfigurationUnavailableException) {
+            $this->markFailed('MAIL_CONFIGURATION_UNAVAILABLE', true, $trackingService, $auditLog);
+
+            return;
+        }
+
+        $mailer = (string) config('mail.default', 'log');
+        if (in_array($mailer, ['log', 'array'], true)) {
+            try {
                 $emailLog = $emailLogs->log(
                     'payment_operations_alert', 'admin', 'skipped', $mail, $recipients,
                     userId: (int) $context['portal_user_id'], mailer: $mailer,
@@ -122,8 +129,21 @@ class SendPaymentOperationsAlert implements ShouldQueue
                         'reason' => 'mail_delivery_disabled',
                     ],
                 );
-            } else {
+            } catch (\Throwable) {
+                $this->markFailed('EMAIL_LOG_FAILED_BEFORE_DELIVERY', true, $trackingService, $auditLog);
+
+                return;
+            }
+        } else {
+            try {
                 Mail::to($recipients)->send($mail);
+            } catch (\Throwable) {
+                $this->markUnknown('EMAIL_DELIVERY_OUTCOME_UNKNOWN', $trackingService, $auditLog);
+
+                return;
+            }
+
+            try {
                 $emailLog = $emailLogs->log(
                     'payment_operations_alert', 'admin', 'sent', $mail, $recipients,
                     userId: (int) $context['portal_user_id'], mailer: $mailer,
@@ -134,15 +154,11 @@ class SendPaymentOperationsAlert implements ShouldQueue
                         'notification_kind' => 'admin_issue_alert',
                     ],
                 );
+            } catch (\Throwable) {
+                $this->markUnknown('EMAIL_LOG_FAILED_AFTER_DELIVERY', $trackingService, $auditLog);
+
+                return;
             }
-        } catch (MailConfigurationUnavailableException) {
-            $this->markFailed('MAIL_CONFIGURATION_UNAVAILABLE', true, $trackingService, $auditLog);
-
-            return;
-        } catch (\Throwable) {
-            $this->markFailed('EMAIL_SEND_FAILED', true, $trackingService, $auditLog);
-
-            return;
         }
 
         DB::transaction(function () use ($emailLog, $trackingService, $auditLog): void {
@@ -205,6 +221,38 @@ class SendPaymentOperationsAlert implements ShouldQueue
                 'operations_next_action_at' => $trackingService->nextActionAt($tracking),
             ]);
             $auditLog->log('payment.operations.alert_'.$alert['state'], null, $attempt, [
+                'episode_uuid' => $this->episodeUuid,
+                'slot' => $this->slot,
+                'reason_code' => $code,
+            ], (int) $attempt->company_id);
+        }, 3);
+    }
+
+    private function markUnknown(
+        string $code,
+        PaymentOperationsTrackingService $trackingService,
+        AccountingAuditLogService $auditLog,
+    ): void {
+        DB::transaction(function () use ($code, $trackingService, $auditLog): void {
+            $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->find($this->attemptId);
+            $tracking = is_array($attempt?->operations_tracking) ? $attempt->operations_tracking : [];
+            $issue = $tracking['issues'][$this->slot] ?? null;
+            if (! $attempt || ! is_array($issue) || ($issue['episode_uuid'] ?? null) !== $this->episodeUuid) {
+                return;
+            }
+            $alert = is_array($issue['alert'] ?? null) ? $issue['alert'] : [];
+            $alert['state'] = 'unknown';
+            $alert['error_code'] = $code;
+            $alert['unknown_at'] = now('UTC')->toIso8601String();
+            $alert['next_attempt_at'] = null;
+            unset($alert['claim_uuid'], $alert['claimed_at'], $alert['queued_at']);
+            $issue['alert'] = $alert;
+            $tracking['issues'][$this->slot] = $issue;
+            $attempt->update([
+                'operations_tracking' => $tracking,
+                'operations_next_action_at' => $trackingService->nextActionAt($tracking),
+            ]);
+            $auditLog->log('payment.operations.alert_unknown', null, $attempt, [
                 'episode_uuid' => $this->episodeUuid,
                 'slot' => $this->slot,
                 'reason_code' => $code,

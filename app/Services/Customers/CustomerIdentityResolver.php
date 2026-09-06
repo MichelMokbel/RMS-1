@@ -9,7 +9,6 @@ use App\Services\Accounting\AccountingAuditLogService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
-use JsonException;
 use RuntimeException;
 
 class CustomerIdentityResolver
@@ -20,7 +19,8 @@ class CustomerIdentityResolver
 
     public function __construct(
         private readonly AccountingAuditLogService $auditLog,
-        private readonly PhoneNumberService $phoneNumbers,
+        private readonly CustomerMatchingService $matching,
+        private readonly CustomerMatchingDispatchService $dispatches,
     ) {}
 
     public function resolveForRegistration(
@@ -28,11 +28,38 @@ class CustomerIdentityResolver
         string $verificationMethod,
         ?int $verificationChallengeId = null,
     ): User {
-        return DB::transaction(function () use ($user, $verificationMethod, $verificationChallengeId): User {
-            $lockedUser = User::query()
+        $dispatch = null;
+        $resolved = DB::transaction(function () use ($user, $verificationMethod, $verificationChallengeId, &$dispatch): User {
+            $profile = User::query()->with('customer')->findOrFail($user->id);
+            $matchingEnabled = (bool) config('customers.matching_enabled', false);
+            $profilePhone = $this->matching->effectivePhone($profile);
+            $candidates = collect();
+
+            if ($matchingEnabled && $profilePhone !== null) {
+                $candidates = Customer::query()
+                    ->where('phone_e164', $profilePhone)
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get();
+            }
+
+            $linkedUserIds = $candidates->isEmpty()
+                ? collect()
+                : User::query()->whereIn('customer_id', $candidates->pluck('id'))->pluck('id');
+            $lockedUsers = User::query()
                 ->with('customer')
+                ->whereIn('id', $linkedUserIds->push($profile->id)->unique()->all())
+                ->orderBy('id')
                 ->lockForUpdate()
-                ->findOrFail($user->id);
+                ->get()
+                ->keyBy('id');
+            $lockedUser = $lockedUsers->get($profile->id);
+
+            if (! $lockedUser) {
+                throw ValidationException::withMessages([
+                    'account' => __('This customer account is not available.'),
+                ]);
+            }
 
             if (! $lockedUser->isActive() || ! $lockedUser->isCustomerPortalUser()) {
                 throw ValidationException::withMessages([
@@ -55,12 +82,23 @@ class CustomerIdentityResolver
             }
 
             $proof = $this->resolveProof($lockedUser, $verificationMethod, $verificationChallengeId);
-            $customer = Customer::query()->create([
+            $normalizedName = $this->matching->normalizeName($this->profileName($lockedUser));
+            $activeExact = $candidates->filter(fn (Customer $candidate): bool => $candidate->isActive()
+                && $candidate->merged_into_customer_id === null
+                && hash_equals($normalizedName, $this->matching->normalizeName($candidate->name)));
+            $eligibleExact = $activeExact->filter(function (Customer $candidate) use ($lockedUsers): bool {
+                return ! $lockedUsers->contains(fn (User $candidateUser): bool => (int) $candidateUser->customer_id === (int) $candidate->id);
+            });
+            $matchedCustomer = $activeExact->count() === 1 && $eligibleExact->count() === 1
+                ? $eligibleExact->first()
+                : null;
+
+            $customer = $matchedCustomer ?: Customer::query()->create([
                 'name' => $this->profileName($lockedUser),
                 'customer_type' => Customer::TYPE_RETAIL,
                 'contact_name' => $this->profileName($lockedUser),
                 'phone' => $lockedUser->portal_phone,
-                'phone_e164' => $this->effectivePhone($lockedUser),
+                'phone_e164' => $profilePhone,
                 'phone_verified_at' => $proof['verified_at'],
                 'email' => $lockedUser->email,
                 'delivery_address' => $lockedUser->portal_delivery_address,
@@ -76,10 +114,34 @@ class CustomerIdentityResolver
                 'customer_id' => $customer->id,
             ])->save();
 
-            $this->recordResolution($lockedUser, $customer, $proof);
+            $fingerprint = $this->matching->profileFingerprint($lockedUser->fresh('customer'), $customer);
+            $this->rememberKnownCandidates(
+                $lockedUser,
+                $customer,
+                $candidates,
+                $activeExact,
+                $lockedUsers,
+                $fingerprint,
+            );
+            $this->recordResolution(
+                $lockedUser,
+                $customer,
+                $proof,
+                $matchedCustomer ? 'existing_exact_match' : 'separately_owned_fallback',
+                $fingerprint,
+            );
+            if ($matchingEnabled) {
+                $dispatch = [(int) $lockedUser->id, $fingerprint];
+            }
 
             return $lockedUser->fresh('customer');
         }, 3);
+
+        if ($dispatch !== null) {
+            $this->dispatches->scanAfterCommit($dispatch[0], $dispatch[1]);
+        }
+
+        return $resolved;
     }
 
     /**
@@ -91,27 +153,31 @@ class CustomerIdentityResolver
      */
     public function resolveForCheckout(User $user): User
     {
-        $effectivePhone = $this->effectivePhone($user);
-        $challengeId = $effectivePhone === null
-            ? null
-            : CustomerPhoneVerificationChallenge::query()
-                ->where('user_id', $user->id)
-                ->where('phone_e164', $effectivePhone)
-                ->whereNull('cancelled_at')
-                ->whereNotNull('verified_at')
-                ->whereIn('purpose', [
-                    CustomerPhoneVerificationService::PURPOSE_SIGNUP,
-                    CustomerPhoneVerificationService::PURPOSE_PHONE_CHANGE,
-                    'portal_phone_verify',
-                ])
-                ->latest('verified_at')
-                ->value('id');
+        $challengeId = $this->latestVerificationChallengeId($user);
 
         if ($challengeId !== null) {
             return $this->resolveForRegistration($user, self::VERIFICATION_SMS, (int) $challengeId);
         }
 
         return $this->resolveForRegistration($user, self::VERIFICATION_BYPASS);
+    }
+
+    public function resolveForLogin(User $user): User
+    {
+        if ($user->customer_id !== null) {
+            return $user->fresh('customer');
+        }
+
+        $challengeId = $this->latestVerificationChallengeId($user);
+        if ($challengeId !== null) {
+            return $this->resolveForRegistration($user, self::VERIFICATION_SMS, $challengeId);
+        }
+
+        if ((bool) config('customers.verification_bypass', false)) {
+            return $this->resolveForRegistration($user, self::VERIFICATION_BYPASS);
+        }
+
+        return $user->fresh('customer');
     }
 
     /**
@@ -148,11 +214,11 @@ class CustomerIdentityResolver
             ->whereIn('purpose', [
                 CustomerPhoneVerificationService::PURPOSE_SIGNUP,
                 CustomerPhoneVerificationService::PURPOSE_PHONE_CHANGE,
-                'portal_phone_verify',
+                CustomerPhoneVerificationService::PURPOSE_CURRENT_PHONE,
             ])
             ->first();
 
-        if (! $challenge || $challenge->phone_e164 !== $this->effectivePhone($user)) {
+        if (! $challenge || $challenge->phone_e164 !== $this->matching->effectivePhone($user)) {
             throw ValidationException::withMessages([
                 'phone' => __('Phone verification is required.'),
             ]);
@@ -168,8 +234,13 @@ class CustomerIdentityResolver
     /**
      * @param  array{method:string,challenge_id:int|null,verified_at:\Carbon\CarbonInterface|null}  $proof
      */
-    private function recordResolution(User $user, Customer $customer, array $proof): void
-    {
+    private function recordResolution(
+        User $user,
+        Customer $customer,
+        array $proof,
+        string $resolution,
+        string $fingerprint,
+    ): void {
         if (! Schema::hasTable('accounting_audit_logs')) {
             throw new RuntimeException('Customer identity audit storage is unavailable.');
         }
@@ -177,11 +248,11 @@ class CustomerIdentityResolver
         $this->auditLog->log('customer.identity.resolved', $user->id, $customer, [
             'user_id' => $user->id,
             'customer_id' => $customer->id,
-            'resolution' => 'separately_owned_fallback',
+            'resolution' => $resolution,
             'verification_method' => $proof['method'],
             'verification_challenge_id' => $proof['challenge_id'],
             'matching_enabled' => (bool) config('customers.matching_enabled', false),
-            'profile_fingerprint' => $this->profileFingerprint($user, $customer),
+            'profile_fingerprint' => $fingerprint,
         ]);
     }
 
@@ -190,35 +261,70 @@ class CustomerIdentityResolver
         return trim((string) ($user->portal_name ?: $user->name));
     }
 
-    private function normalizedProfileName(User $user): string
+    private function latestVerificationChallengeId(User $user): ?int
     {
-        $name = preg_replace('/\s+/u', ' ', trim($this->profileName($user))) ?: '';
-
-        return mb_strtolower($name);
-    }
-
-    private function effectivePhone(User $user): ?string
-    {
-        $user->loadMissing('customer');
-
-        return $this->phoneNumbers->normalize($user->portal_phone_e164)
-            ?? $this->phoneNumbers->normalize($user->customer?->phone_e164);
-    }
-
-    private function profileFingerprint(User $user, Customer $customer): string
-    {
-        try {
-            $payload = json_encode([
-                'customer-matching-v1',
-                (string) $user->id,
-                (string) $customer->id,
-                $this->normalizedProfileName($user),
-                $this->effectivePhone($user),
-            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        } catch (JsonException $exception) {
-            throw new RuntimeException('Customer identity fingerprint could not be created.', previous: $exception);
+        $effectivePhone = $this->matching->effectivePhone($user);
+        if ($effectivePhone === null) {
+            return null;
         }
 
-        return hash('sha256', $payload);
+        $id = CustomerPhoneVerificationChallenge::query()
+            ->where('user_id', $user->id)
+            ->where('phone_e164', $effectivePhone)
+            ->whereNull('cancelled_at')
+            ->whereNotNull('verified_at')
+            ->whereIn('purpose', [
+                CustomerPhoneVerificationService::PURPOSE_SIGNUP,
+                CustomerPhoneVerificationService::PURPOSE_PHONE_CHANGE,
+                CustomerPhoneVerificationService::PURPOSE_CURRENT_PHONE,
+            ])
+            ->latest('verified_at')
+            ->value('id');
+
+        return $id === null ? null : (int) $id;
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, Customer>  $candidates
+     * @param  \Illuminate\Support\Collection<int, Customer>  $activeExact
+     * @param  \Illuminate\Support\Collection<int, User>  $lockedUsers
+     */
+    private function rememberKnownCandidates(
+        User $user,
+        Customer $customer,
+        $candidates,
+        $activeExact,
+        $lockedUsers,
+        string $fingerprint,
+    ): void {
+        foreach ($candidates as $candidate) {
+            if ($customer->is($candidate)) {
+                continue;
+            }
+
+            $reasons = [];
+            if (! $candidate->isActive() || $candidate->merged_into_customer_id !== null) {
+                $reasons[] = 'inactive_candidate';
+            }
+            if ($lockedUsers->contains(fn (User $candidateUser): bool => (int) $candidateUser->customer_id === (int) $candidate->id)) {
+                $reasons[] = 'existing_login';
+            }
+            if ($activeExact->count() > 1 && $activeExact->contains(fn (Customer $exact): bool => $exact->is($candidate))) {
+                $reasons[] = 'multiple_exact_matches';
+            }
+            if (! $activeExact->contains(fn (Customer $exact): bool => $exact->is($candidate))) {
+                $reasons[] = 'name_variant';
+            }
+            if ($reasons === []) {
+                $reasons[] = 'multiple_exact_matches';
+            }
+
+            $this->matching->rememberCandidate($user, $customer, $candidate, $reasons, $fingerprint);
+        }
+    }
+
+    public function profileFingerprint(User $user, Customer $customer): string
+    {
+        return $this->matching->profileFingerprint($user, $customer);
     }
 }

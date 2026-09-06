@@ -324,6 +324,18 @@ it('creates one paid 20 meal allowance without orders invoices or immediate meal
     expect(Payment::query()->where('payment_source_id', $this->source->id)->count())->toBe(1)
         ->and(MealSubscription::query()->count())->toBe(1)
         ->and(MembershipPurchaseBlock::query()->count())->toBe(1);
+
+    $consistency = app(PaymentConsistencyService::class);
+    $consistencyRuns = [
+        $consistency->check('provider_checkout_v1', 'payment_checkout_attempt', $attempt->id, triggerKey: 'test:membership:provider'),
+        $consistency->check('membership_purchase_v1', 'membership_purchase_block', $block->id, triggerKey: 'test:membership:purchase'),
+        $consistency->check('membership_balance_v1', 'meal_subscription', $subscription->id, triggerKey: 'test:membership:balance'),
+        $consistency->check('membership_sequence_v1', 'meal_subscription', $subscription->id, triggerKey: 'test:membership:sequence'),
+        $consistency->check('saved_credit_v1', 'payment', $payment->id, triggerKey: 'test:membership:credit'),
+        $consistency->check('notification_operations_v1', 'payment_checkout_attempt', $attempt->id, triggerKey: 'test:membership:notifications'),
+    ];
+    expect(collect($consistencyRuns)->sum('open_count'))->toBe(0)
+        ->and(collect($consistencyRuns)->sum('deferred_count'))->toBe(0);
 });
 
 it('appends a paid 26 meal purchase after the first block on the same queue', function (): void {
@@ -784,6 +796,8 @@ it('completes a retained promotion checkout for the destination customer after a
         'status' => 'active',
     ]);
     $destinationUser->assignRole('customer');
+    Role::findOrCreate('admin', 'web');
+    $this->systemActor->assignRole('admin');
     app(CustomerMergeService::class)->merge($this->customer, $destination, $this->systemActor->id);
     Sanctum::actingAs($destinationUser, ['customer:*']);
 

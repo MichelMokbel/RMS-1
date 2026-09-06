@@ -1,10 +1,14 @@
 <?php
 
+use App\Jobs\ContinuePaymentConsistencySweep;
+use App\Jobs\RunPaymentConsistency;
 use App\Jobs\RunPromotionPaymentConsistency;
+use App\Jobs\SendPaymentConsistencyAlert;
 use App\Models\AccountingAuditLog;
 use App\Models\AccountingCompany;
 use App\Models\Branch;
 use App\Models\Customer;
+use App\Models\EmailLog;
 use App\Models\MealPlanRequest;
 use App\Models\MembershipPlan;
 use App\Models\MembershipPromotion;
@@ -12,6 +16,9 @@ use App\Models\MembershipPromotionRedemption;
 use App\Models\PaymentConsistencyFinding;
 use App\Models\PaymentConsistencyRun;
 use App\Models\User;
+use App\Services\Payments\PaymentConsistencyAlertService;
+use App\Services\Payments\PaymentConsistencyQueryService;
+use App\Services\Payments\PaymentConsistencyRuleRegistry;
 use App\Services\Payments\PaymentConsistencyService;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -20,6 +27,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Livewire\Volt\Volt;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
@@ -146,6 +156,44 @@ it('creates the bounded payment consistency foundation', function (): void {
         ->and($findingSql)->toContain('payment_consistency_findings_state_chk');
 });
 
+it('registers every required versioned rule and its explicit evidence readers', function (): void {
+    $registry = app(PaymentConsistencyRuleRegistry::class);
+    $expected = [
+        'provider_checkout_v1',
+        'ordinary_accounting_v1',
+        'membership_purchase_v1',
+        'membership_balance_v1',
+        'membership_sequence_v1',
+        'booking_correction_v1',
+        'booking_policy_v1',
+        'customer_ownership_v1',
+        'promotion_usage_v1',
+        'saved_credit_v1',
+        'settlement_v1',
+        'notification_operations_v1',
+    ];
+
+    expect($registry->codes())->toBe($expected)
+        ->and($registry->versions())->toHaveCount(12)
+        ->and($registry->hash())->toHaveLength(64);
+    foreach ($expected as $ruleCode) {
+        $definition = $registry->definition($ruleCode);
+        expect($definition['version'])->toBe(1)
+            ->and($definition['subject_types'])->not->toBeEmpty()
+            ->and($definition['fingerprint_readers'])->not->toBeEmpty();
+    }
+
+    $definitions = config('payment_consistency.rules');
+    $brokenDefinitions = $definitions;
+    array_pop($brokenDefinitions['saved_credit_v1']['fingerprint_readers']);
+    Config::set('payment_consistency.rules', $brokenDefinitions);
+    expect(fn () => app(PaymentConsistencyRuleRegistry::class))->toThrow(
+        LogicException::class,
+        'Payment consistency rule readers are incomplete: saved_credit_v1',
+    );
+    Config::set('payment_consistency.rules', $definitions);
+});
+
 it('opens one promotion finding episode and resolves it without changing money', function (): void {
     ['promotion' => $promotion, 'request' => $request] = createConsistencyZeroPromotionUse($this);
     $service = app(PaymentConsistencyService::class);
@@ -205,6 +253,35 @@ it('opens one promotion finding episode and resolves it without changing money',
         ->and(consistencyFinancialSnapshot())->toBe($correctedFinancialState);
 });
 
+it('reclaims a stale running consistency job on queue redelivery', function (): void {
+    ['promotion' => $promotion] = createConsistencyZeroPromotionUse($this);
+    Config::set('payment_consistency.run_stale_seconds', 180);
+    $service = app(PaymentConsistencyService::class);
+    $run = $service->reserve(
+        'promotion_usage_v1',
+        'membership_promotion',
+        $promotion->id,
+        PaymentConsistencyRun::KIND_CATCHUP,
+        'test:stale-worker-redelivery',
+    );
+    $run->update([
+        'state' => PaymentConsistencyRun::STATE_RUNNING,
+        'started_at' => now('UTC')->subMinutes(4),
+        'heartbeat_at' => now('UTC')->subMinutes(4),
+    ]);
+
+    $recovered = $service->checkPromotion(
+        $promotion,
+        PaymentConsistencyRun::KIND_CATCHUP,
+        triggerKey: 'test:stale-worker-redelivery',
+    );
+
+    expect($recovered->id)->toBe($run->id)
+        ->and($recovered->state)->toBe(PaymentConsistencyRun::STATE_COMPLETED)
+        ->and($recovered->checked_count)->toBe(1)
+        ->and($recovered->open_count)->toBe(0);
+});
+
 it('keeps sweeps disabled until configured and queues bounded catchup and full work', function (): void {
     ['promotion' => $promotion, 'request' => $request] = createConsistencyZeroPromotionUse($this);
     Queue::fake([RunPromotionPaymentConsistency::class]);
@@ -225,7 +302,7 @@ it('keeps sweeps disabled until configured and queues bounded catchup and full w
     Queue::assertPushed(RunPromotionPaymentConsistency::class, function ($job) use ($promotion): bool {
         return $job->promotionId === (int) $promotion->id
             && $job->kind === PaymentConsistencyRun::KIND_CATCHUP
-            && str_starts_with($job->triggerKey, 'catchup:');
+            && str_starts_with($job->triggerKey, 'sweep:');
     });
 
     $this->artisan('payments:check-consistency', [
@@ -235,8 +312,152 @@ it('keeps sweeps disabled until configured and queues bounded catchup and full w
     Queue::assertPushed(RunPromotionPaymentConsistency::class, function ($job) use ($promotion): bool {
         return $job->promotionId === (int) $promotion->id
             && $job->kind === PaymentConsistencyRun::KIND_FULL
-            && str_starts_with($job->triggerKey, 'full:');
+            && str_starts_with($job->triggerKey, 'sweep:')
+            && $job->parentRunId !== null;
     });
+
+    $parents = PaymentConsistencyRun::query()
+        ->where('rule_code', 'registry_sweep_v1')
+        ->where('target_type', 'accounting_company')
+        ->orderBy('id')
+        ->get();
+    $this->actor->assignRole('admin');
+    expect($parents)->toHaveCount(2)
+        ->and($parents->every(fn (PaymentConsistencyRun $run): bool => $run->state === PaymentConsistencyRun::STATE_RUNNING))->toBeTrue()
+        ->and(app(PaymentConsistencyQueryService::class)->health($this->actor)['status'])->toBe('running');
+});
+
+it('continues full scans through persisted keyset batches of at most one hundred subjects', function (): void {
+    Customer::factory()->count(205)->create();
+    Config::set('payment_consistency.enabled', true);
+    Config::set('payment_consistency.batch_size', 100);
+    Queue::fake([RunPaymentConsistency::class, ContinuePaymentConsistencySweep::class]);
+
+    $sweeps = app(\App\Services\Payments\PaymentConsistencySweepService::class);
+    $sweeps->dispatch(PaymentConsistencyRun::KIND_FULL, $this->company->id);
+    $parent = PaymentConsistencyRun::query()
+        ->where('rule_code', 'registry_sweep_v1')
+        ->where('kind', PaymentConsistencyRun::KIND_FULL)
+        ->firstOrFail();
+    $batchSizes = [];
+
+    for ($iteration = 0; $iteration < 10 && $parent->fresh()->state !== PaymentConsistencyRun::STATE_COMPLETED; $iteration++) {
+        $parent->refresh();
+        $manifest = collect((array) data_get($parent->cursors, 'manifest', []));
+        if ($manifest->isEmpty()) {
+            $sweeps->continue((int) $parent->id);
+            $parent->refresh();
+            $manifest = collect((array) data_get($parent->cursors, 'manifest', []));
+        }
+        $batchSizes[] = $manifest->count();
+        expect(PaymentConsistencyRun::query()
+            ->where('parent_run_id', $parent->id)
+            ->whereIn('trigger_key', $manifest->pluck('trigger_key'))
+            ->count())->toBe($manifest->count());
+        foreach ($manifest as $subject) {
+            $run = PaymentConsistencyRun::query()
+                ->where('parent_run_id', $parent->id)
+                ->where('rule_code', $subject['rule_code'])
+                ->where('target_type', $subject['subject_type'])
+                ->where('target_id', $subject['subject_id'])
+                ->orderByDesc('id')
+                ->firstOrFail();
+            app(PaymentConsistencyService::class)->check(
+                $subject['rule_code'],
+                $subject['subject_type'],
+                (int) $subject['subject_id'],
+                PaymentConsistencyRun::KIND_FULL,
+                triggerKey: (string) $run->trigger_key,
+                parentRunId: (int) $parent->id,
+            );
+        }
+    }
+
+    $parent->refresh();
+    expect($parent->state)->toBe(PaymentConsistencyRun::STATE_COMPLETED)
+        ->and($parent->checked_count)->toBeGreaterThanOrEqual(206)
+        ->and(max($batchSizes))->toBeLessThanOrEqual(100)
+        ->and(count($batchSizes))->toBeGreaterThanOrEqual(3)
+        ->and(data_get($parent->cursors, 'scan_complete'))->toBeTrue();
+});
+
+it('shows scoped findings and queues an audited administrator recheck', function (): void {
+    ['promotion' => $promotion, 'request' => $request] = createConsistencyZeroPromotionUse($this);
+    Config::set('payment_consistency.enabled', true);
+    Queue::fake([SendPaymentConsistencyAlert::class, RunPaymentConsistency::class]);
+    DB::table('meal_plan_requests')->where('id', $request->id)->update(['promotion_id' => null]);
+    app(PaymentConsistencyService::class)->checkPromotion($promotion, triggerKey: 'test:ui:open');
+    $finding = PaymentConsistencyFinding::query()->firstOrFail();
+
+    Permission::findOrCreate('payments.consistency.run', 'web');
+    Permission::findOrCreate('payments.support.view', 'web');
+    Role::findOrCreate('admin', 'web');
+    Role::findOrCreate('customer', 'web');
+    $admin = User::factory()->create(['status' => 'active']);
+    $admin->assignRole('admin');
+    $admin->givePermissionTo('payments.consistency.run');
+
+    $this->actingAs($admin)
+        ->get(route('receivables.payments.consistency.index'))
+        ->assertOk()
+        ->assertSee('Payment Consistency')
+        ->assertSee('Promotion Usage V1');
+    $this->actingAs($admin)
+        ->get(route('receivables.payments.consistency.show', $finding))
+        ->assertOk()
+        ->assertSee('Detected differences');
+
+    Volt::actingAs($admin)
+        ->test('receivables.payments.consistency.show', ['finding' => $finding])
+        ->call('recheck')
+        ->assertHasNoErrors()
+        ->assertSee('Consistency recheck queued.');
+    Queue::assertPushed(RunPaymentConsistency::class, fn ($job): bool => $job->ruleCode === 'promotion_usage_v1'
+        && $job->subjectId === (int) $promotion->id
+        && $job->kind === PaymentConsistencyRun::KIND_MANUAL
+        && $job->requestedBy === (int) $admin->id);
+    expect(AccountingAuditLog::query()->where('action', 'payment_consistency.manual_recheck_queued')->count())->toBe(1);
+
+    $staff = User::factory()->create(['status' => 'active']);
+    $staff->givePermissionTo('payments.support.view');
+    $staff->branches()->attach($this->branch->id);
+    $this->actingAs($staff)
+        ->get(route('receivables.payments.consistency.show', $finding))
+        ->assertForbidden();
+
+    $customer = User::factory()->create(['status' => 'active']);
+    $customer->assignRole('customer');
+    $this->actingAs($customer)
+        ->get(route('receivables.payments.consistency.index'))
+        ->assertForbidden();
+});
+
+it('sends one administrator alert per non checkout finding episode', function (): void {
+    ['promotion' => $promotion, 'request' => $request] = createConsistencyZeroPromotionUse($this);
+    Config::set('payment_consistency.enabled', true);
+    Config::set('mail.default', 'array');
+    Config::set('mail.daily_dish_admin_emails', ['consistency@example.test']);
+    DB::table('meal_plan_requests')->where('id', $request->id)->update(['promotion_id' => null]);
+    $service = app(PaymentConsistencyService::class);
+
+    $service->checkPromotion($promotion, triggerKey: 'test:alert:first');
+    $service->checkPromotion($promotion, triggerKey: 'test:alert:repeat');
+
+    $finding = PaymentConsistencyFinding::query()->firstOrFail();
+    expect($finding->alert_dispatch['state'])->toBe('sent')
+        ->and(EmailLog::query()->where('category', 'payment_consistency_alert')->count())->toBe(1)
+        ->and(AccountingAuditLog::query()->where('action', 'payment_consistency.alert_sent')->count())->toBe(1);
+
+    $finding->update(['alert_dispatch' => [
+        'state' => 'sending',
+        'attempts' => 1,
+        'claim_uuid' => (string) Str::uuid(),
+        'claimed_at' => now('UTC')->subMinutes(11)->toIso8601String(),
+    ]]);
+    app(PaymentConsistencyAlertService::class)->recoverDue($this->company->id);
+    expect($finding->fresh()->alert_dispatch['state'])->toBe('unknown')
+        ->and(EmailLog::query()->where('category', 'payment_consistency_alert')->count())->toBe(1)
+        ->and(AccountingAuditLog::query()->where('action', 'payment_consistency.alert_unknown')->count())->toBe(1);
 });
 
 it('registers Qatar full scans and fifteen minute catchup scans', function (): void {

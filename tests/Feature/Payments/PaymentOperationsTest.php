@@ -4,6 +4,7 @@ use App\Jobs\InitiateSkipCashCheckout;
 use App\Jobs\RetrySkipCashPaymentProcessing;
 use App\Jobs\SendPaymentOperationsAlert;
 use App\Jobs\SendSkipCashOrderConfirmation;
+use App\Mail\PaymentOperationsAlertMail;
 use App\Models\AccountingAuditLog;
 use App\Models\AccountingCompany;
 use App\Models\ArInvoice;
@@ -181,6 +182,79 @@ it('sends one administrator alert for an unresolved immediate issue', function (
     expect($issue['alert']['state'])->toBe('sent')
         ->and(EmailLog::query()->where('category', 'payment_operations_alert')->count())->toBe(1)
         ->and(AccountingAuditLog::query()->where('action', 'payment.operations.alert_sent')->count())->toBe(1);
+});
+
+it('keeps checkout consistency ownership exact to one open rule', function (): void {
+    Queue::fake([SendPaymentOperationsAlert::class]);
+    $attempt = ($this->makeAttempt)();
+    $tracking = app(PaymentOperationsTrackingService::class);
+
+    expect($tracking->recordConsistencyIssue($attempt->id, 'CONSISTENCY_ORDINARY_ACCOUNTING_V1'))->toBeTrue()
+        ->and($tracking->recordConsistencyIssue($attempt->id, 'CONSISTENCY_PROVIDER_CHECKOUT_V1'))->toBeFalse();
+
+    $tracking->resolveConsistencyIssue($attempt->id, 'CONSISTENCY_PROVIDER_CHECKOUT_V1');
+    expect(data_get($attempt->fresh()->operations_tracking, 'issues.processing.resolved_at'))->toBeNull();
+
+    $tracking->resolveConsistencyIssue($attempt->id, 'CONSISTENCY_ORDINARY_ACCOUNTING_V1');
+    expect(data_get($attempt->fresh()->operations_tracking, 'issues.processing.resolved_at'))->not->toBeNull();
+});
+
+it('does not retry an operations alert when delivery succeeded but email logging failed', function (): void {
+    config(['mail.default' => 'smtp']);
+    Queue::fake([SendPaymentOperationsAlert::class]);
+    Mail::fake();
+    $attempt = ($this->makeAttempt)();
+    $tracking = app(PaymentOperationsTrackingService::class);
+    $tracking->recordConsistencyIssue($attempt->id, 'CONSISTENCY_ORDINARY_ACCOUNTING_V1');
+    $issue = data_get($attempt->fresh()->operations_tracking, 'issues.processing');
+    $emailLogs = \Mockery::mock(EmailLogService::class);
+    $emailLogs->shouldReceive('log')->once()->andThrow(new RuntimeException('Email log unavailable'));
+
+    (new SendPaymentOperationsAlert(
+        $attempt->id,
+        'processing',
+        (string) $issue['episode_uuid'],
+    ))->handle(
+        $emailLogs,
+        $tracking,
+        app(AccountingAuditLogService::class),
+        app(MailSettingsService::class),
+    );
+
+    Mail::assertSent(PaymentOperationsAlertMail::class, 1);
+    $alert = data_get($attempt->fresh()->operations_tracking, 'issues.processing.alert');
+    expect($alert['state'])->toBe('unknown')
+        ->and($alert['error_code'])->toBe('EMAIL_LOG_FAILED_AFTER_DELIVERY')
+        ->and($alert['next_attempt_at'])->toBeNull()
+        ->and(AccountingAuditLog::query()->where('action', 'payment.operations.alert_unknown')->count())->toBe(1);
+});
+
+it('does not retry an operations alert after an uncertain transport failure', function (): void {
+    config(['mail.default' => 'smtp']);
+    Queue::fake([SendPaymentOperationsAlert::class]);
+    Mail::shouldReceive('purge')->once();
+    Mail::shouldReceive('forgetMailers')->once();
+    Mail::shouldReceive('to')->once()->andThrow(new RuntimeException('Transport timed out'));
+    $attempt = ($this->makeAttempt)();
+    $tracking = app(PaymentOperationsTrackingService::class);
+    $tracking->recordConsistencyIssue($attempt->id, 'CONSISTENCY_ORDINARY_ACCOUNTING_V1');
+    $issue = data_get($attempt->fresh()->operations_tracking, 'issues.processing');
+
+    (new SendPaymentOperationsAlert(
+        $attempt->id,
+        'processing',
+        (string) $issue['episode_uuid'],
+    ))->handle(
+        app(EmailLogService::class),
+        $tracking,
+        app(AccountingAuditLogService::class),
+        app(MailSettingsService::class),
+    );
+
+    $alert = data_get($attempt->fresh()->operations_tracking, 'issues.processing.alert');
+    expect($alert['state'])->toBe('unknown')
+        ->and($alert['error_code'])->toBe('EMAIL_DELIVERY_OUTCOME_UNKNOWN')
+        ->and($alert['next_attempt_at'])->toBeNull();
 });
 
 it('repairs an empty administrator confirmation snapshot after mail recipients are configured', function (): void {

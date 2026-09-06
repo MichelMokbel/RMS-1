@@ -39,7 +39,7 @@ class CustomerPortalAccountService
                 ->whereIn('purpose', [
                     CustomerPhoneVerificationService::PURPOSE_SIGNUP,
                     CustomerPhoneVerificationService::PURPOSE_PHONE_CHANGE,
-                    'portal_phone_verify',
+                    CustomerPhoneVerificationService::PURPOSE_CURRENT_PHONE,
                 ])
                 ->latest('verified_at')
                 ->first();

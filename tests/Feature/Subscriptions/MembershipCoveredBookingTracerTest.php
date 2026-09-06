@@ -21,6 +21,7 @@ use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\PaymentCheckoutAttempt;
+use App\Models\PaymentConsistencyFinding;
 use App\Models\PaymentSetting;
 use App\Models\PaymentSource;
 use App\Models\User;
@@ -29,6 +30,7 @@ use App\Services\Customers\CustomerMergeService;
 use App\Services\Mail\EmailLogService;
 use App\Services\Mail\MailSettingsService;
 use App\Services\Payments\FakeSkipCashProvider;
+use App\Services\Payments\PaymentConsistencyService;
 use App\Services\Payments\SkipCashProvider;
 use App\Services\Subscriptions\MealSubscriptionService;
 use Carbon\CarbonImmutable;
@@ -303,6 +305,92 @@ it('books future main quantities from the paid allowance without another payment
         ->and(Payment::query()->count())->toBe(1)
         ->and(MembershipBookingFunding::query()->count())->toBe(1);
 
+    $mapping = MealSubscriptionOrder::query()->firstOrFail();
+    $consistency = app(PaymentConsistencyService::class);
+    $activeRuns = [
+        $consistency->check('membership_balance_v1', 'meal_subscription', $subscription->id, triggerKey: 'test:booking:active:balance'),
+        $consistency->check('membership_sequence_v1', 'meal_subscription', $subscription->id, triggerKey: 'test:booking:active:sequence'),
+        $consistency->check('booking_correction_v1', 'meal_subscription_order', $mapping->id, triggerKey: 'test:booking:active:correction'),
+        $consistency->check('booking_policy_v1', 'meal_subscription_order', $mapping->id, triggerKey: 'test:booking:active:policy'),
+        $consistency->check('notification_operations_v1', 'meal_subscription_order', $mapping->id, triggerKey: 'test:booking:active:notifications'),
+    ];
+    expect(collect($activeRuns)->sum('open_count'))->toBe(0)
+        ->and(collect($activeRuns)->sum('deferred_count'))->toBe(0);
+
+    $subscription->update(['end_date' => now('Asia/Qatar')->addMonth()->toDateString()]);
+    $expiryRun = $consistency->check(
+        'membership_balance_v1',
+        'meal_subscription',
+        $subscription->id,
+        triggerKey: 'test:booking:allowance-expiry',
+    );
+    $expiryFinding = PaymentConsistencyFinding::query()
+        ->where('rule_code', 'membership_balance_v1')
+        ->where('subject_type', 'meal_subscription')
+        ->where('subject_id', $subscription->id)
+        ->firstOrFail();
+    expect($expiryRun->open_count)->toBe(1)
+        ->and(collect($expiryFinding->observed['issues'])->pluck('code')->all())
+        ->toContain('MEMBERSHIP_ALLOWANCE_EXPIRY_CONFIGURED');
+    $subscription->update(['end_date' => null]);
+    expect($consistency->check(
+        'membership_balance_v1',
+        'meal_subscription',
+        $subscription->id,
+        triggerKey: 'test:booking:allowance-expiry-restored',
+    )->resolved_count)->toBe(1);
+
+    $operation = MembershipBookingOperation::query()->firstOrFail();
+    $originalCompletedAt = $operation->getRawOriginal('completed_at');
+    $operation->update(['completed_at' => $funding->change_deadline_at]);
+    $lateRun = $consistency->check(
+        'booking_policy_v1',
+        'meal_subscription_order',
+        $mapping->id,
+        triggerKey: 'test:booking:late-policy',
+    );
+    $lateFinding = PaymentConsistencyFinding::query()
+        ->where('rule_code', 'booking_policy_v1')
+        ->where('subject_type', 'meal_subscription_order')
+        ->where('subject_id', $mapping->id)
+        ->firstOrFail();
+    expect($lateRun->open_count)->toBe(1)
+        ->and(collect($lateFinding->observed['issues'])->pluck('code')->all())
+        ->toContain('MEMBERSHIP_BOOKING_ACCEPTED_AFTER_DEADLINE');
+    $operation->update(['completed_at' => $originalCompletedAt]);
+    expect($consistency->check(
+        'booking_policy_v1',
+        'meal_subscription_order',
+        $mapping->id,
+        triggerKey: 'test:booking:late-policy-restored',
+    )->resolved_count)->toBe(1);
+
+    $notificationSnapshot = $mapping->fresh()->notification_snapshots;
+    $changedNotificationSnapshot = $notificationSnapshot;
+    $changedNotificationSnapshot['main_quantity'] = 3;
+    $mapping->update(['notification_snapshots' => $changedNotificationSnapshot]);
+    $snapshotRun = $consistency->check(
+        'booking_policy_v1',
+        'meal_subscription_order',
+        $mapping->id,
+        triggerKey: 'test:booking:changed-snapshot',
+    );
+    $snapshotFinding = PaymentConsistencyFinding::query()
+        ->where('rule_code', 'booking_policy_v1')
+        ->where('subject_type', 'meal_subscription_order')
+        ->where('subject_id', $mapping->id)
+        ->firstOrFail();
+    expect($snapshotRun->open_count)->toBe(1)
+        ->and(collect($snapshotFinding->observed['issues'])->pluck('code')->all())
+        ->toContain('MEMBERSHIP_BOOKING_NOTIFICATION_SNAPSHOT_MISMATCH');
+    $mapping->update(['notification_snapshots' => $notificationSnapshot]);
+    expect($consistency->check(
+        'booking_policy_v1',
+        'meal_subscription_order',
+        $mapping->id,
+        triggerKey: 'test:booking:changed-snapshot-restored',
+    )->resolved_count)->toBe(1);
+
     app(ArInvoiceService::class)->void($invoice, $this->systemActor->id, 'Customer booking cancelled');
     expect($invoice->fresh()->status)->toBe('voided')
         ->and($order->fresh()->status)->toBe('Cancelled')
@@ -312,6 +400,15 @@ it('books future main quantities from the paid allowance without another payment
     $this->getJson('/api/customer/memberships?selected_branch_id=1')
         ->assertOk()
         ->assertJsonPath('data.available_meals', 20);
+
+    $voidedRuns = [
+        $consistency->check('membership_balance_v1', 'meal_subscription', $subscription->id, triggerKey: 'test:booking:voided:balance'),
+        $consistency->check('membership_sequence_v1', 'meal_subscription', $subscription->id, triggerKey: 'test:booking:voided:sequence'),
+        $consistency->check('booking_correction_v1', 'meal_subscription_order', $mapping->id, triggerKey: 'test:booking:voided:correction'),
+        $consistency->check('booking_policy_v1', 'meal_subscription_order', $mapping->id, triggerKey: 'test:booking:voided:policy'),
+    ];
+    expect(collect($voidedRuns)->sum('open_count'))->toBe(0)
+        ->and(collect($voidedRuns)->sum('deferred_count'))->toBe(0);
 });
 
 it('allocates a discounted membership exactly and keeps its promotion used after invoice void', function (): void {
@@ -453,6 +550,8 @@ it('uses an original membership payment after its customer is merged into the su
         'status' => 'active',
     ]);
     $destinationUser->assignRole('customer');
+    Role::findOrCreate('admin', 'web');
+    $this->systemActor->assignRole('admin');
     app(CustomerMergeService::class)->merge($this->customer, $destination, $this->systemActor->id);
     Sanctum::actingAs($destinationUser, ['customer:*']);
 
@@ -484,6 +583,61 @@ it('uses an original membership payment after its customer is merged into the su
         ->and((int) $invoice->paid_total_cents)->toBe(4050)
         ->and((int) $payment->fresh()->unallocatedCents())->toBe(76950)
         ->and(MembershipPromotionRedemption::query()->count())->toBe(1);
+});
+
+it('keeps pre merge booking attribution within each original customer queue', function (): void {
+    $sourceCustomer = $this->customer;
+    completeCoveredBookingMembership($this, '20');
+    $sourceSubscription = MealSubscription::query()->latest('id')->firstOrFail();
+
+    $bookOne = function (MealSubscription $subscription, string $date): void {
+        $main = createCoveredBookingMenu($this->branch->id, $date);
+        $selections = [coveredBookingSelection($date, $main->id, 1)];
+        $quote = $this->postJson('/api/customer/membership-bookings/quote', [
+            'selected_branch_id' => 1,
+            'queue_reference' => $subscription->subscription_code,
+            'selections' => $selections,
+        ])->assertOk();
+        $this->postJson('/api/customer/membership-bookings', [
+            'client_uuid' => (string) Str::uuid(),
+            'selected_branch_id' => 1,
+            'queue_reference' => $subscription->subscription_code,
+            'queue_revision' => 1,
+            'selections' => $selections,
+            'quote_fingerprint' => $quote->json('quote_fingerprint'),
+            'accepted_terms_version' => 'v1',
+        ])->assertCreated();
+    };
+    $bookOne($sourceSubscription, now('Asia/Qatar')->addDays(2)->toDateString());
+
+    $destination = Customer::factory()->create(['email' => 'pre-merge-destination@example.test']);
+    $destinationUser = User::factory()->create([
+        'customer_id' => $destination->id,
+        'portal_name' => 'Pre Merge Destination',
+        'portal_phone' => '+97455000005',
+        'portal_phone_e164' => '+97455000005',
+        'portal_delivery_address' => 'Doha',
+        'email' => 'pre-merge-destination@example.test',
+        'status' => 'active',
+    ]);
+    $destinationUser->assignRole('customer');
+    Sanctum::actingAs($destinationUser, ['customer:*']);
+    $this->customer = $destination;
+    $this->portalUser = $destinationUser;
+    completeCoveredBookingMembership($this, '20');
+    $destinationSubscription = MealSubscription::query()->latest('id')->firstOrFail();
+    $bookOne($destinationSubscription, now('Asia/Qatar')->addDays(3)->toDateString());
+
+    Role::findOrCreate('admin', 'web');
+    $this->systemActor->assignRole('admin');
+    app(CustomerMergeService::class)->merge($sourceCustomer, $destination, $this->systemActor->id);
+
+    expect(app(PaymentConsistencyService::class)->check(
+        'membership_sequence_v1',
+        'meal_subscription',
+        $destinationSubscription->id,
+        triggerKey: 'test:membership:pre-merge-attribution',
+    )->open_count)->toBe(0);
 });
 
 it('uses the first membership fully before funding a booking from the next purchase', function (): void {
@@ -531,6 +685,29 @@ it('uses the first membership fully before funding a booking from the next purch
         ->and((int) $subscription->fresh()->plan_meals_total)->toBe(46)
         ->and((int) $subscription->fresh()->meals_used)->toBe(21)
         ->and(DB::table('orders')->count())->toBe(1);
+
+    $consistency = app(PaymentConsistencyService::class);
+    expect($consistency->check(
+        'membership_sequence_v1',
+        'meal_subscription',
+        $subscription->id,
+        triggerKey: 'test:booking:two-block-sequence',
+    )->open_count)->toBe(0);
+    $funding[1]->update(['position_ranges' => [[2, 2]]]);
+    $sequenceRun = $consistency->check(
+        'membership_sequence_v1',
+        'meal_subscription',
+        $subscription->id,
+        triggerKey: 'test:booking:premature-second-block-position',
+    );
+    $sequenceFinding = PaymentConsistencyFinding::query()
+        ->where('rule_code', 'membership_sequence_v1')
+        ->where('subject_type', 'meal_subscription')
+        ->where('subject_id', $subscription->id)
+        ->firstOrFail();
+    expect($sequenceRun->open_count)->toBe(1)
+        ->and(collect($sequenceFinding->observed['issues'])->pluck('code')->all())
+        ->toContain('MEMBERSHIP_BLOCK_SEQUENCE_PREMATURE');
 });
 
 it('does not disclose or spend another customer membership queue', function (): void {
@@ -818,6 +995,7 @@ it('sends a customer booking confirmation from the retained snapshot without cha
     (new SendMembershipBookingConfirmation($mapping->id, 'created'))->handle(
         app(EmailLogService::class),
         app(MailSettingsService::class),
+        app(\App\Services\Payments\PaymentConsistencyDispatchService::class),
     );
 
     expect(data_get($mapping->fresh()->notification_dispatch, 'customer_creation.state'))->toBe('sent')

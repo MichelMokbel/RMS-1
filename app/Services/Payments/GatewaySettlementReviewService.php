@@ -32,6 +32,7 @@ class GatewaySettlementReviewService
         private readonly LedgerAccountMappingService $mappings,
         private readonly AccountingAuditLogService $audit,
         private readonly PhoneNumberService $phoneNumbers,
+        private readonly PaymentConsistencyDispatchService $paymentConsistency,
     ) {}
 
     /** @return array<int, array<string, mixed>> */
@@ -216,7 +217,7 @@ class GatewaySettlementReviewService
         $this->assertReviewAccess($actor);
         $this->assertImportAccess($import, $actor);
 
-        return DB::transaction(function () use (
+        $matchedRow = DB::transaction(function () use (
             $import,
             $row,
             $providerTransactionId,
@@ -309,6 +310,14 @@ class GatewaySettlementReviewService
 
             return $row->fresh();
         });
+        $this->paymentConsistency->settlementAfterCommit(
+            (int) $import->id,
+            'gateway_settlement_row',
+            (int) $matchedRow->id,
+            (string) $matchedRow->match_state,
+        );
+
+        return $matchedRow;
     }
 
     /** @return array<string, mixed> */
@@ -325,7 +334,7 @@ class GatewaySettlementReviewService
         $this->assertReviewAccess($actor);
         $this->assertImportAccess($entryImport, $actor);
 
-        return DB::transaction(function () use (
+        $review = DB::transaction(function () use (
             $entryImport,
             $payoutReference,
             $payoutFingerprint,
@@ -485,6 +494,14 @@ class GatewaySettlementReviewService
                 ...$snapshot,
             ];
         });
+        $this->paymentConsistency->settlementAfterCommit(
+            (int) $entryImport->id,
+            'gateway_settlement_import',
+            (int) $entryImport->id,
+            'reviewed',
+        );
+
+        return $review;
     }
 
     /** @return array<string, mixed> */
