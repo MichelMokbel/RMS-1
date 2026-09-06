@@ -207,7 +207,7 @@ class MembershipQueueService
             'meal_plan_request_id' => $request->id,
             'company_id' => $attempt->company_id,
             'branch_id' => $attempt->branch_id,
-            'original_customer_id' => $customer->id,
+            'original_customer_id' => $attempt->customer_id,
             'queue_position' => $position,
             'meal_count' => $plan->meal_count,
             'gross_price_cents' => $attempt->gross_amount_cents,

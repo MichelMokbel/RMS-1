@@ -17,6 +17,7 @@ use App\Models\PaymentProviderTransaction;
 use App\Models\PaymentSetting;
 use App\Models\PaymentSource;
 use App\Models\User;
+use App\Services\Customers\CustomerMergeService;
 use App\Services\Payments\FakeSkipCashProvider;
 use App\Services\Payments\SkipCashProvider;
 use Carbon\CarbonImmutable;
@@ -551,6 +552,61 @@ it('holds the final promotion use during payment and releases it after a decline
         ->assertJsonPath('promotion.code', $promotion->code);
     expect($attempt->fresh()->promotionReservation()->firstOrFail()->status)->toBe('released')
         ->and(MembershipPromotionRedemption::query()->count())->toBe(0);
+});
+
+it('completes a retained promotion checkout for the destination customer after a merge', function (): void {
+    Config::set('payments.membership.promotions_enabled', true);
+    $promotion = createMembershipCheckoutPromotion($this);
+    $payload = [
+        ...membershipQuotePayload('20'),
+        'promo_code' => $promotion->code,
+    ];
+    $quote = $this->postJson('/api/customer/checkouts/quote', $payload)->assertOk();
+    $this->postJson('/api/customer/checkouts', [
+        'client_uuid' => (string) Str::uuid(),
+        ...$payload,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertStatus(202);
+    $attempt = PaymentCheckoutAttempt::query()->latest('id')->firstOrFail();
+    $originalCustomerId = (int) $this->customer->id;
+
+    $destination = Customer::factory()->create(['email' => 'merged-member@example.test']);
+    $destinationUser = User::factory()->create([
+        'customer_id' => $destination->id,
+        'portal_name' => 'Merged Membership Customer',
+        'portal_phone' => '+97455000003',
+        'portal_phone_e164' => '+97455000003',
+        'portal_delivery_address' => 'Doha',
+        'email' => 'merged-member@example.test',
+        'status' => 'active',
+    ]);
+    $destinationUser->assignRole('customer');
+    app(CustomerMergeService::class)->merge($this->customer, $destination, $this->systemActor->id);
+    Sanctum::actingAs($destinationUser, ['customer:*']);
+
+    completeMembershipCheckout($this, $attempt)[0]->assertOk();
+
+    $payment = Payment::query()->where('payment_source_id', $this->source->id)->firstOrFail();
+    $request = MealPlanRequest::query()->firstOrFail();
+    $subscription = MealSubscription::query()->firstOrFail();
+    $block = MembershipPurchaseBlock::query()->firstOrFail();
+    $redemption = MembershipPromotionRedemption::query()->firstOrFail();
+    expect((int) $attempt->customer_id)->toBe($originalCustomerId)
+        ->and((int) $payment->customer_id)->toBe((int) $destination->id)
+        ->and((int) $request->customer_id)->toBe((int) $destination->id)
+        ->and((int) $subscription->customer_id)->toBe((int) $destination->id)
+        ->and((int) $block->original_customer_id)->toBe($originalCustomerId)
+        ->and((int) $redemption->original_customer_id)->toBe($originalCustomerId)
+        ->and($this->portalUser->fresh()->status)->toBe('inactive')
+        ->and($this->portalUser->fresh()->customer_id)->toBeNull();
+
+    $this->getJson('/api/customer/checkouts/'.$attempt->reference)
+        ->assertOk()
+        ->assertJsonPath('purchase_confirmed', true);
+    $this->postJson('/api/customer/checkouts/quote', $payload)
+        ->assertStatus(422)
+        ->assertJsonPath('code', 'PROMOTION_CUSTOMER_LIMIT');
 });
 
 it('releases a partial promotion hold after a terminal unpaid result', function (): void {

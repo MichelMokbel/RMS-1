@@ -8,10 +8,16 @@ use App\Models\MembershipBookingFunding;
 use App\Models\MembershipPurchaseBlock;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
+use App\Services\Customers\CustomerOwnershipService;
 use Illuminate\Database\Eloquent\Builder;
+use Throwable;
 
 class PaymentCreditProjectionService
 {
+    public function __construct(
+        private readonly CustomerOwnershipService $customerOwnership,
+    ) {}
+
     /**
      * @return array{
      *     state:string,
@@ -89,7 +95,7 @@ class PaymentCreditProjectionService
         foreach ($blocks as $block) {
             if ((int) $block->company_id !== (int) $payment->company_id
                 || (int) $block->branch_id !== (int) $payment->branch_id
-                || (int) $block->original_customer_id !== (int) $payment->customer_id
+                || ! $this->sameCanonicalCustomer((int) $block->original_customer_id, (int) $payment->customer_id)
                 || $block->currency !== $payment->currency) {
                 return $this->unavailable($amount, $allocated, $unallocated, 'MEMBERSHIP_FUNDING_SCOPE_MISMATCH');
             }
@@ -167,5 +173,19 @@ class PaymentCreditProjectionService
             'available_cents' => 0,
             'committed_subscription_ids' => [],
         ];
+    }
+
+    private function sameCanonicalCustomer(int $leftCustomerId, int $rightCustomerId): bool
+    {
+        if ($leftCustomerId <= 0 || $rightCustomerId <= 0) {
+            return false;
+        }
+
+        try {
+            return $this->customerOwnership->canonicalCustomerId($leftCustomerId)
+                === $this->customerOwnership->canonicalCustomerId($rightCustomerId);
+        } catch (Throwable) {
+            return false;
+        }
     }
 }

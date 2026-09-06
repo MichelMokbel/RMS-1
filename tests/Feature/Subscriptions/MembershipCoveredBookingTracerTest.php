@@ -25,6 +25,7 @@ use App\Models\PaymentSetting;
 use App\Models\PaymentSource;
 use App\Models\User;
 use App\Services\AR\ArInvoiceService;
+use App\Services\Customers\CustomerMergeService;
 use App\Services\Mail\EmailLogService;
 use App\Services\Mail\MailSettingsService;
 use App\Services\Payments\FakeSkipCashProvider;
@@ -370,6 +371,59 @@ it('allocates a discounted membership exactly and keeps its promotion used after
         'selections' => [],
         'promo_code' => $promotion->code,
     ])->assertStatus(422)->assertJsonPath('code', 'PROMOTION_CUSTOMER_LIMIT');
+});
+
+it('uses an original membership payment after its customer is merged into the surviving login', function (): void {
+    Config::set('payments.membership.promotions_enabled', true);
+    $promotion = createCoveredBookingPromotion($this);
+    completeCoveredBookingMembership($this, '20', $promotion->code);
+    $subscription = MealSubscription::query()->firstOrFail();
+    $payment = Payment::query()->where('payment_source_id', $this->source->id)->firstOrFail();
+    $block = MembershipPurchaseBlock::query()->firstOrFail();
+    $originalCustomerId = (int) $this->customer->id;
+
+    $destination = Customer::factory()->create(['email' => 'booking-merge@example.test']);
+    $destinationUser = User::factory()->create([
+        'customer_id' => $destination->id,
+        'portal_name' => 'Booking Merge Customer',
+        'portal_phone' => '+97455000004',
+        'portal_phone_e164' => '+97455000004',
+        'portal_delivery_address' => 'Doha',
+        'email' => 'booking-merge@example.test',
+        'status' => 'active',
+    ]);
+    $destinationUser->assignRole('customer');
+    app(CustomerMergeService::class)->merge($this->customer, $destination, $this->systemActor->id);
+    Sanctum::actingAs($destinationUser, ['customer:*']);
+
+    $date = now('Asia/Qatar')->addDays(2)->toDateString();
+    $main = createCoveredBookingMenu($this->branch->id, $date);
+    $selections = [coveredBookingSelection($date, $main->id, 1)];
+    $quote = $this->postJson('/api/customer/membership-bookings/quote', [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => $selections,
+    ])->assertOk()->assertJsonPath('queue.available_meals', 20);
+    $this->postJson('/api/customer/membership-bookings', [
+        'client_uuid' => (string) Str::uuid(),
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'queue_revision' => 1,
+        'selections' => $selections,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertCreated()->assertJsonPath('queue.available_meals', 19);
+
+    $invoice = ArInvoice::query()->firstOrFail();
+    $funding = MembershipBookingFunding::query()->firstOrFail();
+    expect((int) $block->original_customer_id)->toBe($originalCustomerId)
+        ->and((int) $payment->fresh()->customer_id)->toBe((int) $destination->id)
+        ->and((int) $subscription->fresh()->customer_id)->toBe((int) $destination->id)
+        ->and((int) $funding->invoice_net_cents)->toBe(4050)
+        ->and((int) $invoice->total_cents)->toBe(4050)
+        ->and((int) $invoice->paid_total_cents)->toBe(4050)
+        ->and((int) $payment->fresh()->unallocatedCents())->toBe(76950)
+        ->and(MembershipPromotionRedemption::query()->count())->toBe(1);
 });
 
 it('uses the first membership fully before funding a booking from the next purchase', function (): void {
