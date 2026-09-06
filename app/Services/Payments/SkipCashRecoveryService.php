@@ -3,7 +3,9 @@
 namespace App\Services\Payments;
 
 use App\Jobs\InitiateSkipCashCheckout;
+use App\Jobs\SendMembershipPromotionRequestConfirmation;
 use App\Jobs\SendSkipCashOrderConfirmation;
+use App\Models\MealPlanRequest;
 use App\Models\PaymentCheckoutAttempt;
 use App\Models\PaymentCheckoutTarget;
 use App\Models\PaymentProviderEvent;
@@ -32,6 +34,7 @@ class SkipCashRecoveryService
             'details_checked' => $this->recoverKnownProviderSessions($limit),
             'events_retried' => $this->recoverRetryableEvents($limit),
             'confirmations_retried' => $this->recoverRetryableConfirmations($limit),
+            'promotion_request_confirmations_retried' => $this->recoverRetryablePromotionRequestConfirmations($limit),
             'operations_observed' => $this->operations->observeOutstanding($limit),
             'consistency_checked' => $this->consistency->scan($limit),
         ];
@@ -296,6 +299,33 @@ class SkipCashRecoveryService
                 ->pluck('id');
             foreach ($ids as $attemptId) {
                 SendSkipCashOrderConfirmation::dispatch((int) $attemptId, $audience);
+                $dispatched++;
+            }
+        }
+
+        return $dispatched;
+    }
+
+    private function recoverRetryablePromotionRequestConfirmations(int $limit): int
+    {
+        $dispatched = 0;
+        foreach (SendMembershipPromotionRequestConfirmation::AUDIENCES as $audience) {
+            $slot = SendMembershipPromotionRequestConfirmation::slotForAudience($audience);
+            if ($slot === null || $dispatched >= $limit) {
+                continue;
+            }
+            $nextRetryPath = '$.'.$slot.'.next_retry_at';
+            $statePath = '$.'.$slot.'.state';
+            $ids = MealPlanRequest::query()
+                ->where('submission_kind', 'promo_request')
+                ->whereNotNull('redemption_id')
+                ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(notification_dispatch, '{$statePath}')) = ?", ['retryable'])
+                ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(notification_dispatch, '{$nextRetryPath}')) <= ?", [now('UTC')->toIso8601String()])
+                ->orderBy('id')
+                ->limit($limit - $dispatched)
+                ->pluck('id');
+            foreach ($ids as $requestId) {
+                SendMembershipPromotionRequestConfirmation::dispatch((int) $requestId, $audience);
                 $dispatched++;
             }
         }

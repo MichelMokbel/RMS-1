@@ -11,6 +11,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function with(): array
     {
+        $this->mealPlanRequest->loadMissing(['promotion', 'promotionRedemption']);
         $subscription = MealSubscription::query()
             ->where('meal_plan_request_id', $this->mealPlanRequest->id)
             ->orderByDesc('id')
@@ -73,6 +74,49 @@ new #[Layout('components.layouts.app')] class extends Component {
             default => 'bg-neutral-100 text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100',
         };
     @endphp
+
+    @if($mpr->submission_kind === 'promo_request')
+        @php
+            $proposal = is_array($mpr->proposed_selections_snapshot) ? $mpr->proposed_selections_snapshot : [];
+            $promotionTerms = is_array($mpr->promotion_terms_snapshot) ? $mpr->promotion_terms_snapshot : [];
+            $offer = is_array($promotionTerms['offer'] ?? null) ? $promotionTerms['offer'] : [];
+            $notificationDispatch = is_array($mpr->notification_dispatch) ? $mpr->notification_dispatch : [];
+            $proposedDays = array_values((array) ($proposal['selections'] ?? []));
+            $excludedToday = array_values((array) ($proposal['excluded_today'] ?? []));
+        @endphp
+
+        <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm dark:border-amber-800 dark:bg-amber-950/30 space-y-4">
+            <div>
+                <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Promotional Membership Request') }}</h2>
+                <p class="mt-1 text-sm text-neutral-700 dark:text-neutral-200">{{ __('No payment, subscription or meal allowance was created automatically.') }}</p>
+            </div>
+
+            <dl class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <div><dt class="text-neutral-600 dark:text-neutral-300">{{ __('Promotion') }}</dt><dd class="font-semibold text-neutral-900 dark:text-neutral-100">{{ $offer['code'] ?? '—' }}</dd></div>
+                <div><dt class="text-neutral-600 dark:text-neutral-300">{{ __('Package price') }}</dt><dd class="font-semibold text-neutral-900 dark:text-neutral-100">QAR {{ number_format(((int) ($mpr->promotionRedemption?->gross_cents ?? 0)) / 100, 2) }}</dd></div>
+                <div><dt class="text-neutral-600 dark:text-neutral-300">{{ __('Promotion saving') }}</dt><dd class="font-semibold text-neutral-900 dark:text-neutral-100">QAR {{ number_format(((int) ($mpr->promotionRedemption?->discount_cents ?? 0)) / 100, 2) }}</dd></div>
+                <div><dt class="text-neutral-600 dark:text-neutral-300">{{ __('Proposed meals') }}</dt><dd class="font-semibold text-neutral-900 dark:text-neutral-100">{{ (int) ($proposal['main_quantity'] ?? 0) }}</dd></div>
+                <div><dt class="text-neutral-600 dark:text-neutral-300">{{ __('Customer confirmation') }}</dt><dd class="font-semibold text-neutral-900 dark:text-neutral-100">{{ data_get($notificationDispatch, 'customer_confirmation.state', 'pending') }}</dd></div>
+                <div><dt class="text-neutral-600 dark:text-neutral-300">{{ __('Administrator confirmation') }}</dt><dd class="font-semibold text-neutral-900 dark:text-neutral-100">{{ data_get($notificationDispatch, 'admin_confirmation.state', 'pending') }}</dd></div>
+            </dl>
+
+            @if($proposedDays !== [])
+                <div class="space-y-2">
+                    <h3 class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Proposed future choices') }}</h3>
+                    @foreach($proposedDays as $day)
+                        <div class="rounded-md border border-amber-200 bg-white px-3 py-2 text-sm dark:border-amber-800 dark:bg-neutral-900">
+                            <span class="font-semibold">{{ $day['key'] ?? '—' }}</span>
+                            <span class="text-neutral-600 dark:text-neutral-300"> · {{ collect($day['mains'] ?? [])->sum(fn ($main) => (int) ($main['qty'] ?? 0)) }} {{ __('main dish(es)') }}</span>
+                        </div>
+                    @endforeach
+                </div>
+            @endif
+
+            @if($excludedToday !== [])
+                <p class="text-sm text-amber-800 dark:text-amber-200">{{ __('Same day choices were excluded and were not saved as proposed future meals. Contact the customer if today still needs attention.') }}</p>
+            @endif
+        </div>
+    @endif
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
         <div class="flex flex-wrap items-center gap-3">

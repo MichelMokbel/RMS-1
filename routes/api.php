@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\CustomerCheckoutController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\CustomerMembershipController;
+use App\Http\Controllers\Api\CustomerMembershipRequestController;
 use App\Http\Controllers\Api\CustomerPortalAuthController;
 use App\Http\Controllers\Api\CustomerPortalDashboardController;
 use App\Http\Controllers\Api\CustomerPortalProfileController;
@@ -96,6 +97,8 @@ Route::prefix('customer')->group(function () {
                 ->middleware('throttle:60,1');
             Route::post('checkouts', [CustomerCheckoutController::class, 'store'])
                 ->middleware('throttle:10,1');
+            Route::post('membership-requests', [CustomerMembershipRequestController::class, 'store'])
+                ->middleware('throttle:10,1');
             Route::post('membership-bookings/quote', [CustomerMembershipController::class, 'quote'])
                 ->middleware('throttle:60,1');
             Route::post('membership-bookings', [CustomerMembershipController::class, 'store'])
@@ -111,6 +114,9 @@ Route::prefix('customer')->group(function () {
         Route::get('checkouts', [CustomerCheckoutController::class, 'index'])
             ->middleware('throttle:120,1');
         Route::get('checkouts/{reference}', [CustomerCheckoutController::class, 'show'])
+            ->middleware('throttle:120,1');
+        Route::get('membership-requests/{reference}', [CustomerMembershipRequestController::class, 'show'])
+            ->whereUuid('reference')
             ->middleware('throttle:120,1');
     });
 });
