@@ -142,6 +142,12 @@ class PaymentCreditProjectionService
             ->unique()
             ->values()
             ->all();
+        if ($invoiceSubscriptionIds !== [] && MealSubscription::query()
+            ->whereIn('id', $invoiceSubscriptionIds)
+            ->where('fulfillment_mode', 'customer_selection')
+            ->exists()) {
+            return 0;
+        }
 
         return array_intersect($projection['committed_subscription_ids'], $invoiceSubscriptionIds) !== []
             ? $projection['unallocated_cents']

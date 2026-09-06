@@ -1,13 +1,16 @@
 <?php
 
+use App\Jobs\SendMembershipBookingConfirmation;
 use App\Models\AccountingCompany;
 use App\Models\ArInvoice;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\DailyDishMenu;
 use App\Models\DailyDishMenuItem;
+use App\Models\EmailLog;
 use App\Models\LedgerAccount;
 use App\Models\MealSubscription;
+use App\Models\MealSubscriptionOrder;
 use App\Models\MembershipBookingFunding;
 use App\Models\MembershipBookingOperation;
 use App\Models\MembershipPurchaseBlock;
@@ -19,8 +22,12 @@ use App\Models\PaymentSetting;
 use App\Models\PaymentSource;
 use App\Models\User;
 use App\Services\AR\ArInvoiceService;
+use App\Services\Mail\EmailLogService;
+use App\Services\Mail\MailSettingsService;
 use App\Services\Payments\FakeSkipCashProvider;
 use App\Services\Payments\SkipCashProvider;
+use App\Services\Subscriptions\MealSubscriptionService;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -356,4 +363,304 @@ it('does not disclose or spend another customer membership queue', function (): 
     expect(Order::query()->count())->toBe(0)
         ->and(MembershipBookingOperation::query()->count())->toBe(0)
         ->and(MembershipBookingFunding::query()->count())->toBe(0);
+});
+
+it('replaces a booking revision by voiding the old invoice and reusing restored allowance', function (): void {
+    completeCoveredBookingMembership($this, '20');
+    $subscription = MealSubscription::query()->firstOrFail();
+    $date = now('Asia/Qatar')->addDays(3)->toDateString();
+    $main = createCoveredBookingMenu($this->branch->id, $date);
+    $initialSelections = [coveredBookingSelection($date, $main->id, 1)];
+    $initialQuote = $this->postJson('/api/customer/membership-bookings/quote', [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => $initialSelections,
+    ])->assertOk();
+    $initial = $this->postJson('/api/customer/membership-bookings', [
+        'client_uuid' => (string) Str::uuid(),
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'queue_revision' => 1,
+        'selections' => $initialSelections,
+        'quote_fingerprint' => $initialQuote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertCreated();
+    $reference = $initial->json('bookings.0.booking_reference');
+    $oldMapping = MealSubscriptionOrder::query()->firstOrFail();
+    $oldFunding = MembershipBookingFunding::query()->firstOrFail();
+    $oldInvoice = ArInvoice::query()->firstOrFail();
+    $oldOrder = Order::query()->firstOrFail();
+
+    $replacementSelections = [coveredBookingSelection($date, $main->id, 2)];
+    $replacementQuote = $this->postJson('/api/customer/membership-bookings/quote', [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => $replacementSelections,
+        'booking_reference' => $reference,
+        'booking_revision' => 1,
+    ])->assertOk()
+        ->assertJsonPath('replacement.current_main_quantity', 1)
+        ->assertJsonPath('available_after_releasing_current_booking', 20)
+        ->assertJsonPath('main_quantity', 2);
+    $operationUuid = (string) Str::uuid();
+    $request = [
+        'client_uuid' => $operationUuid,
+        'expected_booking_revision' => 1,
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'queue_revision' => 2,
+        'selections' => $replacementSelections,
+        'quote_fingerprint' => $replacementQuote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ];
+    $this->putJson('/api/customer/membership-bookings/'.$reference, $request)
+        ->assertOk()
+        ->assertJsonPath('result_kind', 'covered_booking_replaced')
+        ->assertJsonPath('booking.booking_reference', $reference)
+        ->assertJsonPath('booking.booking_revision', 2)
+        ->assertJsonPath('booking.main_quantity', 2)
+        ->assertJsonPath('queue.used_meals', 2)
+        ->assertJsonPath('queue.available_meals', 18);
+
+    $newMapping = MealSubscriptionOrder::query()->where('booking_revision', 2)->firstOrFail();
+    $newFunding = MembershipBookingFunding::query()->where('subscription_order_id', $newMapping->id)->firstOrFail();
+    $newInvoice = ArInvoice::query()->where('source_order_id', $newMapping->order_id)->firstOrFail();
+    expect($oldInvoice->fresh()->status)->toBe('voided')
+        ->and($oldOrder->fresh()->status)->toBe('Cancelled')
+        ->and($oldFunding->fresh()->state)->toBe('released')
+        ->and($newMapping->booking_uuid)->toBe($reference)
+        ->and((int) $newMapping->supersedes_subscription_order_id)->toBe((int) $oldMapping->id)
+        ->and($newFunding->position_ranges)->toBe([[1, 2]])
+        ->and((int) $newFunding->invoice_net_cents)->toBe(9000)
+        ->and($newInvoice->status)->toBe('paid')
+        ->and((int) $subscription->fresh()->meals_used)->toBe(2)
+        ->and(MembershipBookingOperation::query()->count())->toBe(2);
+    $this->getJson('/api/customer/membership-bookings?selected_branch_id=1&queue_reference='.$subscription->subscription_code)
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.booking_reference', $reference)
+        ->assertJsonPath('data.0.booking_revision', 2)
+        ->assertJsonPath('data.0.status', 'scheduled')
+        ->assertJsonPath('data.0.main_quantity', 2)
+        ->assertJsonPath('data.0.can_change', true);
+
+    $this->putJson('/api/customer/membership-bookings/'.$reference, $request)
+        ->assertOk()
+        ->assertJsonPath('replayed', true)
+        ->assertJsonPath('booking.booking_revision', 2);
+    expect(MealSubscriptionOrder::query()->count())->toBe(2)
+        ->and(ArInvoice::query()->count())->toBe(2)
+        ->and(Payment::query()->count())->toBe(1);
+});
+
+it('cancels before the saved cutoff exactly once and rejects at the cutoff', function (): void {
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-07 10:00:00', 'Asia/Qatar'));
+    completeCoveredBookingMembership($this, '20');
+    $subscription = MealSubscription::query()->firstOrFail();
+    $date = '2026-09-09';
+    $main = createCoveredBookingMenu($this->branch->id, $date);
+    $selections = [coveredBookingSelection($date, $main->id, 2)];
+    $quote = $this->postJson('/api/customer/membership-bookings/quote', [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => $selections,
+    ])->assertOk();
+    $created = $this->postJson('/api/customer/membership-bookings', [
+        'client_uuid' => (string) Str::uuid(),
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'queue_revision' => 1,
+        'selections' => $selections,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertCreated();
+    $reference = $created->json('bookings.0.booking_reference');
+
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-08 23:00:00', 'Asia/Qatar'));
+    $this->deleteJson('/api/customer/membership-bookings/'.$reference, [
+        'client_uuid' => (string) Str::uuid(),
+        'expected_booking_revision' => 1,
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'queue_revision' => 2,
+    ])->assertStatus(422)
+        ->assertJsonPath('code', 'MEMBERSHIP_BOOKING_CHANGE_CLOSED');
+    expect(ArInvoice::query()->firstOrFail()->status)->toBe('paid')
+        ->and((int) $subscription->fresh()->meals_used)->toBe(2);
+
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-08 22:59:59', 'Asia/Qatar'));
+    $operationUuid = (string) Str::uuid();
+    $cancelRequest = [
+        'client_uuid' => $operationUuid,
+        'expected_booking_revision' => 1,
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'queue_revision' => 2,
+    ];
+    $this->deleteJson('/api/customer/membership-bookings/'.$reference, $cancelRequest)
+        ->assertOk()
+        ->assertJsonPath('result_kind', 'covered_booking_cancelled')
+        ->assertJsonPath('released_main_quantity', 2)
+        ->assertJsonPath('queue.used_meals', 0)
+        ->assertJsonPath('queue.available_meals', 20);
+    $this->deleteJson('/api/customer/membership-bookings/'.$reference, $cancelRequest)
+        ->assertOk()
+        ->assertJsonPath('replayed', true);
+    expect(ArInvoice::query()->firstOrFail()->status)->toBe('voided')
+        ->and(Order::query()->firstOrFail()->status)->toBe('Cancelled')
+        ->and(MembershipBookingFunding::query()->firstOrFail()->state)->toBe('released')
+        ->and((int) $subscription->fresh()->meals_used)->toBe(0)
+        ->and(MembershipBookingOperation::query()->count())->toBe(2);
+
+    CarbonImmutable::setTestNow();
+});
+
+it('pauses only future bookings in the selected period and restores their funding atomically', function (): void {
+    completeCoveredBookingMembership($this, '20');
+    $subscription = MealSubscription::query()->firstOrFail();
+    $insideDate = now('Asia/Qatar')->addDays(2)->toDateString();
+    $outsideDate = now('Asia/Qatar')->addDays(4)->toDateString();
+    $insideMain = createCoveredBookingMenu($this->branch->id, $insideDate);
+    $outsideMain = createCoveredBookingMenu($this->branch->id, $outsideDate);
+    $selections = [
+        coveredBookingSelection($insideDate, $insideMain->id, 2),
+        coveredBookingSelection($outsideDate, $outsideMain->id, 1),
+    ];
+    $quote = $this->postJson('/api/customer/membership-bookings/quote', [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => $selections,
+    ])->assertOk();
+    $this->postJson('/api/customer/membership-bookings', [
+        'client_uuid' => (string) Str::uuid(),
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'queue_revision' => 1,
+        'selections' => $selections,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertCreated()->assertJsonPath('queue.used_meals', 3);
+
+    app(MealSubscriptionService::class)->pause($subscription, [
+        'pause_start' => $insideDate,
+        'pause_end' => $insideDate,
+        'reason' => 'Customer away',
+    ], $this->systemActor->id);
+
+    $insideMapping = MealSubscriptionOrder::query()->whereDate('service_date', $insideDate)->firstOrFail();
+    $outsideMapping = MealSubscriptionOrder::query()->whereDate('service_date', $outsideDate)->firstOrFail();
+    $insideInvoice = ArInvoice::query()->where('source_order_id', $insideMapping->order_id)->firstOrFail();
+    $outsideInvoice = ArInvoice::query()->where('source_order_id', $outsideMapping->order_id)->firstOrFail();
+    expect($insideInvoice->status)->toBe('voided')
+        ->and($insideMapping->order()->firstOrFail()->status)->toBe('Cancelled')
+        ->and($insideMapping->funding()->firstOrFail()->state)->toBe('released')
+        ->and(data_get($insideMapping->fresh()->notification_dispatch, 'customer_cancellation.state'))->toBe('sent')
+        ->and(data_get($insideMapping->fresh()->notification_snapshots, 'cancellation_reason'))->toBe('membership_pause')
+        ->and($outsideInvoice->status)->toBe('paid')
+        ->and($outsideMapping->order()->firstOrFail()->status)->not->toBe('Cancelled')
+        ->and($outsideMapping->funding()->firstOrFail()->state)->toBe('invoiced')
+        ->and($subscription->fresh()->status)->toBe('paused')
+        ->and((int) $subscription->fresh()->meals_used)->toBe(1);
+    $this->getJson('/api/customer/memberships?selected_branch_id=1')
+        ->assertOk()
+        ->assertJsonPath('data.available_meals', 19)
+        ->assertJsonPath('data.upcoming_meals', 1)
+        ->assertJsonPath('data.pause_periods.0.start', $insideDate);
+    $this->postJson('/api/customer/membership-bookings/quote', [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => [coveredBookingSelection($insideDate, $insideMain->id, 1)],
+    ])->assertStatus(422)->assertJsonPath('code', 'MEMBERSHIP_PAUSED_FOR_DATE');
+    $this->postJson('/api/customer/membership-bookings/quote', [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => [coveredBookingSelection($outsideDate, $outsideMain->id, 1)],
+    ])->assertOk()->assertJsonPath('can_book', true);
+
+    app(MealSubscriptionService::class)->resume($subscription->fresh(), $this->systemActor->id);
+    expect($subscription->fresh()->status)->toBe('active')
+        ->and($subscription->pauses()->firstOrFail()->resumed_at)->not->toBeNull();
+    $this->postJson('/api/customer/membership-bookings/quote', [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => [coveredBookingSelection($insideDate, $insideMain->id, 1)],
+    ])->assertOk()->assertJsonPath('can_book', true);
+});
+
+it('sends a customer booking confirmation from the retained snapshot without changing the booking', function (): void {
+    completeCoveredBookingMembership($this, '20');
+    $subscription = MealSubscription::query()->firstOrFail();
+    $date = now('Asia/Qatar')->addDays(3)->toDateString();
+    $main = createCoveredBookingMenu($this->branch->id, $date);
+    $selections = [coveredBookingSelection($date, $main->id, 1)];
+    $quote = $this->postJson('/api/customer/membership-bookings/quote', [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => $selections,
+    ])->assertOk();
+    $this->postJson('/api/customer/membership-bookings', [
+        'client_uuid' => (string) Str::uuid(),
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'queue_revision' => 1,
+        'selections' => $selections,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertCreated();
+
+    Config::set('mail.default', 'log');
+    app()->forgetInstance(MailSettingsService::class);
+    $mapping = MealSubscriptionOrder::query()->firstOrFail();
+    (new SendMembershipBookingConfirmation($mapping->id, 'created'))->handle(
+        app(EmailLogService::class),
+        app(MailSettingsService::class),
+    );
+
+    expect(data_get($mapping->fresh()->notification_dispatch, 'customer_creation.state'))->toBe('sent')
+        ->and(EmailLog::query()->where('category', 'membership_booking_confirmation')->where('status', 'skipped')->count())->toBe(1)
+        ->and($mapping->order()->firstOrFail()->status)->not->toBe('Cancelled')
+        ->and(ArInvoice::query()->where('source_order_id', $mapping->order_id)->firstOrFail()->status)->toBe('paid')
+        ->and((int) $subscription->fresh()->meals_used)->toBe(1);
+});
+
+it('keeps a void and duplicate draft financial only without restoring or spending membership allowance', function (): void {
+    completeCoveredBookingMembership($this, '20');
+    $subscription = MealSubscription::query()->firstOrFail();
+    $payment = Payment::query()->where('payment_source_id', $this->source->id)->firstOrFail();
+    $date = now('Asia/Qatar')->addDays(3)->toDateString();
+    $main = createCoveredBookingMenu($this->branch->id, $date);
+    $selections = [coveredBookingSelection($date, $main->id, 1)];
+    $quote = $this->postJson('/api/customer/membership-bookings/quote', [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => $selections,
+    ])->assertOk();
+    $this->postJson('/api/customer/membership-bookings', [
+        'client_uuid' => (string) Str::uuid(),
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'queue_revision' => 1,
+        'selections' => $selections,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertCreated();
+    $original = ArInvoice::query()->firstOrFail();
+
+    $duplicate = app(ArInvoiceService::class)->voidAndDuplicate(
+        $original,
+        $this->systemActor->id,
+        'Correct invoice description',
+    );
+    expect($original->fresh()->status)->toBe('voided')
+        ->and($duplicate->status)->toBe('draft')
+        ->and(MembershipBookingFunding::query()->firstOrFail()->state)->toBe('released')
+        ->and((int) $subscription->fresh()->meals_used)->toBe(0)
+        ->and((int) $payment->fresh()->unallocatedCents())->toBe(90000);
+
+    $issuedDuplicate = app(ArInvoiceService::class)->issue($duplicate, $this->systemActor->id, true);
+    expect($issuedDuplicate->status)->toBe('issued')
+        ->and((int) $issuedDuplicate->paid_total_cents)->toBe(0)
+        ->and($issuedDuplicate->paymentAllocations()->count())->toBe(0)
+        ->and((int) $subscription->fresh()->meals_used)->toBe(0)
+        ->and((int) $payment->fresh()->unallocatedCents())->toBe(90000);
 });

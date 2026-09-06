@@ -35,7 +35,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $subscription = MealSubscription::query()
             ->withRenewalState()
-            ->with(['days', 'pauses', 'customer', 'sourcePayment', 'renewalSuccessor.customer'])
+            ->with(['days', 'pauses', 'customer', 'sourcePayment', 'purchaseBlocks.payment', 'renewalSuccessor.customer'])
             ->findOrFail($this->subscription->id);
 
         return [
@@ -45,6 +45,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'linkablePayments' => Payment::where('customer_id', $subscription->customer_id)
                 ->whereNull('voided_at')
                 ->whereDoesntHave('mealSubscriptions')
+                ->whereDoesntHave('membershipPurchaseBlocks', fn ($query) => $query->whereNull('cancelled_at'))
                 ->orderByDesc('received_at')
                 ->limit(20)
                 ->get(),
@@ -132,7 +133,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $cancelledCount = 0;
             $skippedCount = 0;
 
-            if (! empty($data['pause_cancel_generated_orders'])) {
+            if ($this->subscription->fulfillment_mode !== 'customer_selection' && ! empty($data['pause_cancel_generated_orders'])) {
                 $start = Carbon::parse($data['pause_start'])->toDateString();
                 $end = Carbon::parse($data['pause_end'])->toDateString();
 
@@ -195,7 +196,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function resume(MealSubscriptionService $service): void
     {
-        $service->resume($this->subscription);
+        $service->resume($this->subscription, Illuminate\Support\Facades\Auth::id());
         $this->showResumeModal = false;
         session()->flash('status', __('Subscription resumed.'));
     }
@@ -219,7 +220,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             @if ($subscription->source_payment_id)
                 <flux:button :href="route('subscriptions.invoice-audit', $subscription)" wire:navigate variant="subtle">{{ __('Invoice Audit') }}</flux:button>
             @endif
-            <flux:button :href="route('subscriptions.edit', $subscription)" wire:navigate>{{ __('Edit') }}</flux:button>
+            @if ($subscription->fulfillment_mode !== 'customer_selection')
+                <flux:button :href="route('subscriptions.edit', $subscription)" wire:navigate>{{ __('Edit') }}</flux:button>
+            @endif
             <flux:button :href="route('subscriptions.index')" wire:navigate variant="ghost">{{ __('Back') }}</flux:button>
         </div>
     </div>
@@ -280,54 +283,76 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="flex gap-2">
             @if ($subscription->status === 'active')
                 <flux:button type="button" wire:click="$set('showPauseModal', true)">{{ __('Pause') }}</flux:button>
-                <flux:button type="button" wire:click="$set('showCancelModal', true)" variant="ghost">{{ __('Cancel') }}</flux:button>
+                @if ($subscription->fulfillment_mode !== 'customer_selection')
+                    <flux:button type="button" wire:click="$set('showCancelModal', true)" variant="ghost">{{ __('Cancel') }}</flux:button>
+                @endif
             @elseif ($subscription->status === 'paused')
                 <flux:button type="button" wire:click="$set('showResumeModal', true)" variant="primary">{{ __('Resume') }}</flux:button>
-                <flux:button type="button" wire:click="$set('showCancelModal', true)" variant="ghost">{{ __('Cancel') }}</flux:button>
+                @if ($subscription->fulfillment_mode !== 'customer_selection')
+                    <flux:button type="button" wire:click="$set('showCancelModal', true)" variant="ghost">{{ __('Cancel') }}</flux:button>
+                @endif
             @elseif (in_array($subscription->status, ['cancelled', 'expired']))
                 <span class="text-sm text-neutral-600 dark:text-neutral-400">{{ __('No actions available') }}</span>
             @endif
         </div>
     </div>
 
-    {{-- Source Payment --}}
+    {{-- Source payment or paid membership purchase blocks --}}
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-3">
-        <h3 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Source Payment') }}</h3>
-
-        @if ($sourcePayment)
-            <div class="flex items-center justify-between text-sm">
-                <span class="text-neutral-800 dark:text-neutral-100">
-                    {{ $this->formatMoney($sourcePayment->amount_cents) }}
-                    · {{ $sourcePayment->received_at?->format('Y-m-d') ?? '—' }}
-                    · {{ strtoupper($sourcePayment->method ?? '—') }}
-                </span>
-                <div class="flex items-center gap-2">
-                    <flux:button :href="route('receivables.payments.show', $sourcePayment)" wire:navigate size="sm" variant="ghost">{{ __('View Payment') }}</flux:button>
-                    <flux:button wire:click="unlinkPayment" size="sm" variant="ghost">{{ __('Unlink') }}</flux:button>
-                </div>
+        @if ($subscription->fulfillment_mode === 'customer_selection')
+            <h3 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Membership Purchases') }}</h3>
+            <div class="space-y-2">
+                @foreach ($subscription->purchaseBlocks as $block)
+                    <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
+                        <span class="text-neutral-800 dark:text-neutral-100">
+                            {{ __('Block :position', ['position' => $block->queue_position]) }}
+                            · {{ $block->meal_count }} {{ __('meals') }}
+                            · {{ $this->formatMoney($block->final_price_cents) }}
+                        </span>
+                        @if ($block->payment)
+                            <flux:button :href="route('receivables.payments.show', $block->payment)" wire:navigate size="sm" variant="ghost">{{ __('View Payment') }}</flux:button>
+                        @endif
+                    </div>
+                @endforeach
             </div>
         @else
-            <p class="text-sm text-neutral-500 dark:text-neutral-400">{{ __('No payment linked.') }}</p>
+            <h3 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Source Payment') }}</h3>
 
-            @error('link_payment') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
-
-            @if($linkablePayments->isNotEmpty())
-                <div class="flex items-center gap-2">
-                    <select wire:model="link_payment_id" class="flex-1 rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                        <option value="">{{ __('Select payment to link…') }}</option>
-                        @foreach($linkablePayments as $pmt)
-                            <option value="{{ $pmt->id }}">
-                                #{{ $pmt->id }} · {{ $this->formatMoney($pmt->amount_cents) }} · {{ $pmt->received_at?->format('Y-m-d') }}
-                            </option>
-                        @endforeach
-                    </select>
-                    <flux:button wire:click="linkPayment" size="sm">{{ __('Link') }}</flux:button>
+            @if ($sourcePayment)
+                <div class="flex items-center justify-between text-sm">
+                    <span class="text-neutral-800 dark:text-neutral-100">
+                        {{ $this->formatMoney($sourcePayment->amount_cents) }}
+                        · {{ $sourcePayment->received_at?->format('Y-m-d') ?? '—' }}
+                        · {{ strtoupper($sourcePayment->method ?? '—') }}
+                    </span>
+                    <div class="flex items-center gap-2">
+                        <flux:button :href="route('receivables.payments.show', $sourcePayment)" wire:navigate size="sm" variant="ghost">{{ __('View Payment') }}</flux:button>
+                        <flux:button wire:click="unlinkPayment" size="sm" variant="ghost">{{ __('Unlink') }}</flux:button>
+                    </div>
                 </div>
-            @endif
-        @endif
+            @else
+                <p class="text-sm text-neutral-500 dark:text-neutral-400">{{ __('No payment linked.') }}</p>
 
-        @if(auth()->user()?->hasRole('admin'))
-            <flux:button wire:click="resyncMeals" size="sm" variant="ghost">{{ __('Resync Meals from Invoices') }}</flux:button>
+                @error('link_payment') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
+
+                @if($linkablePayments->isNotEmpty())
+                    <div class="flex items-center gap-2">
+                        <select wire:model="link_payment_id" class="flex-1 rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                            <option value="">{{ __('Select payment to link…') }}</option>
+                            @foreach($linkablePayments as $pmt)
+                                <option value="{{ $pmt->id }}">
+                                    #{{ $pmt->id }} · {{ $this->formatMoney($pmt->amount_cents) }} · {{ $pmt->received_at?->format('Y-m-d') }}
+                                </option>
+                            @endforeach
+                        </select>
+                        <flux:button wire:click="linkPayment" size="sm">{{ __('Link') }}</flux:button>
+                    </div>
+                @endif
+            @endif
+
+            @if(auth()->user()?->hasRole('admin'))
+                <flux:button wire:click="resyncMeals" size="sm" variant="ghost">{{ __('Resync Meals from Invoices') }}</flux:button>
+            @endif
         @endif
     </div>
 
@@ -387,7 +412,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         <form wire:submit="pause" class="space-y-4">
             <div class="space-y-1">
                 <flux:heading size="lg">{{ __('Pause Subscription') }}</flux:heading>
-                <flux:subheading>{{ __('Set a pause range. Orders will not be generated during this period.') }}</flux:subheading>
+                <flux:subheading>
+                    {{ $subscription->fulfillment_mode === 'customer_selection'
+                        ? __('Set a pause range. Existing future bookings in that range will be corrected automatically.')
+                        : __('Set a pause range. Orders will not be generated during this period.') }}
+                </flux:subheading>
             </div>
 
             <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -396,15 +425,21 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <flux:input wire:model="pause_reason" :label="__('Reason')" />
             </div>
 
-            <div class="rounded-md border border-neutral-200 p-3 text-sm text-neutral-700 dark:border-neutral-700 dark:text-neutral-200">
-                <flux:checkbox
-                    wire:model="pause_cancel_generated_orders"
-                    :label="__('Cancel already-generated orders within this pause range')"
-                />
-                <div class="mt-1 text-xs text-neutral-600 dark:text-neutral-300">
-                    {{ __('This will cancel linked subscription orders in the selected date range (if any). Delivered/cancelled orders will be skipped.') }}
+            @if ($subscription->fulfillment_mode === 'customer_selection')
+                <div class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+                    {{ __('Paid membership bookings in this period will be cancelled, their invoices voided, and their meals restored automatically.') }}
                 </div>
-            </div>
+            @else
+                <div class="rounded-md border border-neutral-200 p-3 text-sm text-neutral-700 dark:border-neutral-700 dark:text-neutral-200">
+                    <flux:checkbox
+                        wire:model="pause_cancel_generated_orders"
+                        :label="__('Cancel already-generated orders within this pause range')"
+                    />
+                    <div class="mt-1 text-xs text-neutral-600 dark:text-neutral-300">
+                        {{ __('This will cancel linked subscription orders in the selected date range (if any). Delivered/cancelled orders will be skipped.') }}
+                    </div>
+                </div>
+            @endif
 
             <div class="flex justify-end gap-2">
                 <flux:modal.close>
@@ -425,7 +460,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="space-y-4">
             <div class="space-y-1">
                 <flux:heading size="lg">{{ __('Resume Subscription') }}</flux:heading>
-                <flux:subheading>{{ __('Are you sure you want to resume this subscription? Orders will be generated again according to the schedule.') }}</flux:subheading>
+                <flux:subheading>
+                    {{ $subscription->fulfillment_mode === 'customer_selection'
+                        ? __('Resume this membership so the customer can book dates in the paused period again. Cancelled bookings will not be recreated.')
+                        : __('Are you sure you want to resume this subscription? Orders will be generated again according to the schedule.') }}
+                </flux:subheading>
             </div>
 
             <div class="flex justify-end gap-2">

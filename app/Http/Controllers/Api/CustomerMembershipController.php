@@ -7,6 +7,7 @@ use App\Models\Branch;
 use App\Services\Accounting\AccountingContextService;
 use App\Services\Payments\PaymentCheckoutException;
 use App\Services\Subscriptions\MembershipBookingQuoteService;
+use App\Services\Subscriptions\MembershipBookingReadService;
 use App\Services\Subscriptions\MembershipBookingService;
 use App\Services\Subscriptions\MembershipQueueService;
 use Illuminate\Http\Request;
@@ -19,6 +20,7 @@ class CustomerMembershipController extends Controller
         private readonly MembershipQueueService $queues,
         private readonly MembershipBookingQuoteService $quotes,
         private readonly MembershipBookingService $bookings,
+        private readonly MembershipBookingReadService $bookingReads,
     ) {}
 
     public function show(Request $request)
@@ -44,16 +46,46 @@ class CustomerMembershipController extends Controller
     public function quote(Request $request)
     {
         try {
-            $this->assertExactKeys($request->all(), ['selected_branch_id', 'queue_reference', 'selections']);
+            $this->assertExactKeys($request->all(), [
+                'selected_branch_id',
+                'queue_reference',
+                'selections',
+                'booking_reference',
+                'booking_revision',
+            ]);
             $payload = $request->validate([
                 'selected_branch_id' => ['required', 'integer', 'min:1'],
                 'queue_reference' => ['required', 'string', 'max:80'],
                 'selections' => ['required', 'array', 'min:1'],
+                'booking_reference' => ['nullable', 'uuid', 'required_with:booking_revision'],
+                'booking_revision' => ['nullable', 'integer', 'min:1', 'required_with:booking_reference'],
             ]);
             $quote = $this->quotes->quote($request->user(), $payload);
             unset($quote['_context'], $quote['_priced_days']);
 
             return response()->json($quote);
+        } catch (PaymentCheckoutException $exception) {
+            return $this->error($exception);
+        }
+    }
+
+    public function index(Request $request)
+    {
+        try {
+            $payload = $request->validate([
+                'selected_branch_id' => ['required', 'integer', 'min:1'],
+                'queue_reference' => ['required', 'string', 'max:80'],
+                'filter' => ['nullable', 'in:future,history,all'],
+                'per_page' => ['nullable', 'integer', 'min:1', 'max:50'],
+            ]);
+
+            return response()->json($this->bookingReads->index(
+                $request->user(),
+                (int) $payload['selected_branch_id'],
+                (string) $payload['queue_reference'],
+                (string) ($payload['filter'] ?? 'future'),
+                (int) ($payload['per_page'] ?? 20),
+            ));
         } catch (PaymentCheckoutException $exception) {
             return $this->error($exception);
         }
@@ -81,6 +113,62 @@ class CustomerMembershipController extends Controller
                 'accepted_terms_version' => ['required', 'string', 'max:80'],
             ]);
             $result = $this->bookings->create($request->user(), $payload);
+
+            return response()->json($result['result'] + ['replayed' => $result['replayed']], $result['status']);
+        } catch (PaymentCheckoutException $exception) {
+            return $this->error($exception);
+        }
+    }
+
+    public function update(string $reference, Request $request)
+    {
+        try {
+            $this->assertExactKeys($request->all(), [
+                'client_uuid',
+                'expected_booking_revision',
+                'selected_branch_id',
+                'queue_reference',
+                'queue_revision',
+                'selections',
+                'quote_fingerprint',
+                'accepted_terms_version',
+            ]);
+            $payload = $request->validate([
+                'client_uuid' => ['required', 'uuid'],
+                'expected_booking_revision' => ['required', 'integer', 'min:1'],
+                'selected_branch_id' => ['required', 'integer', 'min:1'],
+                'queue_reference' => ['required', 'string', 'max:80'],
+                'queue_revision' => ['required', 'integer', 'min:0'],
+                'selections' => ['required', 'array', 'min:1'],
+                'quote_fingerprint' => ['required', 'string', 'size:64'],
+                'accepted_terms_version' => ['required', 'string', 'max:80'],
+            ]);
+            $result = $this->bookings->replace($request->user(), $reference, $payload);
+
+            return response()->json($result['result'] + ['replayed' => $result['replayed']], $result['status']);
+        } catch (PaymentCheckoutException $exception) {
+            return $this->error($exception);
+        }
+    }
+
+    public function destroy(string $reference, Request $request)
+    {
+        try {
+            $this->assertExactKeys($request->all(), [
+                'client_uuid',
+                'expected_booking_revision',
+                'selected_branch_id',
+                'queue_reference',
+                'queue_revision',
+            ]);
+            $payload = $request->validate([
+                'client_uuid' => ['required', 'uuid'],
+                'expected_booking_revision' => ['required', 'integer', 'min:1'],
+                'selected_branch_id' => ['required', 'integer', 'min:1'],
+                'queue_reference' => ['required', 'string', 'max:80'],
+                'queue_revision' => ['required', 'integer', 'min:0'],
+            ]);
+            $result = $this->bookings->cancel($request->user(), $reference, $payload);
 
             return response()->json($result['result'] + ['replayed' => $result['replayed']], $result['status']);
         } catch (PaymentCheckoutException $exception) {

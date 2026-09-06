@@ -2,7 +2,7 @@
 
 **Date**: 2026-08-31
 **Status**: In Progress
-**Scope**: Feature 10. Queue projection, covered quote and confirmation, exact sequential funding, paid invoice allocation, direct invoice void restoration, and standing-generation guards were implemented behind disabled launch flags on 2026-09-05. Customer change/cancel, pause correction, confirmations, website surfaces, legacy opening, and full release verification remain pending.
+**Scope**: Feature 10. Queue projection, covered quote and confirmation, exact sequential funding, paid invoice allocation, direct invoice void restoration, standing-generation guards, customer change/cancel, pause correction, booking history, and customer confirmations were implemented behind disabled launch flags by 2026-09-06. Website surfaces, legacy opening, and full release verification remain pending.
 
 ## Summary
 

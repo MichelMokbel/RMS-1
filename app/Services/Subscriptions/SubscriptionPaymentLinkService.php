@@ -2,10 +2,10 @@
 
 namespace App\Services\Subscriptions;
 
+use App\Models\ArInvoice;
 use App\Models\MealSubscription;
 use App\Models\MenuItem;
 use App\Models\Payment;
-use App\Models\ArInvoice;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -123,6 +123,7 @@ class SubscriptionPaymentLinkService
      */
     public function linkPaymentToSubscription(Payment $payment, MealSubscription $subscription, int $actorId): void
     {
+        $this->assertStandingSubscription($subscription);
         if ($payment->customer_id !== $subscription->customer_id) {
             throw ValidationException::withMessages([
                 'subscription' => __('Payment and subscription must belong to the same customer.'),
@@ -132,6 +133,11 @@ class SubscriptionPaymentLinkService
         if ($payment->voided_at !== null) {
             throw ValidationException::withMessages([
                 'payment' => __('Cannot link a voided payment to a subscription.'),
+            ]);
+        }
+        if ($payment->membershipPurchaseBlocks()->whereNull('cancelled_at')->exists()) {
+            throw ValidationException::withMessages([
+                'payment' => __('This payment is committed to a paid membership allowance.'),
             ]);
         }
 
@@ -148,7 +154,7 @@ class SubscriptionPaymentLinkService
 
         $wasTrackingEnabled = (bool) $subscription->uses_invoice_tracking;
 
-        $subscription->source_payment_id    = $payment->id;
+        $subscription->source_payment_id = $payment->id;
         $subscription->uses_invoice_tracking = true;
         $subscription->save();
 
@@ -166,6 +172,7 @@ class SubscriptionPaymentLinkService
      */
     public function unlinkPaymentFromSubscription(MealSubscription $subscription): void
     {
+        $this->assertStandingSubscription($subscription);
         if ($subscription->source_payment_id === null && ! $subscription->uses_invoice_tracking) {
             return;
         }
@@ -211,9 +218,9 @@ class SubscriptionPaymentLinkService
                     isset($idToMeals[$item->sellable_id])
                 ) {
                     $mealsTotal = (int) $idToMeals[$item->sellable_id];
-                    $key = $item->sellable_id . '_' . $mealsTotal;
+                    $key = $item->sellable_id.'_'.$mealsTotal;
                     $detected[$key] = [
-                        'menu_item_id'    => (int) $item->sellable_id,
+                        'menu_item_id' => (int) $item->sellable_id,
                         'plan_meals_total' => $mealsTotal,
                     ];
                 }
@@ -243,7 +250,7 @@ class SubscriptionPaymentLinkService
         $sub = $subscriptionService->save($payload, null, $actorId);
 
         // MealSubscriptionService::save() does not handle these fields — set directly
-        $sub->source_payment_id    = $payment->id;
+        $sub->source_payment_id = $payment->id;
         $sub->uses_invoice_tracking = true;
         $sub->save();
 
@@ -263,6 +270,7 @@ class SubscriptionPaymentLinkService
      */
     public function resyncMealsUsed(MealSubscription $subscription): int
     {
+        $this->assertStandingSubscription($subscription);
         if ($subscription->source_payment_id) {
             // Payment-anchored: only invoices allocated to the linked payment are authoritative.
             // For each invoice we compare the allocation amount against the subscription items'
@@ -299,9 +307,9 @@ class SubscriptionPaymentLinkService
                     continue;
                 }
 
-                $subItemsQty   = (float) $subItems->sum('qty');
+                $subItemsQty = (float) $subItems->sum('qty');
                 $subItemsTotal = (int) $subItems->sum('line_total_cents');
-                $allocated     = (int) $invoice->paymentAllocations->sum('amount_cents');
+                $allocated = (int) $invoice->paymentAllocations->sum('amount_cents');
 
                 if ($subItemsQty <= 0) {
                     continue;
@@ -329,7 +337,7 @@ class SubscriptionPaymentLinkService
                 ->whereHas('invoice', fn ($q) => $q->whereNull('voided_at'));
 
             $metaInvoiceIds = $metaItems->pluck('invoice_id')->unique();
-            $primaryCount   = (int) (clone $metaItems)->sum('qty');
+            $primaryCount = (int) (clone $metaItems)->sum('qty');
 
             // Fallback: items linked via order chain (pre-Step-5 invoices without subscription_id in meta)
             $orderIds = $subscription->subscriptionOrders()->pluck('order_id');
@@ -340,12 +348,12 @@ class SubscriptionPaymentLinkService
                     ->whereJsonContains('meta->is_subscription', true)
                     ->whereHas('invoice', function ($q) use ($orderIds) {
                         $q->whereNull('voided_at')
-                          ->whereIn('source_order_id', $orderIds);
+                            ->whereIn('source_order_id', $orderIds);
                     })
                     ->whereRaw("(JSON_EXTRACT(meta, '$.subscription_id') IS NULL OR JSON_EXTRACT(meta, '$.subscription_id') != ?)", [$subscription->id]);
 
                 $orderChainInvoiceIds = $fallbackItems->pluck('invoice_id')->unique();
-                $fallbackCount        = (int) (clone $fallbackItems)->sum('qty');
+                $fallbackCount = (int) (clone $fallbackItems)->sum('qty');
             }
 
             // Path C: manually created plan-purchase invoices that have no subscription metadata.
@@ -364,9 +372,9 @@ class SubscriptionPaymentLinkService
                         ->where('sellable_id', $matchingMenuItemId)
                         ->whereHas('invoice', function ($q) use ($subscription, $alreadyCounted) {
                             $q->whereNull('voided_at')
-                              ->where('type', '!=', 'credit_note')
-                              ->where('customer_id', $subscription->customer_id)
-                              ->when($alreadyCounted->isNotEmpty(), fn ($q2) => $q2->whereNotIn('id', $alreadyCounted->all()));
+                                ->where('type', '!=', 'credit_note')
+                                ->where('customer_id', $subscription->customer_id)
+                                ->when($alreadyCounted->isNotEmpty(), fn ($q2) => $q2->whereNotIn('id', $alreadyCounted->all()));
                         })
                         ->sum('qty');
                 }
@@ -380,10 +388,10 @@ class SubscriptionPaymentLinkService
             $sub->meals_used = $total;
             if ($sub->plan_meals_total !== null) {
                 if ($total >= $sub->plan_meals_total && $sub->status === 'active') {
-                    $sub->status   = 'expired';
+                    $sub->status = 'expired';
                     $sub->end_date = $sub->end_date ?? now()->toDateString();
                 } elseif ($total < $sub->plan_meals_total && $sub->status === 'expired') {
-                    $sub->status   = 'active';
+                    $sub->status = 'active';
                     $sub->end_date = null;
                 }
             }
@@ -391,6 +399,16 @@ class SubscriptionPaymentLinkService
         });
 
         $subscription->refresh();
+
         return $total;
+    }
+
+    private function assertStandingSubscription(MealSubscription $subscription): void
+    {
+        if ($subscription->fulfillment_mode === 'customer_selection') {
+            throw ValidationException::withMessages([
+                'subscription' => __('Paid membership balances are managed by their purchase, booking, invoice void, and pause records.'),
+            ]);
+        }
     }
 }

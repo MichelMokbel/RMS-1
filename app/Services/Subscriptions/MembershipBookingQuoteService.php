@@ -2,11 +2,13 @@
 
 namespace App\Services\Subscriptions;
 
+use App\Models\MealSubscriptionOrder;
 use App\Models\User;
 use App\Services\Customers\CustomerIdentityResolver;
 use App\Services\Payments\CheckoutCanonicalizer;
 use App\Services\Payments\OrdinaryOrderQuoteService;
 use App\Services\Payments\PaymentCheckoutException;
+use Carbon\CarbonImmutable;
 use Illuminate\Validation\ValidationException;
 
 class MembershipBookingQuoteService
@@ -79,8 +81,30 @@ class MembershipBookingQuoteService
                 ['support_phone' => $context['settings']->order_support_phone, 'can_buy_membership' => true],
             );
         }
+        $replacement = $this->replacementContext(
+            $user,
+            $request,
+            (int) $context['company_id'],
+            (int) $context['branch']->id,
+        );
+        $availableForRequest = (int) $queue['available_meals'] + (int) ($replacement['main_quantity'] ?? 0);
 
         $acceptedDays = $ordinary['_priced_days'];
+        $pausedDates = collect($acceptedDays)
+            ->pluck('date')
+            ->filter(fn (string $date): bool => collect($queue['pause_periods'])->contains(
+                fn (array $period): bool => $date >= $period['start'] && $date <= $period['end'],
+            ))
+            ->values()
+            ->all();
+        if ($pausedDates !== []) {
+            throw new PaymentCheckoutException(
+                'MEMBERSHIP_PAUSED_FOR_DATE',
+                422,
+                __('Your membership is paused for one or more selected dates.'),
+                ['paused_dates' => $pausedDates],
+            );
+        }
         $mainQuantity = collect($acceptedDays)->sum(fn (array $day): int => collect($day['submission']['mains'])
             ->sum(fn (array $main): int => (int) $main['qty']));
         if ($mainQuantity <= 0) {
@@ -96,19 +120,44 @@ class MembershipBookingQuoteService
                 'terms_url' => $ordinary['terms_url'],
                 'support_phone' => $ordinary['support_phone'],
                 'queue' => $queue,
+                'replacement' => $replacement ? $this->publicReplacement($replacement) : null,
                 'can_book' => false,
             ];
         }
-        if ($mainQuantity > (int) $queue['available_meals']) {
+        if ($replacement && count($acceptedDays) !== 1) {
+            throw new PaymentCheckoutException(
+                'MEMBERSHIP_REPLACEMENT_REQUIRES_ONE_DATE',
+                422,
+                __('A membership booking can be changed to one future date at a time.'),
+            );
+        }
+        if ($mainQuantity > $availableForRequest) {
             throw new PaymentCheckoutException(
                 'INSUFFICIENT_MEMBERSHIP_BALANCE',
                 422,
                 __('Your membership has :available meals available, but :selected were selected.', [
-                    'available' => (int) $queue['available_meals'],
+                    'available' => $availableForRequest,
                     'selected' => $mainQuantity,
                 ]),
-                ['queue' => $queue, 'can_buy_membership' => true],
+                [
+                    'queue' => $queue,
+                    'available_after_releasing_current_booking' => $availableForRequest,
+                    'can_buy_membership' => true,
+                ],
             );
+        }
+
+        if ($replacement) {
+            $newDate = (string) $acceptedDays[0]['date'];
+            $newDeadline = $newDate === $replacement['service_date']
+                ? $replacement['change_deadline']
+                : CarbonImmutable::createFromFormat(
+                    '!Y-m-d H:i:s',
+                    $newDate.' '.$replacement['booking_cutoff_time'],
+                    $replacement['booking_timezone'],
+                )->subDay();
+            $this->assertBeforeDeadline($newDeadline);
+            $replacement['new_change_deadline'] = $newDeadline;
         }
 
         $canonicalDays = array_map(fn (array $day): array => $day['canonical_tuple'], $acceptedDays);
@@ -119,6 +168,9 @@ class MembershipBookingQuoteService
             (string) $context['branch']->id,
             (string) $queueReference,
             (string) $queue['queue_revision'],
+            (string) ($replacement['booking_reference'] ?? ''),
+            (string) ($replacement['booking_revision'] ?? ''),
+            $replacement ? $replacement['new_change_deadline']->toIso8601String() : '',
             $canonicalDays,
             (string) $ordinary['terms_version'],
             (string) $ordinary['terms_content_hash'],
@@ -140,9 +192,105 @@ class MembershipBookingQuoteService
             'support_phone' => $ordinary['support_phone'],
             'current_qatar_date' => now('Asia/Qatar')->toDateString(),
             'queue' => $queue,
+            'available_after_releasing_current_booking' => $availableForRequest,
+            'replacement' => $replacement ? $this->publicReplacement($replacement) : null,
             'can_book' => true,
             '_context' => $context,
             '_priced_days' => $acceptedDays,
+            '_replacement' => $replacement,
+        ];
+    }
+
+    /** @return array<string, mixed>|null */
+    private function replacementContext(User $user, array $request, int $companyId, int $branchId): ?array
+    {
+        $reference = trim((string) ($request['booking_reference'] ?? ''));
+        $requestedRevision = (int) ($request['booking_revision'] ?? 0);
+        if ($reference === '' && $requestedRevision === 0) {
+            return null;
+        }
+        if ($reference === '' || $requestedRevision <= 0) {
+            throw ValidationException::withMessages([
+                'booking_reference' => __('Both booking reference and revision are required to change a booking.'),
+            ]);
+        }
+
+        $roots = $this->queues->compatibleRootsForRead(
+            (int) $user->customer_id,
+            $companyId,
+            $branchId,
+        );
+        $mapping = MealSubscriptionOrder::query()
+            ->with(['order', 'funding'])
+            ->whereIn('subscription_id', $roots->pluck('id'))
+            ->where('booking_uuid', $reference)
+            ->orderByDesc('booking_revision')
+            ->first();
+        if (! $mapping) {
+            throw new PaymentCheckoutException('MEMBERSHIP_BOOKING_NOT_FOUND', 404, __('Membership booking was not found.'));
+        }
+        if ((int) $mapping->booking_revision !== $requestedRevision) {
+            throw new PaymentCheckoutException(
+                'MEMBERSHIP_BOOKING_CHANGED',
+                409,
+                __('This membership booking changed. Reload it before continuing.'),
+                ['current_booking_revision' => (int) $mapping->booking_revision],
+            );
+        }
+
+        $activeFunding = $mapping->funding->whereIn('state', ['reserved', 'invoiced']);
+        if ($mapping->order?->status === 'Cancelled' || $activeFunding->isEmpty()) {
+            throw new PaymentCheckoutException('MEMBERSHIP_BOOKING_NOT_ACTIVE', 409, __('This membership booking is no longer active.'));
+        }
+        $deadlines = $activeFunding
+            ->map(fn ($row): string => $row->change_deadline_at->format('Y-m-d H:i:s'))
+            ->unique();
+        $cutoffs = $activeFunding->pluck('booking_cutoff_time')->map(fn ($value): string => (string) $value)->unique();
+        $timezones = $activeFunding->pluck('booking_timezone')->map(fn ($value): string => (string) $value)->unique();
+        if ($deadlines->count() !== 1 || $cutoffs->count() !== 1 || $timezones->count() !== 1) {
+            throw new \RuntimeException('Membership booking cutoff evidence is inconsistent.');
+        }
+        $timezone = (string) $timezones->first();
+        $deadline = CarbonImmutable::createFromFormat('!Y-m-d H:i:s', (string) $deadlines->first(), $timezone);
+        $this->assertBeforeDeadline($deadline);
+
+        return [
+            'mapping' => $mapping,
+            'booking_reference' => (string) $mapping->booking_uuid,
+            'booking_revision' => (int) $mapping->booking_revision,
+            'service_date' => $mapping->service_date->toDateString(),
+            'main_quantity' => (int) $activeFunding->sum('main_quantity'),
+            'booking_cutoff_time' => (string) $cutoffs->first(),
+            'booking_timezone' => $timezone,
+            'change_deadline' => $deadline,
+        ];
+    }
+
+    private function assertBeforeDeadline(CarbonImmutable $deadline): void
+    {
+        if (CarbonImmutable::now($deadline->getTimezone())->greaterThanOrEqualTo($deadline)) {
+            throw new PaymentCheckoutException(
+                'MEMBERSHIP_BOOKING_CHANGE_CLOSED',
+                422,
+                __('This booking can no longer be changed online. Please contact us for help.'),
+            );
+        }
+    }
+
+    /** @param array<string, mixed> $replacement
+     * @return array<string, mixed>
+     */
+    private function publicReplacement(array $replacement): array
+    {
+        return [
+            'booking_reference' => $replacement['booking_reference'],
+            'booking_revision' => $replacement['booking_revision'],
+            'service_date' => $replacement['service_date'],
+            'current_main_quantity' => $replacement['main_quantity'],
+            'change_deadline_at' => $replacement['change_deadline']->toIso8601String(),
+            'new_change_deadline_at' => isset($replacement['new_change_deadline'])
+                ? $replacement['new_change_deadline']->toIso8601String()
+                : null,
         ];
     }
 }

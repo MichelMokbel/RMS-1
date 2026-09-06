@@ -11,6 +11,7 @@ class MealSubscriptionPause extends Model
     use HasFactory;
 
     protected $table = 'meal_subscription_pauses';
+
     const UPDATED_AT = null;
 
     protected $fillable = [
@@ -18,12 +19,16 @@ class MealSubscriptionPause extends Model
         'pause_start',
         'pause_end',
         'reason',
+        'resumed_at',
+        'resumed_by',
         'created_by',
     ];
 
     protected $casts = [
         'pause_start' => 'date',
         'pause_end' => 'date',
+        'resumed_at' => 'datetime',
+        'resumed_by' => 'integer',
         'created_at' => 'datetime',
     ];
 

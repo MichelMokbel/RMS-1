@@ -57,15 +57,17 @@ class MealSubscriptionController extends Controller
         return response()->json($sub);
     }
 
-    public function resume(MealSubscription $subscription, MealSubscriptionService $service)
+    public function resume(MealSubscription $subscription, Request $request, MealSubscriptionService $service)
     {
-        $sub = $service->resume($subscription);
+        $sub = $service->resume($subscription, (int) $request->user()->id);
+
         return response()->json($sub);
     }
 
     public function cancel(MealSubscription $subscription, MealSubscriptionService $service)
     {
         $sub = $service->cancel($subscription);
+
         return response()->json($sub);
     }
 

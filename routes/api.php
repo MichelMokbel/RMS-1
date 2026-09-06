@@ -85,6 +85,8 @@ Route::prefix('customer')->group(function () {
         Route::get('payments/{payment}', [CustomerPortalDashboardController::class, 'showPayment']);
         Route::get('memberships', [CustomerMembershipController::class, 'show'])
             ->middleware('throttle:120,1');
+        Route::get('membership-bookings', [CustomerMembershipController::class, 'index'])
+            ->middleware('throttle:120,1');
 
         Route::middleware('customer.phone.verified')->group(function () {
             Route::post('profile/phone/start-change', [CustomerPortalProfileController::class, 'startPhoneChange']);
@@ -97,6 +99,12 @@ Route::prefix('customer')->group(function () {
             Route::post('membership-bookings/quote', [CustomerMembershipController::class, 'quote'])
                 ->middleware('throttle:60,1');
             Route::post('membership-bookings', [CustomerMembershipController::class, 'store'])
+                ->middleware('throttle:30,1');
+            Route::put('membership-bookings/{reference}', [CustomerMembershipController::class, 'update'])
+                ->whereUuid('reference')
+                ->middleware('throttle:30,1');
+            Route::delete('membership-bookings/{reference}', [CustomerMembershipController::class, 'destroy'])
+                ->whereUuid('reference')
                 ->middleware('throttle:30,1');
         });
 

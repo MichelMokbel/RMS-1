@@ -70,6 +70,40 @@ class MembershipBookingFundingService
         return true;
     }
 
+    /** @return Collection<int, MealSubscription> */
+    public function lockQueueForSubscriptionMutation(MealSubscription $subscription): Collection
+    {
+        if ($subscription->fulfillment_mode !== 'customer_selection'
+            || ! $subscription->queue_company_id
+            || ! $subscription->branch_id) {
+            return collect();
+        }
+
+        $customer = $this->customerOwnership->lockCanonicalCustomer((int) $subscription->customer_id);
+        $roots = $this->queues->lockCompatibleRoots(
+            $customer->id,
+            (int) $subscription->queue_company_id,
+            (int) $subscription->branch_id,
+            (string) ($subscription->queue_currency ?: 'QAR'),
+        );
+        if (! $roots->contains('id', (int) $subscription->id)) {
+            throw new \RuntimeException('Membership subscription is outside its owned queue.');
+        }
+        $blocks = MembershipPurchaseBlock::query()
+            ->whereIn('subscription_id', $roots->pluck('id'))
+            ->orderBy('funded_at')
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+        MembershipBookingFunding::query()
+            ->whereIn('purchase_block_id', $blocks->pluck('id'))
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+
+        return $roots;
+    }
+
     /** @return Collection<int, MembershipPurchaseBlock> */
     private function lockQueueForBlock(MembershipPurchaseBlock $block): Collection
     {

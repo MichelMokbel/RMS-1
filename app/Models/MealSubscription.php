@@ -174,6 +174,9 @@ class MealSubscription extends Model
         }
         // Pause ranges
         foreach ($this->pauses as $pause) {
+            if ($pause->resumed_at) {
+                continue;
+            }
             if ($date->greaterThanOrEqualTo($pause->pause_start) && $date->lessThanOrEqualTo($pause->pause_end)) {
                 return false;
             }

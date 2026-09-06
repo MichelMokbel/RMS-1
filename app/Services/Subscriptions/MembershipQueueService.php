@@ -5,6 +5,7 @@ namespace App\Services\Subscriptions;
 use App\Models\MealPlanRequest;
 use App\Models\MealSubscription;
 use App\Models\MealSubscriptionDay;
+use App\Models\MealSubscriptionPause;
 use App\Models\MembershipBookingFunding;
 use App\Models\MembershipPlan;
 use App\Models\MembershipPurchaseBlock;
@@ -39,6 +40,7 @@ class MembershipQueueService
         $total = (int) $activeBlocks->sum('meal_count');
         $used = (int) $roots->sum('meals_used');
         $activeFunding = MembershipBookingFunding::query()
+            ->with('subscriptionOrder:id,service_date')
             ->whereIn('purchase_block_id', $activeBlocks->pluck('id'))
             ->whereIn('state', ['reserved', 'invoiced'])
             ->get();
@@ -49,6 +51,22 @@ class MembershipQueueService
         }
 
         $firstRoot = $roots->sortBy([['created_at', 'asc'], ['id', 'asc']])->first();
+        $today = CarbonImmutable::now('Asia/Qatar')->toDateString();
+        $upcoming = (int) $activeFunding
+            ->filter(fn (MembershipBookingFunding $row): bool => $row->subscriptionOrder?->service_date?->toDateString() > $today)
+            ->sum('main_quantity');
+        $pausePeriods = MealSubscriptionPause::query()
+            ->whereIn('subscription_id', $roots->pluck('id'))
+            ->whereNull('resumed_at')
+            ->orderBy('pause_start')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (MealSubscriptionPause $pause): array => [
+                'start' => $pause->pause_start?->toDateString(),
+                'end' => $pause->pause_end?->toDateString(),
+                'reason' => $pause->reason,
+            ])
+            ->all();
 
         return [
             'queue_subscription_id' => $firstRoot?->id,
@@ -59,6 +77,8 @@ class MembershipQueueService
             'selected_meals' => $used + $reserved,
             'reserved_meals' => $reserved,
             'available_meals' => $available,
+            'upcoming_meals' => $upcoming,
+            'pause_periods' => $pausePeriods,
             'blocks' => $blocks->map(fn (MembershipPurchaseBlock $block): array => [
                 'id' => (int) $block->id,
                 'plan_code' => $block->plan?->code,
@@ -75,6 +95,12 @@ class MembershipQueueService
     public function lockCompatibleRoots(int $customerId, int $companyId, int $branchId, string $currency = 'QAR'): Collection
     {
         return $this->compatibleRoots($customerId, $companyId, $branchId, $currency, true);
+    }
+
+    /** @return Collection<int, MealSubscription> */
+    public function compatibleRootsForRead(int $customerId, int $companyId, int $branchId, string $currency = 'QAR'): Collection
+    {
+        return $this->compatibleRoots($customerId, $companyId, $branchId, $currency);
     }
 
     private function blockRemaining(MembershipPurchaseBlock $block, Collection $activeFunding): int

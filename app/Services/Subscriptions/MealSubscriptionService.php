@@ -2,9 +2,14 @@
 
 namespace App\Services\Subscriptions;
 
+use App\Jobs\SendMembershipBookingConfirmation;
+use App\Models\ArInvoice;
 use App\Models\MealSubscription;
 use App\Models\MealSubscriptionDay;
+use App\Models\MealSubscriptionOrder;
 use App\Models\MealSubscriptionPause;
+use App\Services\AR\ArInvoiceService;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -12,12 +17,19 @@ use Throwable;
 
 class MealSubscriptionService
 {
-    public function __construct(protected MealSubscriptionCodeService $codeService)
-    {
-    }
+    public function __construct(
+        protected MealSubscriptionCodeService $codeService,
+        protected MembershipBookingFundingService $membershipFunding,
+        protected ArInvoiceService $invoices,
+    ) {}
 
     public function save(array $payload, ?MealSubscription $subscription, int $userId): MealSubscription
     {
+        if ($subscription?->fulfillment_mode === 'customer_selection') {
+            throw ValidationException::withMessages([
+                'subscription' => __('Paid membership subscriptions cannot be edited through the standing subscription form.'),
+            ]);
+        }
         Log::debug('meal_subscription.save.start', [
             'subscription_id' => $subscription?->id,
             'user_id' => $userId,
@@ -29,7 +41,7 @@ class MealSubscriptionService
                 $this->validateDates($payload);
                 $this->validateWeekdays($payload);
 
-                $sub = $subscription ?? new MealSubscription();
+                $sub = $subscription ?? new MealSubscription;
                 $isNew = ! $sub->exists;
                 if ($isNew) {
                     $sub->subscription_code = $this->codeService->generate();
@@ -95,33 +107,102 @@ class MealSubscriptionService
     {
         $payload = $this->validatePause($payload);
 
-        if ($subscription->status === 'active') {
-            $subscription->status = 'paused';
-            $subscription->save();
-        }
+        return DB::transaction(function () use ($subscription, $payload, $userId): MealSubscription {
+            $subject = MealSubscription::query()->findOrFail($subscription->id);
+            $roots = $subject->fulfillment_mode === 'customer_selection'
+                ? $this->membershipFunding->lockQueueForSubscriptionMutation($subject)
+                : collect();
+            $locked = MealSubscription::query()->lockForUpdate()->findOrFail($subject->id);
+            if ($locked->fulfillment_mode === 'customer_selection') {
+                $today = CarbonImmutable::now('Asia/Qatar')->toDateString();
+                $mappings = MealSubscriptionOrder::query()
+                    ->with(['funding', 'order'])
+                    ->whereIn('subscription_id', $roots->pluck('id'))
+                    ->whereDate('service_date', '>', $today)
+                    ->whereDate('service_date', '>=', $payload['pause_start'])
+                    ->whereDate('service_date', '<=', $payload['pause_end'])
+                    ->whereHas('funding', fn ($query) => $query->whereIn('state', ['reserved', 'invoiced']))
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get();
 
-        MealSubscriptionPause::create([
-            'subscription_id' => $subscription->id,
-            'pause_start' => $payload['pause_start'],
-            'pause_end' => $payload['pause_end'],
-            'reason' => $payload['reason'] ?? null,
-            'created_by' => $userId,
-        ]);
+                foreach ($mappings as $mapping) {
+                    $invoiceIds = $mapping->funding
+                        ->whereIn('state', ['reserved', 'invoiced'])
+                        ->pluck('invoice_id')
+                        ->filter()
+                        ->unique();
+                    if ($invoiceIds->count() !== 1) {
+                        throw ValidationException::withMessages([
+                            'pause' => __('A membership booking in this period requires financial review before pausing.'),
+                        ]);
+                    }
+                    $invoice = ArInvoice::query()->findOrFail((int) $invoiceIds->first());
+                    $this->invoices->void($invoice, $userId, __('Membership paused for this service date.'));
+                    $snapshot = is_array($mapping->notification_snapshots) ? $mapping->notification_snapshots : [];
+                    $snapshot['cancelled_at'] = now()->toIso8601String();
+                    $snapshot['cancellation_reason'] = 'membership_pause';
+                    $dispatch = is_array($mapping->notification_dispatch) ? $mapping->notification_dispatch : [];
+                    $dispatch['customer_cancellation'] = ['state' => 'pending'];
+                    $mapping->update([
+                        'notification_snapshots' => $snapshot,
+                        'notification_dispatch' => $dispatch,
+                    ]);
+                    DB::afterCommit(fn () => SendMembershipBookingConfirmation::dispatch((int) $mapping->id, 'cancelled'));
+                }
+            }
 
-        return $subscription->fresh(['pauses']);
+            if ($locked->status === 'active') {
+                $locked->status = 'paused';
+                $locked->save();
+            }
+
+            MealSubscriptionPause::query()->create([
+                'subscription_id' => $locked->id,
+                'pause_start' => $payload['pause_start'],
+                'pause_end' => $payload['pause_end'],
+                'reason' => $payload['reason'] ?? null,
+                'created_by' => $userId,
+            ]);
+
+            return $locked->fresh(['pauses']);
+        }, 3);
     }
 
-    public function resume(MealSubscription $subscription): MealSubscription
+    public function resume(MealSubscription $subscription, ?int $userId = null): MealSubscription
     {
-        if ($subscription->status === 'paused') {
-            $subscription->status = 'active';
-            $subscription->save();
-        }
-        return $subscription->fresh();
+        return DB::transaction(function () use ($subscription, $userId): MealSubscription {
+            $subject = MealSubscription::query()->findOrFail($subscription->id);
+            if ($subject->fulfillment_mode === 'customer_selection') {
+                $this->membershipFunding->lockQueueForSubscriptionMutation($subject);
+            }
+            $locked = MealSubscription::query()->lockForUpdate()->findOrFail($subject->id);
+            if ($locked->status === 'paused') {
+                $locked->status = 'active';
+                $locked->save();
+            }
+            MealSubscriptionPause::query()
+                ->where('subscription_id', $locked->id)
+                ->whereNull('resumed_at')
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->each->update([
+                    'resumed_at' => now(),
+                    'resumed_by' => $userId,
+                ]);
+
+            return $locked->fresh(['pauses']);
+        }, 3);
     }
 
     public function cancel(MealSubscription $subscription): MealSubscription
     {
+        if ($subscription->fulfillment_mode === 'customer_selection') {
+            throw ValidationException::withMessages([
+                'subscription' => __('Paid membership subscriptions cannot be cancelled through the standing subscription action.'),
+            ]);
+        }
         $subscription->status = 'cancelled';
         $subscription->save();
 
