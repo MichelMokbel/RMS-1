@@ -55,6 +55,15 @@ jobs:
       - name: Build RMS image
         run: docker build --tag layla-rms-dev:latest .
 
+      - name: Enable development membership flow
+        run: |
+          gcloud compute ssh "$GCP_INSTANCE" \
+            --project="$GCP_PROJECT_ID" \
+            --zone="$GCP_ZONE" \
+            --quiet \
+            --command='sudo /bin/sh -s' \
+            < deploy/gcp/scripts/enable-membership-development.sh
+
       - name: Deploy RMS image
         run: |
           docker save layla-rms-dev:latest \
