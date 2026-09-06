@@ -3,31 +3,51 @@
 use App\Models\AccountingAuditLog;
 use App\Models\MembershipPlan;
 use App\Models\MembershipPromotion;
+use App\Models\PaymentConsistencyFinding;
+use App\Models\PaymentConsistencyRun;
 use App\Models\User;
+use App\Services\Payments\PaymentConsistencyAccessService;
+use App\Services\Payments\PaymentConsistencyDispatchService;
 use App\Services\Promotions\MembershipPromotionService;
 use App\Services\Promotions\PromotionAccessService;
 use App\Services\Promotions\PromotionConflictException;
+use App\Services\Promotions\PromotionUsageConsistencyRule;
 use App\Services\Promotions\PromotionUsageProjectionService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
-new #[Layout('components.layouts.app')] class extends Component {
+new #[Layout('components.layouts.app')] class extends Component
+{
     public MembershipPromotion $promotion;
+
     public string $discount_type = 'fixed';
+
     public string $fixed_amount = '';
+
     public string $percentage = '';
+
     public string $purchase_eligibility = 'both';
+
     public string $starts_on = '';
+
     public string $ends_on = '';
+
     public int|string $total_limit = 1;
+
     public int|string $per_customer_limit = 1;
+
     /** @var array<int, int|string> */
     public array $eligible_plan_ids = [];
+
     public int|string $increase_total_limit = 1;
+
     public int $expected_revision = 1;
+
     public string $operation_uuid = '';
+
+    public string $consistency_operation_uuid = '';
 
     public function mount(MembershipPromotion $promotion, PromotionAccessService $access): void
     {
@@ -35,6 +55,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless($actor instanceof User, 403);
         $access->assertOwns($actor, $promotion);
         $this->operation_uuid = (string) Str::uuid();
+        $this->consistency_operation_uuid = (string) Str::uuid();
         $this->syncPromotion($promotion->load('plans'));
     }
 
@@ -110,6 +131,39 @@ new #[Layout('components.layouts.app')] class extends Component {
         return $this->redirectRoute('membership-promotions.show', ['promotion' => $copy->id], navigate: true);
     }
 
+    public function recheckConsistency(
+        PaymentConsistencyAccessService $access,
+        PaymentConsistencyDispatchService $dispatcher,
+    ): void {
+        $actor = $this->actor();
+        $access->assertCanRunPromotion($actor, $this->promotion);
+        if (! (bool) config('payment_consistency.enabled', false)) {
+            $this->addError('consistency', __('Payment consistency checks are not enabled.'));
+
+            return;
+        }
+
+        $operationUuid = strtolower(trim($this->consistency_operation_uuid));
+        if (! Str::isUuid($operationUuid)) {
+            $operationUuid = (string) Str::uuid();
+        }
+        $queued = $dispatcher->dispatchPromotion(
+            (int) $this->promotion->id,
+            PaymentConsistencyRun::KIND_MANUAL,
+            'manual:promotion:'.$this->promotion->id.':'.$operationUuid,
+            (int) $actor->id,
+        );
+        if (! $queued) {
+            $this->addError('consistency', __('The consistency recheck could not be queued. Try again.'));
+
+            return;
+        }
+
+        $this->resetErrorBag('consistency');
+        $this->consistency_operation_uuid = (string) Str::uuid();
+        session()->flash('status', __('Promotion consistency recheck queued.'));
+    }
+
     public function with(PromotionAccessService $access, PromotionUsageProjectionService $usage): array
     {
         $actor = $this->actor();
@@ -128,6 +182,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->latest('id')
             ->limit(50)
             ->get();
+        $consistencyFinding = PaymentConsistencyFinding::query()
+            ->where('company_id', $companyId)
+            ->where('rule_code', PromotionUsageConsistencyRule::CODE)
+            ->where('subject_type', PromotionUsageConsistencyRule::SUBJECT_TYPE)
+            ->where('subject_id', $currentPromotion->id)
+            ->first();
+        $latestConsistencyRun = PaymentConsistencyRun::query()
+            ->where('company_id', $companyId)
+            ->where('rule_code', PromotionUsageConsistencyRule::CODE)
+            ->where('target_type', PromotionUsageConsistencyRule::SUBJECT_TYPE)
+            ->where('target_id', $currentPromotion->id)
+            ->latest('id')
+            ->first();
         $discount = $currentPromotion->discount_type === 'fixed'
             ? 'QAR '.number_format($currentPromotion->fixed_amount_cents / 100, 2)
             : number_format($currentPromotion->percentage_basis_points / 100, 2).'%';
@@ -146,6 +213,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             'usage' => $usage->forPromotion($currentPromotion),
             'history' => $history,
             'shareText' => $shareText,
+            'consistencyFinding' => $consistencyFinding,
+            'latestConsistencyRun' => $latestConsistencyRun,
+            'consistencyStatus' => $this->consistencyStatus($consistencyFinding, $latestConsistencyRun),
+            'consistencyIssues' => $this->consistencyIssueMessages($consistencyFinding),
         ];
     }
 
@@ -211,6 +282,90 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->increase_total_limit = (int) $promotion->total_limit + 1;
         $this->expected_revision = (int) $promotion->revision;
     }
+
+    /** @return array{label:string,tone:string,description:string} */
+    private function consistencyStatus(
+        ?PaymentConsistencyFinding $finding,
+        ?PaymentConsistencyRun $latestRun,
+    ): array {
+        if (! (bool) config('payment_consistency.enabled', false)) {
+            return [
+                'label' => __('Disabled'),
+                'tone' => 'neutral',
+                'description' => __('Checks will not run until payment consistency is enabled.'),
+            ];
+        }
+        if ($finding?->state === PaymentConsistencyFinding::STATE_OPEN) {
+            return [
+                'label' => __('Review required'),
+                'tone' => 'danger',
+                'description' => __('A saved promotion relationship does not match its expected state.'),
+            ];
+        }
+        if ($latestRun && in_array($latestRun->state, [PaymentConsistencyRun::STATE_QUEUED, PaymentConsistencyRun::STATE_RUNNING], true)) {
+            return [
+                'label' => __('Checking'),
+                'tone' => 'warning',
+                'description' => __('A background consistency check is in progress.'),
+            ];
+        }
+        if ($latestRun?->state === PaymentConsistencyRun::STATE_FAILED) {
+            return [
+                'label' => __('Check failed'),
+                'tone' => 'danger',
+                'description' => __('The last check did not complete. Queue another check after reviewing system health.'),
+            ];
+        }
+        if ($latestRun?->state === PaymentConsistencyRun::STATE_COMPLETED) {
+            return [
+                'label' => __('Healthy'),
+                'tone' => 'success',
+                'description' => __('The latest complete check found no promotion consistency issue.'),
+            ];
+        }
+
+        return [
+            'label' => __('Not checked yet'),
+            'tone' => 'neutral',
+            'description' => __('No complete promotion consistency check is recorded yet.'),
+        ];
+    }
+
+    /** @return array<int,string> */
+    private function consistencyIssueMessages(?PaymentConsistencyFinding $finding): array
+    {
+        if (! $finding || $finding->state !== PaymentConsistencyFinding::STATE_OPEN) {
+            return [];
+        }
+
+        return collect(data_get($finding->observed, 'issues', []))
+            ->pluck('code')
+            ->filter(fn ($code): bool => is_string($code) && $code !== '')
+            ->unique()
+            ->map(fn (string $code): string => match ($code) {
+                'PROMOTION_TOTAL_LIMIT_EXCEEDED' => __('Completed and protected uses exceed this code’s total limit.'),
+                'PROMOTION_RESERVATION_COMPANY_MISMATCH' => __('A protected checkout hold belongs to a different company.'),
+                'PROMOTION_RESERVATION_MONEY_MISMATCH' => __('A protected checkout hold does not reconcile its gross, discount, and payable amounts.'),
+                'PROMOTION_RESERVATION_CHECKOUT_MISSING',
+                'PROMOTION_RESERVATION_CHECKOUT_MISMATCH' => __('A protected promotion hold does not match its checkout.'),
+                'PROMOTION_HELD_RESERVATION_TERMINAL' => __('A completed or failed checkout still has a protected promotion hold.'),
+                'PROMOTION_REDEEMED_RESERVATION_USE_MISSING' => __('A redeemed hold is missing its permanent promotion use.'),
+                'PROMOTION_RELEASED_RESERVATION_HAS_USE' => __('A released hold also has a permanent promotion use.'),
+                'PROMOTION_REDEMPTION_SCOPE_OR_MONEY_MISMATCH' => __('A permanent promotion use does not match its company or saved amounts.'),
+                'PROMOTION_PAID_USE_PARENT_MISSING',
+                'PROMOTION_PAID_USE_CHECKOUT_MISMATCH',
+                'PROMOTION_PAID_USE_RESERVATION_MISMATCH',
+                'PROMOTION_PAID_USE_REQUEST_MISMATCH',
+                'PROMOTION_PAID_USE_BLOCK_MISMATCH',
+                'PROMOTION_PAID_USE_PAYMENT_MISMATCH' => __('A paid promotion use does not match its checkout, request, membership allowance, or SkipCash payment.'),
+                'PROMOTION_ZERO_USE_SHAPE_MISMATCH',
+                'PROMOTION_ZERO_USE_REQUEST_MISMATCH' => __('A free promotion use does not match its original meal plan request.'),
+                'PROMOTION_ZERO_USE_AUTOMATIC_EFFECT_MISMATCH' => __('A free request’s subscription or order effects do not match an explicit administrator conversion.'),
+                default => __('A saved promotion relationship requires review. Issue code: :code', ['code' => $code]),
+            })
+            ->values()
+            ->all();
+    }
 }; ?>
 
 <div class="app-page space-y-6">
@@ -247,6 +402,50 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800"><span class="text-sm text-zinc-500">{{ __('Remaining') }}</span><strong class="mt-1 block text-2xl">{{ $usage['remaining'] }}</strong><small>{{ __('After completed and held uses') }}</small></div>
         <div class="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800"><span class="text-sm text-zinc-500">{{ __('Customer limit') }}</span><strong class="mt-1 block text-2xl">{{ $currentPromotion->per_customer_limit }}</strong><small>{{ __('Combined history after merge') }}</small></div>
         <div class="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800"><span class="text-sm text-zinc-500">{{ __('Plans') }}</span><strong class="mt-1 block text-xl">{{ $currentPromotion->plans->pluck('code')->join(' + ') }}</strong><small>{{ __('Delivery remains included') }}</small></div>
+    </section>
+
+    <section class="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-800 sm:p-6">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+                <h2 class="text-lg font-semibold">{{ __('Consistency check') }}</h2>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                    <span @class([
+                        'rounded-full px-3 py-1 text-xs font-semibold',
+                        'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-100' => $consistencyStatus['tone'] === 'success',
+                        'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-100' => $consistencyStatus['tone'] === 'warning',
+                        'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-100' => $consistencyStatus['tone'] === 'danger',
+                        'bg-zinc-100 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-100' => $consistencyStatus['tone'] === 'neutral',
+                    ])>{{ $consistencyStatus['label'] }}</span>
+                    @if($latestConsistencyRun)
+                        <span class="text-xs text-zinc-500">{{ __('Run :reference', ['reference' => $latestConsistencyRun->reference]) }}</span>
+                    @endif
+                </div>
+                <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{{ $consistencyStatus['description'] }}</p>
+                @if($latestConsistencyRun?->completed_at)
+                    <p class="mt-1 text-xs text-zinc-500">{{ __('Last completed :time Qatar', ['time' => $latestConsistencyRun->completed_at->setTimezone('Asia/Qatar')->format('M j, Y g:i A')]) }}</p>
+                @endif
+            </div>
+            @if(auth()->user()?->can('payments.consistency.run'))
+                <flux:button
+                    type="button"
+                    variant="ghost"
+                    wire:click="recheckConsistency"
+                    wire:loading.attr="disabled"
+                    wire:target="recheckConsistency"
+                    :disabled="!config('payment_consistency.enabled', false)"
+                >{{ __('Run check') }}</flux:button>
+            @endif
+        </div>
+        @error('consistency')
+            <p role="alert" class="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-100">{{ $message }}</p>
+        @enderror
+        @if($consistencyIssues !== [])
+            <ul class="mt-4 space-y-2">
+                @foreach($consistencyIssues as $index => $issue)
+                    <li wire:key="promotion-consistency-issue-{{ $index }}" class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100">{{ $issue }}</li>
+                @endforeach
+            </ul>
+        @endif
     </section>
 
     @if($currentPromotion->status === 'draft')

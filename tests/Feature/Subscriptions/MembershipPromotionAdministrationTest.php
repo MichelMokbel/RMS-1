@@ -1,14 +1,19 @@
 <?php
 
+use App\Jobs\RunPromotionPaymentConsistency;
 use App\Models\AccountingAuditLog;
 use App\Models\AccountingCompany;
 use App\Models\MembershipPlan;
 use App\Models\MembershipPromotion;
+use App\Models\PaymentConsistencyFinding;
+use App\Models\PaymentConsistencyRun;
 use App\Models\User;
 use App\Services\Promotions\MembershipPromotionService;
 use App\Services\Promotions\PromotionConflictException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Volt\Volt;
@@ -19,8 +24,9 @@ use Spatie\Permission\PermissionRegistrar;
 beforeEach(function (): void {
     Carbon::setTestNow(Carbon::parse('2026-09-06 12:00:00', 'UTC'));
     $permission = Permission::findOrCreate('promotions.manage', 'web');
+    $consistencyPermission = Permission::findOrCreate('payments.consistency.run', 'web');
     $adminRole = Role::findOrCreate('admin', 'web');
-    $adminRole->givePermissionTo($permission);
+    $adminRole->givePermissionTo([$permission, $consistencyPermission]);
     Role::findOrCreate('staff', 'web');
     Role::findOrCreate('customer', 'web');
     app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -338,4 +344,71 @@ it('creates a draft through the responsive administrator page', function (): voi
         ->assertSee($promotion->code)
         ->assertSee('Copy code')
         ->assertSee('Activate promotion');
+});
+
+it('shows scoped consistency health and queues a permission protected manual recheck', function (): void {
+    $service = app(MembershipPromotionService::class);
+    $promotion = $service->create($this->admin, validMembershipPromotionInput(), (string) Str::uuid());
+    Config::set('payment_consistency.enabled', true);
+    Queue::fake([RunPromotionPaymentConsistency::class]);
+
+    $run = PaymentConsistencyRun::query()->create([
+        'reference' => (string) Str::uuid(),
+        'company_id' => $this->company->id,
+        'kind' => 'targeted',
+        'state' => 'completed',
+        'rule_code' => 'promotion_usage_v1',
+        'rule_versions' => ['promotion_usage_v1' => 1],
+        'registry_hash' => hash('sha256', 'promotion_usage_v1:1'),
+        'trigger_key' => 'test:promotion:diagnostic',
+        'target_type' => 'membership_promotion',
+        'target_id' => $promotion->id,
+        'started_at' => now('UTC')->subSecond(),
+        'heartbeat_at' => now('UTC'),
+        'completed_at' => now('UTC'),
+        'checked_count' => 1,
+        'open_count' => 1,
+    ]);
+    PaymentConsistencyFinding::query()->create([
+        'company_id' => $this->company->id,
+        'rule_code' => 'promotion_usage_v1',
+        'rule_version' => 1,
+        'subject_type' => 'membership_promotion',
+        'subject_id' => $promotion->id,
+        'episode_uuid' => (string) Str::uuid(),
+        'state' => 'open',
+        'first_seen_at' => now('UTC'),
+        'last_seen_at' => now('UTC'),
+        'last_run_id' => $run->id,
+        'expected' => ['request_matches_redemption' => true],
+        'observed' => ['issues' => [[
+            'code' => 'PROMOTION_ZERO_USE_REQUEST_MISMATCH',
+            'subject_type' => 'membership_promotion_redemption',
+            'subject_id' => 123,
+        ]]],
+        'evidence_fingerprint' => hash('sha256', 'broken-promotion'),
+        'alert_dispatch' => ['state' => 'pending'],
+    ]);
+
+    Volt::actingAs($this->admin)
+        ->test('membership-promotions.show', ['promotion' => $promotion])
+        ->assertSee('Review required')
+        ->assertSee('A free promotion use does not match its original meal plan request.')
+        ->call('recheckConsistency')
+        ->assertHasNoErrors();
+    Queue::assertPushed(RunPromotionPaymentConsistency::class, function ($job) use ($promotion): bool {
+        return $job->promotionId === (int) $promotion->id
+            && $job->kind === 'manual'
+            && $job->requestedBy === (int) $this->admin->id;
+    });
+
+    Role::findByName('admin', 'web')->revokePermissionTo('payments.consistency.run');
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+    $adminWithoutRunPermission = User::factory()->create(['status' => 'active']);
+    $adminWithoutRunPermission->assignRole('admin');
+
+    Volt::actingAs($adminWithoutRunPermission)
+        ->test('membership-promotions.show', ['promotion' => $promotion])
+        ->call('recheckConsistency')
+        ->assertForbidden();
 });

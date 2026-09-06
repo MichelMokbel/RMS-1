@@ -118,6 +118,10 @@ function consistencyFinancialSnapshot(): array
 it('creates the bounded payment consistency foundation', function (): void {
     expect(Schema::hasTable('payment_consistency_runs'))->toBeTrue()
         ->and(Schema::hasTable('payment_consistency_findings'))->toBeTrue()
+        ->and(DB::table('permissions')
+            ->where('name', 'payments.consistency.run')
+            ->where('guard_name', 'web')
+            ->exists())->toBeTrue()
         ->and(Schema::hasColumns('payment_consistency_runs', [
             'reference',
             'company_id',
