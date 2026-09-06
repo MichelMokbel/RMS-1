@@ -21,6 +21,12 @@ trap cleanup EXIT INT TERM
 exec 9>"$lock_file"
 flock -w 300 9
 
+# Keep one rollback image only. Removing the obsolete rollback tag before
+# receiving the next archive prevents repeated deployments from exhausting the
+# small development VM disk while preserving the currently running image.
+docker image rm layla-rms-dev:previous >/dev/null 2>&1 || true
+docker image prune --all --force >/dev/null
+
 cat > "$archive"
 gzip -t "$archive"
 
