@@ -26,6 +26,7 @@ use App\Services\Customers\CustomerMergeService;
 use App\Services\Mail\EmailLogService;
 use App\Services\Mail\MailSettingsService;
 use App\Services\Payments\SkipCashRecoveryService;
+use App\Services\Promotions\PromotionUsageProjectionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -220,6 +221,7 @@ it('creates one permanent request only redemption and preserves exact replay', f
 
     $request = MealPlanRequest::query()->firstOrFail();
     $redemption = MembershipPromotionRedemption::query()->firstOrFail();
+    $usage = app(PromotionUsageProjectionService::class)->forPromotion($promotion);
     expect($request->submission_kind)->toBe('promo_request')
         ->and($request->status)->toBe('new')
         ->and($request->converted_subscription_id)->toBeNull()
@@ -241,6 +243,10 @@ it('creates one permanent request only redemption and preserves exact replay', f
         ->and(DB::table('orders')->count())->toBe(0)
         ->and(DB::table('ar_invoices')->count())->toBe(0)
         ->and(DB::table('payment_allocations')->count())->toBe(0)
+        ->and($usage['reserved'])->toBe(0)
+        ->and($usage['paid_uses'])->toBe(0)
+        ->and($usage['free_request_uses'])->toBe(1)
+        ->and($usage['remaining'])->toBe(9)
         ->and(AccountingAuditLog::query()->where('action', 'membership_promotion.zero_redeemed')->count())->toBe(1);
     Queue::assertPushed(SendMembershipPromotionRequestConfirmation::class, 2);
 
@@ -427,4 +433,57 @@ it('returns the original request to the destination customer login after a merge
         ->and(MealPlanRequest::query()->firstOrFail()->customer_id)->toBe($destination->id)
         ->and(MembershipPromotionRedemption::query()->count())->toBe(1)
         ->and(MembershipPromotionRedemption::query()->firstOrFail()->original_customer_id)->toBe($this->customer->id);
+});
+
+it('preserves two historical requests after a merge and returns the earliest one', function (): void {
+    Queue::fake([SendMembershipPromotionRequestConfirmation::class]);
+    $promotion = createZeroMembershipPromotion($this);
+    [, $sourceQuoteFingerprint] = quoteZeroMembershipPromotion($this, $promotion);
+    $sourceReference = (string) Str::uuid();
+    $sourcePayload = [
+        'client_uuid' => $sourceReference,
+        'selected_branch_id' => 1,
+        'plan_code' => '20',
+        'promo_code' => $promotion->code,
+        'selections' => [],
+        'quote_fingerprint' => $sourceQuoteFingerprint,
+        'accepted_terms_version' => 'v1',
+    ];
+    $this->postJson('/api/customer/membership-requests', $sourcePayload)->assertCreated();
+
+    $destination = Customer::factory()->create(['email' => 'two-requests@example.test']);
+    $destinationUser = User::factory()->create([
+        'customer_id' => $destination->id,
+        'portal_name' => 'Two Requests Customer',
+        'portal_phone' => '+97455000005',
+        'portal_phone_e164' => '+97455000005',
+        'portal_delivery_address' => 'Doha',
+        'email' => 'two-requests@example.test',
+        'status' => 'active',
+    ]);
+    $destinationUser->assignRole('customer');
+    Sanctum::actingAs($destinationUser, ['customer:*']);
+    [, $destinationQuoteFingerprint] = quoteZeroMembershipPromotion($this, $promotion);
+    $destinationReference = (string) Str::uuid();
+    $destinationPayload = [
+        ...$sourcePayload,
+        'client_uuid' => $destinationReference,
+        'quote_fingerprint' => $destinationQuoteFingerprint,
+    ];
+    $this->postJson('/api/customer/membership-requests', $destinationPayload)->assertCreated();
+
+    app(CustomerMergeService::class)->merge($this->customer, $destination, $this->systemActor->id);
+    Sanctum::actingAs($destinationUser, ['customer:*']);
+    $this->postJson('/api/customer/membership-requests', [
+        ...$destinationPayload,
+        'client_uuid' => (string) Str::uuid(),
+    ])->assertOk()
+        ->assertJsonPath('reference', strtolower($sourceReference))
+        ->assertJsonPath('replayed', true);
+
+    expect(MealPlanRequest::query()->count())->toBe(2)
+        ->and(MealPlanRequest::query()->where('customer_id', $destination->id)->count())->toBe(2)
+        ->and(MembershipPromotionRedemption::query()->count())->toBe(2)
+        ->and(MembershipPromotionRedemption::query()->pluck('original_customer_id')->sort()->values()->all())
+        ->toBe(collect([$this->customer->id, $destination->id])->sort()->values()->all());
 });

@@ -125,7 +125,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div>
             <p class="text-sm font-medium text-amber-700 dark:text-amber-300">{{ __('Administration') }}</p>
             <h1 class="text-2xl font-semibold text-zinc-900 dark:text-white">{{ __('Membership Promotions') }}</h1>
-            <p class="mt-1 max-w-3xl text-sm text-zinc-600 dark:text-zinc-300">{{ __('Generate controlled membership codes here, then copy and share them manually. Customer redemption remains unavailable until its separate release gate is completed.') }}</p>
+            <p class="mt-1 max-w-3xl text-sm text-zinc-600 dark:text-zinc-300">{{ __('Generate controlled membership codes here, then copy and share them manually. Active codes can be redeemed wherever membership promotion checkout is enabled.') }}</p>
         </div>
     </div>
 

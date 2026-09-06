@@ -20,6 +20,7 @@ use App\Models\User;
 use App\Services\Customers\CustomerMergeService;
 use App\Services\Payments\FakeSkipCashProvider;
 use App\Services\Payments\SkipCashProvider;
+use App\Services\Promotions\PromotionUsageProjectionService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
@@ -415,10 +416,14 @@ it('reserves and permanently redeems one partial membership promotion after veri
 
     $attempt = PaymentCheckoutAttempt::query()->latest('id')->firstOrFail();
     $reservation = MembershipPromotionReservation::query()->firstOrFail();
+    $heldUsage = app(PromotionUsageProjectionService::class)->forPromotion($promotion);
     expect($attempt->discount_amount_cents)->toBe(9000)
         ->and($attempt->payable_amount_cents)->toBe(81000)
         ->and($reservation->status)->toBe('held')
         ->and($reservation->offer_snapshot['code'])->toBe($promotion->code)
+        ->and($heldUsage['reserved'])->toBe(1)
+        ->and($heldUsage['completed'])->toBe(0)
+        ->and($heldUsage['remaining'])->toBe(9)
         ->and(MembershipPromotionRedemption::query()->count())->toBe(0);
 
     $promotion->update(['status' => 'paused']);
@@ -427,6 +432,7 @@ it('reserves and permanently redeems one partial membership promotion after veri
     $block = MembershipPurchaseBlock::query()->firstOrFail();
     $payment = Payment::query()->where('payment_source_id', $this->source->id)->firstOrFail();
     $redemption = MembershipPromotionRedemption::query()->firstOrFail();
+    $completedUsage = app(PromotionUsageProjectionService::class)->forPromotion($promotion);
 
     expect($attempt->fresh()->state)->toBe('completed')
         ->and($reservation->fresh()->status)->toBe('redeemed')
@@ -437,7 +443,11 @@ it('reserves and permanently redeems one partial membership promotion after veri
         ->and($block->discount_cents)->toBe(9000)
         ->and($block->final_price_cents)->toBe(81000)
         ->and($payment->amount_cents)->toBe(81000)
-        ->and($payment->unallocatedCents())->toBe(81000);
+        ->and($payment->unallocatedCents())->toBe(81000)
+        ->and($completedUsage['reserved'])->toBe(0)
+        ->and($completedUsage['paid_uses'])->toBe(1)
+        ->and($completedUsage['free_request_uses'])->toBe(0)
+        ->and($completedUsage['remaining'])->toBe(9);
 
     $replay = $this->postJson('/api/customer/checkouts', [
         'client_uuid' => $clientUuid,
@@ -478,6 +488,31 @@ it('enforces first and renewal eligibility from completed membership history', f
         ...membershipQuotePayload('20'),
         'promo_code' => $renewal->code,
     ])->assertOk()->assertJsonPath('promotion.purchase_eligibility', 'renewal');
+});
+
+it('applies a fixed QAR discount only to its eligible 26 meal plan', function (): void {
+    Config::set('payments.membership.promotions_enabled', true);
+    $promotion = createMembershipCheckoutPromotion($this, 1000, 'both', [
+        'code' => 'FLXQAR234567',
+        'discount_type' => 'fixed',
+        'fixed_amount_cents' => 12345,
+        'percentage_basis_points' => null,
+        'plan_code' => '26',
+    ]);
+
+    $this->postJson('/api/customer/checkouts/quote', [
+        ...membershipQuotePayload('20'),
+        'promo_code' => $promotion->code,
+    ])->assertStatus(422)->assertJsonPath('code', 'PROMOTION_PLAN_INELIGIBLE');
+    $this->postJson('/api/customer/checkouts/quote', [
+        ...membershipQuotePayload('26'),
+        'promo_code' => $promotion->code,
+    ])->assertOk()
+        ->assertJsonPath('gross_amount_cents', 120000)
+        ->assertJsonPath('discount_amount_cents', 12345)
+        ->assertJsonPath('payable_amount_cents', 107655)
+        ->assertJsonPath('purchase_allowance', 26)
+        ->assertJsonPath('promotion.discount_type', 'fixed');
 });
 
 it('returns a review conflict when an accepted promotion changes before checkout creation', function (): void {
