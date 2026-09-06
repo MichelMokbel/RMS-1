@@ -20,6 +20,7 @@
                 $canAccessHr = $isAdmin || ($user?->can('hr.access') ?? false);
                 $canAccessQuotations = $user?->can('quotations.access') ?? false;
                 $canManageQuotationTemplates = $user?->can('quotation-templates.manage') ?? false;
+                $canManagePromotions = $isAdmin && ($user?->can('promotions.manage') ?? false);
                 $isAccounting = $user?->hasAnyRole(['admin', 'manager', 'accounting']) ?? false;
 
                 $inSales = request()->routeIs('orders.*')
@@ -46,6 +47,7 @@
                 $inAdministration = request()->routeIs('categories.*')
                     || request()->routeIs('customers.*')
                     || request()->routeIs('customers.accounts.*')
+                    || request()->routeIs('membership-promotions.*')
                     || request()->routeIs('suppliers.*')
                     || request()->routeIs('iam.*')
                     || request()->routeIs('users.*');
@@ -71,6 +73,11 @@
                         <flux:navlist.item icon="user-circle" :href="route('customers.accounts.index')" :current="request()->routeIs('customers.accounts.*')" wire:navigate>
                             {{ __('Customer Accounts') }}
                         </flux:navlist.item>
+                        @if ($canManagePromotions)
+                            <flux:navlist.item icon="gift" :href="route('membership-promotions.index')" :current="request()->routeIs('membership-promotions.*')" wire:navigate>
+                                {{ __('Membership Promotions') }}
+                            </flux:navlist.item>
+                        @endif
                         @if ($isCashier)
                             <flux:navlist.item icon="users" :href="route('customers.index')" :current="request()->routeIs('customers.*')" wire:navigate>
                                 {{ __('Customers') }}

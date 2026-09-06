@@ -1286,6 +1286,11 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|payments.settings
     Volt::route('settings/payments', 'settings.payments')->name('settings.payments');
 });
 
+Route::middleware(['auth', 'active', 'role:admin', 'ensure.admin', 'can:promotions.manage'])->group(function () {
+    Volt::route('membership-promotions', 'membership-promotions.index')->name('membership-promotions.index');
+    Volt::route('membership-promotions/{promotion}', 'membership-promotions.show')->name('membership-promotions.show');
+});
+
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|receivables.access'])->group(function () {
     Volt::route('receivables/payments', 'receivables.payments.index')->name('receivables.payments.index');
     Volt::route('receivables/payments/create', 'receivables.payments.create')->name('receivables.payments.create');

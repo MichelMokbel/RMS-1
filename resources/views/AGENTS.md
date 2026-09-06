@@ -32,7 +32,7 @@ All paths in the first column are relative to `resources/views/livewire/`.
 | `kitchen/` | [Kitchen transitions](../../app/Services/Orders/AGENTS.md). |
 | `order-sheet.blade.php` | [Order sheet publication](../../app/Services/OrderSheet/AGENTS.md). |
 | `pastry-orders/` | [Pastry orders](../../app/Services/PastryOrders/AGENTS.md). |
-| `subscriptions/`, `meal-plan-requests/` | [Subscriptions and request conversion](../../app/Services/Subscriptions/AGENTS.md). |
+| `subscriptions/`, `meal-plan-requests/`, `membership-promotions/` | [Subscriptions, membership promotions, and request conversion](../../app/Services/Subscriptions/AGENTS.md). |
 | `company-food/` | [Company Food](../../app/Services/CompanyFood/AGENTS.md). |
 | `sales/` | [Sales](../../app/Services/Sales/AGENTS.md). |
 | `pos/` | [POS](../../app/Services/POS/AGENTS.md). |

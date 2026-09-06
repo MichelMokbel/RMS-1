@@ -13,7 +13,9 @@ This area owns subscription details, pauses, cancellation, codes, payment links,
 | `SubscriptionPaymentLinkService.php` | Payment links, invoice audits, and usage resynchronization. |
 | `app/Services/Orders/SubscriptionOrderGenerationService.php` | Order generation by branch and service date. |
 | `app/Listeners/SyncSubscriptionMealsOnInvoiceIssued.php` | Usage changes when invoices are issued. |
+| `app/Services/Promotions/` | Company-wide membership promotion rules, lifecycle, usage projections, and audit. |
 | `resources/views/livewire/meal-plan-requests/` | Request review and conversion. |
+| `resources/views/livewire/membership-promotions/` | Administrator promotion creation, lifecycle, copy, counters, and history. |
 
 ## Conventions
 
@@ -21,6 +23,7 @@ This area owns subscription details, pauses, cancellation, codes, payment links,
 * `uses_invoice_tracking` separates generated order consumption from invoice consumption. `source_payment_id` identifies the payment linked path.
 * Usage resynchronization considers subscription item quantities and payment coverage. It is not simply the count of orders or invoices.
 * `config/subscriptions.php` maps plan items and generation settings. The scheduler also requires a configured system actor.
+* Activated membership promotion terms are immutable. Pause, resume, early expiry, and total-limit increases use the Promotions service with expected revisions and durable operation UUIDs. Changed offer terms require copying to a new generated draft.
 
 ## Gotchas
 
