@@ -13,12 +13,14 @@ use App\Models\MembershipPromotionReservation;
 use App\Models\MembershipPurchaseBlock;
 use App\Models\Payment;
 use App\Models\PaymentCheckoutAttempt;
+use App\Models\PaymentConsistencyFinding;
 use App\Models\PaymentProviderTransaction;
 use App\Models\PaymentSetting;
 use App\Models\PaymentSource;
 use App\Models\User;
 use App\Services\Customers\CustomerMergeService;
 use App\Services\Payments\FakeSkipCashProvider;
+use App\Services\Payments\PaymentConsistencyService;
 use App\Services\Payments\SkipCashProvider;
 use App\Services\Promotions\PromotionUsageProjectionService;
 use Carbon\CarbonImmutable;
@@ -425,6 +427,12 @@ it('reserves and permanently redeems one partial membership promotion after veri
         ->and($heldUsage['completed'])->toBe(0)
         ->and($heldUsage['remaining'])->toBe(9)
         ->and(MembershipPromotionRedemption::query()->count())->toBe(0);
+    $heldCheck = app(PaymentConsistencyService::class)->checkPromotion(
+        $promotion,
+        triggerKey: 'test:promotion:held',
+    );
+    expect($heldCheck->open_count)->toBe(0)
+        ->and(PaymentConsistencyFinding::query()->count())->toBe(0);
 
     $promotion->update(['status' => 'paused']);
     [$response] = completeMembershipCheckout($this, $attempt);
@@ -448,6 +456,12 @@ it('reserves and permanently redeems one partial membership promotion after veri
         ->and($completedUsage['paid_uses'])->toBe(1)
         ->and($completedUsage['free_request_uses'])->toBe(0)
         ->and($completedUsage['remaining'])->toBe(9);
+    $completedCheck = app(PaymentConsistencyService::class)->checkPromotion(
+        $promotion,
+        triggerKey: 'test:promotion:completed',
+    );
+    expect($completedCheck->open_count)->toBe(0)
+        ->and(PaymentConsistencyFinding::query()->count())->toBe(0);
 
     $replay = $this->postJson('/api/customer/checkouts', [
         'client_uuid' => $clientUuid,
@@ -635,6 +649,12 @@ it('completes a retained promotion checkout for the destination customer after a
         ->and((int) $redemption->original_customer_id)->toBe($originalCustomerId)
         ->and($this->portalUser->fresh()->status)->toBe('inactive')
         ->and($this->portalUser->fresh()->customer_id)->toBeNull();
+    $mergedCheck = app(PaymentConsistencyService::class)->checkPromotion(
+        $promotion,
+        triggerKey: 'test:promotion:merged',
+    );
+    expect($mergedCheck->open_count)->toBe(0)
+        ->and(PaymentConsistencyFinding::query()->count())->toBe(0);
 
     $this->getJson('/api/customer/checkouts/'.$attempt->reference)
         ->assertOk()
