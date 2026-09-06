@@ -13,6 +13,9 @@ use App\Models\MealSubscription;
 use App\Models\MealSubscriptionOrder;
 use App\Models\MembershipBookingFunding;
 use App\Models\MembershipBookingOperation;
+use App\Models\MembershipPlan;
+use App\Models\MembershipPromotion;
+use App\Models\MembershipPromotionRedemption;
 use App\Models\MembershipPurchaseBlock;
 use App\Models\MenuItem;
 use App\Models\Order;
@@ -110,14 +113,14 @@ beforeEach(function (): void {
     Sanctum::actingAs($this->portalUser, ['customer:*']);
 });
 
-function completeCoveredBookingMembership($test, string $planCode): PaymentCheckoutAttempt
+function completeCoveredBookingMembership($test, string $planCode, ?string $promoCode = null): PaymentCheckoutAttempt
 {
     $payload = [
         'purpose' => 'membership',
         'selected_branch_id' => 1,
         'plan_code' => $planCode,
         'selections' => [],
-        'promo_code' => null,
+        'promo_code' => $promoCode,
     ];
     $quote = $test->postJson('/api/customer/checkouts/quote', $payload)->assertOk();
     $test->postJson('/api/customer/checkouts', [
@@ -150,6 +153,34 @@ function completeCoveredBookingMembership($test, string $planCode): PaymentCheck
         ->assertOk();
 
     return $attempt->fresh();
+}
+
+function createCoveredBookingPromotion($test): MembershipPromotion
+{
+    $promotion = MembershipPromotion::query()->create([
+        'company_id' => $test->company->id,
+        'code' => 'SAVEQAR23456',
+        'discount_type' => 'percentage',
+        'percentage_basis_points' => 1000,
+        'purchase_eligibility' => 'both',
+        'starts_at' => now('UTC')->subDay(),
+        'ends_at' => now('UTC')->addDay(),
+        'total_limit' => 10,
+        'per_customer_limit' => 1,
+        'status' => 'active',
+        'revision' => 1,
+        'first_activated_at' => now('UTC'),
+        'created_by' => $test->systemActor->id,
+        'updated_by' => $test->systemActor->id,
+    ]);
+    $promotion->plans()->attach(
+        MembershipPlan::query()
+            ->where('company_id', $test->company->id)
+            ->where('code', '20')
+            ->value('id')
+    );
+
+    return $promotion;
 }
 
 function createCoveredBookingMenu(int $branchId, string $date): MenuItem
@@ -280,6 +311,65 @@ it('books future main quantities from the paid allowance without another payment
     $this->getJson('/api/customer/memberships?selected_branch_id=1')
         ->assertOk()
         ->assertJsonPath('data.available_meals', 20);
+});
+
+it('allocates a discounted membership exactly and keeps its promotion used after invoice void', function (): void {
+    Config::set('payments.membership.promotions_enabled', true);
+    $promotion = createCoveredBookingPromotion($this);
+    completeCoveredBookingMembership($this, '20', $promotion->code);
+    $subscription = MealSubscription::query()->firstOrFail();
+    $payment = Payment::query()->where('payment_source_id', $this->source->id)->firstOrFail();
+    $block = MembershipPurchaseBlock::query()->firstOrFail();
+    $date = now('Asia/Qatar')->addDays(2)->toDateString();
+    $main = createCoveredBookingMenu($this->branch->id, $date);
+    $selections = [coveredBookingSelection($date, $main->id, 20)];
+    $quote = $this->postJson('/api/customer/membership-bookings/quote', [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => $selections,
+    ])->assertOk();
+
+    $this->postJson('/api/customer/membership-bookings', [
+        'client_uuid' => (string) Str::uuid(),
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'queue_revision' => 1,
+        'selections' => $selections,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertCreated()->assertJsonPath('queue.available_meals', 0);
+
+    $invoice = ArInvoice::query()->firstOrFail();
+    $funding = MembershipBookingFunding::query()->firstOrFail();
+    $redemption = MembershipPromotionRedemption::query()->firstOrFail();
+    expect((int) $block->gross_price_cents)->toBe(90000)
+        ->and((int) $block->discount_cents)->toBe(9000)
+        ->and((int) $block->final_price_cents)->toBe(81000)
+        ->and($funding->position_ranges)->toBe([[1, 20]])
+        ->and((int) $funding->invoice_gross_cents)->toBe(90000)
+        ->and((int) $funding->invoice_discount_cents)->toBe(9000)
+        ->and((int) $funding->invoice_net_cents)->toBe(81000)
+        ->and((int) $invoice->total_cents)->toBe(81000)
+        ->and((int) $invoice->paid_total_cents)->toBe(81000)
+        ->and((int) $payment->fresh()->unallocatedCents())->toBe(0)
+        ->and((int) $subscription->fresh()->meals_used)->toBe(20)
+        ->and($redemption->kind)->toBe('paid_purchase')
+        ->and((int) $redemption->purchase_block_id)->toBe((int) $block->id);
+
+    app(ArInvoiceService::class)->void($invoice, $this->systemActor->id, 'Customer booking cancelled');
+
+    expect($invoice->fresh()->status)->toBe('voided')
+        ->and($funding->fresh()->state)->toBe('released')
+        ->and((int) $payment->fresh()->unallocatedCents())->toBe(81000)
+        ->and((int) $subscription->fresh()->meals_used)->toBe(0)
+        ->and(MembershipPromotionRedemption::query()->count())->toBe(1);
+    $this->postJson('/api/customer/checkouts/quote', [
+        'purpose' => 'membership',
+        'selected_branch_id' => 1,
+        'plan_code' => '20',
+        'selections' => [],
+        'promo_code' => $promotion->code,
+    ])->assertStatus(422)->assertJsonPath('code', 'PROMOTION_CUSTOMER_LIMIT');
 });
 
 it('uses the first membership fully before funding a booking from the next purchase', function (): void {

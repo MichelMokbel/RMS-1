@@ -54,7 +54,13 @@ class MembershipCheckoutService
             ];
         }
 
-        $quote = $this->quotes->quote($user, $request);
+        try {
+            $quote = $this->quotes->quote($user, $request);
+        } catch (PaymentCheckoutException $exception) {
+            $this->throwPromotionAcceptanceConflict($request, $exception);
+
+            throw $exception;
+        }
         if (! hash_equals((string) $quote['quote_fingerprint'], (string) ($request['quote_fingerprint'] ?? ''))) {
             throw new PaymentCheckoutException('QUOTE_CHANGED', 409, __('Your membership quote changed. Review it before paying.'), [
                 'quote' => $this->publicQuote($quote),
@@ -131,12 +137,18 @@ class MembershipCheckoutService
             $plan = $quote['_plan'];
             $acceptedPromotion = null;
             if (is_array($quote['_promotion'])) {
-                $acceptedPromotion = $this->promotionQuotes->quoteForAcceptance(
-                    (int) $context['company_id'],
-                    (int) $customer->id,
-                    $plan,
-                    (string) $request['promo_code'],
-                );
+                try {
+                    $acceptedPromotion = $this->promotionQuotes->quoteForAcceptance(
+                        (int) $context['company_id'],
+                        (int) $customer->id,
+                        $plan,
+                        (string) $request['promo_code'],
+                    );
+                } catch (PaymentCheckoutException $exception) {
+                    $this->throwPromotionAcceptanceConflict($request, $exception);
+
+                    throw $exception;
+                }
                 if (! hash_equals(
                     (string) $quote['_promotion']['acceptance_fingerprint'],
                     (string) $acceptedPromotion['acceptance_fingerprint'],
@@ -309,5 +321,26 @@ class MembershipCheckoutService
     private function publicQuote(array $quote): array
     {
         return array_diff_key($quote, array_flip(['_context', '_plan', '_promotion']));
+    }
+
+    /** @param array<string, mixed> $request */
+    private function throwPromotionAcceptanceConflict(array $request, PaymentCheckoutException $exception): void
+    {
+        if (trim((string) ($request['promo_code'] ?? '')) === ''
+            || ! in_array($exception->codeName, [
+                'PROMOTION_UNAVAILABLE',
+                'PROMOTION_PLAN_INELIGIBLE',
+                'PROMOTION_PURCHASE_INELIGIBLE',
+                'PROMOTION_EXHAUSTED',
+                'PROMOTION_CUSTOMER_LIMIT',
+            ], true)) {
+            return;
+        }
+
+        throw new PaymentCheckoutException(
+            'QUOTE_CHANGED',
+            409,
+            __('Your promotion quote changed. Review it before paying.'),
+        );
     }
 }

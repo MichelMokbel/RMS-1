@@ -141,9 +141,15 @@ function membershipWebhookSignature(array $payload): string
     ));
 }
 
-function createMembershipCheckoutPromotion($test, int $basisPoints = 1000, string $eligibility = 'both'): MembershipPromotion
-{
-    $promotion = MembershipPromotion::query()->create([
+function createMembershipCheckoutPromotion(
+    $test,
+    int $basisPoints = 1000,
+    string $eligibility = 'both',
+    array $overrides = [],
+): MembershipPromotion {
+    $planCode = (string) ($overrides['plan_code'] ?? '20');
+    unset($overrides['plan_code']);
+    $promotion = MembershipPromotion::query()->create(array_merge([
         'company_id' => $test->company->id,
         'code' => 'SAVEQAR23456',
         'discount_type' => 'percentage',
@@ -158,11 +164,11 @@ function createMembershipCheckoutPromotion($test, int $basisPoints = 1000, strin
         'first_activated_at' => now('UTC'),
         'created_by' => $test->systemActor->id,
         'updated_by' => $test->systemActor->id,
-    ]);
+    ], $overrides));
     $promotion->plans()->attach(
         MembershipPlan::query()
             ->where('company_id', $test->company->id)
-            ->where('code', '20')
+            ->where('code', $planCode)
             ->value('id')
     );
 
@@ -440,6 +446,111 @@ it('reserves and permanently redeems one partial membership promotion after veri
     ])->assertOk()->assertJsonPath('replayed', true);
     expect($replay->json('promotion.code'))->toBe($promotion->code)
         ->and(MembershipPromotionRedemption::query()->count())->toBe(1);
+});
+
+it('enforces first and renewal eligibility from completed membership history', function (): void {
+    Config::set('payments.membership.promotions_enabled', true);
+    $first = createMembershipCheckoutPromotion($this, 1000, 'first', [
+        'code' => 'STARTQA23456',
+    ]);
+    $renewal = createMembershipCheckoutPromotion($this, 1000, 'renewal', [
+        'code' => 'RENEWQA23456',
+    ]);
+
+    $this->postJson('/api/customer/checkouts/quote', [
+        ...membershipQuotePayload('20'),
+        'promo_code' => $first->code,
+    ])->assertOk()->assertJsonPath('promotion.purchase_eligibility', 'first');
+    $this->postJson('/api/customer/checkouts/quote', [
+        ...membershipQuotePayload('20'),
+        'promo_code' => $renewal->code,
+    ])->assertStatus(422)->assertJsonPath('code', 'PROMOTION_PURCHASE_INELIGIBLE');
+
+    $attempt = startMembershipCheckout($this, '20');
+    completeMembershipCheckout($this, $attempt)[0]->assertOk();
+
+    $this->postJson('/api/customer/checkouts/quote', [
+        ...membershipQuotePayload('20'),
+        'promo_code' => $first->code,
+    ])->assertStatus(422)->assertJsonPath('code', 'PROMOTION_PURCHASE_INELIGIBLE');
+    $this->postJson('/api/customer/checkouts/quote', [
+        ...membershipQuotePayload('20'),
+        'promo_code' => $renewal->code,
+    ])->assertOk()->assertJsonPath('promotion.purchase_eligibility', 'renewal');
+});
+
+it('returns a review conflict when an accepted promotion changes before checkout creation', function (): void {
+    Config::set('payments.membership.promotions_enabled', true);
+    $promotion = createMembershipCheckoutPromotion($this);
+    $payload = [
+        ...membershipQuotePayload('20'),
+        'promo_code' => $promotion->code,
+    ];
+    $quote = $this->postJson('/api/customer/checkouts/quote', $payload)->assertOk();
+    $promotion->update(['status' => 'paused', 'revision' => 2]);
+
+    $this->postJson('/api/customer/checkouts', [
+        'client_uuid' => (string) Str::uuid(),
+        ...$payload,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertStatus(409)->assertJsonPath('code', 'QUOTE_CHANGED');
+
+    expect(PaymentCheckoutAttempt::query()->count())->toBe(0)
+        ->and(MealPlanRequest::query()->count())->toBe(0)
+        ->and(MembershipPromotionReservation::query()->count())->toBe(0);
+});
+
+it('holds the final promotion use during payment and releases it after a decline', function (): void {
+    Config::set('payments.membership.promotions_enabled', true);
+    $promotion = createMembershipCheckoutPromotion($this, 1000, 'both', [
+        'code' => 'CAPQAR234567',
+        'total_limit' => 1,
+    ]);
+    $payload = [
+        ...membershipQuotePayload('20'),
+        'promo_code' => $promotion->code,
+    ];
+    $quote = $this->postJson('/api/customer/checkouts/quote', $payload)->assertOk();
+    $this->postJson('/api/customer/checkouts', [
+        'client_uuid' => (string) Str::uuid(),
+        ...$payload,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertStatus(202);
+    $attempt = PaymentCheckoutAttempt::query()->latest('id')->firstOrFail();
+
+    $otherCustomer = Customer::factory()->create(['email' => 'other-promo@example.test']);
+    $otherUser = User::factory()->create([
+        'customer_id' => $otherCustomer->id,
+        'portal_name' => 'Other Promotion Customer',
+        'portal_phone' => '+97455000002',
+        'portal_phone_e164' => '+97455000002',
+        'portal_delivery_address' => 'Doha',
+        'email' => 'other-promo@example.test',
+        'status' => 'active',
+    ]);
+    $otherUser->assignRole('customer');
+    Sanctum::actingAs($otherUser, ['customer:*']);
+
+    $this->postJson('/api/customer/checkouts/quote', $payload)
+        ->assertStatus(422)
+        ->assertJsonPath('code', 'PROMOTION_EXHAUSTED');
+
+    $transaction = $attempt->providerTransactions()->firstOrFail();
+    $decline = membershipWebhookPayload($attempt, $transaction);
+    $decline['StatusId'] = '3';
+    $this->postJson(
+        '/api/integrations/skipcash/webhook',
+        $decline,
+        ['Authorization' => membershipWebhookSignature($decline)],
+    )->assertOk()->assertJson(['accepted' => true]);
+
+    $this->postJson('/api/customer/checkouts/quote', $payload)
+        ->assertOk()
+        ->assertJsonPath('promotion.code', $promotion->code);
+    expect($attempt->fresh()->promotionReservation()->firstOrFail()->status)->toBe('released')
+        ->and(MembershipPromotionRedemption::query()->count())->toBe(0);
 });
 
 it('releases a partial promotion hold after a terminal unpaid result', function (): void {
