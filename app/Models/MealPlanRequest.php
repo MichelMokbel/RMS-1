@@ -27,7 +27,14 @@ class MealPlanRequest extends Model
         'checkout_id',
         'converted_subscription_id',
         'submission_kind',
+        'client_uuid',
+        'promotion_id',
+        'redemption_id',
         'submission_snapshot',
+        'proposed_selections_snapshot',
+        'promotion_terms_snapshot',
+        'notification_snapshots',
+        'notification_dispatch',
         'converted_at',
     ];
 
@@ -37,7 +44,13 @@ class MealPlanRequest extends Model
         'plan_meals' => 'integer',
         'checkout_id' => 'integer',
         'converted_subscription_id' => 'integer',
+        'promotion_id' => 'integer',
+        'redemption_id' => 'integer',
         'submission_snapshot' => 'encrypted:array',
+        'proposed_selections_snapshot' => 'encrypted:array',
+        'promotion_terms_snapshot' => 'encrypted:array',
+        'notification_snapshots' => 'encrypted:array',
+        'notification_dispatch' => 'array',
         'converted_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
@@ -66,6 +79,16 @@ class MealPlanRequest extends Model
     public function convertedSubscription(): BelongsTo
     {
         return $this->belongsTo(MealSubscription::class, 'converted_subscription_id');
+    }
+
+    public function promotion(): BelongsTo
+    {
+        return $this->belongsTo(MembershipPromotion::class, 'promotion_id');
+    }
+
+    public function promotionRedemption(): BelongsTo
+    {
+        return $this->belongsTo(MembershipPromotionRedemption::class, 'redemption_id');
     }
 
     public function linkedOrderIds(): array

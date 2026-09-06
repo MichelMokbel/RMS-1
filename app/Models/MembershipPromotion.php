@@ -7,6 +7,7 @@ use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MembershipPromotion extends Model
 {
@@ -87,6 +88,16 @@ class MembershipPromotion extends Model
     public function updater(): BelongsTo
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    public function reservations(): HasMany
+    {
+        return $this->hasMany(MembershipPromotionReservation::class, 'promotion_id');
+    }
+
+    public function redemptions(): HasMany
+    {
+        return $this->hasMany(MembershipPromotionRedemption::class, 'promotion_id');
     }
 
     public function displayStatus(?CarbonInterface $now = null): string

@@ -1,7 +1,7 @@
 # 0010. Promotion validation and permanent redemption
 
 **Date**: 2026-08-31
-**Status**: Proposed
+**Status**: In Progress
 **Scope**: Feature 6. Design confirmed on 2026-09-01; not implemented.
 
 ## Summary
