@@ -6,6 +6,7 @@ use App\Models\PaymentCheckoutAttempt;
 use App\Models\PaymentCheckoutTarget;
 use App\Models\PaymentProviderEvent;
 use App\Models\PaymentProviderTransaction;
+use App\Services\Promotions\MembershipPromotionReservationService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -17,6 +18,7 @@ class SkipCashWebhookService
         private readonly OrdinaryOrderActivationService $activation,
         private readonly MembershipCheckoutActivationService $membershipActivation,
         private readonly PaymentOperationsTrackingService $operations,
+        private readonly MembershipPromotionReservationService $promotionReservations,
     ) {}
 
     /**
@@ -279,6 +281,10 @@ class SkipCashWebhookService
                     'hold_state' => 'released',
                     'released_at' => now('UTC'),
                 ]);
+            $this->promotionReservations->releaseForCheckout(
+                (int) $attempt->id,
+                'provider_unpaid_terminal',
+            );
 
             return false;
         }, 3);
@@ -431,6 +437,10 @@ class SkipCashWebhookService
                 'hold_state' => 'released',
                 'released_at' => now('UTC'),
             ]);
+        $this->promotionReservations->releaseForCheckout(
+            (int) $attempt->id,
+            'provider_unpaid_terminal',
+        );
     }
 
     private function isRetryableFailure(string $code): bool

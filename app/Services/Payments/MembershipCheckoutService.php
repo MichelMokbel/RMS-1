@@ -8,6 +8,8 @@ use App\Models\PaymentCheckoutAttempt;
 use App\Models\PaymentCheckoutTarget;
 use App\Models\User;
 use App\Services\Customers\CustomerOwnershipService;
+use App\Services\Promotions\MembershipPromotionQuoteService;
+use App\Services\Promotions\MembershipPromotionReservationService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -21,6 +23,8 @@ class MembershipCheckoutService
         private readonly CheckoutCanonicalizer $canonicalizer,
         private readonly CheckoutStatusPresenter $statuses,
         private readonly CustomerOwnershipService $customerOwnership,
+        private readonly MembershipPromotionQuoteService $promotionQuotes,
+        private readonly MembershipPromotionReservationService $promotionReservations,
     ) {}
 
     /** @param array<string, mixed> $request
@@ -60,6 +64,14 @@ class MembershipCheckoutService
             throw new PaymentCheckoutException('TERMS_CHANGED', 409, __('Accept the current terms before paying.'), [
                 'quote' => $this->publicQuote($quote),
             ]);
+        }
+        if ((int) $quote['payable_amount_cents'] <= 0) {
+            throw new PaymentCheckoutException(
+                'PROMOTION_REQUEST_REQUIRED',
+                409,
+                __('This promotion requires the request submission flow and cannot start a payment.'),
+                ['quote' => $this->publicQuote($quote)],
+            );
         }
 
         $this->setup->assertReadyForNewCheckout((int) $quote['_context']['branch']->id);
@@ -117,6 +129,25 @@ class MembershipCheckoutService
 
             $context = $quote['_context'];
             $plan = $quote['_plan'];
+            $acceptedPromotion = null;
+            if (is_array($quote['_promotion'])) {
+                $acceptedPromotion = $this->promotionQuotes->quoteForAcceptance(
+                    (int) $context['company_id'],
+                    (int) $customer->id,
+                    $plan,
+                    (string) $request['promo_code'],
+                );
+                if (! hash_equals(
+                    (string) $quote['_promotion']['acceptance_fingerprint'],
+                    (string) $acceptedPromotion['acceptance_fingerprint'],
+                )) {
+                    throw new PaymentCheckoutException(
+                        'QUOTE_CHANGED',
+                        409,
+                        __('Your promotion quote changed. Review it before paying.'),
+                    );
+                }
+            }
             $startedAt = now('Asia/Qatar');
             $expiresAt = $startedAt->copy()->addMinutes((int) $context['settings']->checkout_duration_minutes);
             $terms = $context['terms'];
@@ -131,12 +162,15 @@ class MembershipCheckoutService
                 'plan_meals' => $plan->meal_count,
                 'status' => 'new',
                 'submission_kind' => 'paid_checkout',
+                'promotion_id' => $acceptedPromotion['promotion']->id ?? null,
                 'submission_snapshot' => [
                     'plan' => $quote['plan'],
                     'selections' => [],
                     'selected_branch_id' => (int) $context['branch']->id,
                     'terms_version' => $terms['version'],
+                    'promotion' => $acceptedPromotion['offer_snapshot'] ?? null,
                 ],
+                'promotion_terms_snapshot' => $acceptedPromotion['offer_snapshot'] ?? null,
             ]);
             $attempt = PaymentCheckoutAttempt::query()->create([
                 'reference' => (string) Str::uuid(),
@@ -149,12 +183,16 @@ class MembershipCheckoutService
                 'purpose' => 'membership',
                 'currency' => 'QAR',
                 'gross_amount_cents' => (int) $quote['gross_amount_cents'],
-                'discount_amount_cents' => 0,
+                'discount_amount_cents' => (int) $quote['discount_amount_cents'],
                 'payable_amount_cents' => (int) $quote['payable_amount_cents'],
                 'cart_fingerprint' => $this->canonicalizer->hash([
                     'membership-cart-v1',
                     (string) $plan->id,
                     [],
+                    $acceptedPromotion ? [
+                        'code' => $acceptedPromotion['code'],
+                        'acceptance_fingerprint' => $acceptedPromotion['acceptance_fingerprint'],
+                    ] : null,
                 ]),
                 'quote_fingerprint' => $quote['quote_fingerprint'],
                 'request_fingerprint' => $requestFingerprint,
@@ -172,8 +210,9 @@ class MembershipCheckoutService
                     'plan_id' => (int) $plan->id,
                     'plan' => $quote['plan'],
                     'gross_amount_cents' => (int) $quote['gross_amount_cents'],
-                    'discount_amount_cents' => 0,
+                    'discount_amount_cents' => (int) $quote['discount_amount_cents'],
                     'payable_amount_cents' => (int) $quote['payable_amount_cents'],
+                    'promotion' => $acceptedPromotion['offer_snapshot'] ?? null,
                 ],
                 'terms_snapshot' => [
                     'version' => $terms['version'],
@@ -187,7 +226,8 @@ class MembershipCheckoutService
                     'selected_branch_id' => (int) $context['branch']->id,
                     'plan_code' => (string) $plan->code,
                     'selections' => [],
-                    'promo_code' => null,
+                    'promo_code' => $acceptedPromotion['code'] ?? null,
+                    'promotion_acceptance_fingerprint' => $acceptedPromotion['acceptance_fingerprint'] ?? null,
                     'submitted_quote_fingerprint' => (string) $request['quote_fingerprint'],
                     'accepted_terms_version' => (string) $request['accepted_terms_version'],
                 ],
@@ -214,11 +254,15 @@ class MembershipCheckoutService
                     'plan_id' => (int) $plan->id,
                     'plan' => $quote['plan'],
                     'selections' => [],
+                    'promotion' => $acceptedPromotion['offer_snapshot'] ?? null,
                 ],
                 'hold_state' => 'held',
                 'held_at' => $startedAt,
                 'meal_plan_request_id' => $mealPlanRequest->id,
             ]);
+            if ($acceptedPromotion) {
+                $this->promotionReservations->create($attempt, $ownedUser, $acceptedPromotion);
+            }
 
             DB::afterCommit(fn () => InitiateSkipCashCheckout::dispatch($attempt->id));
 
@@ -241,7 +285,9 @@ class MembershipCheckoutService
             (string) ($request['selected_branch_id'] ?? ''),
             trim((string) ($request['plan_code'] ?? '')),
             [],
-            null,
+            trim((string) ($request['promo_code'] ?? '')) === ''
+                ? null
+                : strtoupper(trim((string) $request['promo_code'])),
             (string) ($request['quote_fingerprint'] ?? ''),
             (string) ($request['accepted_terms_version'] ?? ''),
         ]);
@@ -262,6 +308,6 @@ class MembershipCheckoutService
      */
     private function publicQuote(array $quote): array
     {
-        return array_diff_key($quote, array_flip(['_context', '_plan']));
+        return array_diff_key($quote, array_flip(['_context', '_plan', '_promotion']));
     }
 }

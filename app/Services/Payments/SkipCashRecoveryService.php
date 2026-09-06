@@ -8,6 +8,7 @@ use App\Models\PaymentCheckoutAttempt;
 use App\Models\PaymentCheckoutTarget;
 use App\Models\PaymentProviderEvent;
 use App\Models\PaymentProviderTransaction;
+use App\Services\Promotions\MembershipPromotionReservationService;
 use Illuminate\Support\Facades\DB;
 
 class SkipCashRecoveryService
@@ -16,6 +17,7 @@ class SkipCashRecoveryService
         private readonly SkipCashWebhookService $webhooks,
         private readonly PaymentOperationsTrackingService $operations,
         private readonly PaymentOperationsConsistencyService $consistency,
+        private readonly MembershipPromotionReservationService $promotionReservations,
     ) {}
 
     /** @return array<string, int> */
@@ -110,6 +112,10 @@ class SkipCashRecoveryService
                     'hold_state' => 'released',
                     'released_at' => now('UTC'),
                 ]);
+            $this->promotionReservations->releaseForCheckout(
+                (int) $attempt->id,
+                'checkout_expired_unpaid',
+            );
 
             return true;
         }, 3);

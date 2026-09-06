@@ -6,6 +6,10 @@ use App\Models\Customer;
 use App\Models\LedgerAccount;
 use App\Models\MealPlanRequest;
 use App\Models\MealSubscription;
+use App\Models\MembershipPlan;
+use App\Models\MembershipPromotion;
+use App\Models\MembershipPromotionRedemption;
+use App\Models\MembershipPromotionReservation;
 use App\Models\MembershipPurchaseBlock;
 use App\Models\Payment;
 use App\Models\PaymentCheckoutAttempt;
@@ -122,12 +126,47 @@ function membershipWebhookPayload(PaymentCheckoutAttempt $attempt, PaymentProvid
 
 function membershipWebhookSignature(array $payload): string
 {
+    $parts = [];
+    foreach (['PaymentId', 'Amount', 'StatusId', 'TransactionId', 'Custom1', 'VisaId'] as $field) {
+        if (array_key_exists($field, $payload) && (string) $payload[$field] !== '') {
+            $parts[] = $field.'='.(string) $payload[$field];
+        }
+    }
+
     return base64_encode(hash_hmac(
         'sha256',
-        'PaymentId='.$payload['PaymentId'].',Amount='.$payload['Amount'].',StatusId=2,TransactionId='.$payload['TransactionId'].',VisaId='.$payload['VisaId'],
+        implode(',', $parts),
         'webhook-secret',
         true,
     ));
+}
+
+function createMembershipCheckoutPromotion($test, int $basisPoints = 1000, string $eligibility = 'both'): MembershipPromotion
+{
+    $promotion = MembershipPromotion::query()->create([
+        'company_id' => $test->company->id,
+        'code' => 'SAVEQAR23456',
+        'discount_type' => 'percentage',
+        'percentage_basis_points' => $basisPoints,
+        'purchase_eligibility' => $eligibility,
+        'starts_at' => now('UTC')->subDay(),
+        'ends_at' => now('UTC')->addDay(),
+        'total_limit' => 10,
+        'per_customer_limit' => 1,
+        'status' => 'active',
+        'revision' => 1,
+        'first_activated_at' => now('UTC'),
+        'created_by' => $test->systemActor->id,
+        'updated_by' => $test->systemActor->id,
+    ]);
+    $promotion->plans()->attach(
+        MembershipPlan::query()
+            ->where('company_id', $test->company->id)
+            ->where('code', '20')
+            ->value('id')
+    );
+
+    return $promotion;
 }
 
 function startMembershipCheckout($test, string $planCode): PaymentCheckoutAttempt
@@ -336,6 +375,157 @@ it('keeps paid purchase selections and promotion paths closed without affecting 
     expect(PaymentCheckoutAttempt::query()->count())->toBe(0)
         ->and(MealPlanRequest::query()->count())->toBe(0)
         ->and(Payment::query()->where('payment_source_id', $this->source->id)->count())->toBe(0);
+});
+
+it('reserves and permanently redeems one partial membership promotion after verified payment', function (): void {
+    Config::set('payments.membership.promotions_enabled', true);
+    $promotion = createMembershipCheckoutPromotion($this);
+    $quotePayload = [
+        ...membershipQuotePayload('20'),
+        'promo_code' => $promotion->code,
+    ];
+    $quote = $this->postJson('/api/customer/checkouts/quote', $quotePayload)
+        ->assertOk()
+        ->assertJsonPath('result_kind', 'paid_membership')
+        ->assertJsonPath('gross_amount_cents', 90000)
+        ->assertJsonPath('discount_amount_cents', 9000)
+        ->assertJsonPath('payable_amount_cents', 81000)
+        ->assertJsonPath('purchase_allowance', 20)
+        ->assertJsonPath('promotion.code', $promotion->code);
+    expect(MembershipPromotionReservation::query()->count())->toBe(0)
+        ->and(MembershipPromotionRedemption::query()->count())->toBe(0);
+
+    $clientUuid = (string) Str::uuid();
+    $this->postJson('/api/customer/checkouts', [
+        'client_uuid' => $clientUuid,
+        ...$quotePayload,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertStatus(202)
+        ->assertJsonPath('status', 'pending')
+        ->assertJsonPath('discount_amount_cents', 9000)
+        ->assertJsonPath('payable_amount_cents', 81000);
+
+    $attempt = PaymentCheckoutAttempt::query()->latest('id')->firstOrFail();
+    $reservation = MembershipPromotionReservation::query()->firstOrFail();
+    expect($attempt->discount_amount_cents)->toBe(9000)
+        ->and($attempt->payable_amount_cents)->toBe(81000)
+        ->and($reservation->status)->toBe('held')
+        ->and($reservation->offer_snapshot['code'])->toBe($promotion->code)
+        ->and(MembershipPromotionRedemption::query()->count())->toBe(0);
+
+    $promotion->update(['status' => 'paused']);
+    [$response] = completeMembershipCheckout($this, $attempt);
+    $response->assertOk()->assertJson(['accepted' => true]);
+    $block = MembershipPurchaseBlock::query()->firstOrFail();
+    $payment = Payment::query()->where('payment_source_id', $this->source->id)->firstOrFail();
+    $redemption = MembershipPromotionRedemption::query()->firstOrFail();
+
+    expect($attempt->fresh()->state)->toBe('completed')
+        ->and($reservation->fresh()->status)->toBe('redeemed')
+        ->and($redemption->kind)->toBe('paid_purchase')
+        ->and($redemption->purchase_block_id)->toBe($block->id)
+        ->and($block->meal_count)->toBe(20)
+        ->and($block->gross_price_cents)->toBe(90000)
+        ->and($block->discount_cents)->toBe(9000)
+        ->and($block->final_price_cents)->toBe(81000)
+        ->and($payment->amount_cents)->toBe(81000)
+        ->and($payment->unallocatedCents())->toBe(81000);
+
+    $replay = $this->postJson('/api/customer/checkouts', [
+        'client_uuid' => $clientUuid,
+        ...$quotePayload,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertOk()->assertJsonPath('replayed', true);
+    expect($replay->json('promotion.code'))->toBe($promotion->code)
+        ->and(MembershipPromotionRedemption::query()->count())->toBe(1);
+});
+
+it('releases a partial promotion hold after a terminal unpaid result', function (): void {
+    Config::set('payments.membership.promotions_enabled', true);
+    $promotion = createMembershipCheckoutPromotion($this);
+    $quotePayload = [
+        ...membershipQuotePayload('20'),
+        'promo_code' => $promotion->code,
+    ];
+    $quote = $this->postJson('/api/customer/checkouts/quote', $quotePayload)->assertOk();
+    $this->postJson('/api/customer/checkouts', [
+        'client_uuid' => (string) Str::uuid(),
+        ...$quotePayload,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertStatus(202);
+    $attempt = PaymentCheckoutAttempt::query()->latest('id')->firstOrFail();
+    $transaction = $attempt->providerTransactions()->firstOrFail();
+    $payload = membershipWebhookPayload($attempt, $transaction);
+    $payload['StatusId'] = '3';
+
+    $this->postJson(
+        '/api/integrations/skipcash/webhook',
+        $payload,
+        ['Authorization' => membershipWebhookSignature($payload)],
+    )->assertOk()->assertJson(['accepted' => true]);
+
+    expect($attempt->fresh()->state)->toBe('declined')
+        ->and($attempt->targets()->firstOrFail()->hold_state)->toBe('released')
+        ->and(MembershipPromotionReservation::query()->firstOrFail()->status)->toBe('released')
+        ->and(MembershipPromotionRedemption::query()->count())->toBe(0);
+});
+
+it('releases a partial promotion hold when verified payment finishes after checkout expiry', function (): void {
+    Config::set('payments.membership.promotions_enabled', true);
+    $promotion = createMembershipCheckoutPromotion($this);
+    $quotePayload = [
+        ...membershipQuotePayload('20'),
+        'promo_code' => $promotion->code,
+    ];
+    $quote = $this->postJson('/api/customer/checkouts/quote', $quotePayload)->assertOk();
+    $this->postJson('/api/customer/checkouts', [
+        'client_uuid' => (string) Str::uuid(),
+        ...$quotePayload,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertStatus(202);
+
+    $attempt = PaymentCheckoutAttempt::query()->latest('id')->firstOrFail();
+    $attempt->update(['expires_at' => now('UTC')->subMinute()]);
+    [$response] = completeMembershipCheckout($this, $attempt->fresh(), CarbonImmutable::now('UTC'));
+    $response->assertOk()->assertJson(['accepted' => true]);
+
+    expect($attempt->fresh()->state)->toBe('payment_received_as_credit')
+        ->and($attempt->promotionReservation()->firstOrFail()->status)->toBe('released')
+        ->and(MembershipPromotionRedemption::query()->count())->toBe(0)
+        ->and(MembershipPurchaseBlock::query()->count())->toBe(0)
+        ->and(Payment::query()->where('payment_source_id', $this->source->id)->firstOrFail()->amount_cents)->toBe(81000);
+});
+
+it('quotes a zero membership promotion but refuses to start a payment checkout', function (): void {
+    Config::set('payments.membership.promotions_enabled', true);
+    $promotion = createMembershipCheckoutPromotion($this, 10000);
+    $quotePayload = [
+        ...membershipQuotePayload('20'),
+        'promo_code' => $promotion->code,
+    ];
+    $quote = $this->postJson('/api/customer/checkouts/quote', $quotePayload)
+        ->assertOk()
+        ->assertJsonPath('result_kind', 'pending_request')
+        ->assertJsonPath('discount_amount_cents', 90000)
+        ->assertJsonPath('payable_amount_cents', 0)
+        ->assertJsonPath('can_checkout', false)
+        ->assertJsonPath('can_submit_request', true);
+
+    $this->postJson('/api/customer/checkouts', [
+        'client_uuid' => (string) Str::uuid(),
+        ...$quotePayload,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertStatus(409)->assertJsonPath('code', 'PROMOTION_REQUEST_REQUIRED');
+
+    expect(PaymentCheckoutAttempt::query()->count())->toBe(0)
+        ->and(MealPlanRequest::query()->count())->toBe(0)
+        ->and(MembershipPromotionReservation::query()->count())->toBe(0)
+        ->and(MembershipPromotionRedemption::query()->count())->toBe(0);
 });
 
 it('keeps membership checkout closed unless checkout and queue launch flags are enabled', function (): void {

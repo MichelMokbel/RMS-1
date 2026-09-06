@@ -6,6 +6,7 @@ use App\Models\PaymentCheckoutAttempt;
 use App\Models\PaymentCheckoutTarget;
 use App\Models\PaymentProviderTransaction;
 use App\Services\Payments\SkipCashProvider;
+use App\Services\Promotions\MembershipPromotionReservationService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -25,9 +26,11 @@ class InitiateSkipCashCheckout implements ShouldQueue
         $this->timeout = (int) config('payments.skipcash.worker_timeout_seconds', 30);
     }
 
-    public function handle(SkipCashProvider $provider): void
-    {
-        $attempt = DB::transaction(function (): ?PaymentCheckoutAttempt {
+    public function handle(
+        SkipCashProvider $provider,
+        MembershipPromotionReservationService $promotionReservations,
+    ): void {
+        $attempt = DB::transaction(function () use ($promotionReservations): ?PaymentCheckoutAttempt {
             $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->find($this->attemptId);
             if (! $attempt || $attempt->provider_create_outcome !== 'not_sent' || ! (bool) config('payments.skipcash.enabled', false)) {
                 return null;
@@ -46,6 +49,10 @@ class InitiateSkipCashCheckout implements ShouldQueue
                         'hold_state' => 'released',
                         'released_at' => now('UTC'),
                     ]);
+                $promotionReservations->releaseForCheckout(
+                    (int) $attempt->id,
+                    'expired_before_dispatch',
+                );
 
                 return null;
             }
@@ -87,7 +94,7 @@ class InitiateSkipCashCheckout implements ShouldQueue
         }
 
         if (($result['outcome'] ?? null) !== 'created' || ! $this->validCreateResult($result)) {
-            DB::transaction(function (): void {
+            DB::transaction(function () use ($promotionReservations): void {
                 $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->find($this->attemptId);
                 if (! $attempt || $attempt->provider_create_outcome !== 'in_flight') {
                     return;
@@ -98,6 +105,18 @@ class InitiateSkipCashCheckout implements ShouldQueue
                     'last_error_code' => 'PROVIDER_CREATE_REJECTED',
                     'next_recovery_at' => null,
                 ]);
+                PaymentCheckoutTarget::query()
+                    ->where('attempt_id', $attempt->id)
+                    ->where('hold_state', 'held')
+                    ->lockForUpdate()
+                    ->update([
+                        'hold_state' => 'released',
+                        'released_at' => now('UTC'),
+                    ]);
+                $promotionReservations->releaseForCheckout(
+                    (int) $attempt->id,
+                    'provider_create_rejected',
+                );
             });
 
             return;

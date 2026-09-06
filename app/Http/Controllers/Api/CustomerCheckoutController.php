@@ -12,6 +12,7 @@ use App\Services\Payments\OrdinaryOrderCheckoutService;
 use App\Services\Payments\OrdinaryOrderQuoteService;
 use App\Services\Payments\PaymentCheckoutException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 
 class CustomerCheckoutController extends Controller
 {
@@ -37,8 +38,9 @@ class CustomerCheckoutController extends Controller
                     'selections' => ['present', 'array'],
                     'promo_code' => ['nullable', 'string', 'max:80'],
                 ]);
+                $this->throttlePromotionQuote($request, (string) ($payload['promo_code'] ?? ''));
                 $quote = $this->membershipQuotes->quote($request->user(), $payload);
-                unset($quote['_context'], $quote['_plan']);
+                unset($quote['_context'], $quote['_plan'], $quote['_promotion']);
             } else {
                 $this->assertExactKeys($request->all(), ['purpose', 'cart']);
                 $payload = $request->validate([
@@ -167,6 +169,37 @@ class CustomerCheckoutController extends Controller
             abort(response()->json([
                 'message' => __('Unsupported checkout fields were submitted.'),
             ], 422));
+        }
+    }
+
+    private function throttlePromotionQuote(Request $request, string $promoCode): void
+    {
+        if (trim($promoCode) === '') {
+            return;
+        }
+
+        $limits = [
+            [
+                'key' => 'membership-promotion-quote:user:'.(int) $request->user()->id,
+                'attempts' => max(1, (int) config('payments.membership.promotion_quote_user_limit', 10)),
+            ],
+            [
+                'key' => 'membership-promotion-quote:ip:'.hash('sha256', (string) $request->ip()),
+                'attempts' => max(1, (int) config('payments.membership.promotion_quote_ip_limit', 30)),
+            ],
+        ];
+        foreach ($limits as $limit) {
+            if (RateLimiter::tooManyAttempts($limit['key'], $limit['attempts'])) {
+                throw new PaymentCheckoutException(
+                    'PROMOTION_RATE_LIMITED',
+                    429,
+                    __('Too many promotion checks were submitted. Please wait and try again.'),
+                    ['retry_after' => RateLimiter::availableIn($limit['key'])],
+                );
+            }
+        }
+        foreach ($limits as $limit) {
+            RateLimiter::hit($limit['key'], 60);
         }
     }
 }

@@ -8,6 +8,7 @@ use App\Models\PaymentSource;
 use App\Models\User;
 use App\Services\Accounting\AccountingContextService;
 use App\Services\Customers\CustomerIdentityResolver;
+use App\Services\Promotions\MembershipPromotionQuoteService;
 use App\Services\Subscriptions\MembershipPlanCatalogService;
 use App\Services\Subscriptions\MembershipQueueService;
 use Illuminate\Validation\ValidationException;
@@ -21,6 +22,7 @@ class MembershipQuoteService
         private readonly CheckoutCanonicalizer $canonicalizer,
         private readonly MembershipPlanCatalogService $plans,
         private readonly MembershipQueueService $queues,
+        private readonly MembershipPromotionQuoteService $promotions,
     ) {}
 
     /** @param array<string, mixed> $request
@@ -46,29 +48,45 @@ class MembershipQuoteService
                 __('Choose meals later while membership meal booking is being enabled.'),
             );
         }
-        if (trim((string) ($request['promo_code'] ?? '')) !== '') {
-            throw new PaymentCheckoutException(
-                'MEMBERSHIP_PROMOTIONS_NOT_AVAILABLE',
-                503,
-                __('Promotion codes are not available for checkout yet.'),
-            );
-        }
-
         $planCode = trim((string) ($request['plan_code'] ?? ''));
         $plan = $this->plans->findActive($context['company_id'], $planCode);
         if (! $plan) {
             throw ValidationException::withMessages(['plan_code' => __('Choose an available membership plan.')]);
         }
         $planSnapshot = $this->plans->present($plan);
+        $promoCode = trim((string) ($request['promo_code'] ?? ''));
+        $promotion = null;
+        if ($promoCode !== '') {
+            if (! (bool) config('payments.membership.promotions_enabled', false)) {
+                throw new PaymentCheckoutException(
+                    'MEMBERSHIP_PROMOTIONS_NOT_AVAILABLE',
+                    503,
+                    __('Promotion codes are not available for checkout yet.'),
+                );
+            }
+            $promotion = $this->promotions->quote(
+                $context['company_id'],
+                (int) $user->customer_id,
+                $plan,
+                $promoCode,
+            );
+        }
+        $discountCents = (int) ($promotion['discount_cents'] ?? 0);
+        $payableCents = (int) $plan->package_price_cents - $discountCents;
+        $resultKind = (string) ($promotion['result_kind'] ?? 'paid_membership');
         $quoteFingerprint = $this->canonicalizer->hash([
-            'membership-quote-v1',
+            'membership-quote-v2',
             (string) $user->customer_id,
             (string) $context['company_id'],
             (string) $context['branch']->id,
             'QAR',
             $planSnapshot,
             [],
-            null,
+            $promotion ? [
+                'acceptance_fingerprint' => $promotion['acceptance_fingerprint'],
+                'code' => $promotion['code'],
+            ] : null,
+            $resultKind,
             $context['terms']['version'],
             $context['terms']['content_hash'],
         ]);
@@ -80,8 +98,8 @@ class MembershipQuoteService
             'main_quantity' => 0,
             'purchase_allowance' => (int) $plan->meal_count,
             'gross_amount_cents' => (int) $plan->package_price_cents,
-            'discount_amount_cents' => 0,
-            'payable_amount_cents' => (int) $plan->package_price_cents,
+            'discount_amount_cents' => $discountCents,
+            'payable_amount_cents' => $payableCents,
             'currency' => 'QAR',
             'delivery_included' => true,
             'quote_fingerprint' => $quoteFingerprint,
@@ -94,9 +112,20 @@ class MembershipQuoteService
                 $context['company_id'],
                 (int) $context['branch']->id,
             ),
-            'can_checkout' => true,
+            'result_kind' => $resultKind,
+            'promotion' => $promotion ? [
+                'code' => $promotion['code'],
+                'discount_type' => $promotion['offer_snapshot']['discount_type'],
+                'fixed_amount_cents' => $promotion['offer_snapshot']['fixed_amount_cents'],
+                'percentage_basis_points' => $promotion['offer_snapshot']['percentage_basis_points'],
+                'purchase_eligibility' => $promotion['offer_snapshot']['purchase_eligibility'],
+                'offer_revision' => $promotion['offer_snapshot']['revision'],
+            ] : null,
+            'can_checkout' => $payableCents > 0,
+            'can_submit_request' => $payableCents === 0,
             '_context' => $context,
             '_plan' => $plan,
+            '_promotion' => $promotion,
         ];
     }
 

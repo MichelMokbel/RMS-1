@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class PaymentCheckoutAttempt extends Model
 {
@@ -111,5 +112,15 @@ class PaymentCheckoutAttempt extends Model
     public function providerTransactions(): HasMany
     {
         return $this->hasMany(PaymentProviderTransaction::class, 'attempt_id');
+    }
+
+    public function promotionReservation(): HasOne
+    {
+        return $this->hasOne(MembershipPromotionReservation::class, 'checkout_id');
+    }
+
+    public function promotionRedemption(): HasOne
+    {
+        return $this->hasOne(MembershipPromotionRedemption::class, 'checkout_id');
     }
 }

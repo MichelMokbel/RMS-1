@@ -12,6 +12,7 @@ use App\Services\AR\ArPaymentService;
 use App\Services\Customers\CustomerOwnershipService;
 use App\Services\Mail\MailConfigurationUnavailableException;
 use App\Services\Mail\MailSettingsService;
+use App\Services\Promotions\MembershipPromotionReservationService;
 use App\Services\Subscriptions\MembershipQueueService;
 use Illuminate\Support\Facades\DB;
 
@@ -23,6 +24,7 @@ class MembershipCheckoutActivationService
         private readonly AccountingAuditLogService $auditLog,
         private readonly CustomerOwnershipService $customerOwnership,
         private readonly MailSettingsService $mailSettings,
+        private readonly MembershipPromotionReservationService $promotionReservations,
     ) {}
 
     public function complete(int $attemptId, int $providerTransactionId): PaymentCheckoutAttempt
@@ -114,6 +116,11 @@ class MembershipCheckoutActivationService
                     'hold_state' => 'released',
                     'released_at' => now('UTC'),
                 ]);
+                $this->promotionReservations->releaseForCheckout(
+                    (int) $attempt->id,
+                    'payment_late',
+                    $actorId,
+                );
                 $attempt->update([
                     'state' => 'payment_received_as_credit',
                     'completed_at' => now('UTC'),
@@ -144,6 +151,14 @@ class MembershipCheckoutActivationService
                 $plan,
                 $actorId,
             );
+            if ((int) $attempt->discount_amount_cents > 0) {
+                $this->promotionReservations->redeemPaidPurchase(
+                    $attempt,
+                    $conversion['request'],
+                    $conversion['block'],
+                    $actorId,
+                );
+            }
             $target->update([
                 'hold_state' => 'activated',
                 'activated_at' => now('UTC'),

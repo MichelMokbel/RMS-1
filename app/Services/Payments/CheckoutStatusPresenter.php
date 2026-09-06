@@ -50,6 +50,8 @@ class CheckoutStatusPresenter
             'message' => $this->message($attempt, $status),
             'recovery_reference' => $attempt->reference,
             'currency' => $attempt->currency,
+            'gross_amount_cents' => (int) $attempt->gross_amount_cents,
+            'discount_amount_cents' => (int) $attempt->discount_amount_cents,
             'payable_amount_cents' => (int) $attempt->payable_amount_cents,
             'paid_amount_cents' => $financialIntent['provider_transaction_id'] ?? null ? (int) $attempt->payable_amount_cents : 0,
             'confirmed_amount_cents' => $state === 'completed' ? (int) $attempt->payable_amount_cents : 0,
@@ -67,6 +69,8 @@ class CheckoutStatusPresenter
             $result['meal_plan_request_id'] = $request?->id;
             $result['subscription_id'] = $request?->converted_subscription_id;
             $result['purchase_block_id'] = $notification['purchase_block_id'] ?? null;
+            $result['result_kind'] = 'paid_membership';
+            $result['promotion'] = $attempt->pricing_snapshot['promotion'] ?? null;
             $result['queue'] = $request?->converted_subscription_id
                 ? $this->membershipQueues->summary(
                     (int) $attempt->customer_id,
