@@ -322,7 +322,7 @@ it('records an after expiry membership payment as credit without activating allo
         ->assertJsonPath('retained_credit_amount_cents', 90000);
 });
 
-it('keeps unbuilt booking and promotion paths closed without affecting empty purchases', function (): void {
+it('keeps paid purchase selections and promotion paths closed without affecting empty purchases', function (): void {
     $this->postJson('/api/customer/checkouts/quote', [
         ...membershipQuotePayload('20'),
         'selections' => [['date' => now('Asia/Qatar')->addDay()->toDateString()]],

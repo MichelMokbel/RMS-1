@@ -14,6 +14,7 @@ return [
     'membership' => [
         'checkout_enabled' => (bool) env('MEMBERSHIP_CHECKOUT_ENABLED', false),
         'queue_enabled' => (bool) env('MEMBERSHIP_QUEUE_ENABLED', false),
+        'booking_enabled' => (bool) env('MEMBERSHIP_BOOKING_ENABLED', false),
     ],
 
     'defaults' => [

@@ -70,6 +70,10 @@ class OrdinaryOrderQuoteService
                 'terms_content_hash' => $context['terms']['content_hash'],
                 'support_phone' => $context['settings']->order_support_phone,
                 'can_checkout' => false,
+                '_context' => $context,
+                '_priced_days' => [],
+                '_pricing_version' => $this->pricingVersion(),
+                '_canonical_days' => [],
             ];
         }
 

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MembershipPurchaseBlock extends Model
 {
@@ -85,5 +86,10 @@ class MembershipPurchaseBlock extends Model
     public function request(): BelongsTo
     {
         return $this->belongsTo(MealPlanRequest::class, 'meal_plan_request_id');
+    }
+
+    public function bookingFunding(): HasMany
+    {
+        return $this->hasMany(MembershipBookingFunding::class, 'purchase_block_id');
     }
 }

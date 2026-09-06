@@ -21,6 +21,7 @@ use App\Services\Accounting\JobCostingService;
 use App\Services\Ledger\SubledgerService;
 use App\Services\Payments\PaymentCreditProjectionService;
 use App\Services\Sequences\DocumentSequenceService;
+use App\Services\Subscriptions\MembershipBookingFundingService;
 use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -36,6 +37,7 @@ class ArInvoiceService
         protected ArAllocationIntegrityService $allocationIntegrity,
         protected AccountingPeriodGateService $periodGate,
         protected PaymentCreditProjectionService $creditProjection,
+        protected MembershipBookingFundingService $membershipBookingFunding,
     ) {}
 
     public function createDraft(
@@ -669,6 +671,7 @@ class ArInvoiceService
     public function void(ArInvoice $invoice, int $actorId, ?string $reason = null): ArInvoice
     {
         return DB::transaction(function () use ($invoice, $actorId, $reason) {
+            $this->membershipBookingFunding->lockQueueForInvoiceMutation((int) $invoice->id);
             $locked = ArInvoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
 
             if ($locked->status === 'voided') {
@@ -690,7 +693,9 @@ class ArInvoiceService
             $locked->void_reason = $reason ? trim($reason) : ($locked->void_reason ?: null);
             $locked->save();
             $this->reverseIssuedInvoicePosting($locked, $actorId, $locked->voided_at?->toDateString());
-            $this->decrementSubscriptionMealsForVoidedInvoice($locked->fresh(['items']));
+            if (! $this->membershipBookingFunding->releaseVoidedInvoice($locked->fresh(['items']), $actorId)) {
+                $this->decrementSubscriptionMealsForVoidedInvoice($locked->fresh(['items']));
+            }
             $this->recalc($locked->fresh(['items']));
 
             $this->auditLog->log('ar_invoice.voided', $actorId, $locked, [
@@ -704,6 +709,7 @@ class ArInvoiceService
     public function voidAndDuplicate(ArInvoice $invoice, int $actorId, ?string $reason = null): ArInvoice
     {
         return DB::transaction(function () use ($invoice, $actorId, $reason) {
+            $this->membershipBookingFunding->lockQueueForInvoiceMutation((int) $invoice->id);
             $locked = ArInvoice::query()->with(['items'])->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
 
             if ($locked->status === 'voided') {
@@ -736,7 +742,9 @@ class ArInvoiceService
             $locked->void_reason = $reason ? trim($reason) : ($locked->void_reason ?: null);
             $locked->save();
             $this->reverseIssuedInvoicePosting($locked, $actorId, $locked->voided_at?->toDateString());
-            $this->decrementSubscriptionMealsForVoidedInvoice($locked->fresh(['items']));
+            if (! $this->membershipBookingFunding->releaseVoidedInvoice($locked->fresh(['items']), $actorId)) {
+                $this->decrementSubscriptionMealsForVoidedInvoice($locked->fresh(['items']));
+            }
             $this->recalc($locked->fresh(['items']));
 
             $items = $locked->items->map(fn (ArInvoiceItem $item) => [
@@ -904,9 +912,13 @@ class ArInvoiceService
             ->where('company_id', $invoiceCompanyId)
             ->where('source', 'ar')
             ->whereNull('voided_at')
-            ->whereHas('mealSubscriptions', fn ($query) => $query
-                ->whereIn('status', ['active', 'paused'])
-                ->where('uses_invoice_tracking', true))
+            ->where(function ($query): void {
+                $query->whereHas('mealSubscriptions', fn ($subscriptionQuery) => $subscriptionQuery
+                    ->whereIn('status', ['active', 'paused'])
+                    ->where('uses_invoice_tracking', true))
+                    ->orWhereHas('membershipPurchaseBlocks', fn ($blockQuery) => $blockQuery
+                        ->whereNull('cancelled_at'));
+            })
             ->orderBy('received_at', 'asc')
             ->orderBy('id', 'asc')
             ->get();

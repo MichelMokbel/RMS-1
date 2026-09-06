@@ -1,8 +1,8 @@
 # 0008. Covered membership booking and correction
 
 **Date**: 2026-08-31
-**Status**: Proposed
-**Scope**: Feature 10. Design confirmed on 2026-09-01; not implemented.
+**Status**: In Progress
+**Scope**: Feature 10. Queue projection, covered quote and confirmation, exact sequential funding, paid invoice allocation, direct invoice void restoration, and standing-generation guards were implemented behind disabled launch flags on 2026-09-05. Customer change/cancel, pause correction, confirmations, website surfaces, legacy opening, and full release verification remain pending.
 
 ## Summary
 

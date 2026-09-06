@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\AP\ApReportsController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\CustomerCheckoutController;
 use App\Http\Controllers\Api\CustomerController;
+use App\Http\Controllers\Api\CustomerMembershipController;
 use App\Http\Controllers\Api\CustomerPortalAuthController;
 use App\Http\Controllers\Api\CustomerPortalDashboardController;
 use App\Http\Controllers\Api\CustomerPortalProfileController;
@@ -82,6 +83,8 @@ Route::prefix('customer')->group(function () {
         Route::get('invoices/{invoice}', [CustomerPortalDashboardController::class, 'showInvoice']);
         Route::get('payments', [CustomerPortalDashboardController::class, 'payments']);
         Route::get('payments/{payment}', [CustomerPortalDashboardController::class, 'showPayment']);
+        Route::get('memberships', [CustomerMembershipController::class, 'show'])
+            ->middleware('throttle:120,1');
 
         Route::middleware('customer.phone.verified')->group(function () {
             Route::post('profile/phone/start-change', [CustomerPortalProfileController::class, 'startPhoneChange']);
@@ -91,6 +94,10 @@ Route::prefix('customer')->group(function () {
                 ->middleware('throttle:60,1');
             Route::post('checkouts', [CustomerCheckoutController::class, 'store'])
                 ->middleware('throttle:10,1');
+            Route::post('membership-bookings/quote', [CustomerMembershipController::class, 'quote'])
+                ->middleware('throttle:60,1');
+            Route::post('membership-bookings', [CustomerMembershipController::class, 'store'])
+                ->middleware('throttle:30,1');
         });
 
         Route::get('checkouts', [CustomerCheckoutController::class, 'index'])

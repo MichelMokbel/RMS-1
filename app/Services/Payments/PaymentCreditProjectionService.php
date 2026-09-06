@@ -4,6 +4,8 @@ namespace App\Services\Payments;
 
 use App\Models\ArInvoice;
 use App\Models\MealSubscription;
+use App\Models\MembershipBookingFunding;
+use App\Models\MembershipPurchaseBlock;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use Illuminate\Database\Eloquent\Builder;
@@ -80,6 +82,24 @@ class PaymentCreditProjectionService
             return $this->unavailable($amount, $allocated, $unallocated, 'MEMBERSHIP_FUNDING_INCONSISTENT');
         }
 
+        $blocks = MembershipPurchaseBlock::query()
+            ->where('payment_id', $payment->id)
+            ->when($lock, fn (Builder $query) => $query->lockForUpdate())
+            ->get();
+        foreach ($blocks as $block) {
+            if ((int) $block->company_id !== (int) $payment->company_id
+                || (int) $block->branch_id !== (int) $payment->branch_id
+                || (int) $block->original_customer_id !== (int) $payment->customer_id
+                || $block->currency !== $payment->currency) {
+                return $this->unavailable($amount, $allocated, $unallocated, 'MEMBERSHIP_FUNDING_SCOPE_MISMATCH');
+            }
+            if (! $block->cancelled_at) {
+                $committedSubscriptionIds[] = (int) $block->subscription_id;
+            }
+        }
+
+        $committedSubscriptionIds = array_values(array_unique($committedSubscriptionIds));
+
         $committed = $committedSubscriptionIds === [] ? 0 : $unallocated;
 
         return [
@@ -99,6 +119,18 @@ class PaymentCreditProjectionService
         $projection = $this->project($payment, $lock);
         if ($projection['state'] !== 'committed' || $projection['unallocated_cents'] <= 0) {
             return 0;
+        }
+
+        $queueCommitted = MembershipBookingFunding::query()
+            ->where('invoice_id', $invoice->id)
+            ->whereIn('state', ['reserved', 'invoiced'])
+            ->whereHas('purchaseBlock', fn (Builder $query) => $query
+                ->where('payment_id', $payment->id)
+                ->whereNull('cancelled_at'))
+            ->when($lock, fn (Builder $query) => $query->lockForUpdate())
+            ->sum('invoice_net_cents');
+        if ((int) $queueCommitted > 0) {
+            return min((int) $queueCommitted, (int) $projection['unallocated_cents']);
         }
 
         $invoice->loadMissing('items');

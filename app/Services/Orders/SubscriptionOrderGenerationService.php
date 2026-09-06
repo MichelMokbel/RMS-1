@@ -3,26 +3,21 @@
 namespace App\Services\Orders;
 
 use App\Models\DailyDishMenu;
-use App\Models\DailyDishMenuItem;
 use App\Models\MealSubscription;
 use App\Models\MealSubscriptionOrder;
-use App\Models\MenuItem;
 use App\Models\OpsEvent;
 use App\Models\SubscriptionOrderRun;
 use App\Models\SubscriptionOrderRunError;
 use App\Services\Pricing\MealPlanPricingService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 
 class SubscriptionOrderGenerationService
 {
     public function __construct(
         protected MealPlanPricingService $pricing,
         protected OrderNumberService $orderNumbers
-    )
-    {
-    }
+    ) {}
 
     public function generateForDate(string $serviceDate, int $branchId, int $userId, bool $dryRun = false): array
     {
@@ -64,12 +59,14 @@ class SubscriptionOrderGenerationService
                 'created_at' => now(),
             ]);
             $this->finishRun($run, $result, 'failed');
+
             return $result;
         }
 
         $subs = MealSubscription::with(['days', 'pauses', 'customer'])
             ->where('branch_id', $branchId)
             ->where('status', 'active')
+            ->where('fulfillment_mode', 'standing')
             ->whereDate('start_date', '<=', $serviceDate)
             ->where(function ($q) use ($serviceDate) {
                 $q->whereNull('end_date')->orWhereDate('end_date', '>=', $serviceDate);
@@ -81,6 +78,7 @@ class SubscriptionOrderGenerationService
                 if ($s->plan_meals_total === null) {
                     return true;
                 }
+
                 return (int) ($s->meals_used ?? 0) < (int) $s->plan_meals_total;
             });
 
@@ -94,17 +92,20 @@ class SubscriptionOrderGenerationService
                 ->exists();
             if ($exists) {
                 $result['skipped_existing_count']++;
+
                 continue;
             }
 
             $selectedItems = $this->selectItemsForSubscription($sub, $menuItemsGrouped);
             if ($selectedItems->isEmpty()) {
                 $result['skipped_no_items_count']++;
+
                 continue;
             }
 
             if ($dryRun) {
                 $result['created_count']++;
+
                 continue;
             }
 
@@ -331,4 +332,3 @@ class SubscriptionOrderGenerationService
         ]);
     }
 }
-

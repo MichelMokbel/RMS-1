@@ -107,6 +107,11 @@ class Payment extends Model
         return $this->hasMany(MealSubscription::class, 'source_payment_id');
     }
 
+    public function membershipPurchaseBlocks(): HasMany
+    {
+        return $this->hasMany(MembershipPurchaseBlock::class, 'payment_id');
+    }
+
     public function allAllocations(): HasMany
     {
         return $this->hasMany(PaymentAllocation::class, 'payment_id');

@@ -14,6 +14,7 @@ use App\Services\AR\ArAllocationIntegrityService;
 use App\Services\AR\ArAllocationService;
 use App\Services\AR\ArInvoiceService;
 use App\Services\Ledger\SubledgerService;
+use App\Services\Subscriptions\MembershipBookingFundingService;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -31,6 +32,7 @@ class SavedCreditAllocationService
         private readonly ArAllocationService $allocations,
         private readonly SubledgerService $subledger,
         private readonly PaymentCreditProjectionService $projection,
+        private readonly MembershipBookingFundingService $membershipBookingFunding,
     ) {}
 
     /**
@@ -54,6 +56,7 @@ class SavedCreditAllocationService
         ], JSON_THROW_ON_ERROR));
 
         return DB::transaction(function () use ($paymentId, $normalizedRows, $actor, $operationUuid, $fingerprint): array {
+            $this->membershipBookingFunding->lockQueueForPaymentMutation($paymentId);
             $payment = Payment::query()->whereKey($paymentId)->lockForUpdate()->firstOrFail();
             $companyId = $this->integrity->resolvePaymentCompanyId($payment);
             if (! $companyId || $companyId !== $this->context->defaultCompanyId()) {

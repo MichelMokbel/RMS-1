@@ -5,13 +5,24 @@ namespace App\Listeners;
 use App\Events\InvoiceIssued;
 use App\Models\MealSubscription;
 use App\Models\MenuItem;
+use App\Services\Subscriptions\MembershipBookingFundingService;
 use Illuminate\Support\Facades\DB;
 
 class SyncSubscriptionMealsOnInvoiceIssued
 {
+    public function __construct(
+        private readonly MembershipBookingFundingService $membershipBookingFunding,
+    ) {}
+
     public function handle(InvoiceIssued $event): void
     {
         $invoice = $event->invoice->loadMissing('items');
+        if ($this->membershipBookingFunding->transitionIssuedInvoice(
+            $invoice,
+            (int) ($invoice->updated_by ?? $invoice->created_by),
+        )) {
+            return;
+        }
 
         // --- Path A: auto-generated subscription orders invoiced via buildDailyDishInvoiceItems ---
         // Items tagged with meta.is_subscription = true and meta.subscription_id
@@ -92,7 +103,7 @@ class SyncSubscriptionMealsOnInvoiceIssued
         DB::transaction(function () use ($subId, $count) {
             $sub = MealSubscription::lockForUpdate()->find($subId);
 
-            if (! $sub || ! $sub->uses_invoice_tracking) {
+            if (! $sub || ! $sub->uses_invoice_tracking || $sub->fulfillment_mode === 'customer_selection') {
                 return;
             }
 
@@ -104,7 +115,7 @@ class SyncSubscriptionMealsOnInvoiceIssued
             $sub->meals_used = (int) ($sub->meals_used ?? 0) + $count;
 
             if ($sub->plan_meals_total !== null && $sub->meals_used >= $sub->plan_meals_total) {
-                $sub->status   = 'expired';
+                $sub->status = 'expired';
                 $sub->end_date = $sub->end_date ?? now()->toDateString();
             }
 

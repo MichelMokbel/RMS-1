@@ -20,12 +20,11 @@ class OrderCreateService
         protected OrderTotalsService $totals,
         protected DailyDishPricingService $dailyDishPricing,
         protected SubscriptionOrderGenerationService $subscriptionGen
-    ) {
-    }
+    ) {}
 
     /**
-     * @param  array  $data validated order fields (incl selected_items, menu_id, etc.)
-     * @param  int|null $actorId user id creating the order (nullable in tests)
+     * @param  array  $data  validated order fields (incl selected_items, menu_id, etc.)
+     * @param  int|null  $actorId  user id creating the order (nullable in tests)
      */
     public function create(array $data, ?int $actorId): Order
     {
@@ -78,6 +77,12 @@ class OrderCreateService
                     'subscription_id' => __('Subscription is for a different branch.'),
                 ]);
             }
+            if ($sub->fulfillment_mode === 'customer_selection') {
+                throw ValidationException::withMessages([
+                    'subscription_id' => __('Customer selection memberships must be booked through the covered membership workflow.'),
+                ]);
+            }
+
             return $this->createSubscriptionDailyDishOrder($data, $sub, $menu, $actorId);
         }
 
@@ -186,7 +191,7 @@ class OrderCreateService
 
         $menuItems = $itemsWithQty->isEmpty() ? collect() : $this->loadMenuItems($itemsWithQty);
 
-        return DB::transaction(function () use ($data, $itemsWithQty, $menu, $roleByMenuItemId, $menuItems, $portionType, $portionQuantity, $total, $orderDiscount, $actorId) {
+        return DB::transaction(function () use ($data, $itemsWithQty, $roleByMenuItemId, $menuItems, $portionType, $portionQuantity, $total, $orderDiscount, $actorId) {
             $order = Order::create([
                 'order_number' => $this->numbers->generate(),
                 'branch_id' => $data['branch_id'],
@@ -349,8 +354,8 @@ class OrderCreateService
             $menuItem = $menuItems->get((int) ($row['menu_item_id'] ?? 0));
             $price = isset($row['unit_price']) ? (float) $row['unit_price'] : (float) ($menuItem?->selling_price_per_unit ?? 0);
             $discount = (float) ($row['discount_amount'] ?? 0);
+
             return $carry + max(0, ($qty * $price) - $discount);
         }, 0.0);
     }
 }
-

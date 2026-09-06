@@ -5,6 +5,7 @@ namespace App\Services\Subscriptions;
 use App\Models\MealPlanRequest;
 use App\Models\MealSubscription;
 use App\Models\MealSubscriptionDay;
+use App\Models\MembershipBookingFunding;
 use App\Models\MembershipPlan;
 use App\Models\MembershipPurchaseBlock;
 use App\Models\Payment;
@@ -37,26 +38,59 @@ class MembershipQueueService
         $activeBlocks = $blocks->whereNull('cancelled_at');
         $total = (int) $activeBlocks->sum('meal_count');
         $used = (int) $roots->sum('meals_used');
-        $available = $total - $used;
+        $activeFunding = MembershipBookingFunding::query()
+            ->whereIn('purchase_block_id', $activeBlocks->pluck('id'))
+            ->whereIn('state', ['reserved', 'invoiced'])
+            ->get();
+        $reserved = (int) $activeFunding->where('state', 'reserved')->sum('main_quantity');
+        $available = $total - $used - $reserved;
         if ($available < 0) {
             throw new \RuntimeException('Membership queue usage exceeds its funded allowance.');
         }
 
+        $firstRoot = $roots->sortBy([['created_at', 'asc'], ['id', 'asc']])->first();
+
         return [
-            'queue_subscription_id' => $roots->sortBy([['created_at', 'asc'], ['id', 'asc']])->first()?->id,
+            'queue_subscription_id' => $firstRoot?->id,
+            'queue_reference' => $firstRoot?->subscription_code,
+            'queue_revision' => (int) $roots->sum('queue_revision'),
             'total_meals' => $total,
             'used_meals' => $used,
-            'reserved_meals' => 0,
+            'selected_meals' => $used + $reserved,
+            'reserved_meals' => $reserved,
             'available_meals' => $available,
             'blocks' => $blocks->map(fn (MembershipPurchaseBlock $block): array => [
                 'id' => (int) $block->id,
                 'plan_code' => $block->plan?->code,
                 'queue_position' => (int) $block->queue_position,
                 'meal_count' => (int) $block->meal_count,
+                'remaining_meals' => $block->cancelled_at ? 0 : $this->blockRemaining($block, $activeFunding),
                 'status' => $block->cancelled_at ? 'cancelled' : 'active',
                 'funded_at' => $block->funded_at?->toIso8601String(),
             ])->values()->all(),
         ];
+    }
+
+    /** @return Collection<int, MealSubscription> */
+    public function lockCompatibleRoots(int $customerId, int $companyId, int $branchId, string $currency = 'QAR'): Collection
+    {
+        return $this->compatibleRoots($customerId, $companyId, $branchId, $currency, true);
+    }
+
+    private function blockRemaining(MembershipPurchaseBlock $block, Collection $activeFunding): int
+    {
+        $activeQuantity = (int) $activeFunding
+            ->where('purchase_block_id', $block->id)
+            ->sum('main_quantity');
+        $remaining = (int) $block->meal_count
+            - (int) $block->opening_used_quantity
+            + (int) $block->opening_released_quantity
+            - $activeQuantity;
+        if ($remaining < 0) {
+            throw new \RuntimeException('Membership block usage exceeds its funded allowance.');
+        }
+
+        return $remaining;
     }
 
     /**
