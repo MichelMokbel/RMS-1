@@ -371,7 +371,8 @@ Let admins generate and manage company wide membership payment codes with a fixe
   * [x] Promotion schema, generated codes, validation, permissions and complete audit conventions (AC-1, AC-2, AC-3, AC-4).
   * [x] Draft, activation, pause, expiry and limit actions with immutable offer snapshots, action replay and revision checks (AC-2, AC-5, AC-7).
   * [x] Scoped and responsive admin forms, manual copy, eligibility examples and history (AC-1, AC-3, AC-4, AC-6).
-  * [ ] Reservation and redemption projections with 0010, merged history, diagnostics and the complete release verification matrix (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7).
+  * [x] Reservation and redemption projections with 0010 and combined completed history after approved customer merges (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7).
+  * [ ] Promotion consistency diagnostics and the complete release verification matrix (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7).
 * [ ] Verify it: `/check verify promotion rules and dashboard`
 * [ ] Test it: `/test promotion rules and dashboard`
 * [ ] Review it (fresh model): `/check review promotion rules and dashboard`
@@ -387,10 +388,11 @@ Expose a stable API contract and website entry flow to quote a code, then apply 
 
 * [x] Design it (spec): `/architect promotion validation and redemption API`
 * [ ] Build it: `/develop promotion validation and redemption API`
-  * [ ] Reservation and permanent redemption schema, zero request fields and the shared completed history and merge resolver (AC-1, AC-3, AC-5, AC-6, AC-7, AC-8).
-  * [ ] Server quote, exact discount, capacity locks and positive checkout completion and release integration (AC-1, AC-2, AC-3, AC-4, AC-7, AC-8).
-  * [ ] Request only zero result, permanent replay, explicit manual handling boundary and durable request email (AC-5, AC-6, AC-7, AC-8, AC-9).
-  * [ ] Website code entry and requote, result and account recovery, admin projections, diagnostics and the complete cross application verification matrix (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-10).
+  * [x] Reservation and permanent redemption schema, zero request fields and the shared completed history and merge resolver (AC-1, AC-3, AC-5, AC-6, AC-7, AC-8).
+  * [x] Server quote, exact discount, capacity locks and positive checkout completion and release integration (AC-1, AC-2, AC-3, AC-4, AC-7, AC-8).
+  * [x] Request only zero result, permanent replay, explicit manual handling boundary and durable request email (AC-5, AC-6, AC-7, AC-8, AC-9).
+  * [x] Website code entry and requote, paid versus request result, reload and account recovery, and administrator usage projections (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9).
+  * [ ] Promotion consistency diagnostics and the complete cross application release verification matrix (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-10).
 * [ ] Verify it: `/check verify promotion validation and redemption API`
 * [ ] Test it: `/test promotion validation and redemption API`
 * [ ] Review it (fresh model): `/check review promotion validation and redemption API`
@@ -410,6 +412,6 @@ Expose a stable API contract and website entry flow to quote a code, then apply 
 
 **Feature lifecycle:** `planned` becomes `in-progress` when design or build starts, then `done` when you accept the verified result. `existing` describes work that predates this workflow.
 
-**Next step:** update this feature branch from `origin/main` without losing the current work, then begin `/develop` with the foundation and identity and ordinary payment tracer. The shared accounting contract and final feature designs are accepted; do not restart that requirements discussion.
+**Next step:** implement the promotion consistency diagnostics from 0006, complete the remaining isolated release matrix for 0010, then run formal verification. The shared accounting contract and final feature designs are accepted; do not restart that requirements discussion.
 
 **Workflow:** GA means payment features normally run `/architect`, `/develop`, `/check verify`, `/test`, a fresh `/check review`, and `/document`.

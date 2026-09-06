@@ -2,7 +2,7 @@
 
 **Date**: 2026-08-31
 **Status**: In Progress
-**Scope**: Feature 6. Design confirmed on 2026-09-01; not implemented.
+**Scope**: Feature 6. Design confirmed on 2026-09-01. Schema, paid redemption, request only redemption, administrator projections, and customer website flows are implemented on `develop`; consistency diagnostics and final release verification remain.
 
 ## Summary
 
