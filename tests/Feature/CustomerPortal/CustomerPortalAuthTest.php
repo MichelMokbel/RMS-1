@@ -8,6 +8,7 @@ use App\Notifications\CustomerPortalResetPassword;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
 use Spatie\Permission\Models\Role;
@@ -58,6 +59,71 @@ it('starts customer registration without linking to an existing customer and sen
     expect($challenge->purpose)->toBe('signup');
     expect((int) $challenge->send_count)->toBe(1);
     expect($this->sms->messages)->toHaveCount(1);
+});
+
+it('persists the Telnyx message reference when starting verified registration', function (): void {
+    Config::set('services.customer_sms.provider', 'telnyx');
+    Config::set('services.customer_sms.telnyx', [
+        'api_key' => 'test-api-key',
+        'from' => 'Layla Kitch',
+        'messaging_profile_id' => 'profile-123',
+        'base_url' => 'https://api.telnyx.test/v2',
+        'connect_timeout_seconds' => 3,
+        'timeout_seconds' => 10,
+    ]);
+    app()->forgetInstance(PhoneVerificationProvider::class);
+    Http::fake([
+        'https://api.telnyx.test/v2/messages' => Http::response([
+            'data' => ['id' => 'message-123'],
+        ]),
+    ]);
+
+    $this->postJson('/api/customer/auth/register/start', [
+        'name' => 'Telnyx Customer',
+        'email' => 'telnyx@example.test',
+        'password' => 'password123',
+        'phone' => '55123456',
+        'address' => 'West Bay',
+    ])->assertCreated();
+
+    $challenge = CustomerPhoneVerificationChallenge::query()->firstOrFail();
+    expect($challenge->provider)->toBe('telnyx')
+        ->and($challenge->provider_message_id)->toBe('message-123')
+        ->and((int) $challenge->send_count)->toBe(1);
+    Http::assertSentCount(1);
+});
+
+it('lets registration retry cleanly when Telnyx rejects the verification message', function (): void {
+    Config::set('services.customer_sms.provider', 'telnyx');
+    Config::set('services.customer_sms.telnyx', [
+        'api_key' => 'test-api-key',
+        'from' => 'Layla Kitch',
+        'messaging_profile_id' => 'profile-123',
+        'base_url' => 'https://api.telnyx.test/v2',
+        'connect_timeout_seconds' => 3,
+        'timeout_seconds' => 10,
+    ]);
+    app()->forgetInstance(PhoneVerificationProvider::class);
+    Http::fake([
+        'https://api.telnyx.test/v2/messages' => Http::response([
+            'errors' => [['detail' => 'provider detail must stay private']],
+        ], 400),
+    ]);
+
+    $response = $this->postJson('/api/customer/auth/register/start', [
+        'name' => 'Retry Customer',
+        'email' => 'retry@example.test',
+        'password' => 'password123',
+        'phone' => '55123456',
+    ]);
+
+    $response->assertUnprocessable()
+        ->assertJsonValidationErrors('phone');
+
+    $this->assertDatabaseMissing('users', ['email' => 'retry@example.test']);
+    expect($response->getContent())->not->toContain('provider detail must stay private')
+        ->and(CustomerPhoneVerificationChallenge::query()->count())->toBe(0);
+    Http::assertSentCount(1);
 });
 
 it('verifies signup otp, creates a linked customer, and issues a customer api token', function () {

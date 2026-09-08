@@ -216,11 +216,19 @@ class CustomerPhoneVerificationService
     private function dispatchCode(CustomerPhoneVerificationChallenge $challenge): CustomerPhoneVerificationChallenge
     {
         $code = $this->generateCode();
-        $dispatch = $this->provider->sendVerificationCode(
-            $challenge->phone_e164,
-            $this->buildMessage($code),
-            ['purpose' => $challenge->purpose, 'challenge_id' => $challenge->id]
-        );
+        try {
+            $dispatch = $this->provider->sendVerificationCode(
+                $challenge->phone_e164,
+                $this->buildMessage($code),
+                ['purpose' => $challenge->purpose, 'challenge_id' => $challenge->id]
+            );
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            throw ValidationException::withMessages([
+                'phone' => __('We could not send the verification code. Please try again.'),
+            ]);
+        }
 
         $challenge->forceFill([
             'code_hash' => Hash::make($code),

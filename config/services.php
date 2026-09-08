@@ -37,6 +37,14 @@ return [
         'monthly_spend_limit_usd' => env('AWS_SMS_MONTHLY_SPEND_LIMIT_USD'),
         'delivery_status_iam_role_arn' => env('AWS_SMS_DELIVERY_STATUS_IAM_ROLE_ARN'),
         'delivery_status_success_sampling_rate' => env('AWS_SMS_DELIVERY_STATUS_SUCCESS_SAMPLING_RATE'),
+        'telnyx' => [
+            'api_key' => env('TELNYX_API_KEY'),
+            'from' => env('TELNYX_FROM'),
+            'messaging_profile_id' => env('TELNYX_MESSAGING_PROFILE_ID'),
+            'base_url' => env('TELNYX_API_BASE_URL', 'https://api.telnyx.com/v2'),
+            'connect_timeout_seconds' => env('TELNYX_CONNECT_TIMEOUT_SECONDS', 3),
+            'timeout_seconds' => env('TELNYX_TIMEOUT_SECONDS', 10),
+        ],
     ],
 
     'slack' => [

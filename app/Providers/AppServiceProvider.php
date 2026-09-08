@@ -6,6 +6,7 @@ use App\Contracts\PhoneVerificationProvider;
 use App\Services\Ai\AiProviderInterface;
 use App\Services\Ai\GeminiProvider;
 use App\Services\Customers\AwsSnsPhoneVerificationProvider;
+use App\Services\Customers\TelnyxPhoneVerificationProvider;
 use App\Services\Finance\FinanceSettingsService;
 use App\Services\Mail\MailSettingsService;
 use App\Services\Payments\FakeSkipCashProvider;
@@ -34,6 +35,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(PhoneVerificationProvider::class, function ($app) {
             return match ((string) config('services.customer_sms.provider', 'aws_sns')) {
                 'aws_sns' => $app->make(AwsSnsPhoneVerificationProvider::class),
+                'telnyx' => $app->make(TelnyxPhoneVerificationProvider::class),
                 default => throw new InvalidArgumentException('Unsupported customer SMS provider configured.'),
             };
         });
