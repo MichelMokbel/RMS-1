@@ -57,6 +57,12 @@ class PromotionUsageConsistencyRule
                 'id', 'company_id', 'branch_id', 'customer_id', 'purpose', 'currency', 'state',
                 'gross_amount_cents', 'discount_amount_cents', 'payable_amount_cents',
             ]);
+        $checkoutAddOnAmounts = DB::table('payment_checkout_targets')
+            ->whereIn('attempt_id', $attempts->keys())
+            ->where('target_type', 'order')
+            ->selectRaw('attempt_id, SUM(expected_amount_cents) AS aggregate')
+            ->groupBy('attempt_id')
+            ->pluck('aggregate', 'attempt_id');
         $requests = $this->rowsById('meal_plan_requests', $redemptions->pluck('meal_plan_request_id'), [
             'id', 'customer_id', 'user_id', 'plan_meals', 'status', 'submission_kind', 'checkout_id',
             'converted_subscription_id', 'promotion_id', 'redemption_id', 'converted_at',
@@ -118,6 +124,7 @@ class PromotionUsageConsistencyRule
         $redemptionsByReservation = $redemptions->whereNotNull('reservation_id')->keyBy('reservation_id');
         foreach ($reservations as $reservation) {
             $attempt = $attempts->get((int) $reservation->checkout_id);
+            $addOnCents = (int) ($checkoutAddOnAmounts->get((int) $reservation->checkout_id) ?? 0);
             $redemption = $redemptionsByReservation->get((int) $reservation->id);
             if ((int) $reservation->company_id !== (int) $promotion->company_id) {
                 $this->issue($issues, 'PROMOTION_RESERVATION_COMPANY_MISMATCH', 'membership_promotion_reservation', (int) $reservation->id);
@@ -131,9 +138,9 @@ class PromotionUsageConsistencyRule
                 || (int) $attempt->branch_id !== (int) $reservation->branch_id
                 || (int) $attempt->customer_id !== (int) $reservation->original_customer_id
                 || $attempt->purpose !== 'membership'
-                || (int) $attempt->gross_amount_cents !== (int) $reservation->gross_cents
+                || (int) $attempt->gross_amount_cents !== (int) $reservation->gross_cents + $addOnCents
                 || (int) $attempt->discount_amount_cents !== (int) $reservation->discount_cents
-                || (int) $attempt->payable_amount_cents !== (int) $reservation->net_cents) {
+                || (int) $attempt->payable_amount_cents !== (int) $reservation->net_cents + $addOnCents) {
                 $this->issue($issues, 'PROMOTION_RESERVATION_CHECKOUT_MISMATCH', 'membership_promotion_reservation', (int) $reservation->id);
             }
 
@@ -165,6 +172,7 @@ class PromotionUsageConsistencyRule
                     $request,
                     $blocks->get((int) $redemption->purchase_block_id),
                     $payments,
+                    (int) ($checkoutAddOnAmounts->get((int) $redemption->checkout_id) ?? 0),
                 );
             } elseif ($redemption->kind === MembershipPromotionRedemption::KIND_ZERO_REQUEST) {
                 $this->evaluateZeroRedemption(
@@ -240,6 +248,7 @@ class PromotionUsageConsistencyRule
         ?object $request,
         ?object $block,
         Collection $payments,
+        int $addOnCents,
     ): void {
         $id = (int) $redemption->id;
         if (! $attempt || ! $reservation || ! $request || ! $block) {
@@ -252,9 +261,9 @@ class PromotionUsageConsistencyRule
             || (int) $attempt->company_id !== (int) $redemption->company_id
             || (int) $attempt->branch_id !== (int) $redemption->branch_id
             || (int) $attempt->customer_id !== (int) $redemption->original_customer_id
-            || (int) $attempt->gross_amount_cents !== (int) $redemption->gross_cents
+            || (int) $attempt->gross_amount_cents !== (int) $redemption->gross_cents + $addOnCents
             || (int) $attempt->discount_amount_cents !== (int) $redemption->discount_cents
-            || (int) $attempt->payable_amount_cents !== (int) $redemption->net_cents) {
+            || (int) $attempt->payable_amount_cents !== (int) $redemption->net_cents + $addOnCents) {
             $this->issue($issues, 'PROMOTION_PAID_USE_CHECKOUT_MISMATCH', 'membership_promotion_redemption', $id);
         }
         if ($reservation->status !== MembershipPromotionReservation::STATUS_REDEEMED
@@ -288,7 +297,7 @@ class PromotionUsageConsistencyRule
             || $payment->voided_at !== null
             || (int) $payment->company_id !== (int) $redemption->company_id
             || (int) $payment->branch_id !== (int) $redemption->branch_id
-            || (int) $payment->amount_cents !== (int) $redemption->net_cents
+            || (int) $payment->amount_cents !== (int) $attempt->payable_amount_cents
             || $payment->currency !== 'QAR'
             || ! $this->sameCanonicalCustomer((int) $redemption->original_customer_id, (int) ($payment->customer_id ?? 0))) {
             $this->issue($issues, 'PROMOTION_PAID_USE_PAYMENT_MISMATCH', 'membership_promotion_redemption', $id);

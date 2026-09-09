@@ -12,7 +12,10 @@ use App\Services\Mail\MailSettingsService;
 use App\Services\Payments\FakeSkipCashProvider;
 use App\Services\Payments\HttpSkipCashProvider;
 use App\Services\Payments\SkipCashProvider;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
@@ -47,6 +50,17 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         View::addNamespace('layouts', resource_path('views/components/layouts'));
+
+        RateLimiter::for('public-membership-read', fn (Request $request): Limit => Limit::perMinute(300)
+            ->by('public-membership-read|'.$request->ip()));
+        RateLimiter::for('public-storefront-read', fn (Request $request): Limit => Limit::perMinute(600)
+            ->by('public-storefront-read|'.$request->ip()));
+        RateLimiter::for('public-storefront-events', fn (Request $request): Limit => Limit::perMinute(1200)
+            ->by('public-storefront-events|'.$request->ip()));
+        RateLimiter::for('public-daily-dish-read', fn (Request $request): Limit => Limit::perMinute(600)
+            ->by('public-daily-dish-read|'.$request->ip()));
+        RateLimiter::for('public-daily-dish-order', fn (Request $request): Limit => Limit::perMinute(120)
+            ->by('public-daily-dish-order|'.($request->user()?->id ?? $request->ip())));
 
         // Allow finance.lock_date to be managed in-app via DB (falls back to env).
         try {

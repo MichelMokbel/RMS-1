@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Mail\DailyDishOrderAdminMail;
 use App\Mail\DailyDishOrderCustomerMail;
 use App\Mail\MembershipPurchaseConfirmationMail;
+use App\Mail\StorefrontMenuOrderConfirmationMail;
 use App\Models\Order;
 use App\Models\PaymentCheckoutAttempt;
 use App\Services\Mail\EmailLogService;
@@ -92,6 +93,16 @@ class SendSkipCashOrderConfirmation implements ShouldQueue
                 return;
             }
             $mail = new MembershipPurchaseConfirmationMail($snapshot, $this->audience);
+        } elseif ($attempt->purpose === 'menu_order') {
+            if (! (int) ($snapshot['order_ids'][0] ?? 0)
+                || ! (int) ($snapshot['invoice_ids'][0] ?? 0)
+                || empty($snapshot['items'])) {
+                $this->markFailed('MENU_ORDER_CONFIRMATION_UNAVAILABLE', true, $operations);
+
+                return;
+            }
+            $orders = Order::query()->whereIn('id', array_map('intval', (array) ($snapshot['order_ids'] ?? [])))->get();
+            $mail = new StorefrontMenuOrderConfirmationMail($snapshot, $this->audience);
         } else {
             $orders = Order::query()
                 ->whereIn('id', array_map('intval', (array) ($snapshot['order_ids'] ?? [])))
@@ -111,7 +122,7 @@ class SendSkipCashOrderConfirmation implements ShouldQueue
             $mailer = (string) config('mail.default', 'log');
             if (in_array($mailer, ['log', 'array'], true)) {
                 $emailLogs->log(
-                    $attempt->purpose === 'membership' ? 'skipcash_membership_confirmation' : 'skipcash_order_confirmation',
+                    $this->category($attempt),
                     $this->audience, 'skipped', $mail, $recipients,
                     userId: $attempt->portal_user_id, orderId: $orders->first()?->id,
                     mealPlanRequestId: $snapshot['meal_plan_request_id'] ?? null, mailer: $mailer,
@@ -120,7 +131,7 @@ class SendSkipCashOrderConfirmation implements ShouldQueue
             } else {
                 Mail::to($recipients)->send($mail);
                 $emailLogs->log(
-                    $attempt->purpose === 'membership' ? 'skipcash_membership_confirmation' : 'skipcash_order_confirmation',
+                    $this->category($attempt),
                     $this->audience, 'sent', $mail, $recipients,
                     userId: $attempt->portal_user_id, orderId: $orders->first()?->id,
                     mealPlanRequestId: $snapshot['meal_plan_request_id'] ?? null, mailer: $mailer,
@@ -193,5 +204,14 @@ class SendSkipCashOrderConfirmation implements ShouldQueue
         $base = max(1, (int) config('payments.skipcash.notification_retry_base_minutes', 1));
 
         return min(30, $base * (2 ** max(0, $attempts - 1)));
+    }
+
+    private function category(PaymentCheckoutAttempt $attempt): string
+    {
+        return match ($attempt->purpose) {
+            'membership' => 'skipcash_membership_confirmation',
+            'menu_order' => 'skipcash_menu_order_confirmation',
+            default => 'skipcash_order_confirmation',
+        };
     }
 }

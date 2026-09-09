@@ -18,10 +18,14 @@ use App\Models\PaymentProviderEvent;
 use App\Models\PaymentProviderTransaction;
 use App\Models\PaymentSetting;
 use App\Models\PaymentSource;
+use App\Models\StorefrontCategory;
+use App\Models\StorefrontItemProfile;
+use App\Models\StorefrontSetting;
 use App\Models\User;
 use App\Services\Accounting\AccountingPeriodGateService;
 use App\Services\AR\ArInvoiceService;
 use App\Services\Customers\CustomerMergeService;
+use App\Services\Payments\CheckoutCanonicalizer;
 use App\Services\Payments\FakeSkipCashProvider;
 use App\Services\Payments\PaymentConsistencyService;
 use App\Services\Payments\PaymentOperationsRecoveryService;
@@ -138,20 +142,76 @@ function createSkipCashTracerMenu(int $branchId, int $daysAhead = 2): array
     return [$date, $main];
 }
 
-function skipCashTracerCart(string $date, int $mainId): array
+function skipCashTracerCart(string $date, int $mainId, ?int $addOnId = null): array
 {
-    return [
-        'items' => [[
-            'key' => $date,
-            'mains' => [[
-                'menu_item_id' => $mainId,
-                'portion' => 'plate',
-                'qty' => 1,
-            ]],
-            'salad_qty' => 1,
-            'dessert_qty' => 1,
+    $day = [
+        'key' => $date,
+        'mains' => [[
+            'menu_item_id' => $mainId,
+            'portion' => 'plate',
+            'qty' => 1,
         ]],
+        'salad_qty' => 1,
+        'dessert_qty' => 1,
     ];
+    if ($addOnId !== null) {
+        $day['add_ons'] = [['menu_item_id' => $addOnId, 'quantity' => '1']];
+    }
+
+    return ['items' => [$day]];
+}
+
+function createSkipCashTracerUpsell(object $test): MenuItem
+{
+    $category = StorefrontCategory::query()->create([
+        'company_id' => $test->company->id,
+        'slug' => 'ordinary-add-ons',
+        'title' => 'Ordinary Add-ons',
+        'is_active' => true,
+        'created_by' => $test->systemActor->id,
+        'updated_by' => $test->systemActor->id,
+    ]);
+    StorefrontSetting::query()->create([
+        'company_id' => $test->company->id,
+        'portal_branch_id' => $test->branch->id,
+        'normal_menu_enabled' => false,
+        'checkout_upsell_enabled' => true,
+        'upsell_category_id' => $category->id,
+        'menu_cutoff_time' => '23:00:00',
+        'timezone' => 'Asia/Qatar',
+        'revision' => 1,
+        'created_by' => $test->systemActor->id,
+        'updated_by' => $test->systemActor->id,
+    ]);
+    $item = MenuItem::factory()->create([
+        'code' => 'TRACE-ADDON',
+        'name' => 'Tracer Appetizer',
+        'selling_price_per_unit' => '12.500',
+        'unit' => MenuItem::UNIT_EACH,
+        'is_active' => true,
+    ]);
+    DB::table('menu_item_branches')->insertOrIgnore([
+        'menu_item_id' => $item->id,
+        'branch_id' => $test->branch->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    StorefrontItemProfile::query()->create([
+        'company_id' => $test->company->id,
+        'branch_id' => $test->branch->id,
+        'menu_item_id' => $item->id,
+        'category_id' => $category->id,
+        'customer_title' => 'Hummus Cup',
+        'direct_order_enabled' => true,
+        'advance_days' => 1,
+        'minimum_quantity' => '1.000',
+        'quantity_increment' => '1.000',
+        'maximum_quantity' => '5.000',
+        'created_by' => $test->systemActor->id,
+        'updated_by' => $test->systemActor->id,
+    ]);
+
+    return $item;
 }
 
 it('creates a paid ordinary SkipCash order only after verified provider evidence', function (): void {
@@ -318,6 +378,60 @@ it('creates a paid ordinary SkipCash order only after verified provider evidence
         ->and($attempt->fresh()->notification_dispatch['customer_confirmation']['state'])->toBe('sent')
         ->and($attempt->fresh()->notification_dispatch['admin_confirmation']['state'])->toBe('sent')
         ->and(Payment::query()->where('payment_source_id', $this->source->id)->count())->toBe(1);
+});
+
+it('adds a checkout add-on to the same paid Daily Dish order and invoice', function (): void {
+    createSkipCashTracerCustomer();
+    [$date, $main] = createSkipCashTracerMenu($this->branch->id);
+    $addOn = createSkipCashTracerUpsell($this);
+    $cart = skipCashTracerCart($date, $main->id, $addOn->id);
+    $quote = $this->postJson('/api/customer/checkouts/quote', [
+        'purpose' => 'ordinary_order',
+        'cart' => $cart,
+    ])->assertOk()
+        ->assertJsonPath('add_on_amount_cents', 1250)
+        ->assertJsonPath('payable_amount_cents', 7750);
+    $this->postJson('/api/customer/checkouts', [
+        'client_uuid' => (string) Str::uuid(),
+        'purpose' => 'ordinary_order',
+        'cart' => $cart,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertStatus(202);
+
+    $attempt = PaymentCheckoutAttempt::query()->sole();
+    $providerTransaction = $attempt->providerTransactions()->sole();
+    $provider = app(SkipCashProvider::class);
+    $provider->markPaid($providerTransaction->provider_payment_id, visaId: 'daily-addon');
+    $payload = [
+        'PaymentId' => $providerTransaction->provider_payment_id,
+        'Amount' => '77.50',
+        'StatusId' => '2',
+        'TransactionId' => str_replace('-', '', $attempt->reference),
+        'Custom1' => '',
+        'VisaId' => 'daily-addon',
+    ];
+    $signature = base64_encode(hash_hmac(
+        'sha256',
+        'PaymentId='.$payload['PaymentId'].',Amount=77.50,StatusId=2,TransactionId='.$payload['TransactionId'].',VisaId=daily-addon',
+        'webhook-secret',
+        true,
+    ));
+    $this->postJson('/api/integrations/skipcash/webhook', $payload, ['Authorization' => $signature])
+        ->assertOk()
+        ->assertJsonPath('accepted', true);
+
+    $attempt->refresh()->load('targets.order.items', 'targets.invoice.paymentAllocations');
+    $target = $attempt->targets->sole();
+    $payment = Payment::query()->where('payment_source_id', $this->source->id)->sole();
+    expect($attempt->state)->toBe('completed')
+        ->and($attempt->pricing_snapshot['add_on_amount_cents'])->toBe(1250)
+        ->and((int) $payment->amount_cents)->toBe(7750)
+        ->and($payment->unallocatedCents())->toBe(0)
+        ->and((int) $target->invoice->total_cents)->toBe(7750)
+        ->and((int) $target->invoice->paymentAllocations->sum('amount_cents'))->toBe(7750)
+        ->and($target->order->items->where('role', 'checkout_add_on')->count())->toBe(1)
+        ->and((string) $target->order->items->firstWhere('role', 'checkout_add_on')->unit_price)->toBe('12.500');
 });
 
 it('rejects conflicting signed and authenticated SkipCash reconciliation identifiers', function (): void {
@@ -1281,6 +1395,93 @@ it('marks an ambiguous provider dispatch as unknown without creating another pro
         ->and(PaymentProviderTransaction::query()->count())->toBe(0)
         ->and(DB::table('orders')->count())->toBe(0)
         ->and(Payment::query()->count())->toBe(0);
+});
+
+it('replays and recovers ordinary checkouts created with legacy no add-on fingerprints', function (): void {
+    createSkipCashTracerCustomer();
+    [$date, $main] = createSkipCashTracerMenu($this->branch->id);
+    $cart = skipCashTracerCart($date, $main->id);
+    $quote = $this->postJson('/api/customer/checkouts/quote', [
+        'purpose' => 'ordinary_order',
+        'cart' => $cart,
+    ])->assertOk();
+    $request = [
+        'client_uuid' => (string) Str::uuid(),
+        'purpose' => 'ordinary_order',
+        'cart' => $cart,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ];
+    $first = $this->postJson('/api/customer/checkouts', $request)->assertStatus(202);
+    $legacyCart = [[
+        $date,
+        [[(string) $main->id, 'plate', 1]],
+        1,
+        1,
+        null,
+    ]];
+    $canonicalizer = app(CheckoutCanonicalizer::class);
+    PaymentCheckoutAttempt::query()->sole()->update([
+        'request_fingerprint' => $canonicalizer->hash([
+            'ordinary-request-v1',
+            'ordinary_order',
+            $legacyCart,
+            $quote->json('quote_fingerprint'),
+            'v1',
+            null,
+        ]),
+        'recovery_fingerprint' => $canonicalizer->hash([
+            'ordinary-recovery-v1',
+            (string) $this->company->id,
+            (string) $this->branch->id,
+            $legacyCart,
+        ]),
+    ]);
+
+    $this->postJson('/api/customer/checkouts', $request)
+        ->assertOk()
+        ->assertJsonPath('replayed', true)
+        ->assertJsonPath('reference', $first->json('reference'));
+    $this->postJson('/api/customer/checkouts', [...$request, 'client_uuid' => (string) Str::uuid()])
+        ->assertStatus(409)
+        ->assertJsonPath('code', 'EXISTING_CHECKOUT')
+        ->assertJsonPath('recovery_reference', $first->json('reference'));
+
+    expect(PaymentCheckoutAttempt::query()->count())->toBe(1);
+});
+
+it('validates Daily Dish add-ons against the actual payment branch', function (): void {
+    createSkipCashTracerCustomer();
+    [$date, $main] = createSkipCashTracerMenu($this->branch->id);
+    $addOn = createSkipCashTracerUpsell($this);
+    $otherBranch = Branch::query()->create([
+        'company_id' => $this->company->id,
+        'name' => 'Other checkout branch',
+        'code' => 'OTHER-CHECKOUT',
+        'is_active' => true,
+    ]);
+    StorefrontSetting::query()->firstOrFail()->update(['portal_branch_id' => $otherBranch->id]);
+    StorefrontItemProfile::query()->where('menu_item_id', $addOn->id)->update(['branch_id' => $otherBranch->id]);
+    DB::table('menu_item_branches')->where('menu_item_id', $addOn->id)->delete();
+    DB::table('menu_item_branches')->insert([
+        'menu_item_id' => $addOn->id,
+        'branch_id' => $otherBranch->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $this->getJson('/api/public/storefront/upsell-items?service_dates[]='.$date.'&path_code=daily_dish')
+        ->assertOk()
+        ->assertJsonPath('enabled', false);
+    $this->getJson('/api/public/storefront/upsell-items?service_dates[]='.$date.'&path_code=advance_menu')
+        ->assertOk()
+        ->assertJsonPath('enabled', true)
+        ->assertJsonPath('dates.0.items.0.menu_item_id', $addOn->id);
+
+    $this->postJson('/api/customer/checkouts/quote', [
+        'purpose' => 'ordinary_order',
+        'cart' => skipCashTracerCart($date, $main->id, $addOn->id),
+    ])->assertStatus(409)->assertJsonPath('code', 'UPSELL_ITEM_UNAVAILABLE');
 });
 
 it('purges only raw provider bodies after the required retention period', function (): void {

@@ -12,6 +12,7 @@ use App\Models\Order;
 use App\Models\PastryOrder;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
+use App\Models\PaymentCheckoutTarget;
 use App\Models\PaymentTerm;
 use App\Models\Sale;
 use App\Services\Accounting\AccountingAuditLogService;
@@ -275,6 +276,87 @@ class ArInvoiceService
             if ($notes) {
                 $invoice->update(['notes' => $notes, 'updated_by' => $actorId]);
             }
+
+            return $invoice->fresh(['items']);
+        });
+    }
+
+    /**
+     * Create the invoice for a verified storefront payment from its retained
+     * target lines. Current catalog values and finance defaults are deliberately
+     * excluded from this boundary.
+     *
+     * @param  array<int, array<string, mixed>>  $items
+     */
+    public function createFromOrderSnapshot(
+        Order $order,
+        array $items,
+        int $expectedTotalCents,
+        int $actorId,
+        ?string $notes = null,
+        ?string $issueDate = null,
+    ): ArInvoice {
+        if (! $order->customer_id) {
+            throw ValidationException::withMessages(['customer_id' => __('Customer is required to invoice an order.')]);
+        }
+        if ($order->isInvoiced()) {
+            throw ValidationException::withMessages(['order' => __('Order has already been invoiced.')]);
+        }
+
+        $invoiceItems = collect($items)->map(function (array $item): array {
+            return [
+                'description' => (string) ($item['title'] ?? ''),
+                'qty' => (string) ($item['quantity'] ?? '0'),
+                'unit' => (string) ($item['unit'] ?? ''),
+                'unit_price_cents' => (int) ($item['unit_price_cents'] ?? 0),
+                'discount_cents' => 0,
+                'tax_cents' => 0,
+                'line_total_cents' => (int) ($item['line_total_cents'] ?? 0),
+                'line_notes' => $item['description'] ?? null,
+                'sellable_type' => MenuItem::class,
+                'sellable_id' => (int) ($item['menu_item_id'] ?? 0),
+                'name_snapshot' => (string) ($item['canonical_name'] ?? $item['title'] ?? ''),
+                'sku_snapshot' => null,
+                'meta' => ['storefront_snapshot' => true],
+            ];
+        })->all();
+
+        if ($invoiceItems === []
+            || collect($invoiceItems)->contains(fn (array $item): bool => trim($item['description']) === ''
+                || $item['sellable_id'] <= 0
+                || MinorUnits::parseQtyMilli($item['qty']) <= 0
+                || $item['unit_price_cents'] <= 0
+                || $item['line_total_cents'] <= 0)
+            || (int) collect($invoiceItems)->sum('line_total_cents') !== $expectedTotalCents) {
+            throw ValidationException::withMessages(['items' => __('The retained storefront invoice lines are inconsistent.')]);
+        }
+
+        return DB::transaction(function () use ($order, $invoiceItems, $expectedTotalCents, $actorId, $notes, $issueDate): ArInvoice {
+            $invoice = $this->createDraft(
+                branchId: (int) $order->branch_id,
+                customerId: (int) $order->customer_id,
+                items: $invoiceItems,
+                actorId: $actorId,
+                currency: 'QAR',
+                posReference: $order->order_number,
+                source: 'order',
+                sourceSaleId: null,
+                type: 'invoice',
+                issueDate: $issueDate,
+                paymentType: 'credit',
+                paymentTermId: null,
+                paymentTermDays: 0,
+            );
+            if ((int) $invoice->total_cents !== $expectedTotalCents) {
+                throw ValidationException::withMessages(['items' => __('The retained storefront invoice total is inconsistent.')]);
+            }
+
+            $invoice->update([
+                'source_order_id' => $order->id,
+                'notes' => $notes,
+                'updated_by' => $actorId,
+            ]);
+            $order->update(['invoiced_at' => now()]);
 
             return $invoice->fresh(['items']);
         });
@@ -697,6 +779,7 @@ class ArInvoiceService
             $locked->void_reason = $reason ? trim($reason) : ($locked->void_reason ?: null);
             $locked->save();
             $this->reverseIssuedInvoicePosting($locked, $actorId, $locked->voided_at?->toDateString());
+            $this->cancelStorefrontMenuOrderForVoidedInvoice($locked, $actorId);
             if (! $this->membershipBookingFunding->releaseVoidedInvoice($locked->fresh(['items']), $actorId)) {
                 $this->decrementSubscriptionMealsForVoidedInvoice($locked->fresh(['items']));
             }
@@ -746,6 +829,7 @@ class ArInvoiceService
             $locked->void_reason = $reason ? trim($reason) : ($locked->void_reason ?: null);
             $locked->save();
             $this->reverseIssuedInvoicePosting($locked, $actorId, $locked->voided_at?->toDateString());
+            $this->cancelStorefrontMenuOrderForVoidedInvoice($locked, $actorId);
             if (! $this->membershipBookingFunding->releaseVoidedInvoice($locked->fresh(['items']), $actorId)) {
                 $this->decrementSubscriptionMealsForVoidedInvoice($locked->fresh(['items']));
             }
@@ -887,6 +971,54 @@ class ArInvoiceService
         );
     }
 
+    private function cancelStorefrontMenuOrderForVoidedInvoice(ArInvoice $invoice, int $actorId): void
+    {
+        $sourceOrderId = (int) ($invoice->source_order_id ?? 0);
+        if ($sourceOrderId <= 0) {
+            return;
+        }
+
+        $target = PaymentCheckoutTarget::query()
+            ->where(function ($query) use ($invoice, $sourceOrderId): void {
+                $query->where('invoice_id', $invoice->id)
+                    ->orWhere('order_id', $sourceOrderId);
+            })
+            ->whereHas('attempt', fn ($query) => $query->where('purpose', 'menu_order'))
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->first();
+        if (! $target || (int) $target->order_id !== $sourceOrderId) {
+            return;
+        }
+
+        $order = Order::query()->whereKey($sourceOrderId)->lockForUpdate()->first();
+        if (! $order) {
+            return;
+        }
+
+        $orderStatusBefore = (string) $order->status;
+        $changed = $orderStatusBefore !== 'Cancelled';
+        if ($changed) {
+            $order->update(['status' => 'Cancelled']);
+        }
+        $changedLines = $order->items()
+            ->where('status', '!=', 'Cancelled')
+            ->lockForUpdate()
+            ->get();
+        foreach ($changedLines as $line) {
+            $line->update(['status' => 'Cancelled']);
+        }
+
+        if ($changed || $changedLines->isNotEmpty()) {
+            $this->auditLog->log('storefront.menu_order.cancelled_by_invoice_void', $actorId, $order, [
+                'invoice_id' => (int) $invoice->id,
+                'checkout_target_id' => (int) $target->id,
+                'order_status_before' => $orderStatusBefore,
+                'cancelled_line_count' => $changedLines->count(),
+            ], (int) ($invoice->company_id ?? 0) ?: null);
+        }
+    }
+
     protected function autoAllocateAvailableAdvancePayments(ArInvoice $invoice, int $actorId): void
     {
         if ($invoice->isCreditNote()) {
@@ -910,18 +1042,24 @@ class ArInvoiceService
 
         // Saved credit is administrator allocated. This automatic path considers only
         // the committed payment that funds a matching subscription invoice.
+        $invoiceMeta = is_array($invoice->meta) ? $invoice->meta : [];
+        $checkoutAddOnPaymentId = (int) ($invoiceMeta['checkout_add_on_payment_id'] ?? 0);
+        $checkoutAddOnCents = (int) ($invoiceMeta['checkout_add_on_amount_cents'] ?? 0);
         $payments = Payment::query()
             ->where('customer_id', (int) $invoice->customer_id)
             ->where('branch_id', (int) $invoice->branch_id)
             ->where('company_id', $invoiceCompanyId)
             ->where('source', 'ar')
             ->whereNull('voided_at')
-            ->where(function ($query): void {
+            ->where(function ($query) use ($checkoutAddOnPaymentId): void {
                 $query->whereHas('mealSubscriptions', fn ($subscriptionQuery) => $subscriptionQuery
                     ->whereIn('status', ['active', 'paused'])
                     ->where('uses_invoice_tracking', true))
                     ->orWhereHas('membershipPurchaseBlocks', fn ($blockQuery) => $blockQuery
                         ->whereNull('cancelled_at'));
+                if ($checkoutAddOnPaymentId > 0) {
+                    $query->orWhere('id', $checkoutAddOnPaymentId);
+                }
             })
             ->orderBy('received_at', 'asc')
             ->orderBy('id', 'asc')
@@ -958,6 +1096,9 @@ class ArInvoiceService
                 $invoice,
                 true,
             );
+            if ((int) $lockedPayment->id === $checkoutAddOnPaymentId && $checkoutAddOnCents > 0) {
+                $committedAvailable += $checkoutAddOnCents;
+            }
             if ($committedAvailable <= 0) {
                 continue;
             }

@@ -22,8 +22,13 @@ class MembershipPromotionReservationService
     /** @param array<string, mixed> $evaluation */
     public function create(PaymentCheckoutAttempt $attempt, User $user, array $evaluation): MembershipPromotionReservation
     {
+        $pricing = (array) $attempt->pricing_snapshot;
+        $addOnCents = (int) ($pricing['add_on_amount_cents'] ?? 0);
         if ((int) $evaluation['net_cents'] <= 0
-            || (int) $attempt->payable_amount_cents !== (int) $evaluation['net_cents']
+            || (int) ($pricing['membership_gross_amount_cents'] ?? 0) !== (int) $evaluation['gross_cents']
+            || (int) ($pricing['membership_payable_amount_cents'] ?? 0) !== (int) $evaluation['net_cents']
+            || (int) $attempt->gross_amount_cents !== (int) $evaluation['gross_cents'] + $addOnCents
+            || (int) $attempt->payable_amount_cents !== (int) $evaluation['net_cents'] + $addOnCents
             || (int) $attempt->discount_amount_cents !== (int) $evaluation['discount_cents']) {
             throw new PaymentCheckoutException('PROMOTION_RESERVATION_INVALID', 409, __('This promotion checkout is inconsistent.'));
         }
@@ -130,9 +135,9 @@ class MembershipPromotionReservationService
             || (int) $reservation->company_id !== (int) $attempt->company_id
             || (int) $reservation->branch_id !== (int) $attempt->branch_id
             || (int) $reservation->original_customer_id !== (int) $attempt->customer_id
-            || (int) $reservation->gross_cents !== (int) $attempt->gross_amount_cents
+            || (int) $reservation->gross_cents !== (int) ($attempt->pricing_snapshot['membership_gross_amount_cents'] ?? 0)
             || (int) $reservation->discount_cents !== (int) $attempt->discount_amount_cents
-            || (int) $reservation->net_cents !== (int) $attempt->payable_amount_cents
+            || (int) $reservation->net_cents !== (int) ($attempt->pricing_snapshot['membership_payable_amount_cents'] ?? 0)
             || (int) $block->meal_plan_request_id !== (int) $request->id
             || (int) $block->final_price_cents !== (int) $reservation->net_cents) {
             throw new PaymentCheckoutException('PROMOTION_REDEMPTION_MISMATCH', 503, __('The retained promotion use is inconsistent.'));

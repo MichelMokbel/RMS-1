@@ -80,6 +80,17 @@ class CheckoutStatusPresenter
                 )
                 : null;
         }
+        if ($attempt->purpose === 'membership_booking') {
+            $result['result_kind'] = 'covered_booking_with_add_ons';
+            $result['queue'] = $state === 'completed'
+                ? $this->membershipQueues->summary(
+                    (int) $attempt->customer_id,
+                    (int) $attempt->company_id,
+                    (int) $attempt->branch_id,
+                    (string) $attempt->currency,
+                )
+                : null;
+        }
 
         if ($detail) {
             $result['reviewed_cart'] = $attempt->cart_snapshot['cart'] ?? $attempt->cart_snapshot;
@@ -101,6 +112,19 @@ class CheckoutStatusPresenter
                 'paid_processing' => __('Your membership payment is being confirmed.'),
                 'declined' => __('This membership checkout did not complete.'),
                 default => __('Your membership checkout is ready for payment.'),
+            };
+        }
+
+        if ($attempt->purpose === 'membership_booking') {
+            if ($attempt->state === 'payment_received_as_credit') {
+                return __('Your add-on payment was received as customer credit. No membership meals were booked because the checkout could not be completed.');
+            }
+
+            return match ($status) {
+                'completed' => __('Your membership meals and paid add-ons are confirmed.'),
+                'paid_processing' => __('Your add-on payment is being confirmed.'),
+                'declined' => __('This add-on checkout did not complete. Your meal hold was released.'),
+                default => __('Your membership add-on checkout is ready for payment.'),
             };
         }
 

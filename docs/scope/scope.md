@@ -123,6 +123,8 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 10 | Existing membership meal selection | Slice 4 | in-progress |
 | 5 | Promotion rules and dashboard | Slice 5 | in-progress |
 | 6 | Promotion validation and redemption API | Slice 6 | in-progress |
+| 11 | Unified storefront and advance menu ordering | Next slice | done |
+| 12 | Checkout add-on upsell | Conversion extension | done |
 
 ## Customer journey coverage before technical design
 
@@ -398,6 +400,50 @@ Expose a stable API contract and website entry flow to quote a code, then apply 
 * [ ] Review it (fresh model): `/check review promotion validation and redemption API`
 * [ ] Document it: `/document promotion validation and redemption API`
 
+## Next slice: Unified ordering storefront
+
+### 11. Unified storefront and advance menu ordering · done
+Let customers order ordinary menu items through the same customer website while keeping Daily Dish and membership access immediate and clear. Use the cleaned RMS menu items as the product source. Removing raw materials and other mistaken entries is a separate data cleanup task and must not shape the storefront architecture. Admins manage the customer presentation, minimum advance days, display order, and sales channel availability for each valid menu item. The whole normal menu section is controlled by an RMS feature setting. Guests can browse before sign in when it is enabled. When the setting is disabled, the website hides the normal menu and RMS rejects new normal menu quotes and payment starts. Any SkipCash payment attempt that already started can still be verified, recovered, completed, and accounted for so a paid customer is never stranded. Every item shows its price, unit, and earliest available date before checkout.
+
+The server calculates availability in Qatar time. Minimum advance days use calendar dates with one normal menu cutoff that an authorized RMS admin can configure. The default cutoff is 11:00 PM Qatar time. Before the cutoff, the current date is the order date. At or after the cutoff, preparation starts from the following date, which moves the earliest service date forward by one day. One normal menu checkout has one service date. That date is accepted only when every selected item meets its recorded advance rule, so the item with the longest preparation time sets the earliest date for the cart. The website must explain a date conflict when it happens and preserve the rest of the cart. A verified SkipCash payment creates the ordinary order, invoice, payment, and allocation through the existing financial workflow. Membership credits remain limited to eligible Daily Dish meals and do not pay for ordinary catalog items.
+
+Add an honest Popular this week area based on paid order evidence. It must exclude internal, hidden, inactive, voided, and unavailable items. When there is not enough evidence, omit the claim or show a separately managed Chef picks area with its own label. Do not invent ratings, demand, scarcity, or food claims.
+
+Add an Order on delivery apps section without making it compete with the direct Daily Dish and menu paths. The confirmed apps are Talabat, Snoonu, Rafeeq, and Keeta. RMS admins choose which valid menu items appear for each app and maintain the destination link. A customer can open the item in the chosen app, or the restaurant page when an item link is not available. The delivery app owns that checkout, payment, availability, and confirmation. Opening it does not create an RMS website order or payment. Track the item, app, section, and outbound click without sending customer details.
+
+**Done when:** an authorized RMS admin can enable or disable the normal menu section without affecting Daily Dish, memberships, account history, or delivery app links. Disabling it prevents new browsing, quotes, and payment starts while allowing every already started SkipCash attempt to complete or recover through the normal order, invoice, payment, and allocation workflow. When enabled, a customer can enter the order home, understand the difference between Daily Dish and Order from the Menu, browse either path without signing in, find a valid ordinary item by a customer friendly category or search, see its earliest available date, choose one service date that is valid for the whole cart, review the full amount, pay once through SkipCash, and find the paid order and invoice in the same account. Daily Dish, membership booking, membership purchase, and their existing timing rules remain easy to reach and unchanged. RMS staff can manage customer presentation, advance days, direct website availability, and delivery app links for cleaned menu items. A customer can leave through a clearly labelled delivery app item link without creating a false RMS order. Repeated checkout completion cannot create another order, invoice, payment, or allocation. Popular this week is calculated from an approved paid order rule and every impression, item choice, cart action, checkout start, payment result, path switch, and delivery app exit can be measured without recording personal details in analytics.
+
+**Confirmed checkout boundary:** the first release keeps Daily Dish and ordinary menu baskets and payments separate inside one shared storefront and account. The design must use reusable order groups and payment targets so a later combined checkout can place both order types under one payment without replacing the catalog, cart, order, invoice, or allocation workflows.
+
+**Spec:** [0011 unified ordering storefront](../specs/0011-unified-ordering-storefront/index.md). Design accepted on 2026-09-09. It preserves the current Daily Dish and membership journeys, adds advance menu ordering behind RMS settings, and keeps payment and accounting inside the existing durable checkout foundation. The specification is `Accepted`.
+
+* [x] Design it (spec): `/architect unified storefront and advance menu ordering`
+* [x] Build it: `/develop unified storefront and advance menu ordering`
+  * [x] Add the default off storefront settings, publication boundary, immutable target lines, provider dispatch claim, and one paid menu item tracer through order, AR, SkipCash clearing, and account history (AC-1, AC-2, AC-7, AC-8, AC-9, AC-10, AC-11).
+  * [x] Add storefront administration, safe catalog cleanup, quantity and Qatar availability rules, server quotes, conflict handling, and independent delivery application configuration (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-16).
+  * [x] Add `/orders/advance-menu`, preserve `/orders/menu`, implement the separate seven day guest cart, authenticated review, confirmations, account recovery, responsive behavior, and accessibility (AC-13, AC-14, AC-18, AC-19, AC-20).
+  * [x] Complete retained snapshot activation, disable and recovery behavior, invoice void and duplicate cancellation, terms, notification retry, and financial consistency coverage (AC-8, AC-9, AC-10, AC-11, AC-12, AC-18, AC-20, AC-21).
+  * [x] Add paid popularity, Chef picks, independent delivery application reads, anonymous browsing events, the raw RMS funnel report, retention cleanup, and launch safeguards (AC-15, AC-16, AC-17).
+* [x] Verify it: `/check verify unified storefront and advance menu ordering`
+* [x] Test it: `/test unified storefront and advance menu ordering`
+* [x] Review it (fresh model): `/check review unified storefront and advance menu ordering`
+* [x] Document it: `/document unified storefront and advance menu ordering`
+
+## Conversion extension: Checkout add-on upsell
+
+### 12. Daily Dish and normal menu checkout add-ons · done
+
+Show one administrator selected storefront category immediately before final review in both ordering journeys. Customers can skip without changing the current flow or select full-price items per service date. Flexible orders and advance menu orders add them to the same payment, dated order, and invoice. Membership purchases and covered bookings preserve sequential meal funding, charge only the add-ons beyond the plan amount, and never consume meal credits for add-ons.
+
+**Spec:** [0012 checkout add-on upsell](../specs/0012-checkout-upsell/index.md). Design confirmed on 2026-09-09 from the approved ten-point contract. The specification is `Accepted`.
+
+* [x] Design it (spec): `/architect checkout add-on upsell`
+* [x] Build it: `/develop checkout add-on upsell`
+* [x] Verify it: `/check verify checkout add-on upsell`
+* [x] Test it: `/test checkout add-on upsell`
+* [x] Review it: `/check review checkout add-on upsell`
+* [x] Document it: `/document checkout add-on upsell`
+
 ## Deferred
 
 - **Customer use of saved credit at checkout**: no website payment option or automatic application of saved balances for orders or memberships. Only admins in RMS can allocate saved credit; normal daily allocation from a membership's own payment continues.
@@ -412,6 +458,6 @@ Expose a stable API contract and website entry flow to quote a code, then apply 
 
 **Feature lifecycle:** `planned` becomes `in-progress` when design or build starts, then `done` when you accept the verified result. `existing` describes work that predates this workflow.
 
-**Next step:** deploy the completed development branches and run the controlled provider-facing validation. Before live enablement, prove one real SkipCash payout against the retained report and bank evidence, and replace the accepted phone-verification bypass with the configured SMS provider when available. These are operational activation gates, not missing application flows.
+**Next step:** complete checkout add-on verification and release checks, then enable normal menu ordering on the development deployment. The existing payment activation gates still apply before live enablement: prove one real SkipCash payout against the retained report and bank evidence.
 
 **Workflow:** GA means payment features normally run `/architect`, `/develop`, `/check verify`, `/test`, a fresh `/check review`, and `/document`.

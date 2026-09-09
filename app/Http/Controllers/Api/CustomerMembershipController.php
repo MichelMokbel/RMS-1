@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Services\Accounting\AccountingContextService;
+use App\Services\Payments\MembershipBookingCheckoutService;
 use App\Services\Payments\PaymentCheckoutException;
 use App\Services\Subscriptions\MembershipBookingQuoteService;
 use App\Services\Subscriptions\MembershipBookingReadService;
@@ -21,6 +22,7 @@ class CustomerMembershipController extends Controller
         private readonly MembershipBookingQuoteService $quotes,
         private readonly MembershipBookingService $bookings,
         private readonly MembershipBookingReadService $bookingReads,
+        private readonly MembershipBookingCheckoutService $bookingCheckouts,
     ) {}
 
     public function show(Request $request)
@@ -112,7 +114,14 @@ class CustomerMembershipController extends Controller
                 'quote_fingerprint' => ['required', 'string', 'size:64'],
                 'accepted_terms_version' => ['required', 'string', 'max:80'],
             ]);
-            $result = $this->bookings->create($request->user(), $payload);
+            $result = $this->bookingCheckouts->replay($request->user(), $payload);
+            $result ??= $this->bookings->replay($request->user(), $payload);
+            if ($result === null) {
+                $quote = $this->quotes->quote($request->user(), $payload);
+                $result = (int) $quote['payable_amount_cents'] > 0
+                    ? $this->bookingCheckouts->create($request->user(), $payload)
+                    : $this->bookings->create($request->user(), $payload);
+            }
 
             return response()->json($result['result'] + ['replayed' => $result['replayed']], $result['status']);
         } catch (PaymentCheckoutException $exception) {

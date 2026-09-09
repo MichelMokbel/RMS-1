@@ -234,9 +234,15 @@ class MembershipBookingFundingService
                 ->lockForUpdate()
                 ->get()
                 ->keyBy('payment_id');
+            $invoiceMeta = is_array($invoice->meta) ? $invoice->meta : [];
+            $checkoutAddOnPaymentId = (int) ($invoiceMeta['checkout_add_on_payment_id'] ?? 0);
+            $checkoutAddOnCents = (int) ($invoiceMeta['checkout_add_on_amount_cents'] ?? 0);
 
             foreach ($rows->groupBy(fn (MembershipBookingFunding $row): int => (int) $row->purchaseBlock->payment_id) as $paymentId => $paymentRows) {
                 $expected = (int) $paymentRows->sum('invoice_net_cents');
+                if ((int) $paymentId === $checkoutAddOnPaymentId) {
+                    $expected += $checkoutAddOnCents;
+                }
                 $allocation = $allocations->get($paymentId);
                 if ($expected > 0 && (! $allocation || (int) $allocation->amount_cents !== $expected)) {
                     throw new \RuntimeException('Membership invoice allocation does not match its funding.');
@@ -253,6 +259,16 @@ class MembershipBookingFundingService
                         'invoiced_at' => now('UTC'),
                         'payment_allocation_id' => $allocation?->id,
                     ]);
+                }
+            }
+
+            $membershipPaymentIds = $rows
+                ->map(fn (MembershipBookingFunding $row): int => (int) $row->purchaseBlock->payment_id)
+                ->unique();
+            if ($checkoutAddOnCents > 0 && ! $membershipPaymentIds->contains($checkoutAddOnPaymentId)) {
+                $addOnAllocation = $allocations->get($checkoutAddOnPaymentId);
+                if (! $addOnAllocation || (int) $addOnAllocation->amount_cents !== $checkoutAddOnCents) {
+                    throw new \RuntimeException('Membership add-on allocation does not match its checkout payment.');
                 }
             }
 

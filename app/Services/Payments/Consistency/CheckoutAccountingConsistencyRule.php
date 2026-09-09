@@ -245,7 +245,7 @@ class CheckoutAccountingConsistencyRule implements PaymentConsistencyRule
         $issues = [];
         $deferred = (string) $attempt->state === 'paid_processing';
 
-        if ($target->target_type !== 'order' || $attempt->purpose !== 'ordinary_order') {
+        if ($target->target_type !== 'order' || ! in_array($attempt->purpose, ['ordinary_order', 'menu_order'], true)) {
             $issues[] = ConsistencyEvidence::issue('ORDINARY_TARGET_TYPE_MISMATCH', 'payment_checkout_target', (int) $target->id);
         }
         if ((string) $attempt->state === 'completed') {

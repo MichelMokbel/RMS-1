@@ -397,10 +397,10 @@ it('publishes the current payment terms from retained hash checked content', fun
 
     expect($terms['valid'])->toBeTrue()
         ->and($terms['errors'])->toBe([])
-        ->and($terms['current']['version'])->toBe('2026-09-05-v1')
+        ->and($terms['current']['version'])->toBe('2026-09-09-v3')
         ->and($terms['current']['url'])->toBe('https://layla-kitchen.com/terms-and-conditions')
         ->and($terms['current']['content_hash'])->toBe(
-            hash_file('sha256', base_path('resources/legal/payment-terms/2026-09-05-v1.md'))
+            hash_file('sha256', base_path('resources/legal/payment-terms/2026-09-09-v3.md'))
         );
 });
 

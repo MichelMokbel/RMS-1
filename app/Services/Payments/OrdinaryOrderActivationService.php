@@ -215,14 +215,14 @@ class OrdinaryOrderActivationService
             'created_by' => $actorId,
         ]);
         foreach (array_values($lines) as $index => $line) {
-            if (! is_array($line) || (int) ($line['quantity'] ?? 0) <= 0) {
+            if (! is_array($line) || ! is_numeric($line['quantity'] ?? null) || (float) $line['quantity'] <= 0) {
                 throw new PaymentCheckoutException('TARGET_SNAPSHOT_INVALID', 503, __('The checkout target line is invalid.'));
             }
             OrderItem::query()->create([
                 'order_id' => $order->id,
                 'menu_item_id' => (int) $line['menu_item_id'],
                 'description_snapshot' => (string) $line['description'],
-                'quantity' => (string) (int) $line['quantity'],
+                'quantity' => (string) $line['quantity'],
                 'unit_price' => $this->decimalCents((int) $line['unit_price_cents']),
                 'discount_amount' => '0.000',
                 'line_total' => $this->decimalCents((int) $line['line_total_cents']),

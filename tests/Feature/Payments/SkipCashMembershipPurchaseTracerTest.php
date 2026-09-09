@@ -21,6 +21,7 @@ use App\Models\PaymentSetting;
 use App\Models\PaymentSource;
 use App\Models\User;
 use App\Services\Customers\CustomerMergeService;
+use App\Services\Payments\CheckoutCanonicalizer;
 use App\Services\Payments\FakeSkipCashProvider;
 use App\Services\Payments\PaymentConsistencyService;
 use App\Services\Payments\SkipCashProvider;
@@ -390,12 +391,7 @@ it('records an after expiry membership payment as credit without activating allo
         ->assertJsonPath('retained_credit_amount_cents', 90000);
 });
 
-it('keeps paid purchase selections and promotion paths closed without affecting empty purchases', function (): void {
-    $this->postJson('/api/customer/checkouts/quote', [
-        ...membershipQuotePayload('20'),
-        'selections' => [['date' => now('Asia/Qatar')->addDay()->toDateString()]],
-    ])->assertStatus(503)->assertJsonPath('code', 'MEMBERSHIP_SELECTIONS_NOT_AVAILABLE');
-
+it('keeps membership promotion checkout closed until the feature is enabled', function (): void {
     $this->postJson('/api/customer/checkouts/quote', [
         ...membershipQuotePayload('20'),
         'promo_code' => 'TESTCODE',
@@ -960,4 +956,34 @@ it('keeps membership checkout closed unless checkout and queue launch flags are 
     expect(PaymentCheckoutAttempt::query()->count())->toBe(0)
         ->and(MealPlanRequest::query()->count())->toBe(0)
         ->and(Payment::query()->where('payment_source_id', $this->source->id)->count())->toBe(0);
+});
+
+it('replays membership checkouts created with the legacy request fingerprint', function (): void {
+    $quotePayload = membershipQuotePayload('20');
+    $quote = $this->postJson('/api/customer/checkouts/quote', $quotePayload)->assertOk();
+    $request = [
+        'client_uuid' => (string) Str::uuid(),
+        ...$quotePayload,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ];
+    $first = $this->postJson('/api/customer/checkouts', $request)->assertStatus(202);
+    $legacy = app(CheckoutCanonicalizer::class)->hash([
+        'membership-request-v1',
+        'membership',
+        '1',
+        '20',
+        [],
+        null,
+        $quote->json('quote_fingerprint'),
+        'v1',
+    ]);
+    PaymentCheckoutAttempt::query()->sole()->update(['request_fingerprint' => $legacy]);
+
+    $this->postJson('/api/customer/checkouts', $request)
+        ->assertOk()
+        ->assertJsonPath('replayed', true)
+        ->assertJsonPath('reference', $first->json('reference'));
+
+    expect(PaymentCheckoutAttempt::query()->count())->toBe(1);
 });

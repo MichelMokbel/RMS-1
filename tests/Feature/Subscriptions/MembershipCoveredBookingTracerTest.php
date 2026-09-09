@@ -21,9 +21,13 @@ use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\PaymentCheckoutAttempt;
+use App\Models\PaymentCheckoutTarget;
 use App\Models\PaymentConsistencyFinding;
 use App\Models\PaymentSetting;
 use App\Models\PaymentSource;
+use App\Models\StorefrontCategory;
+use App\Models\StorefrontItemProfile;
+use App\Models\StorefrontSetting;
 use App\Models\User;
 use App\Services\AR\ArInvoiceService;
 use App\Services\Customers\CustomerMergeService;
@@ -100,6 +104,11 @@ beforeEach(function (): void {
         'content_hash' => hash_file('sha256', $termsPath),
     ]]);
     app()->forgetInstance(SkipCashProvider::class);
+
+    MembershipPlan::query()->update([
+        'effective_from' => '2026-01-01 00:00:00.000000',
+        'effective_to' => null,
+    ]);
 
     $this->customer = Customer::factory()->create(['email' => 'covered-member@example.test']);
     $this->portalUser = User::factory()->create([
@@ -224,6 +233,479 @@ function coveredBookingSelection(string $date, int $mainId, int $quantity): arra
         'notes' => null,
     ];
 }
+
+function createCoveredBookingUpsell(object $test, string $date): MenuItem
+{
+    $category = StorefrontCategory::query()->create([
+        'company_id' => $test->company->id,
+        'slug' => 'checkout-add-ons',
+        'title' => 'Checkout Add-ons',
+        'is_active' => true,
+        'created_by' => $test->systemActor->id,
+        'updated_by' => $test->systemActor->id,
+    ]);
+    StorefrontSetting::query()->create([
+        'company_id' => $test->company->id,
+        'portal_branch_id' => $test->branch->id,
+        'normal_menu_enabled' => false,
+        'checkout_upsell_enabled' => true,
+        'upsell_category_id' => $category->id,
+        'menu_cutoff_time' => '23:00:00',
+        'timezone' => 'Asia/Qatar',
+        'revision' => 1,
+        'created_by' => $test->systemActor->id,
+        'updated_by' => $test->systemActor->id,
+    ]);
+    $item = MenuItem::factory()->create([
+        'code' => 'BOOK-ADDON-'.str_replace('-', '', $date),
+        'name' => 'Current Price Appetizer',
+        'selling_price_per_unit' => '12.500',
+        'unit' => MenuItem::UNIT_EACH,
+        'is_active' => true,
+    ]);
+    DB::table('menu_item_branches')->insertOrIgnore([
+        'menu_item_id' => $item->id,
+        'branch_id' => $test->branch->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    StorefrontItemProfile::query()->create([
+        'company_id' => $test->company->id,
+        'branch_id' => $test->branch->id,
+        'menu_item_id' => $item->id,
+        'category_id' => $category->id,
+        'customer_title' => 'Hummus Cup',
+        'direct_order_enabled' => true,
+        'advance_days' => 1,
+        'minimum_quantity' => '1.000',
+        'quantity_increment' => '1.000',
+        'maximum_quantity' => '5.000',
+        'created_by' => $test->systemActor->id,
+        'updated_by' => $test->systemActor->id,
+    ]);
+
+    return $item;
+}
+
+function completeCoveredBookingAddOnCheckout(
+    object $test,
+    PaymentCheckoutAttempt $attempt,
+    CarbonImmutable $finishedAt,
+    string $visaId,
+) {
+    $transaction = $attempt->providerTransactions()->sole();
+    $provider = app(SkipCashProvider::class);
+    expect($provider)->toBeInstanceOf(FakeSkipCashProvider::class);
+    $provider->markPaid($transaction->provider_payment_id, $finishedAt, $visaId);
+    $amount = number_format($attempt->payable_amount_cents / 100, 2, '.', '');
+    $body = [
+        'PaymentId' => $transaction->provider_payment_id,
+        'Amount' => $amount,
+        'StatusId' => '2',
+        'TransactionId' => str_replace('-', '', $attempt->reference),
+        'Custom1' => '',
+        'VisaId' => $visaId,
+    ];
+    $signature = base64_encode(hash_hmac(
+        'sha256',
+        'PaymentId='.$body['PaymentId'].',Amount='.$amount.',StatusId=2,TransactionId='.$body['TransactionId'].',VisaId='.$visaId,
+        'webhook-secret',
+        true,
+    ));
+
+    return $test->postJson('/api/integrations/skipcash/webhook', $body, ['Authorization' => $signature]);
+}
+
+it('charges covered booking add-ons in one SkipCash payment without consuming extra meal credits', function (): void {
+    completeCoveredBookingMembership($this, '20');
+    $subscription = MealSubscription::query()->firstOrFail();
+    $membershipPayment = Payment::query()->where('payment_source_id', $this->source->id)->firstOrFail();
+    $serviceDate = now('Asia/Qatar')->addDays(2)->toDateString();
+    $main = createCoveredBookingMenu($this->branch->id, $serviceDate);
+    $addOn = createCoveredBookingUpsell($this, $serviceDate);
+    $selection = coveredBookingSelection($serviceDate, $main->id, 1) + [
+        'add_ons' => [['menu_item_id' => $addOn->id, 'quantity' => '1']],
+    ];
+    $quotePayload = [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => [$selection],
+    ];
+    $quote = $this->postJson('/api/customer/membership-bookings/quote', $quotePayload)
+        ->assertOk()
+        ->assertJsonPath('main_quantity', 1)
+        ->assertJsonPath('add_on_amount_cents', 1250)
+        ->assertJsonPath('payable_amount_cents', 1250)
+        ->assertJsonPath('requires_payment', true);
+
+    $checkoutRequest = [
+        'client_uuid' => (string) Str::uuid(),
+        ...$quotePayload,
+        'queue_revision' => $quote->json('queue_revision'),
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ];
+    $create = $this->postJson('/api/customer/membership-bookings', $checkoutRequest)->assertStatus(202)
+        ->assertJsonPath('result_kind', 'covered_booking_with_add_ons')
+        ->assertJsonPath('payable_amount_cents', 1250);
+
+    $attempt = PaymentCheckoutAttempt::query()->where('purpose', 'membership_booking')->firstOrFail();
+    expect($attempt->targets()->sole()->membership_main_quantity)->toBe(1)
+        ->and($attempt->targets()->sole()->hold_state)->toBe('held');
+    $this->getJson('/api/customer/memberships?selected_branch_id=1')
+        ->assertOk()
+        ->assertJsonPath('data.checkout_held_meals', 1)
+        ->assertJsonPath('data.available_meals', 19);
+    $this->postJson('/api/customer/membership-bookings', $checkoutRequest)
+        ->assertOk()
+        ->assertJsonPath('replayed', true)
+        ->assertJsonPath('reference', $attempt->reference);
+    $this->portalUser->update(['portal_delivery_address' => 'Changed after checkout']);
+
+    $transaction = $attempt->providerTransactions()->firstOrFail();
+    $provider = app(SkipCashProvider::class);
+    $provider->markPaid($transaction->provider_payment_id, visaId: 'booking-addon');
+    $body = [
+        'PaymentId' => $transaction->provider_payment_id,
+        'Amount' => '12.50',
+        'StatusId' => '2',
+        'TransactionId' => str_replace('-', '', $attempt->reference),
+        'Custom1' => '',
+        'VisaId' => 'booking-addon',
+    ];
+    $signature = base64_encode(hash_hmac(
+        'sha256',
+        'PaymentId='.$body['PaymentId'].',Amount=12.50,StatusId=2,TransactionId='.$body['TransactionId'].',VisaId=booking-addon',
+        'webhook-secret',
+        true,
+    ));
+    $this->postJson('/api/integrations/skipcash/webhook', $body, ['Authorization' => $signature])
+        ->assertOk()
+        ->assertJsonPath('accepted', true);
+
+    $attempt->refresh()->load('targets.invoice.paymentAllocations', 'targets.order.items');
+    $target = $attempt->targets->sole();
+    $addOnPayment = Payment::query()->whereKeyNot($membershipPayment->id)->where('payment_source_id', $this->source->id)->sole();
+    expect($attempt->state)->toBe('completed')
+        ->and($target->hold_state)->toBe('activated')
+        ->and((int) $target->invoice->total_cents)->toBe(5750)
+        ->and((int) $target->invoice->paymentAllocations->sum('amount_cents'))->toBe(5750)
+        ->and((int) $membershipPayment->fresh()->allocations()->whereNull('voided_at')->sum('amount_cents'))->toBe(4500)
+        ->and((int) $addOnPayment->amount_cents)->toBe(1250)
+        ->and($addOnPayment->unallocatedCents())->toBe(0)
+        ->and($target->order->items->where('role', 'checkout_add_on')->count())->toBe(1)
+        ->and((string) $target->order->items->firstWhere('role', 'checkout_add_on')->unit_price)->toBe('12.500')
+        ->and($target->order->delivery_address_snapshot)->toBe('Doha')
+        ->and((int) $subscription->fresh()->meals_used)->toBe(1);
+
+    $mapping = MealSubscriptionOrder::query()->where('order_id', $target->order_id)->sole();
+    expect(app(PaymentConsistencyService::class)->check(
+        'booking_correction_v1',
+        'meal_subscription_order',
+        $mapping->id,
+        triggerKey: 'test:covered-booking:add-on-funding',
+    )->open_count)->toBe(0);
+
+    $this->getJson('/api/customer/checkouts/'.$create->json('reference'))
+        ->assertOk()
+        ->assertJsonPath('status', 'completed')
+        ->assertJsonPath('queue.available_meals', 19);
+});
+
+it('keeps membership promotions off add-ons and activates selected meals from the same purchase payment', function (): void {
+    Config::set('payments.membership.promotions_enabled', true);
+    createCoveredBookingPromotion($this);
+    $serviceDate = now('Asia/Qatar')->addDays(2)->toDateString();
+    $main = createCoveredBookingMenu($this->branch->id, $serviceDate);
+    $addOn = createCoveredBookingUpsell($this, $serviceDate);
+    $selection = coveredBookingSelection($serviceDate, $main->id, 1) + [
+        'add_ons' => [['menu_item_id' => $addOn->id, 'quantity' => '1']],
+    ];
+    $quotePayload = [
+        'purpose' => 'membership',
+        'selected_branch_id' => 1,
+        'plan_code' => '20',
+        'selections' => [$selection],
+        'promo_code' => 'SAVEQAR23456',
+    ];
+    $quote = $this->postJson('/api/customer/checkouts/quote', $quotePayload)
+        ->assertOk()
+        ->assertJsonPath('membership_gross_amount_cents', 90000)
+        ->assertJsonPath('discount_amount_cents', 9000)
+        ->assertJsonPath('membership_payable_amount_cents', 81000)
+        ->assertJsonPath('add_on_amount_cents', 1250)
+        ->assertJsonPath('payable_amount_cents', 82250);
+    $this->postJson('/api/customer/checkouts', [
+        'client_uuid' => (string) Str::uuid(),
+        ...$quotePayload,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertStatus(202);
+
+    $attempt = PaymentCheckoutAttempt::query()->where('purpose', 'membership')->sole();
+    $this->portalUser->update(['portal_delivery_address' => 'Changed after membership checkout']);
+    $transaction = $attempt->providerTransactions()->sole();
+    $provider = app(SkipCashProvider::class);
+    $provider->markPaid($transaction->provider_payment_id, visaId: 'membership-addon');
+    $body = [
+        'PaymentId' => $transaction->provider_payment_id,
+        'Amount' => '822.50',
+        'StatusId' => '2',
+        'TransactionId' => str_replace('-', '', $attempt->reference),
+        'Custom1' => '',
+        'VisaId' => 'membership-addon',
+    ];
+    $signature = base64_encode(hash_hmac(
+        'sha256',
+        'PaymentId='.$body['PaymentId'].',Amount=822.50,StatusId=2,TransactionId='.$body['TransactionId'].',VisaId=membership-addon',
+        'webhook-secret',
+        true,
+    ));
+    $this->postJson('/api/integrations/skipcash/webhook', $body, ['Authorization' => $signature])
+        ->assertOk()
+        ->assertJsonPath('accepted', true);
+
+    $attempt->refresh()->load('targets.invoice.paymentAllocations', 'targets.order.items');
+    $orderTarget = $attempt->targets->firstWhere('target_type', 'order');
+    $payment = Payment::query()->where('payment_source_id', $this->source->id)->sole();
+    $block = MembershipPurchaseBlock::query()->sole();
+    expect($attempt->state)->toBe('completed')
+        ->and((int) $payment->amount_cents)->toBe(82250)
+        ->and((int) $block->gross_price_cents)->toBe(90000)
+        ->and((int) $block->discount_cents)->toBe(9000)
+        ->and((int) $block->final_price_cents)->toBe(81000)
+        ->and((int) $orderTarget->invoice->total_cents)->toBe(5300)
+        ->and((int) $orderTarget->invoice->paymentAllocations->sum('amount_cents'))->toBe(5300)
+        ->and($orderTarget->order->items->where('role', 'checkout_add_on')->count())->toBe(1)
+        ->and($orderTarget->order->delivery_address_snapshot)->toBe('Doha')
+        ->and((int) MealSubscription::query()->sole()->meals_used)->toBe(1)
+        ->and(MembershipPromotionRedemption::query()->count())->toBe(1);
+
+    expect(app(PaymentConsistencyService::class)->checkPromotion(
+        MembershipPromotion::query()->sole(),
+        triggerKey: 'test:membership-purchase:add-on-promotion',
+    )->open_count)->toBe(0);
+    $purchaseConsistency = app(PaymentConsistencyService::class)->check(
+        'membership_purchase_v1',
+        'membership_purchase_block',
+        $block->id,
+        triggerKey: 'test:membership-purchase:add-on-accounting',
+    );
+    expect($purchaseConsistency->open_count)->toBe(0);
+});
+
+it('replays a free booking after the first request consumes the final membership meals', function (): void {
+    completeCoveredBookingMembership($this, '20');
+    $subscription = MealSubscription::query()->sole();
+    $date = now('Asia/Qatar')->addDays(2)->toDateString();
+    $main = createCoveredBookingMenu($this->branch->id, $date);
+    $selections = [coveredBookingSelection($date, $main->id, 20)];
+    $quote = $this->postJson('/api/customer/membership-bookings/quote', [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => $selections,
+    ])->assertOk();
+    $request = [
+        'client_uuid' => (string) Str::uuid(),
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'queue_revision' => $quote->json('queue_revision'),
+        'selections' => $selections,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ];
+
+    $first = $this->postJson('/api/customer/membership-bookings', $request)->assertCreated();
+    $this->postJson('/api/customer/membership-bookings', $request)
+        ->assertOk()
+        ->assertJsonPath('replayed', true)
+        ->assertJsonPath('operation_reference', $first->json('operation_reference'));
+
+    expect((int) $subscription->fresh()->meals_used)->toBe(20)
+        ->and(MembershipBookingOperation::query()->count())->toBe(1)
+        ->and(Order::query()->count())->toBe(1);
+});
+
+it('replays a paid add-on booking after its hold uses the final membership meals', function (): void {
+    completeCoveredBookingMembership($this, '20');
+    $subscription = MealSubscription::query()->sole();
+    $date = now('Asia/Qatar')->addDays(2)->toDateString();
+    $main = createCoveredBookingMenu($this->branch->id, $date);
+    $addOn = createCoveredBookingUpsell($this, $date);
+    $selections = [coveredBookingSelection($date, $main->id, 20) + [
+        'add_ons' => [['menu_item_id' => $addOn->id, 'quantity' => '1']],
+    ]];
+    $quote = $this->postJson('/api/customer/membership-bookings/quote', [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => $selections,
+    ])->assertOk();
+    $request = [
+        'client_uuid' => (string) Str::uuid(),
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'queue_revision' => $quote->json('queue_revision'),
+        'selections' => $selections,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ];
+
+    $first = $this->postJson('/api/customer/membership-bookings', $request)->assertStatus(202);
+    $this->postJson('/api/customer/membership-bookings', $request)
+        ->assertOk()
+        ->assertJsonPath('replayed', true)
+        ->assertJsonPath('reference', $first->json('reference'));
+
+    expect(PaymentCheckoutAttempt::query()->where('purpose', 'membership_booking')->count())->toBe(1)
+        ->and((int) $subscription->fresh()->meals_used)->toBe(0)
+        ->and((int) PaymentCheckoutTarget::query()->where('hold_state', 'held')->sum('membership_main_quantity'))->toBe(20);
+});
+
+it('completes an expired booking when provider evidence proves the payment finished on time', function (): void {
+    completeCoveredBookingMembership($this, '20');
+    $subscription = MealSubscription::query()->sole();
+    $date = now('Asia/Qatar')->addDays(2)->toDateString();
+    $main = createCoveredBookingMenu($this->branch->id, $date);
+    $addOn = createCoveredBookingUpsell($this, $date);
+    $selection = coveredBookingSelection($date, $main->id, 1) + [
+        'add_ons' => [['menu_item_id' => $addOn->id, 'quantity' => '1']],
+    ];
+    $quote = $this->postJson('/api/customer/membership-bookings/quote', [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => [$selection],
+    ])->assertOk();
+    $this->postJson('/api/customer/membership-bookings', [
+        'client_uuid' => (string) Str::uuid(),
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'queue_revision' => $quote->json('queue_revision'),
+        'selections' => [$selection],
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertStatus(202);
+    $attempt = PaymentCheckoutAttempt::query()->where('purpose', 'membership_booking')->sole();
+    $expiry = now('UTC')->subMinute();
+    $attempt->update(['state' => 'expired', 'expires_at' => $expiry]);
+    $attempt->targets()->update(['hold_state' => 'released', 'released_at' => now('UTC')]);
+
+    completeCoveredBookingAddOnCheckout($this, $attempt->fresh(), CarbonImmutable::parse($expiry)->subSecond(), 'on-time-late-report')
+        ->assertOk()
+        ->assertJsonPath('accepted', true);
+
+    expect($attempt->fresh()->state)->toBe('completed')
+        ->and($attempt->targets()->sole()->hold_state)->toBe('activated')
+        ->and((int) $subscription->fresh()->meals_used)->toBe(1)
+        ->and(Payment::query()->where('payment_source_id', $this->source->id)->latest('id')->firstOrFail()->unallocatedCents())->toBe(0);
+});
+
+it('retains an actually late booking add-on payment as customer credit', function (): void {
+    completeCoveredBookingMembership($this, '20');
+    $subscription = MealSubscription::query()->sole();
+    $date = now('Asia/Qatar')->addDays(2)->toDateString();
+    $main = createCoveredBookingMenu($this->branch->id, $date);
+    $addOn = createCoveredBookingUpsell($this, $date);
+    $selection = coveredBookingSelection($date, $main->id, 1) + [
+        'add_ons' => [['menu_item_id' => $addOn->id, 'quantity' => '1']],
+    ];
+    $quote = $this->postJson('/api/customer/membership-bookings/quote', [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => [$selection],
+    ])->assertOk();
+    $this->postJson('/api/customer/membership-bookings', [
+        'client_uuid' => (string) Str::uuid(),
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'queue_revision' => $quote->json('queue_revision'),
+        'selections' => [$selection],
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertStatus(202);
+    $attempt = PaymentCheckoutAttempt::query()->where('purpose', 'membership_booking')->sole();
+    $expiry = now('UTC')->subMinute();
+    $attempt->update(['state' => 'expired', 'expires_at' => $expiry]);
+    $attempt->targets()->update(['hold_state' => 'released', 'released_at' => now('UTC')]);
+
+    completeCoveredBookingAddOnCheckout($this, $attempt->fresh(), CarbonImmutable::now('UTC'), 'actual-late-booking')
+        ->assertOk()
+        ->assertJsonPath('accepted', true);
+
+    $payment = Payment::query()->where('payment_source_id', $this->source->id)->latest('id')->firstOrFail();
+    expect($attempt->fresh()->state)->toBe('payment_received_as_credit')
+        ->and($attempt->targets()->sole()->hold_state)->toBe('released')
+        ->and((int) $subscription->fresh()->meals_used)->toBe(0)
+        ->and($payment->unallocatedCents())->toBe(1250)
+        ->and(Order::query()->count())->toBe(0);
+});
+
+it('retains an on-time add-on payment as credit when another checkout holds the released meals', function (): void {
+    completeCoveredBookingMembership($this, '20');
+    $subscription = MealSubscription::query()->sole();
+    $paidDate = now('Asia/Qatar')->addDays(2)->toDateString();
+    $paidMain = createCoveredBookingMenu($this->branch->id, $paidDate);
+    $addOn = createCoveredBookingUpsell($this, $paidDate);
+    $paidSelection = coveredBookingSelection($paidDate, $paidMain->id, 20) + [
+        'add_ons' => [['menu_item_id' => $addOn->id, 'quantity' => '1']],
+    ];
+    $paidQuote = $this->postJson('/api/customer/membership-bookings/quote', [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => [$paidSelection],
+    ])->assertOk();
+    $this->postJson('/api/customer/membership-bookings', [
+        'client_uuid' => (string) Str::uuid(),
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'queue_revision' => $paidQuote->json('queue_revision'),
+        'selections' => [$paidSelection],
+        'quote_fingerprint' => $paidQuote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertStatus(202);
+    $attempt = PaymentCheckoutAttempt::query()->where('purpose', 'membership_booking')->sole();
+    $expiry = now('UTC')->subMinute();
+    $attempt->update(['state' => 'expired', 'expires_at' => $expiry]);
+    $attempt->targets()->update(['hold_state' => 'released', 'released_at' => now('UTC')]);
+
+    $secondDate = now('Asia/Qatar')->addDays(3)->toDateString();
+    $secondMain = createCoveredBookingMenu($this->branch->id, $secondDate);
+    $secondSelection = [coveredBookingSelection($secondDate, $secondMain->id, 20) + [
+        'add_ons' => [['menu_item_id' => $addOn->id, 'quantity' => '1']],
+    ]];
+    $secondQuote = $this->postJson('/api/customer/membership-bookings/quote', [
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'selections' => $secondSelection,
+    ])->assertOk();
+    $this->postJson('/api/customer/membership-bookings', [
+        'client_uuid' => (string) Str::uuid(),
+        'selected_branch_id' => 1,
+        'queue_reference' => $subscription->subscription_code,
+        'queue_revision' => $secondQuote->json('queue_revision'),
+        'selections' => $secondSelection,
+        'quote_fingerprint' => $secondQuote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+    ])->assertStatus(202);
+
+    completeCoveredBookingAddOnCheckout($this, $attempt->fresh(), CarbonImmutable::parse($expiry)->subSecond(), 'on-time-without-meals')
+        ->assertOk()
+        ->assertJsonPath('accepted', true);
+
+    $payment = Payment::query()->where('payment_source_id', $this->source->id)->latest('id')->firstOrFail();
+    expect($attempt->fresh()->state)->toBe('payment_received_as_credit')
+        ->and($attempt->targets()->sole()->hold_state)->toBe('released')
+        ->and((int) $subscription->fresh()->meals_used)->toBe(0)
+        ->and($payment->unallocatedCents())->toBe(1250)
+        ->and(PaymentCheckoutAttempt::query()->where('purpose', 'membership_booking')->count())->toBe(2)
+        ->and((int) PaymentCheckoutTarget::query()->where('hold_state', 'held')->sum('membership_main_quantity'))->toBe(20)
+        ->and(Order::query()->count())->toBe(0);
+
+    $this->getJson('/api/customer/checkouts/'.$attempt->reference)
+        ->assertOk()
+        ->assertJsonPath('purchase_confirmed', false)
+        ->assertJsonPath('retained_credit_amount_cents', 1250)
+        ->assertJsonPath('message', 'Your add-on payment was received as customer credit. No membership meals were booked because the checkout could not be completed.');
+});
 
 it('books future main quantities from the paid allowance without another payment', function (): void {
     completeCoveredBookingMembership($this, '20');

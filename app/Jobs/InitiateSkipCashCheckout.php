@@ -5,14 +5,18 @@ namespace App\Jobs;
 use App\Models\PaymentCheckoutAttempt;
 use App\Models\PaymentCheckoutTarget;
 use App\Models\PaymentProviderTransaction;
+use App\Services\Customers\CustomerPortalAccountService;
+use App\Services\Payments\PaymentCheckoutException;
 use App\Services\Payments\SkipCashProvider;
 use App\Services\Promotions\MembershipPromotionReservationService;
+use App\Services\Storefront\StorefrontMenuQuoteService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class InitiateSkipCashCheckout implements ShouldQueue
 {
@@ -29,8 +33,10 @@ class InitiateSkipCashCheckout implements ShouldQueue
     public function handle(
         SkipCashProvider $provider,
         MembershipPromotionReservationService $promotionReservations,
+        StorefrontMenuQuoteService $menuQuotes,
+        CustomerPortalAccountService $customerAccounts,
     ): void {
-        $attempt = DB::transaction(function () use ($promotionReservations): ?PaymentCheckoutAttempt {
+        $attempt = DB::transaction(function () use ($promotionReservations, $menuQuotes, $customerAccounts): ?PaymentCheckoutAttempt {
             $attempt = PaymentCheckoutAttempt::query()->lockForUpdate()->find($this->attemptId);
             if (! $attempt || $attempt->provider_create_outcome !== 'not_sent' || ! (bool) config('payments.skipcash.enabled', false)) {
                 return null;
@@ -55,6 +61,36 @@ class InitiateSkipCashCheckout implements ShouldQueue
                 );
 
                 return null;
+            }
+            if ($attempt->purpose === 'menu_order') {
+                try {
+                    $portalUser = $attempt->portalUser()->firstOrFail();
+                    if (! $customerAccounts->isPhoneVerified($portalUser)) {
+                        throw ValidationException::withMessages(['phone' => __('Phone verification is required.')]);
+                    }
+                    $menuQuotes->quote($portalUser, [
+                        'group' => $attempt->request_snapshot['group'] ?? [],
+                        'previous_quote_fingerprint' => (string) $attempt->quote_fingerprint,
+                    ], true);
+                } catch (PaymentCheckoutException|ValidationException $exception) {
+                    $attempt->update([
+                        'state' => 'declined',
+                        'last_error_code' => $exception instanceof PaymentCheckoutException
+                            ? $exception->codeName
+                            : 'MENU_ORDER_CHANGED_BEFORE_DISPATCH',
+                        'next_recovery_at' => null,
+                    ]);
+                    PaymentCheckoutTarget::query()
+                        ->where('attempt_id', $attempt->id)
+                        ->where('hold_state', 'held')
+                        ->lockForUpdate()
+                        ->update([
+                            'hold_state' => 'released',
+                            'released_at' => now('UTC'),
+                        ]);
+
+                    return null;
+                }
             }
 
             $attempt->update([

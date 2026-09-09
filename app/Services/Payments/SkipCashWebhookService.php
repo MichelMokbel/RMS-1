@@ -7,6 +7,7 @@ use App\Models\PaymentCheckoutTarget;
 use App\Models\PaymentProviderEvent;
 use App\Models\PaymentProviderTransaction;
 use App\Services\Promotions\MembershipPromotionReservationService;
+use App\Services\Storefront\StorefrontMenuOrderActivationService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -17,6 +18,8 @@ class SkipCashWebhookService
         private readonly SkipCashProvider $provider,
         private readonly OrdinaryOrderActivationService $activation,
         private readonly MembershipCheckoutActivationService $membershipActivation,
+        private readonly MembershipBookingCheckoutActivationService $membershipBookingActivation,
+        private readonly StorefrontMenuOrderActivationService $menuOrderActivation,
         private readonly PaymentOperationsTrackingService $operations,
         private readonly MembershipPromotionReservationService $promotionReservations,
         private readonly PaymentConsistencyDispatchService $paymentConsistency,
@@ -172,6 +175,8 @@ class SkipCashWebhookService
             match ($attempt->purpose) {
                 'ordinary_order' => $this->activation->complete($attempt->id, $providerTransaction->id),
                 'membership' => $this->membershipActivation->complete($attempt->id, $providerTransaction->id),
+                'membership_booking' => $this->membershipBookingActivation->complete($attempt->id, $providerTransaction->id),
+                'menu_order' => $this->menuOrderActivation->complete($attempt->id, $providerTransaction->id),
                 default => throw new PaymentCheckoutException(
                     'CHECKOUT_PURPOSE_INVALID',
                     409,

@@ -31,7 +31,7 @@ class PaymentConsistencyDispatchService
             $targets = DB::table('payment_checkout_targets')->where('attempt_id', $attemptId)->orderBy('id')->get([
                 'id', 'target_type', 'meal_plan_request_id',
             ]);
-            if ($attempt->purpose === 'ordinary_order') {
+            if (in_array($attempt->purpose, ['ordinary_order', 'menu_order'], true)) {
                 foreach ($targets as $target) {
                     $this->dispatchTargeted('ordinary_accounting_v1', 'payment_checkout_target', (int) $target->id, $sourceType, $sourceId, $transition);
                 }

@@ -9,6 +9,7 @@ use App\Models\PaymentSource;
 use App\Models\User;
 use App\Services\Accounting\AccountingContextService;
 use App\Services\Customers\CustomerIdentityResolver;
+use App\Services\Storefront\StorefrontUpsellService;
 use App\Support\Money\MinorUnits;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
@@ -23,6 +24,7 @@ class OrdinaryOrderQuoteService
         private readonly CustomerIdentityResolver $identityResolver,
         private readonly PaymentTermsService $paymentTerms,
         private readonly CheckoutCanonicalizer $canonicalizer,
+        private readonly StorefrontUpsellService $upsells,
     ) {}
 
     /**
@@ -78,12 +80,17 @@ class OrdinaryOrderQuoteService
         }
 
         $pricedDays = collect($future)
-            ->map(fn (array $day): array => $this->priceDay($day, $context['branch']->id))
+            ->map(fn (array $day): array => $this->priceDay(
+                $day,
+                (int) $context['company_id'],
+                (int) $context['branch']->id,
+            ))
             ->sortBy('date')
             ->values()
             ->all();
 
         $payable = array_sum(array_column($pricedDays, 'total_cents'));
+        $addOnTotal = array_sum(array_column($pricedDays, 'add_on_total_cents'));
         if ($payable <= 0 || $payable > PHP_INT_MAX) {
             throw ValidationException::withMessages([
                 'cart.items' => __('The selected order has an invalid total.'),
@@ -117,6 +124,7 @@ class OrdinaryOrderQuoteService
             'gross_amount_cents' => $payable,
             'discount_amount_cents' => 0,
             'payable_amount_cents' => $payable,
+            'add_on_amount_cents' => $addOnTotal,
             'currency' => 'QAR',
             'quote_fingerprint' => $quoteFingerprint,
             'terms_version' => $context['terms']['version'],
@@ -150,7 +158,7 @@ class OrdinaryOrderQuoteService
             if (! is_array($item)) {
                 throw ValidationException::withMessages(['cart.items' => __('Each service date must be valid.')]);
             }
-            $this->assertExactKeys($item, ['key', 'mains', 'salad_qty', 'dessert_qty', 'notes'], 'cart.items.'.$index);
+            $this->assertExactKeys($item, ['key', 'mains', 'salad_qty', 'dessert_qty', 'notes', 'add_ons'], 'cart.items.'.$index);
 
             $date = trim((string) ($item['key'] ?? ''));
             if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || ! $this->validDate($date)) {
@@ -198,12 +206,18 @@ class OrdinaryOrderQuoteService
 
             $sortedMains = array_values($mergedMains);
             usort($sortedMains, fn (array $left, array $right): int => [$left['menu_item_id'], $left['portion']] <=> [$right['menu_item_id'], $right['portion']]);
+            if (array_key_exists('add_ons', $item) && ! is_array($item['add_ons'])) {
+                throw ValidationException::withMessages(['cart.items.'.$index.'.add_ons' => __('Checkout add-ons must be valid.')]);
+            }
             $days[$date] = [
                 'date' => $date,
                 'mains' => $sortedMains,
                 'salad_qty' => $saladQty,
                 'dessert_qty' => $dessertQty,
                 'notes' => $notes,
+                'add_ons' => $this->upsells->normalizeSelections(
+                    $item['add_ons'] ?? [],
+                ),
             ];
         }
 
@@ -246,7 +260,7 @@ class OrdinaryOrderQuoteService
     /** @param array<string, mixed> $day
      * @return array<string, mixed>
      */
-    private function priceDay(array $day, int $branchId): array
+    private function priceDay(array $day, int $companyId, int $branchId): array
     {
         $menu = DailyDishMenu::query()
             ->with('items.menuItem')
@@ -274,6 +288,13 @@ class OrdinaryOrderQuoteService
 
         $salad = $this->resolveUniqueSide($menu->items, 'salad', (int) $day['salad_qty'], $day['date']);
         $dessert = $this->resolveUniqueSide($menu->items, 'dessert', (int) $day['dessert_qty'], $day['date']);
+        $upsell = $this->upsells->quoteDate(
+            $day['date'],
+            $day['add_ons'],
+            false,
+            $companyId,
+            $branchId,
+        );
         $orderLines = [];
         $displayItems = [];
         $allPlate = collect($resolvedMains)->every(fn (array $main): bool => $main['portion'] === 'plate');
@@ -322,7 +343,16 @@ class OrdinaryOrderQuoteService
             }
         }
 
-        $orderLines = array_values(array_filter($orderLines, fn (array $line): bool => $line['quantity'] > 0));
+        foreach ($upsell['lines'] as $line) {
+            $orderLines[] = $line;
+            $displayItems[] = [
+                'menu_item_id' => $line['menu_item_id'],
+                'role' => 'checkout_add_on',
+                'quantity' => $line['quantity'],
+                'amount_cents' => $line['line_total_cents'],
+            ];
+        }
+        $orderLines = array_values(array_filter($orderLines, fn (array $line): bool => (float) $line['quantity'] > 0));
         $total = array_sum(array_column($orderLines, 'line_total_cents'));
         $submission = $this->submissionDay($day);
         $canonicalTuple = [
@@ -333,6 +363,7 @@ class OrdinaryOrderQuoteService
             $dessert['menu_item_id'] ?? null,
             (int) $day['dessert_qty'],
             $day['notes'],
+            $upsell['canonical'],
         ];
 
         return [
@@ -343,6 +374,7 @@ class OrdinaryOrderQuoteService
             'order_lines' => $orderLines,
             'display_items' => $displayItems,
             'notes' => $day['notes'],
+            'add_on_total_cents' => $upsell['total_cents'],
         ];
     }
 
@@ -446,6 +478,7 @@ class OrdinaryOrderQuoteService
             'salad_qty' => (int) $day['salad_qty'],
             'dessert_qty' => (int) $day['dessert_qty'],
             'notes' => $day['notes'],
+            'add_ons' => $day['add_ons'],
         ];
     }
 

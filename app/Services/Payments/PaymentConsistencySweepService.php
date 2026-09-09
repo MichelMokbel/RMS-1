@@ -410,7 +410,7 @@ class PaymentConsistencySweepService
                         ->where('allocations.allocatable_type', '=', 'App\\Models\\ArInvoice');
                 })
                 ->where('attempts.company_id', $companyId)
-                ->where('attempts.purpose', 'ordinary_order');
+                ->whereIn('attempts.purpose', ['ordinary_order', 'menu_order']);
             if (! $full) {
                 $query->where(fn ($q) => $q->where('targets.updated_at', '>=', $cutoff)
                     ->orWhere('attempts.updated_at', '>=', $cutoff)->orWhere('orders.updated_at', '>=', $cutoff)

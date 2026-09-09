@@ -45,7 +45,12 @@ class MembershipQueueService
             ->whereIn('state', ['reserved', 'invoiced'])
             ->get();
         $reserved = (int) $activeFunding->where('state', 'reserved')->sum('main_quantity');
-        $available = $total - $used - $reserved;
+        $checkoutHeld = (int) PaymentCheckoutTarget::query()
+            ->whereIn('membership_subscription_id', $roots->pluck('id'))
+            ->where('hold_state', 'held')
+            ->whereHas('attempt', fn ($query) => $query->whereIn('state', ['initiating', 'pending', 'paid_processing']))
+            ->sum('membership_main_quantity');
+        $available = $total - $used - $reserved - $checkoutHeld;
         if ($available < 0) {
             throw new \RuntimeException('Membership queue usage exceeds its funded allowance.');
         }
@@ -74,8 +79,9 @@ class MembershipQueueService
             'queue_revision' => (int) $roots->sum('queue_revision'),
             'total_meals' => $total,
             'used_meals' => $used,
-            'selected_meals' => $used + $reserved,
+            'selected_meals' => $used + $reserved + $checkoutHeld,
             'reserved_meals' => $reserved,
+            'checkout_held_meals' => $checkoutHeld,
             'available_meals' => $available,
             'upcoming_meals' => $upcoming,
             'pause_periods' => $pausePeriods,
@@ -210,9 +216,9 @@ class MembershipQueueService
             'original_customer_id' => $attempt->customer_id,
             'queue_position' => $position,
             'meal_count' => $plan->meal_count,
-            'gross_price_cents' => $attempt->gross_amount_cents,
+            'gross_price_cents' => (int) ($attempt->pricing_snapshot['membership_gross_amount_cents'] ?? $attempt->gross_amount_cents),
             'discount_cents' => $attempt->discount_amount_cents,
-            'final_price_cents' => $attempt->payable_amount_cents,
+            'final_price_cents' => (int) ($attempt->pricing_snapshot['membership_payable_amount_cents'] ?? $attempt->payable_amount_cents),
             'currency' => 'QAR',
             'origin' => 'checkout',
             'origin_key' => 'checkout:'.$attempt->id,
@@ -242,9 +248,9 @@ class MembershipQueueService
             'payment_id' => $payment->id,
             'queue_position' => $position,
             'meal_count' => (int) $plan->meal_count,
-            'gross_price_cents' => (int) $attempt->gross_amount_cents,
+            'gross_price_cents' => (int) ($attempt->pricing_snapshot['membership_gross_amount_cents'] ?? $attempt->gross_amount_cents),
             'discount_cents' => (int) $attempt->discount_amount_cents,
-            'final_price_cents' => (int) $attempt->payable_amount_cents,
+            'final_price_cents' => (int) ($attempt->pricing_snapshot['membership_payable_amount_cents'] ?? $attempt->payable_amount_cents),
         ], (int) $attempt->company_id);
 
         return [
@@ -294,6 +300,7 @@ class MembershipQueueService
             || (int) $payment->company_id !== (int) $attempt->company_id
             || (int) $payment->branch_id !== (int) $attempt->branch_id
             || (int) $payment->amount_cents !== (int) $attempt->payable_amount_cents
+            || (int) $target->expected_amount_cents !== (int) ($attempt->pricing_snapshot['membership_payable_amount_cents'] ?? $attempt->payable_amount_cents)
             || $payment->currency !== 'QAR'
             || $payment->method !== 'skipcash'
             || (int) $providerTransaction->payment_id !== (int) $payment->id) {

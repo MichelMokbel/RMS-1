@@ -11,6 +11,8 @@ use App\Services\Payments\MembershipQuoteService;
 use App\Services\Payments\OrdinaryOrderCheckoutService;
 use App\Services\Payments\OrdinaryOrderQuoteService;
 use App\Services\Payments\PaymentCheckoutException;
+use App\Services\Storefront\StorefrontMenuCheckoutService;
+use App\Services\Storefront\StorefrontMenuQuoteService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 
@@ -21,6 +23,8 @@ class CustomerCheckoutController extends Controller
         private readonly OrdinaryOrderCheckoutService $ordinaryCheckouts,
         private readonly MembershipQuoteService $membershipQuotes,
         private readonly MembershipCheckoutService $membershipCheckouts,
+        private readonly StorefrontMenuQuoteService $menuQuotes,
+        private readonly StorefrontMenuCheckoutService $menuCheckouts,
         private readonly CheckoutStatusPresenter $statuses,
         private readonly CustomerOwnershipService $customerOwnership,
     ) {}
@@ -40,7 +44,16 @@ class CustomerCheckoutController extends Controller
                 ]);
                 $this->throttlePromotionQuote($request, (string) ($payload['promo_code'] ?? ''));
                 $quote = $this->membershipQuotes->quote($request->user(), $payload);
-                unset($quote['_context'], $quote['_plan'], $quote['_promotion']);
+                unset($quote['_context'], $quote['_plan'], $quote['_promotion'], $quote['_priced_days']);
+            } elseif ($purpose === 'menu_order') {
+                $this->assertExactKeys($request->all(), ['purpose', 'group', 'previous_quote_fingerprint']);
+                $payload = $request->validate([
+                    'purpose' => ['required', 'in:menu_order'],
+                    'group' => ['required', 'array'],
+                    'previous_quote_fingerprint' => ['nullable', 'string', 'size:64'],
+                ]);
+                $quote = $this->menuQuotes->quote($request->user(), $payload);
+                $quote = $this->menuQuotes->publicQuote($quote);
             } else {
                 $this->assertExactKeys($request->all(), ['purpose', 'cart']);
                 $payload = $request->validate([
@@ -83,6 +96,22 @@ class CustomerCheckoutController extends Controller
                     'accepted_terms_version' => ['required', 'string', 'max:80'],
                 ]);
                 $result = $this->membershipCheckouts->create($request->user(), $payload);
+            } elseif ($purpose === 'menu_order') {
+                $this->assertExactKeys($request->all(), [
+                    'client_uuid',
+                    'purpose',
+                    'group',
+                    'quote_fingerprint',
+                    'accepted_terms_version',
+                ]);
+                $payload = $request->validate([
+                    'client_uuid' => ['required', 'uuid'],
+                    'purpose' => ['required', 'in:menu_order'],
+                    'group' => ['required', 'array'],
+                    'quote_fingerprint' => ['required', 'string', 'size:64'],
+                    'accepted_terms_version' => ['required', 'string', 'max:80'],
+                ]);
+                $result = $this->menuCheckouts->create($request->user(), $payload);
             } else {
                 $this->assertExactKeys($request->all(), [
                     'client_uuid',

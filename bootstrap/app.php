@@ -15,6 +15,7 @@ use App\Console\Commands\ImportMenuItemArabicNames;
 use App\Console\Commands\IntegrityAudit;
 use App\Console\Commands\PrunePosPrintStreamEvents;
 use App\Console\Commands\PurgeSkipCashProviderBodies;
+use App\Console\Commands\PurgeStorefrontEvents;
 use App\Console\Commands\ReapplySafeForeignKeys;
 use App\Console\Commands\RecoverCustomerMatching;
 use App\Console\Commands\RecoverSkipCashPayments;
@@ -60,6 +61,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ExpireQuotations::class,
         ImportMenuItemArabicNames::class,
         PrunePosPrintStreamEvents::class,
+        PurgeStorefrontEvents::class,
         RecoverSkipCashPayments::class,
         PurgeSkipCashProviderBodies::class,
         HelpSeedDemoCommand::class,
@@ -111,6 +113,11 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $schedule->command('payments:purge-skipcash-provider-bodies')
             ->dailyAt('02:00')
+            ->withoutOverlapping();
+
+        $schedule->command('storefront:purge-events --days=180')
+            ->dailyAt('02:30')
+            ->timezone('Asia/Qatar')
             ->withoutOverlapping();
 
         $schedule->command('payments:check-consistency --mode=catchup')

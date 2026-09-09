@@ -37,7 +37,7 @@ class PaymentOperationsConsistencyService
     public function scan(int $limit = 100): int
     {
         $ids = PaymentCheckoutAttempt::query()
-            ->where('purpose', 'ordinary_order')
+            ->whereIn('purpose', ['ordinary_order', 'menu_order'])
             ->whereIn('state', ['paid_processing', 'completed'])
             ->orderBy('id')
             ->limit(max(1, min(100, $limit)))
@@ -64,7 +64,7 @@ class PaymentOperationsConsistencyService
             ])
             ->find($attemptId);
 
-        if (! $attempt || $attempt->purpose !== 'ordinary_order'
+        if (! $attempt || ! in_array($attempt->purpose, ['ordinary_order', 'menu_order'], true)
             || ! in_array($attempt->state, ['paid_processing', 'completed'], true)) {
             return null;
         }

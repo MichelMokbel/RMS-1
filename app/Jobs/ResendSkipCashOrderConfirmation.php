@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Mail\DailyDishOrderCustomerMail;
+use App\Mail\StorefrontMenuOrderConfirmationMail;
 use App\Models\Order;
 use App\Models\PaymentCheckoutAttempt;
 use App\Models\User;
@@ -76,6 +77,8 @@ class ResendSkipCashOrderConfirmation implements ShouldQueue
                 'recipient' => (string) ($snapshot['customer_email'] ?? ''),
                 'order_ids' => array_values(array_map('intval', (array) ($snapshot['order_ids'] ?? []))),
                 'portal_user_id' => (int) $attempt->portal_user_id,
+                'purpose' => (string) $attempt->purpose,
+                'snapshot' => $snapshot,
             ];
         }, 3);
         if (! $context) {
@@ -94,13 +97,15 @@ class ResendSkipCashOrderConfirmation implements ShouldQueue
             return;
         }
 
-        $mail = new DailyDishOrderCustomerMail($orders, null, null);
+        $mail = $context['purpose'] === 'menu_order'
+            ? new StorefrontMenuOrderConfirmationMail($context['snapshot'], 'customer')
+            : new DailyDishOrderCustomerMail($orders, null, null);
         try {
             $mailSettings->prepareForDelivery();
             $mailer = (string) config('mail.default', 'log');
             if (in_array($mailer, ['log', 'array'], true)) {
                 $emailLog = $emailLogs->log(
-                    'skipcash_order_confirmation_resend', 'customer', 'skipped', $mail, [$context['recipient']],
+                    $context['purpose'] === 'menu_order' ? 'skipcash_menu_order_confirmation_resend' : 'skipcash_order_confirmation_resend', 'customer', 'skipped', $mail, [$context['recipient']],
                     userId: $context['portal_user_id'], orderId: $orders->first()->id, mailer: $mailer,
                     context: [
                         'checkout_attempt_id' => $this->attemptId,
@@ -112,7 +117,7 @@ class ResendSkipCashOrderConfirmation implements ShouldQueue
             } else {
                 Mail::to([$context['recipient']])->send($mail);
                 $emailLog = $emailLogs->log(
-                    'skipcash_order_confirmation_resend', 'customer', 'sent', $mail, [$context['recipient']],
+                    $context['purpose'] === 'menu_order' ? 'skipcash_menu_order_confirmation_resend' : 'skipcash_order_confirmation_resend', 'customer', 'sent', $mail, [$context['recipient']],
                     userId: $context['portal_user_id'], orderId: $orders->first()->id, mailer: $mailer,
                     context: [
                         'checkout_attempt_id' => $this->attemptId,

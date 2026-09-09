@@ -8,6 +8,7 @@ use App\Models\MealSubscription;
 use App\Models\MealSubscriptionOrder;
 use App\Models\MembershipBookingOperation;
 use App\Models\MembershipPurchaseBlock;
+use App\Models\PaymentCheckoutAttempt;
 use App\Services\Accounting\AccountingContextService;
 use App\Services\Customers\CustomerOwnershipService;
 use Carbon\CarbonImmutable;
@@ -128,10 +129,10 @@ class MembershipConsistencyRule implements PaymentConsistencyRule
             'id', 'customer_id', 'company_id', 'branch_id', 'payment_source_id', 'source', 'method',
             'amount_cents', 'currency', 'received_at', 'voided_at', 'created_at', 'updated_at',
         ]);
-        $attempt = $request?->checkout_id ? DB::table('payment_checkout_attempts')->where('id', $request->checkout_id)->first([
+        $attempt = $request?->checkout_id ? PaymentCheckoutAttempt::query()->find($request->checkout_id, [
             'id', 'company_id', 'branch_id', 'customer_id', 'payment_source_id', 'purpose', 'currency',
             'gross_amount_cents', 'discount_amount_cents', 'payable_amount_cents', 'quote_fingerprint',
-            'state', 'expires_at', 'completed_at', 'created_at', 'updated_at',
+            'pricing_snapshot', 'state', 'expires_at', 'completed_at', 'created_at', 'updated_at',
         ]) : null;
         $target = $attempt ? DB::table('payment_checkout_targets')->where('attempt_id', $attempt->id)
             ->where('meal_plan_request_id', $request->id)->first([
@@ -145,6 +146,9 @@ class MembershipConsistencyRule implements PaymentConsistencyRule
             ]) : null;
         $issues = [];
         $deferred = $attempt && (string) $attempt->state === 'paid_processing';
+        $pricing = $attempt?->pricing_snapshot ?? [];
+        $membershipGross = (int) ($pricing['membership_gross_amount_cents'] ?? $attempt?->gross_amount_cents ?? 0);
+        $membershipPayable = (int) ($pricing['membership_payable_amount_cents'] ?? $attempt?->payable_amount_cents ?? 0);
 
         if (! $request || ! $subscription || ! $plan || ! $payment || ! $attempt || ! $target || ! $provider) {
             $issues[] = ConsistencyEvidence::issue('MEMBERSHIP_PURCHASE_PARENT_MISSING', 'membership_purchase_block', (int) $block->id);
@@ -161,9 +165,9 @@ class MembershipConsistencyRule implements PaymentConsistencyRule
                 || (int) $attempt->company_id !== (int) $block->company_id
                 || (int) $attempt->branch_id !== (int) $block->branch_id
                 || (string) $attempt->currency !== (string) $block->currency
-                || (int) $attempt->gross_amount_cents !== (int) $block->gross_price_cents
+                || $membershipGross !== (int) $block->gross_price_cents
                 || (int) $attempt->discount_amount_cents !== (int) $block->discount_cents
-                || (int) $attempt->payable_amount_cents !== (int) $block->final_price_cents
+                || $membershipPayable !== (int) $block->final_price_cents
                 || ! hash_equals((string) $attempt->quote_fingerprint, (string) $block->quote_fingerprint)) {
                 $issues[] = ConsistencyEvidence::issue('MEMBERSHIP_PURCHASE_CHECKOUT_MISMATCH', 'membership_purchase_block', (int) $block->id);
             }
@@ -187,13 +191,13 @@ class MembershipConsistencyRule implements PaymentConsistencyRule
                 $issues[] = ConsistencyEvidence::issue('MEMBERSHIP_PURCHASE_QUEUE_MISMATCH', 'membership_purchase_block', (int) $block->id);
             }
             if ((string) $payment->source !== 'ar' || (string) $payment->method !== 'skipcash'
-                || (int) $payment->amount_cents !== (int) $block->final_price_cents
+                || (int) $payment->amount_cents !== (int) $attempt->payable_amount_cents
                 || (string) $payment->currency !== (string) $block->currency
                 || (int) $payment->company_id !== (int) $block->company_id
                 || (int) $payment->branch_id !== (int) $block->branch_id
                 || $payment->voided_at !== null
                 || ! $this->sameCustomer((int) $payment->customer_id, (int) $block->original_customer_id)
-                || (int) $provider->verified_amount_cents !== (int) $block->final_price_cents) {
+                || (int) $provider->verified_amount_cents !== (int) $attempt->payable_amount_cents) {
                 $issues[] = ConsistencyEvidence::issue('MEMBERSHIP_PURCHASE_PAYMENT_MISMATCH', 'membership_purchase_block', (int) $block->id);
             }
         }
@@ -231,7 +235,11 @@ class MembershipConsistencyRule implements PaymentConsistencyRule
                 'subscription' => $subscription ? (array) $subscription : ['missing' => true],
                 'plan' => $plan ? (array) $plan : ['missing' => true],
                 'payment' => $payment ? (array) $payment : ['missing' => true],
-                'attempt' => $attempt ? (array) $attempt : ['missing' => true],
+                'attempt' => $attempt ? $attempt->only([
+                    'id', 'company_id', 'branch_id', 'customer_id', 'payment_source_id', 'purpose', 'currency',
+                    'gross_amount_cents', 'discount_amount_cents', 'payable_amount_cents', 'quote_fingerprint',
+                    'state', 'expires_at', 'completed_at', 'created_at', 'updated_at',
+                ]) : ['missing' => true],
                 'target' => $target ? (array) $target : ['missing' => true],
                 'provider' => $provider ? (array) $provider : ['missing' => true],
             ],

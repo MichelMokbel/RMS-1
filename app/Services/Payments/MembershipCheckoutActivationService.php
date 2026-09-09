@@ -13,6 +13,7 @@ use App\Services\Customers\CustomerOwnershipService;
 use App\Services\Mail\MailConfigurationUnavailableException;
 use App\Services\Mail\MailSettingsService;
 use App\Services\Promotions\MembershipPromotionReservationService;
+use App\Services\Subscriptions\MembershipBookingService;
 use App\Services\Subscriptions\MembershipQueueService;
 use Illuminate\Support\Facades\DB;
 
@@ -25,6 +26,7 @@ class MembershipCheckoutActivationService
         private readonly CustomerOwnershipService $customerOwnership,
         private readonly MailSettingsService $mailSettings,
         private readonly MembershipPromotionReservationService $promotionReservations,
+        private readonly MembershipBookingService $bookings,
     ) {}
 
     public function complete(int $attemptId, int $providerTransactionId): PaymentCheckoutAttempt
@@ -68,11 +70,12 @@ class MembershipCheckoutActivationService
                 ->orderBy('sequence')
                 ->lockForUpdate()
                 ->get();
-            $target = $targets->first();
-            if ($targets->count() !== 1 || ! $target || $target->target_type !== 'meal_plan_request'
+            $target = $targets->firstWhere('target_type', 'meal_plan_request');
+            if (! $target || $target->target_type !== 'meal_plan_request'
                 || ! $target->meal_plan_request_id
-                || (int) $target->expected_amount_cents !== (int) $attempt->payable_amount_cents
-                || $target->order_id || $target->invoice_id) {
+                || (int) $targets->sum('expected_amount_cents') !== (int) $attempt->payable_amount_cents
+                || $target->order_id || $target->invoice_id
+                || $targets->where('target_type', 'order')->contains(fn (PaymentCheckoutTarget $day): bool => ! is_array($day->item_snapshot))) {
                 throw new PaymentCheckoutException('TARGET_TOTAL_MISMATCH', 503, __('The membership checkout target is inconsistent.'));
             }
 
@@ -81,7 +84,8 @@ class MembershipCheckoutActivationService
                 throw new PaymentCheckoutException('SYSTEM_ACTOR_MISSING', 503, __('The payment system actor is unavailable.'));
             }
             $allocationDate = (string) ($intent['allocation_date'] ?? '');
-            if ($allocationDate === '') {
+            $invoiceDate = (string) ($intent['invoice_issue_date'] ?? '');
+            if ($allocationDate === '' || $invoiceDate === '') {
                 throw new PaymentCheckoutException('FINANCIAL_DATE_MISSING', 503, __('The payment financial date is unavailable.'));
             }
 
@@ -112,7 +116,7 @@ class MembershipCheckoutActivationService
             if (! $providerTransaction->verified_finished_at
                 || ! $providerTransaction->verified_finished_at->lt($attempt->expires_at)) {
                 $providerTransaction->update(['classification' => 'retained_credit']);
-                $target->update([
+                PaymentCheckoutTarget::query()->where('attempt_id', $attempt->id)->update([
                     'hold_state' => 'released',
                     'released_at' => now('UTC'),
                 ]);
@@ -159,7 +163,48 @@ class MembershipCheckoutActivationService
                     $actorId,
                 );
             }
+            $roots = $this->queues->lockCompatibleRoots(
+                (int) $customer->id,
+                (int) $attempt->company_id,
+                (int) $attempt->branch_id,
+            );
+            $portalUser = $attempt->portalUser()->with('customer')->firstOrFail();
+            $createdBookings = [];
+            foreach ($targets->where('target_type', 'order') as $dayTarget) {
+                $snapshot = (array) $dayTarget->item_snapshot;
+                $day = [
+                    'date' => (string) ($snapshot['date'] ?? ''),
+                    'submission' => (array) ($snapshot['submission'] ?? []),
+                    'order_lines' => (array) ($snapshot['order_lines'] ?? []),
+                    'notes' => $snapshot['notes'] ?? null,
+                ];
+                $booking = $this->bookings->createBookedDay(
+                    user: $portalUser,
+                    customerId: (int) $customer->id,
+                    branchId: (int) $attempt->branch_id,
+                    root: $conversion['subscription'],
+                    roots: $roots,
+                    day: $day,
+                    operationUuid: (string) $attempt->client_uuid,
+                    issueDate: $invoiceDate,
+                    actorId: $actorId,
+                    cutoff: (string) ($snapshot['booking_cutoff_time'] ?? '23:00:00'),
+                    profileSnapshot: $this->bookingProfileSnapshot($attempt),
+                    checkoutPayment: (int) $dayTarget->expected_amount_cents > 0 ? $payment : null,
+                    checkoutAddOnCents: (int) $dayTarget->expected_amount_cents,
+                );
+                $dayTarget->update([
+                    'order_id' => $booking['order_id'],
+                    'invoice_id' => $booking['invoice_id'],
+                    'membership_subscription_id' => $conversion['subscription']->id,
+                    'hold_state' => 'activated',
+                    'activated_at' => now('UTC'),
+                    'intended_invoice_issue_date' => $invoiceDate,
+                ]);
+                $createdBookings[] = $booking;
+            }
             $target->update([
+                'membership_subscription_id' => $conversion['subscription']->id,
                 'hold_state' => 'activated',
                 'activated_at' => now('UTC'),
             ]);
@@ -174,6 +219,9 @@ class MembershipCheckoutActivationService
                 'plan_code' => (string) $plan->code,
                 'meal_count' => (int) $plan->meal_count,
                 'amount_cents' => (int) $attempt->payable_amount_cents,
+                'add_on_amount_cents' => (int) ($attempt->pricing_snapshot['add_on_amount_cents'] ?? 0),
+                'bookings' => $createdBookings,
+                'order_ids' => array_column($createdBookings, 'order_id'),
                 'reference' => $attempt->reference,
             ];
             $attempt->update([
@@ -202,6 +250,19 @@ class MembershipCheckoutActivationService
 
             return $attempt->fresh('targets.mealPlanRequest');
         }, 3);
+    }
+
+    /** @return array{name:string|null,phone:string|null,email:string|null,address:string|null} */
+    private function bookingProfileSnapshot(PaymentCheckoutAttempt $attempt): array
+    {
+        $snapshot = (array) $attempt->customer_snapshot;
+
+        return [
+            'name' => $snapshot['full_name'] ?? null,
+            'phone' => $snapshot['phone'] ?? null,
+            'email' => $snapshot['email'] ?? null,
+            'address' => $snapshot['address'] ?? null,
+        ];
     }
 
     /** @return array<int, string> */

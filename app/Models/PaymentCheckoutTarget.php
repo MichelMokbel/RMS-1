@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PaymentCheckoutTarget extends Model
 {
@@ -21,6 +22,8 @@ class PaymentCheckoutTarget extends Model
         'intended_invoice_issue_date',
         'order_id',
         'meal_plan_request_id',
+        'membership_subscription_id',
+        'membership_main_quantity',
         'invoice_id',
     ];
 
@@ -36,6 +39,8 @@ class PaymentCheckoutTarget extends Model
         'intended_invoice_issue_date' => 'date',
         'order_id' => 'integer',
         'meal_plan_request_id' => 'integer',
+        'membership_subscription_id' => 'integer',
+        'membership_main_quantity' => 'integer',
         'invoice_id' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
@@ -59,5 +64,10 @@ class PaymentCheckoutTarget extends Model
     public function mealPlanRequest(): BelongsTo
     {
         return $this->belongsTo(MealPlanRequest::class, 'meal_plan_request_id');
+    }
+
+    public function items(): HasMany
+    {
+        return $this->hasMany(PaymentCheckoutTargetItem::class, 'target_id')->orderBy('sequence');
     }
 }

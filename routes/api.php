@@ -39,6 +39,8 @@ use App\Http\Controllers\Api\PublicCompanyFoodOrderController;
 use App\Http\Controllers\Api\PublicDailyDishController;
 use App\Http\Controllers\Api\PublicDailyDishOrderController;
 use App\Http\Controllers\Api\PublicMembershipPlanController;
+use App\Http\Controllers\Api\PublicStorefrontController;
+use App\Http\Controllers\Api\PublicStorefrontEventController;
 use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\SkipCashWebhookController;
 use App\Http\Controllers\Api\Spend\ExpenseController as SpendExpenseController;
@@ -133,13 +135,30 @@ Route::post('integrations/skipcash/webhook', [SkipCashWebhookController::class, 
 
 // Public endpoints for the external website form (no session/cookies)
 Route::middleware('api')->prefix('public')->group(function () {
-    Route::middleware('throttle:60,1')->group(function () {
-        Route::get('membership-plans', PublicMembershipPlanController::class);
-        Route::get('daily-dish/menus', [PublicDailyDishController::class, 'menus'])
-            ->middleware('throttle:120,1');
-        Route::post('daily-dish/orders', [PublicDailyDishOrderController::class, 'store'])
-            ->middleware(['auth:sanctum', 'customer.portal', 'customer.phone.verified', 'throttle:60,1']);
-    });
+    Route::get('membership-plans', PublicMembershipPlanController::class)
+        ->middleware('throttle:public-membership-read');
+    Route::get('storefront', [PublicStorefrontController::class, 'show'])
+        ->middleware('throttle:public-storefront-read');
+    Route::get('storefront/menu-items', [PublicStorefrontController::class, 'items'])
+        ->middleware('throttle:public-storefront-read');
+    Route::get('storefront/menu-items/{profile}', [PublicStorefrontController::class, 'item'])
+        ->whereNumber('profile')
+        ->middleware('throttle:public-storefront-read');
+    Route::get('storefront/upsell-items', [PublicStorefrontController::class, 'upsellItems'])
+        ->middleware('throttle:public-storefront-read');
+    Route::get('storefront/menu-item/{menuItem}', [PublicStorefrontController::class, 'menuItem'])
+        ->whereNumber('menuItem')
+        ->middleware('throttle:public-storefront-read');
+    Route::get('storefront/delivery-apps', [PublicStorefrontController::class, 'deliveryApps'])
+        ->middleware('throttle:public-storefront-read');
+    Route::get('storefront/delivery-items', [PublicStorefrontController::class, 'deliveryApps'])
+        ->middleware('throttle:public-storefront-read');
+    Route::post('storefront/events', PublicStorefrontEventController::class)
+        ->middleware('throttle:public-storefront-events');
+    Route::get('daily-dish/menus', [PublicDailyDishController::class, 'menus'])
+        ->middleware('throttle:public-daily-dish-read');
+    Route::post('daily-dish/orders', [PublicDailyDishOrderController::class, 'store'])
+        ->middleware(['auth:sanctum', 'customer.portal', 'customer.phone.verified', 'throttle:public-daily-dish-order']);
 
     // Company Food (standalone module - no integration with orders/daily-dish)
     // Intentionally unthrottled per current integration requirement.

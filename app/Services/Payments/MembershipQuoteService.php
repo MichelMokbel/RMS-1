@@ -23,6 +23,7 @@ class MembershipQuoteService
         private readonly MembershipPlanCatalogService $plans,
         private readonly MembershipQueueService $queues,
         private readonly MembershipPromotionQuoteService $promotions,
+        private readonly OrdinaryOrderQuoteService $ordinaryQuotes,
     ) {}
 
     /** @param array<string, mixed> $request
@@ -40,13 +41,6 @@ class MembershipQuoteService
         $selections = $request['selections'] ?? [];
         if (! is_array($selections)) {
             throw ValidationException::withMessages(['selections' => __('Membership meal selections must be valid.')]);
-        }
-        if ($selections !== []) {
-            throw new PaymentCheckoutException(
-                'MEMBERSHIP_SELECTIONS_NOT_AVAILABLE',
-                503,
-                __('Choose meals later while membership meal booking is being enabled.'),
-            );
         }
         $planCode = trim((string) ($request['plan_code'] ?? ''));
         $plan = $this->plans->findActive($context['company_id'], $planCode);
@@ -72,21 +66,66 @@ class MembershipQuoteService
             );
         }
         $discountCents = (int) ($promotion['discount_cents'] ?? 0);
-        $payableCents = (int) $plan->package_price_cents - $discountCents;
+        $membershipPayableCents = (int) $plan->package_price_cents - $discountCents;
         $resultKind = (string) ($promotion['result_kind'] ?? 'paid_membership');
+        $pricedDays = [];
+        $acceptedSelections = [];
+        $excludedToday = [];
+        $mainQuantity = 0;
+        $addOnTotalCents = 0;
+        $selectionCanonical = [];
+        if ($membershipPayableCents > 0 && $selections !== []) {
+            $normalized = $this->ordinaryQuotes->normalizeCart(['items' => $selections]);
+            $membershipSelections = array_map(function (array $day): array {
+                $mainQuantity = 0;
+                foreach ($day['mains'] as $main) {
+                    if ($main['portion'] !== 'plate') {
+                        throw ValidationException::withMessages(['selections' => __('Membership meals support plate main dishes only.')]);
+                    }
+                    $mainQuantity += (int) $main['qty'];
+                }
+
+                return [
+                    'key' => $day['date'],
+                    'mains' => $day['mains'],
+                    'salad_qty' => $mainQuantity,
+                    'dessert_qty' => $mainQuantity,
+                    'notes' => $day['notes'],
+                    'add_ons' => $day['add_ons'],
+                ];
+            }, $normalized);
+            $ordinary = $this->ordinaryQuotes->quote($user, ['cart' => ['items' => $membershipSelections]]);
+            $pricedDays = $ordinary['_priced_days'];
+            $acceptedSelections = array_map(fn (array $day): array => $day['submission'], $pricedDays);
+            $excludedToday = $ordinary['excluded_today'];
+            $mainQuantity = (int) collect($acceptedSelections)->sum(fn (array $day): int => collect($day['mains'])
+                ->sum(fn (array $main): int => (int) $main['qty']));
+            if ($mainQuantity > (int) $plan->meal_count) {
+                throw new PaymentCheckoutException(
+                    'MEMBERSHIP_PURCHASE_SELECTION_LIMIT',
+                    422,
+                    __('This purchase includes :meals meals. Reduce the selected main dishes before paying.', ['meals' => (int) $plan->meal_count]),
+                );
+            }
+            $addOnTotalCents = (int) collect($pricedDays)->sum('add_on_total_cents');
+            $selectionCanonical = array_map(fn (array $day): array => $day['canonical_tuple'], $pricedDays);
+        }
+        $payableCents = $membershipPayableCents + $addOnTotalCents;
         $quoteFingerprint = $this->canonicalizer->hash([
-            'membership-quote-v2',
+            'membership-quote-v3',
             (string) $user->customer_id,
             (string) $context['company_id'],
             (string) $context['branch']->id,
             'QAR',
             $planSnapshot,
-            [],
+            $selectionCanonical,
             $promotion ? [
                 'acceptance_fingerprint' => $promotion['acceptance_fingerprint'],
                 'code' => $promotion['code'],
             ] : null,
             $resultKind,
+            $membershipPayableCents,
+            $addOnTotalCents,
             $context['terms']['version'],
             $context['terms']['content_hash'],
         ]);
@@ -94,12 +133,16 @@ class MembershipQuoteService
         return [
             'purpose' => 'membership',
             'plan' => $planSnapshot,
-            'selections' => [],
-            'main_quantity' => 0,
+            'selections' => $acceptedSelections,
+            'excluded_today' => $excludedToday,
+            'main_quantity' => $mainQuantity,
             'purchase_allowance' => (int) $plan->meal_count,
-            'gross_amount_cents' => (int) $plan->package_price_cents,
+            'gross_amount_cents' => (int) $plan->package_price_cents + $addOnTotalCents,
             'discount_amount_cents' => $discountCents,
             'payable_amount_cents' => $payableCents,
+            'membership_gross_amount_cents' => (int) $plan->package_price_cents,
+            'membership_payable_amount_cents' => $membershipPayableCents,
+            'add_on_amount_cents' => $addOnTotalCents,
             'currency' => 'QAR',
             'delivery_included' => true,
             'quote_fingerprint' => $quoteFingerprint,
@@ -121,11 +164,12 @@ class MembershipQuoteService
                 'purchase_eligibility' => $promotion['offer_snapshot']['purchase_eligibility'],
                 'offer_revision' => $promotion['offer_snapshot']['revision'],
             ] : null,
-            'can_checkout' => $payableCents > 0,
-            'can_submit_request' => $payableCents === 0,
+            'can_checkout' => $membershipPayableCents > 0,
+            'can_submit_request' => $membershipPayableCents === 0,
             '_context' => $context,
             '_plan' => $plan,
             '_promotion' => $promotion,
+            '_priced_days' => $pricedDays,
         ];
     }
 

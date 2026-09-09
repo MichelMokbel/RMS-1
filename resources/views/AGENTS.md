@@ -28,11 +28,13 @@ All paths in the first column are relative to `resources/views/livewire/`.
 | `inventory/` | [Inventory and transfers](../../app/Services/Inventory/AGENTS.md). |
 | `suppliers/`, `purchase-orders/` | [Purchasing and supplier references](../../app/Services/Purchasing/AGENTS.md). |
 | `orders/` | [Orders](../../app/Services/Orders/AGENTS.md). |
+| `storefront/` | [Customer storefront administration, catalog, delivery apps, analytics, and checkout upsells](../../app/Services/Storefront/AGENTS.md). |
 | `daily-dish/` | [Daily menus and preparation](../../app/Services/DailyDish/AGENTS.md), [pricing](../../app/Services/Pricing/AGENTS.md). |
 | `kitchen/` | [Kitchen transitions](../../app/Services/Orders/AGENTS.md). |
 | `order-sheet.blade.php` | [Order sheet publication](../../app/Services/OrderSheet/AGENTS.md). |
 | `pastry-orders/` | [Pastry orders](../../app/Services/PastryOrders/AGENTS.md). |
-| `subscriptions/`, `meal-plan-requests/`, `membership-promotions/` | [Subscriptions, membership promotions, and request conversion](../../app/Services/Subscriptions/AGENTS.md). |
+| `subscriptions/`, `meal-plan-requests/` | [Subscriptions and request conversion](../../app/Services/Subscriptions/AGENTS.md). |
+| `membership-promotions/` | [Membership promotions](../../app/Services/Promotions/AGENTS.md). |
 | `company-food/` | [Company Food](../../app/Services/CompanyFood/AGENTS.md). |
 | `sales/` | [Sales](../../app/Services/Sales/AGENTS.md). |
 | `pos/` | [POS](../../app/Services/POS/AGENTS.md). |

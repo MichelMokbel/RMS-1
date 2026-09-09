@@ -177,7 +177,7 @@ class PaymentOperationsResendService
                 ? $dispatchState['admin_confirmation']
                 : [];
             $existingRecipients = array_values(array_filter((array) ($snapshot['admin_emails'] ?? [])));
-            if ($attempt->purpose !== 'ordinary_order' || $attempt->state !== 'completed'
+            if (! in_array($attempt->purpose, ['ordinary_order', 'menu_order'], true) || $attempt->state !== 'completed'
                 || ($adminDispatch['state'] ?? null) !== 'failed'
                 || ($adminDispatch['error_code'] ?? null) !== 'ADMIN_RECIPIENT_MISSING'
                 || $existingRecipients !== []) {
@@ -229,7 +229,7 @@ class PaymentOperationsResendService
     public function assertEligible(PaymentCheckoutAttempt $attempt, string $snapshotHash, bool $acknowledgeUnknown): void
     {
         $attempt->loadMissing(['targets.invoice']);
-        if ($attempt->purpose !== 'ordinary_order' || $attempt->state !== 'completed') {
+        if (! in_array($attempt->purpose, ['ordinary_order', 'menu_order'], true) || $attempt->state !== 'completed') {
             throw ValidationException::withMessages(['resend' => __('Only a completed paid order confirmation can be resent.')]);
         }
         if (! hash_equals((string) ($this->snapshotHash($attempt) ?? ''), $snapshotHash)) {

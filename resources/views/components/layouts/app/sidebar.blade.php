@@ -21,6 +21,7 @@
                 $canAccessQuotations = $user?->can('quotations.access') ?? false;
                 $canManageQuotationTemplates = $user?->can('quotation-templates.manage') ?? false;
                 $canManagePromotions = $isAdmin && ($user?->can('promotions.manage') ?? false);
+                $canManageStorefront = $isAdmin && ($user?->can('storefront.manage') ?? false);
                 $isAccounting = $user?->hasAnyRole(['admin', 'manager', 'accounting']) ?? false;
 
                 $inSales = request()->routeIs('orders.*')
@@ -48,6 +49,7 @@
                     || request()->routeIs('customers.*')
                     || request()->routeIs('customers.accounts.*')
                     || request()->routeIs('membership-promotions.*')
+                    || request()->routeIs('storefront.*')
                     || request()->routeIs('suppliers.*')
                     || request()->routeIs('iam.*')
                     || request()->routeIs('users.*');
@@ -76,6 +78,11 @@
                         @if ($canManagePromotions)
                             <flux:navlist.item icon="gift" :href="route('membership-promotions.index')" :current="request()->routeIs('membership-promotions.*')" wire:navigate>
                                 {{ __('Membership Promotions') }}
+                            </flux:navlist.item>
+                        @endif
+                        @if ($canManageStorefront)
+                            <flux:navlist.item icon="building-storefront" :href="route('storefront.index')" :current="request()->routeIs('storefront.*')" wire:navigate>
+                                {{ __('Storefront') }}
                             </flux:navlist.item>
                         @endif
                         @if ($isCashier)

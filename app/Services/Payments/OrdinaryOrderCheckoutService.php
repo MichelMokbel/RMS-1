@@ -39,8 +39,7 @@ class OrdinaryOrderCheckoutService
             ->where('client_uuid', $clientUuid)
             ->first();
         if ($replay) {
-            $fingerprint = $this->requestFingerprint($request);
-            if (! hash_equals((string) $replay->request_fingerprint, $fingerprint)) {
+            if (! $this->matchesRequestFingerprint((string) $replay->request_fingerprint, $request)) {
                 throw new PaymentCheckoutException('REQUEST_CHANGED', 409, __('This checkout identifier was already used for different selections.'));
             }
 
@@ -108,7 +107,7 @@ class OrdinaryOrderCheckoutService
                 ->lockForUpdate()
                 ->first();
             if ($existing) {
-                if (! hash_equals((string) $existing->request_fingerprint, $requestFingerprint)) {
+                if (! $this->matchesRequestFingerprint((string) $existing->request_fingerprint, $request)) {
                     throw new PaymentCheckoutException('REQUEST_CHANGED', 409, __('This checkout identifier was already used for different selections.'));
                 }
 
@@ -160,6 +159,7 @@ class OrdinaryOrderCheckoutService
                     'pricing_version' => $quote['_pricing_version'],
                     'day_totals' => $quote['day_totals'],
                     'payable_amount_cents' => (int) $quote['payable_amount_cents'],
+                    'add_on_amount_cents' => (int) ($quote['add_on_amount_cents'] ?? 0),
                 ],
                 'terms_snapshot' => [
                     'version' => $terms['version'],
@@ -238,6 +238,27 @@ class OrdinaryOrderCheckoutService
     }
 
     /** @param array<string, mixed> $request */
+    private function matchesRequestFingerprint(string $storedFingerprint, array $request): bool
+    {
+        if (hash_equals($storedFingerprint, $this->requestFingerprint($request))) {
+            return true;
+        }
+        $legacyCart = $this->legacyNormalizedSubmittedCart($request);
+        if ($legacyCart === null) {
+            return false;
+        }
+
+        return hash_equals($storedFingerprint, $this->canonicalizer->hash([
+            'ordinary-request-v1',
+            'ordinary_order',
+            $legacyCart,
+            (string) ($request['quote_fingerprint'] ?? ''),
+            (string) ($request['accepted_terms_version'] ?? ''),
+            $this->separatePurchaseReference($request),
+        ]));
+    }
+
+    /** @param array<string, mixed> $request */
     private function recoveryFingerprint(int $companyId, int $branchId, array $normalizedCart): string
     {
         return $this->canonicalizer->hash([
@@ -265,12 +286,12 @@ class OrdinaryOrderCheckoutService
             ->when($forUpdate, fn ($query) => $query->lockForUpdate())
             ->get();
         foreach ($attempts as $attempt) {
-            $fingerprint = $this->recoveryFingerprint(
+            if ($this->matchesRecoveryFingerprint(
+                (string) $attempt->recovery_fingerprint,
                 (int) $attempt->company_id,
                 (int) $attempt->branch_id,
                 $normalizedCart,
-            );
-            if (hash_equals((string) $attempt->recovery_fingerprint, $fingerprint)) {
+            )) {
                 return $attempt;
             }
         }
@@ -336,12 +357,12 @@ class OrdinaryOrderCheckoutService
             ]);
         }
 
-        $fingerprint = $this->recoveryFingerprint(
+        if (! $this->matchesRecoveryFingerprint(
+            (string) $source->recovery_fingerprint,
             (int) $source->company_id,
             (int) $source->branch_id,
             $normalizedCart,
-        );
-        if (! hash_equals((string) $source->recovery_fingerprint, $fingerprint)) {
+        )) {
             throw ValidationException::withMessages([
                 'separate_purchase_from' => __('The selected checkout does not match these selections.'),
             ]);
@@ -371,7 +392,43 @@ class OrdinaryOrderCheckoutService
             (int) $day['salad_qty'],
             (int) $day['dessert_qty'],
             $day['notes'],
+            array_map(fn (array $addOn): array => [(string) $addOn['menu_item_id'], $addOn['quantity']], $day['add_ons']),
         ], $days);
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     * @return array<int, mixed>|null
+     */
+    private function legacyNormalizedSubmittedCart(array $request): ?array
+    {
+        $cart = $this->normalizedSubmittedCart($request);
+        if (collect($cart)->contains(fn (array $day): bool => ($day[5] ?? []) !== [])) {
+            return null;
+        }
+
+        return array_map(fn (array $day): array => array_slice($day, 0, 5), $cart);
+    }
+
+    /** @param array<int, mixed> $normalizedCart */
+    private function matchesRecoveryFingerprint(
+        string $storedFingerprint,
+        int $companyId,
+        int $branchId,
+        array $normalizedCart,
+    ): bool {
+        if (hash_equals($storedFingerprint, $this->recoveryFingerprint($companyId, $branchId, $normalizedCart))) {
+            return true;
+        }
+        if (collect($normalizedCart)->contains(fn (array $day): bool => ($day[5] ?? []) !== [])) {
+            return false;
+        }
+
+        return hash_equals($storedFingerprint, $this->recoveryFingerprint(
+            $companyId,
+            $branchId,
+            array_map(fn (array $day): array => array_slice($day, 0, 5), $normalizedCart),
+        ));
     }
 
     /** @param array<string, mixed> $quote

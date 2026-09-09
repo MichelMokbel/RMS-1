@@ -1293,6 +1293,12 @@ Route::middleware(['auth', 'active', 'role:admin', 'ensure.admin', 'can:promotio
     Volt::route('membership-promotions/{promotion}', 'membership-promotions.show')->name('membership-promotions.show');
 });
 
+Route::middleware(['auth', 'active', 'role:admin', 'ensure.admin', 'can:storefront.manage'])->group(function () {
+    Volt::route('storefront', 'storefront.index')->name('storefront.index');
+    Route::get('storefront/catalog-cleanup.csv', \App\Http\Controllers\Storefront\StorefrontCleanupExportController::class)
+        ->name('storefront.cleanup.csv');
+});
+
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|receivables.access'])->group(function () {
     Volt::route('receivables/payments', 'receivables.payments.index')->name('receivables.payments.index');
     Volt::route('receivables/payments/create', 'receivables.payments.create')->name('receivables.payments.create');

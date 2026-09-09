@@ -78,6 +78,9 @@ The repository workflow skills are indexed in [.agents/README.md](.agents/README
 |---|---|
 | IAM and branch access | `app/Services/Security`, auth middleware, IAM Volt pages |
 | Customers and customer portal | `app/Services/Customers`, customer API controllers |
+| Payments and SkipCash | `app/Services/Payments`, checkout APIs, webhook, operations, and settlement flows |
+| Membership promotions | `app/Services/Promotions`, promotion administration and checkout usage |
+| Customer storefront | `app/Services/Storefront`, storefront administration, public catalog, analytics, and normal-menu ordering |
 | Catalog, menu, recipes | menu/recipe models, services, and Volt pages |
 | Orders, kitchen, daily dish | `app/Services/Orders`, `DailyDish`, kitchen/order pages |
 | Subscriptions and company food | subscription services, public APIs, scheduled generation |
@@ -378,6 +381,8 @@ The service guides cover every current service area. The UI guide maps every top
 - [app/Services/Orders/AGENTS.md](app/Services/Orders/AGENTS.md) (ordinary orders, kitchen transitions, portal submissions, and generation).
 - [app/Services/PastryOrders/AGENTS.md](app/Services/PastryOrders/AGENTS.md) (pastry orders, images, totals, numbering, and AR conversion).
 - [app/Services/Pricing/AGENTS.md](app/Services/Pricing/AGENTS.md) (daily dish bundles, portion prices, meal plan prices, and labels).
+- [app/Services/Payments/AGENTS.md](app/Services/Payments/AGENTS.md) (SkipCash checkout, activation, clearing, settlement imports, terms, operations, and consistency).
+- [app/Services/Promotions/AGENTS.md](app/Services/Promotions/AGENTS.md) (membership promotion lifecycle, eligibility, reservations, redemptions, and limits).
 - [app/Services/Purchasing/AGENTS.md](app/Services/Purchasing/AGENTS.md) (purchase orders, receiving, supplier references, stock costs, and AP drafts).
 - [app/Services/Recipes/AGENTS.md](app/Services/Recipes/AGENTS.md) (recipe composition, nested ingredients, costing, and production).
 - [app/Services/Reports/AGENTS.md](app/Services/Reports/AGENTS.md) (report registry, filters, historical balances, and export formats).
@@ -385,6 +390,7 @@ The service guides cover every current service area. The UI guide maps every top
 - [app/Services/Security/AGENTS.md](app/Services/Security/AGENTS.md) (IAM, roles, authentication helpers, branch scope, and admin safety).
 - [app/Services/Sequences/AGENTS.md](app/Services/Sequences/AGENTS.md) (shared document numbering and its distinction from POS reservations).
 - [app/Services/Spend/AGENTS.md](app/Services/Spend/AGENTS.md) (canonical AP expenses, approval stages, settlement, and reporting).
+- [app/Services/Storefront/AGENTS.md](app/Services/Storefront/AGENTS.md) (customer-facing catalog, availability, discovery, delivery apps, checkout upsells, analytics, and normal-menu ordering).
 - [app/Services/Subscriptions/AGENTS.md](app/Services/Subscriptions/AGENTS.md) (meal subscriptions, pauses, request conversion, payment links, and usage).
 - [bootstrap/AGENTS.md](bootstrap/AGENTS.md) (application wiring, provider contracts, events, queues, and schedules).
 - [routes/AGENTS.md](routes/AGENTS.md) (web, internal API, customer portal, public, POS, and HR access boundaries).

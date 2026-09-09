@@ -60,6 +60,7 @@ class MembershipBookingQuoteService
                 'salad_qty' => $mainQuantity,
                 'dessert_qty' => $mainQuantity,
                 'notes' => $day['notes'],
+                'add_ons' => $day['add_ons'],
             ];
         }, $normalized);
 
@@ -107,6 +108,7 @@ class MembershipBookingQuoteService
         }
         $mainQuantity = collect($acceptedDays)->sum(fn (array $day): int => collect($day['submission']['mains'])
             ->sum(fn (array $main): int => (int) $main['qty']));
+        $addOnTotalCents = (int) collect($acceptedDays)->sum('add_on_total_cents');
         if ($mainQuantity <= 0) {
             return [
                 'result_kind' => 'covered_booking',
@@ -172,6 +174,7 @@ class MembershipBookingQuoteService
             (string) ($replacement['booking_revision'] ?? ''),
             $replacement ? $replacement['new_change_deadline']->toIso8601String() : '',
             $canonicalDays,
+            $addOnTotalCents,
             (string) $ordinary['terms_version'],
             (string) $ordinary['terms_content_hash'],
         ]);
@@ -183,7 +186,8 @@ class MembershipBookingQuoteService
             'selections' => array_map(fn (array $day): array => $day['submission'], $acceptedDays),
             'excluded_today' => $ordinary['excluded_today'],
             'main_quantity' => $mainQuantity,
-            'payable_amount_cents' => 0,
+            'payable_amount_cents' => $addOnTotalCents,
+            'add_on_amount_cents' => $addOnTotalCents,
             'currency' => 'QAR',
             'quote_fingerprint' => $quoteFingerprint,
             'terms_version' => $ordinary['terms_version'],
@@ -195,6 +199,7 @@ class MembershipBookingQuoteService
             'available_after_releasing_current_booking' => $availableForRequest,
             'replacement' => $replacement ? $this->publicReplacement($replacement) : null,
             'can_book' => true,
+            'requires_payment' => $addOnTotalCents > 0,
             '_context' => $context,
             '_priced_days' => $acceptedDays,
             '_replacement' => $replacement,

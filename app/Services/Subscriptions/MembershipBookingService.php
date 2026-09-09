@@ -11,6 +11,7 @@ use App\Models\MembershipBookingFunding;
 use App\Models\MembershipBookingOperation;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Payment;
 use App\Models\User;
 use App\Services\Accounting\AccountingAuditLogService;
 use App\Services\Accounting\AccountingContextService;
@@ -48,13 +49,10 @@ class MembershipBookingService
         if (! Str::isUuid($clientUuid)) {
             throw ValidationException::withMessages(['client_uuid' => __('A valid booking identifier is required.')]);
         }
-        $requestFingerprint = $this->requestFingerprint($request);
-        $replay = $this->findReplay($user, $clientUuid);
-        if ($replay) {
-            $this->assertReplayMatches($replay, $requestFingerprint);
-
-            return ['result' => $replay->result_snapshot, 'replayed' => true, 'status' => 200];
+        if ($replay = $this->replay($user, $request)) {
+            return $replay;
         }
+        $requestFingerprint = $this->requestFingerprint($request);
 
         $quote = $this->quotes->quote($user, $request);
         $this->assertAcceptedQuote($quote, $request);
@@ -171,6 +169,24 @@ class MembershipBookingService
 
             return ['result' => $result, 'replayed' => false, 'status' => 201];
         }, 3);
+    }
+
+    /** @param array<string, mixed> $request
+     * @return array{result:array<string,mixed>,replayed:bool,status:int}|null
+     */
+    public function replay(User $user, array $request): ?array
+    {
+        $clientUuid = strtolower(trim((string) ($request['client_uuid'] ?? '')));
+        if (! Str::isUuid($clientUuid)) {
+            throw ValidationException::withMessages(['client_uuid' => __('A valid booking identifier is required.')]);
+        }
+        $replay = $this->findReplay($user, $clientUuid);
+        if (! $replay) {
+            return null;
+        }
+        $this->assertReplayMatches($replay, $this->requestFingerprint($request));
+
+        return ['result' => $replay->result_snapshot, 'replayed' => true, 'status' => 200];
     }
 
     /** @param array<string, mixed> $request
@@ -396,7 +412,7 @@ class MembershipBookingService
      * @param  array<string, string|null>|null  $profileSnapshot
      * @return array<string, mixed>
      */
-    private function createBookedDay(
+    public function createBookedDay(
         User $user,
         int $customerId,
         int $branchId,
@@ -413,6 +429,8 @@ class MembershipBookingService
         ?CarbonImmutable $deadline = null,
         ?array $profileSnapshot = null,
         string $notificationKind = 'created',
+        ?Payment $checkoutPayment = null,
+        int $checkoutAddOnCents = 0,
     ): array {
         $quantity = collect($day['submission']['mains'])->sum(fn (array $main): int => (int) $main['qty']);
         $attributions = $this->funding->reserveOldestPositions($roots, $quantity);
@@ -422,7 +440,16 @@ class MembershipBookingService
             $day['date'].' '.$cutoff,
             'Asia/Qatar',
         )->subDay();
-        $order = $this->createOrder($user, $customerId, $branchId, $day, $attributions, $actorId, $profileSnapshot);
+        $order = $this->createOrder(
+            $user,
+            $customerId,
+            $branchId,
+            $day,
+            $attributions,
+            $actorId,
+            $profileSnapshot,
+            $checkoutAddOnCents,
+        );
         $mapping = MealSubscriptionOrder::query()->create([
             'subscription_id' => $root->id,
             'order_id' => $order->id,
@@ -445,7 +472,16 @@ class MembershipBookingService
             ],
         ]);
 
-        $invoice = $this->createInvoice($order, $mapping, $attributions, $issueDate, $actorId);
+        $invoice = $this->createInvoice(
+            $order,
+            $mapping,
+            $attributions,
+            $issueDate,
+            $actorId,
+            $day,
+            $checkoutPayment,
+            $checkoutAddOnCents,
+        );
         foreach ($attributions as $attribution) {
             MembershipBookingFunding::query()->create([
                 'purchase_block_id' => $attribution['block']->id,
@@ -500,8 +536,10 @@ class MembershipBookingService
         array $attributions,
         int $actorId,
         ?array $profileSnapshot = null,
+        int $checkoutAddOnCents = 0,
     ): Order {
-        $total = (int) collect($attributions)->sum('net_cents');
+        $membershipGross = (int) collect($attributions)->sum('gross_cents');
+        $total = (int) collect($attributions)->sum('net_cents') + $checkoutAddOnCents;
         $customerSnapshot = $user->customer;
         $order = Order::query()->create([
             'order_number' => $this->numbers->generate(),
@@ -522,20 +560,21 @@ class MembershipBookingService
             'scheduled_time' => null,
             'notes' => $day['notes'] ?? null,
             'order_discount_amount' => $this->decimalCents((int) collect($attributions)->sum('discount_cents')),
-            'total_before_tax' => $this->decimalCents((int) collect($attributions)->sum('gross_cents')),
+            'total_before_tax' => $this->decimalCents($membershipGross + $checkoutAddOnCents),
             'tax_amount' => '0.000',
             'total_amount' => $this->decimalCents($total),
             'created_by' => $actorId,
         ]);
         foreach (array_values($day['order_lines']) as $index => $line) {
+            $isCheckoutAddOn = ($line['role'] ?? null) === 'checkout_add_on';
             OrderItem::query()->create([
                 'order_id' => $order->id,
                 'menu_item_id' => (int) $line['menu_item_id'],
                 'description_snapshot' => (string) $line['description'],
-                'quantity' => (string) (int) $line['quantity'],
-                'unit_price' => '0.000',
+                'quantity' => (string) $line['quantity'],
+                'unit_price' => $isCheckoutAddOn ? $this->decimalCents((int) $line['unit_price_cents']) : '0.000',
                 'discount_amount' => '0.000',
-                'line_total' => '0.000',
+                'line_total' => $isCheckoutAddOn ? $this->decimalCents((int) $line['line_total_cents']) : '0.000',
                 'status' => 'Pending',
                 'sort_order' => $index,
                 'role' => (string) $line['role'],
@@ -552,6 +591,9 @@ class MembershipBookingService
         array $attributions,
         string $issueDate,
         int $actorId,
+        array $day,
+        ?Payment $checkoutPayment,
+        int $checkoutAddOnCents,
     ): ArInvoice {
         $items = array_map(function (array $attribution) use ($order, $mapping): array {
             $ranges = collect($attribution['position_ranges'])
@@ -577,6 +619,24 @@ class MembershipBookingService
                 ],
             ];
         }, $attributions);
+        foreach (array_values($day['order_lines'] ?? []) as $line) {
+            if (($line['role'] ?? null) !== 'checkout_add_on') {
+                continue;
+            }
+            $items[] = [
+                'description' => (string) $line['description'],
+                'qty' => (string) $line['quantity'],
+                'unit_price_cents' => (int) $line['unit_price_cents'],
+                'discount_cents' => 0,
+                'tax_cents' => 0,
+                'line_total_cents' => (int) $line['line_total_cents'],
+                'meta' => [
+                    'is_checkout_add_on' => true,
+                    'menu_item_id' => (int) $line['menu_item_id'],
+                    'order_id' => (int) $order->id,
+                ],
+            ];
+        }
         $invoice = $this->invoices->createDraft(
             branchId: (int) $order->branch_id,
             customerId: (int) $order->customer_id,
@@ -591,6 +651,11 @@ class MembershipBookingService
         $invoice->update([
             'source_order_id' => $order->id,
             'notes' => __('Funded from paid membership allowance.'),
+            'meta' => [
+                ...((array) $invoice->meta),
+                'checkout_add_on_payment_id' => $checkoutPayment?->id,
+                'checkout_add_on_amount_cents' => $checkoutAddOnCents,
+            ],
             'updated_by' => $actorId,
         ]);
         $order->update(['invoiced_at' => now('UTC')]);
