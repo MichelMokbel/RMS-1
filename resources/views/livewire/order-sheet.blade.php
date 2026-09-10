@@ -150,7 +150,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 }
                 $colId = $menuItemToColumnId->get($item->menu_item_id);
                 if ($colId) {
-                    $qty[$colId] = (int) round($item->quantity);
+                    $qty[$colId] += (int) round($item->quantity);
                 } else {
                     $extras[] = [
                         'menu_item_id'   => $item->menu_item_id,
@@ -172,6 +172,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'remarks'         => $order->notes ?? '',
             ];
         }
+
+        // Subscription placeholders can also have been saved before an order was generated.
+        // Remove only empty placeholders for the same customer, never distinct orders or manual plans.
+        $orderedCustomerIds = collect($this->rows)->filter(fn ($row) => ! empty($row['order_id']))
+            ->pluck('customer_id')->filter()->all();
+        $this->rows = array_values(array_filter($this->rows, fn ($row) => ! (
+            empty($row['order_id'])
+            && ! empty($row['customer_id'])
+            && in_array($row['customer_id'], $orderedCustomerIds)
+            && ! collect($row['qty'])->contains(fn ($quantity) => (int) $quantity > 0)
+            && empty($row['extras'])
+            && blank($row['location'])
+            && blank($row['remarks'])
+        )));
 
         // Always ensure a blank trailing row
         $this->ensureTrailingBlankRow();
