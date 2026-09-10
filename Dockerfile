@@ -56,6 +56,7 @@ RUN mkdir -p \
         storage/framework/testing \
         storage/framework/views \
         storage/logs \
+    && ln -s ../storage/app/public public/storage \
     && chown -R www-data:www-data bootstrap/cache storage \
     && chmod -R ug+rwX bootstrap/cache storage
 
