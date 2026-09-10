@@ -145,3 +145,31 @@ it('exports numeric dish totals and literal text in a valid Excel workbook', fun
         ->and((string) $xml->xpath('//s:c[@r="G3"]/s:v')[0])->toBe('3')
         ->and((string) $xml->xpath('//s:c[@r="H3"]/s:v')[0])->toBe('5');
 });
+
+it('shows online delivery locations on the page and print while preserving manual sheet locations', function () {
+    $order = Order::factory()->dailyDish()->create(['customer_id' => $this->customer->id, 'delivery_address_snapshot' => 'Building 12, West Bay']);
+    $page = Volt::test('order-sheet');
+    expect(collect($page->get('rows'))->firstWhere('order_id', $order->id)['location'])->toBe('Building 12, West Bay');
+    $sheet = OrderSheet::create(['sheet_date' => now()->toDateString()]);
+    $entry = $sheet->entries()->create(['order_id' => $order->id, 'customer_name' => 'Delivery customer']);
+    $response = $this->get(route('order-sheet.print.by-order'))->assertOk()->assertSee('Building 12, West Bay');
+    expect(substr_count($response->getContent(), '<section class="blank-sheet">'))->toBe(2);
+    $entry->update(['location' => 'Reception desk']);
+    $this->get(route('order-sheet.print.by-order'))->assertOk()->assertSee('Reception desk')->assertDontSee('Building 12, West Bay');
+    expect(collect(Volt::test('order-sheet')->get('rows'))->firstWhere('order_id', $order->id)['location'])->toBe('Reception desk');
+});
+
+it('falls back to saved meal plan subscription and profile addresses when the order address is empty', function () {
+    $this->customer->update(['delivery_address' => 'Profile location']);
+    $order = Order::factory()->dailyDish()->create(['customer_id' => $this->customer->id, 'delivery_address_snapshot' => null]);
+    $service = app(\App\Services\OrderSheet\OrderSheetLocationService::class);
+    expect($service->forOrders(Order::whereKey($order->id)->get())->get($order->id))->toBe('Profile location');
+    $sub = MealSubscription::factory()->create(['customer_id' => $this->customer->id, 'address_snapshot' => 'Subscription location']);
+    \App\Models\MealSubscriptionOrder::create(['subscription_id' => $sub->id, 'order_id' => $order->id, 'service_date' => now()->toDateString(), 'branch_id' => 1]);
+    expect($service->forOrders(Order::whereKey($order->id)->get())->get($order->id))->toBe('Subscription location');
+    $plan = \App\Models\MealPlanRequest::create(['customer_name' => 'Online customer', 'customer_phone' => '12345678', 'plan_meals' => 20, 'status' => 'new', 'delivery_address' => 'Request location']);
+    $plan->orders()->attach($order);
+    $order->update(['customer_id' => null]);
+    expect($service->forOrders(Order::whereKey($order->id)->get())->get($order->id))->toBe('Request location');
+    expect(collect(Volt::test('order-sheet')->get('rows'))->firstWhere('order_id', $order->id)['location'])->toBe('Request location');
+});

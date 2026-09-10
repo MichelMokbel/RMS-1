@@ -24,6 +24,7 @@ class OrderSheetPrintController extends Controller
             'entries.quantities.dailyDishMenuItem.menuItem',
             'entries.extras',
             'entries.customer',
+            'entries.order',
         ])->whereDate('sheet_date', $date->toDateString())->first();
 
         $menu = DailyDishMenu::with(['items.menuItem'])
@@ -42,12 +43,14 @@ class OrderSheetPrintController extends Controller
                 ])->values()->all()
             : [];
 
+        $locations = app(\App\Services\OrderSheet\OrderSheetLocationService::class)
+            ->forOrders(new \Illuminate\Database\Eloquent\Collection($sheet?->entries->pluck('order')->filter()->all() ?? []));
         $entries = collect();
 
         if ($sheet && $sheet->entries->isNotEmpty()) {
             $entries = $sheet->entries
                 ->filter(fn ($e) => filled($e->customer_name))
-                ->map(function ($entry) use ($menuItems) {
+                ->map(function ($entry) use ($menuItems, $locations) {
                     $qty = collect($menuItems)->mapWithKeys(fn ($item) => [$item['id'] => (int) optional($entry->quantities->firstWhere('daily_dish_menu_item_id', $item['id']))->quantity ?? 0]
                     )->all();
 
@@ -60,7 +63,7 @@ class OrderSheetPrintController extends Controller
 
                     return [
                         'customer_name' => $entry->customer_name,
-                        'location' => $entry->location ?? '',
+                        'location' => filled($entry->location) ? $entry->location : $locations->get($entry->order_id, ''),
                         'remarks' => $entry->remarks ?? '',
                         'qty' => $qty,
                         'extras' => $extras,

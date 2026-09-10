@@ -73,15 +73,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             'entries' => fn ($query) => $query->withContent(),
             'entries.quantities',
             'entries.extras',
+            'entries.order',
         ])->whereDate('sheet_date', $this->sheetDate)->first();
 
         // Lookup: menu_item_id → daily_dish_menu_item_id (for mapping order items → qty columns)
         $menuItemToColumnId = collect($this->menuItems)->keyBy('menu_item_id')->map(fn ($m) => $m['id']);
         $emptyQty = collect($this->menuItems)->mapWithKeys(fn ($item) => [$item['id'] => 0])->all();
 
+        $locations = app(\App\Services\OrderSheet\OrderSheetLocationService::class)
+            ->forOrders(new \Illuminate\Database\Eloquent\Collection($sheet?->entries->pluck('order')->filter()->all() ?? []));
+
         if ($sheet && $sheet->entries->isNotEmpty()) {
             // Sheet has been saved before — load persisted entries
-            $this->rows = $sheet->entries->map(function (OrderSheetEntry $entry) use ($emptyQty) {
+            $this->rows = $sheet->entries->map(function (OrderSheetEntry $entry) use ($emptyQty, $locations) {
                 $qty = collect($this->menuItems)
                     ->mapWithKeys(fn ($item) =>
                         [$item['id'] => (int) optional($entry->quantities->firstWhere('daily_dish_menu_item_id', $item['id']))->quantity ?? 0]
@@ -99,7 +103,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'customer_id'     => $entry->customer_id,
                     'customer_name'   => $entry->customer_name,
                     'customer_search' => $entry->customer_name,
-                    'location'        => $entry->location ?? '',
+                    'location'        => filled($entry->location) ? $entry->location : $locations->get($entry->order_id, ''),
                     'qty'             => $qty,
                     'extras'          => $extras,
                     'remarks'         => $entry->remarks ?? '',
@@ -120,6 +124,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->orderBy('customer_name_snapshot')
             ->get();
 
+        $locations = app(\App\Services\OrderSheet\OrderSheetLocationService::class)->forOrders($existingOrders);
         foreach ($existingOrders as $order) {
             $qty = $emptyQty;
             $extras = [];
@@ -146,7 +151,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'customer_id'     => $order->customer_id,
                 'customer_name'   => $order->customer_name_snapshot,
                 'customer_search' => $order->customer_name_snapshot,
-                'location'        => '',
+                'location'        => $locations->get($order->id, ''),
                 'qty'             => $qty,
                 'extras'          => $extras,
                 'remarks'         => $order->notes ?? '',
@@ -1325,6 +1330,17 @@ new #[Layout('components.layouts.app')] class extends Component {
             .replace(/class="[^"]*no-print[^"]*"/g, 'style="display:none"')
             : '<p>No data</p>';
 
+        const blankTable = table?.cloneNode(true);
+        if (blankTable) {
+            blankTable.querySelectorAll('.no-print, tfoot').forEach(el => el.remove());
+            blankTable.querySelector('thead th div:last-child')?.remove();
+            const body = blankTable.querySelector('tbody');
+            const columns = blankTable.querySelectorAll('thead th').length;
+            body.innerHTML = Array.from({length: 14}, () => '<tr>' + '<td>&nbsp;</td>'.repeat(columns) + '</tr>').join('');
+        }
+        const extraPages = blankTable ? Array.from({length: 2}, (_, index) =>
+            `<section class="blank-sheet"><h2>Additional orders — ${prettyDate} (${index + 1}/2)</h2>${blankTable.outerHTML}</section>`).join('') : '';
+
         win.document.write(`<!doctype html><html><head><meta charset="utf-8">
         <title>Layla Kitchen — ${prettyDate}</title>
         <style>
@@ -1357,6 +1373,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 letter-spacing: 0.06em;
                 font-family: 'Times New Roman', Times, serif;
             }
+            .blank-sheet { break-before: page; page-break-before: always; break-inside: avoid; }
+            .blank-sheet table { table-layout: fixed; font-size: 11px; }
+            .blank-sheet th { min-width: 0 !important; width: auto !important; height: 30mm !important; padding: 2px; overflow-wrap: anywhere; }
+            .blank-sheet td { height: 7mm; padding: 0 3px; }
+            .blank-sheet h2 { font-size: 16px; margin: 0 0 8px; }
             /* Strip all input styling — show only the value text */
             input {
                 border: none !important;
@@ -1381,6 +1402,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div style="text-align:right"><div class="sub">Generated ${new Date().toLocaleString('en-GB')}</div></div>
         </div>
         ${printTable}
+        ${extraPages}
         <script>setTimeout(()=>window.print(),300);<\/script>
         </body></html>`);
         win.document.close();
