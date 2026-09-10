@@ -2,7 +2,6 @@
 <?php
 use App\Models\Customer;
 use App\Models\DailyDishMenu;
-use App\Models\MealSubscription;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderSheet;
@@ -71,6 +70,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function loadRows(): void
     {
         $sheet = OrderSheet::with([
+            'entries' => fn ($query) => $query->withContent(),
             'entries.quantities',
             'entries.extras',
         ])->whereDate('sheet_date', $this->sheetDate)->first();
@@ -106,27 +106,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ];
             })->toArray();
         } else {
-            // No saved sheet yet — seed from active subscriptions (sorted by name)
-            $subscriptions = MealSubscription::with('customer')
-                ->where('status', 'active')
-                ->where('start_date', '<=', $this->sheetDate)
-                ->where(fn ($q) => $q->whereNull('end_date')->orWhere('end_date', '>=', $this->sheetDate))
-                ->get()
-                ->filter(fn ($s) => $s->customer)
-                ->unique('customer_id')
-                ->sortBy(fn ($s) => $s->customer->name);
-
-            $this->rows = $subscriptions->map(fn ($sub) => [
-                'db_id'           => null,
-                'order_id'        => null,
-                'customer_id'     => $sub->customer_id,
-                'customer_name'   => $sub->customer->name,
-                'customer_search' => $sub->customer->name,
-                'location'        => '',
-                'qty'             => $emptyQty,
-                'extras'          => [],
-                'remarks'         => '',
-            ])->values()->toArray();
+            $this->rows = [];
         }
 
         // Merge daily-dish orders for this date that aren't already linked to a sheet entry
@@ -172,20 +152,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'remarks'         => $order->notes ?? '',
             ];
         }
-
-        // Subscription placeholders can also have been saved before an order was generated.
-        // Remove only empty placeholders for the same customer, never distinct orders or manual plans.
-        $orderedCustomerIds = collect($this->rows)->filter(fn ($row) => ! empty($row['order_id']))
-            ->pluck('customer_id')->filter()->all();
-        $this->rows = array_values(array_filter($this->rows, fn ($row) => ! (
-            empty($row['order_id'])
-            && ! empty($row['customer_id'])
-            && in_array($row['customer_id'], $orderedCustomerIds)
-            && ! collect($row['qty'])->contains(fn ($quantity) => (int) $quantity > 0)
-            && empty($row['extras'])
-            && blank($row['location'])
-            && blank($row['remarks'])
-        )));
 
         // Always ensure a blank trailing row
         $this->ensureTrailingBlankRow();
@@ -642,7 +608,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <th class="border border-zinc-300 bg-white/60 align-bottom p-2 h-[120px] min-w-[220px]">
                                     <div class="text-left text-[11px] uppercase tracking-[0.15em] font-semibold text-zinc-600">Customer</div>
                                     <div class="text-right text-[10px] text-zinc-400 mt-1">
-                                        {{ collect($rows)->filter(fn($r) => filled($r['customer_name']))->count() }}/{{ count($rows) }} filled
+                                        {{ collect($rows)->filter(fn($r) => filled($r['customer_name']))->count() }} {{ __('entries') }}
                                     </div>
                                 </th>
                                 <th class="border border-zinc-300 bg-white/60 align-bottom p-1 h-[120px] w-[80px]">
@@ -671,7 +637,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </thead>
                         <tbody>
                             @foreach ($rows as $i => $row)
-                                <tr wire:key="row-{{ $i }}" class="group">
+                                <tr wire:key="row-{{ $i }}" class="group {{ blank($row['customer_name']) ? 'no-print' : '' }}">
 
                                     {{-- Customer --}}
                                     <td class="border border-zinc-300 px-3 py-2"

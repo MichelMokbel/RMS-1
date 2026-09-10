@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,6 +10,18 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class OrderSheetEntry extends Model
 {
     protected $fillable = ['order_sheet_id', 'customer_id', 'customer_name', 'location', 'remarks', 'order_id'];
+
+    /** Exclude saved name-only placeholders without discarding orders or manual planning data. */
+    public function scopeWithContent(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query) {
+            $query->whereNotNull('order_id')
+                ->orWhereHas('quantities', fn (Builder $quantities) => $quantities->where('quantity', '>', 0))
+                ->orWhereHas('extras', fn (Builder $extras) => $extras->where('quantity', '>', 0))
+                ->orWhereRaw("TRIM(COALESCE(location, '')) <> ''")
+                ->orWhereRaw("TRIM(COALESCE(remarks, '')) <> ''");
+        });
+    }
 
     public function sheet(): BelongsTo
     {

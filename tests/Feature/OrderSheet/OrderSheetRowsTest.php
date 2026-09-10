@@ -17,16 +17,17 @@ beforeEach(function () {
     MealSubscription::factory()->create(['customer_id' => $this->customer->id]);
 });
 
-it('replaces the subscription placeholder with existing orders and retains customers without orders', function () {
+it('lists actual orders without seeding empty subscription rows', function () {
     $other = Customer::factory()->create(['name' => $this->customer->name]);
     MealSubscription::factory()->create(['customer_id' => $other->id]);
     $orders = Order::factory()->dailyDish()->count(2)->create(['customer_id' => $this->customer->id]);
 
     $page = Volt::test('order-sheet');
     $rows = collect($page->get('rows'))->filter(fn ($row) => filled($row['customer_name']));
-    expect($rows)->toHaveCount(3)
+    expect($rows)->toHaveCount(2)
         ->and($rows->where('customer_id', $this->customer->id)->pluck('order_id')->sort()->values()->all())->toBe($orders->modelKeys())
-        ->and($rows->where('customer_id', $other->id)->first()['order_id'])->toBeNull();
+        ->and($rows->where('customer_id', $other->id))->toHaveCount(0);
+    $page->assertSee('2 entries')->assertDontSee('2/3 filled');
 });
 
 it('cleans saved empty placeholders on reload and save without deleting orders', function () {
@@ -51,12 +52,13 @@ it('keeps manually entered planning data alongside an existing order', function 
     expect(collect($page->get('rows'))->where('customer_id', $this->customer->id))->toHaveCount(2);
 });
 
-it('does not suppress a placeholder for cancelled or other-date orders', function () {
+it('does not include cancelled or other-date orders or empty subscribers', function () {
     Order::factory()->dailyDish()->create(['customer_id' => $this->customer->id, 'status' => 'Cancelled']);
     Order::factory()->dailyDish()->create(['customer_id' => $this->customer->id, 'scheduled_date' => now()->addDay()->toDateString()]);
     $page = Volt::test('order-sheet');
     $rows = collect($page->get('rows'))->where('customer_id', $this->customer->id);
-    expect($rows)->toHaveCount(1)->and($rows->first()['order_id'])->toBeNull();
+    expect($rows)->toHaveCount(0);
+    expect($page->get('rows'))->toHaveCount(1); // One editable blank row remains.
 });
 
 it('sums repeated dish lines instead of overwriting quantities', function () {
@@ -70,4 +72,37 @@ it('sums repeated dish lines instead of overwriting quantities', function () {
     $page = Volt::test('order-sheet');
     $row = collect($page->get('rows'))->firstWhere('order_id', $order->id);
     expect($row['qty'][$column->id])->toBe(5);
+});
+
+it('omits saved name-only rows even when orders have no customer id and in both print reports', function () {
+    $sheet = OrderSheet::create(['sheet_date' => now()->toDateString()]);
+    $sheet->entries()->create(['customer_id' => $this->customer->id, 'customer_name' => 'Empty subscriber']);
+    $order = Order::factory()->dailyDish()->create(['customer_id' => null, 'customer_name_snapshot' => 'Actual meal order']);
+    $entry = $sheet->entries()->create(['customer_name' => 'Actual meal order', 'order_id' => $order->id]);
+    $item = MenuItem::factory()->create();
+    $entry->extras()->create(['menu_item_id' => $item->id, 'menu_item_name' => $item->name, 'quantity' => 3]);
+    $page = Volt::test('order-sheet')->assertDontSee('Empty subscriber')->assertSee('Actual meal order');
+    expect(collect($page->get('rows'))->whereNotNull('order_id'))->toHaveCount(1);
+    foreach (['order-sheet.print.by-order', 'order-sheet.print.by-item'] as $route) {
+        $this->get(route($route, ['date' => now()->toDateString()]))->assertOk()
+            ->assertViewHas('entries', fn ($entries) => $entries->count() === 1 && $entries->first()['order_id'] === $order->id)
+            ->assertViewHas('extraTotals', fn ($totals) => $totals[$item->name]['quantity'] === 3);
+    }
+    expect($sheet->entries()->count())->toBe(2); // Viewing or printing does not delete saved data.
+});
+
+it('keeps saved manual dish quantities and extras without an order', function () {
+    $item = MenuItem::factory()->create();
+    $menu = DailyDishMenu::create(['branch_id' => 1, 'service_date' => now()->toDateString(), 'status' => 'published']);
+    $column = $menu->items()->create(['menu_item_id' => $item->id, 'role' => 'main', 'sort_order' => 1]);
+    $sheet = OrderSheet::create(['sheet_date' => now()->toDateString()]);
+    $entry = $sheet->entries()->create(['customer_name' => 'Manual meal']);
+    $entry->quantities()->create(['daily_dish_menu_item_id' => $column->id, 'quantity' => 2]);
+    $extra = $sheet->entries()->create(['customer_name' => 'Manual extra']);
+    $extra->extras()->create(['menu_item_id' => $item->id, 'menu_item_name' => $item->name, 'quantity' => 4]);
+    $page = Volt::test('order-sheet')->assertSee('Manual meal')->assertSee('Manual extra');
+    expect($page->get('rows'))->toHaveCount(3);
+    $this->get(route('order-sheet.print.by-order'))->assertOk()
+        ->assertViewHas('dishTotals', fn ($totals) => $totals[$column->id]['quantity'] === 2)
+        ->assertViewHas('extraTotals', fn ($totals) => $totals[$item->name]['quantity'] === 4);
 });
