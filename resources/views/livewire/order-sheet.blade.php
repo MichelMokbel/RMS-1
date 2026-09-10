@@ -332,6 +332,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     // ── Save ────────────────────────────────────────────────
 
+    public function exportExcel(): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        abort_unless(auth()->user()?->isActive() && auth()->user()->hasAnyRole(['admin', 'manager', 'staff', 'cashier']), 403);
+        $this->validate(['sheetDate' => ['required', 'date_format:Y-m-d']]);
+
+        return app(\App\Services\OrderSheet\OrderSheetExcelExport::class)
+            ->download($this->sheetDate, $this->menuItems, $this->rows);
+    }
+
     public function save(): void
     {
         $sheet = OrderSheet::firstOrCreate(['sheet_date' => $this->sheetDate]);
@@ -536,6 +545,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </button>
                 @endif
 
+                <button wire:click="exportExcel" wire:loading.attr="disabled"
+                    class="no-print min-h-[44px] flex items-center gap-2 px-3 py-2 bg-white border border-zinc-200 rounded-lg text-[13px] font-medium hover:bg-zinc-50 disabled:opacity-60">
+                    <span wire:loading.remove wire:target="exportExcel">{{ __('Export Excel') }}</span>
+                    <span wire:loading wire:target="exportExcel">{{ __('Exporting…') }}</span>
+                </button>
                 <button onclick="exportPDF()" class="no-print flex items-center gap-2 px-3 py-2 bg-white border border-zinc-200 rounded-lg text-[13px] font-medium hover:bg-zinc-50">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                     Print

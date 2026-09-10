@@ -106,3 +106,42 @@ it('keeps saved manual dish quantities and extras without an order', function ()
         ->assertViewHas('dishTotals', fn ($totals) => $totals[$column->id]['quantity'] === 2)
         ->assertViewHas('extraTotals', fn ($totals) => $totals[$item->name]['quantity'] === 4);
 });
+
+it('downloads the current sheet including unsaved edits as Excel without saving orders', function () {
+    $page = Volt::test('order-sheet');
+    $page->set('rows.0.customer_name', '=Literal customer')
+        ->set('rows.0.extras', [['menu_item_id' => 1, 'menu_item_name' => 'Extra meal', 'quantity' => 3]])
+        ->call('exportExcel')->assertHasNoErrors()
+        ->assertFileDownloaded('order-sheet-'.now()->toDateString().'.xlsx');
+    expect(OrderSheet::count())->toBe(0)->and(Order::count())->toBe(0);
+});
+
+it('rejects Excel export for a user outside the order sheet roles', function () {
+    $page = Volt::test('order-sheet');
+    $this->actingAs(User::factory()->create(['status' => 'active']));
+    $page->call('exportExcel')->assertForbidden();
+});
+
+it('exports numeric dish totals and literal text in a valid Excel workbook', function () {
+    $response = app(\App\Services\OrderSheet\OrderSheetExcelExport::class)->download('2026-09-10', [
+        ['id' => 7, 'name' => 'Main dish'],
+    ], [
+        ['order_id' => 23, 'customer_name' => '=Literal name', 'location' => 'Office', 'qty' => [7 => 2], 'extras' => [
+            ['menu_item_name' => 'Salad', 'quantity' => 3],
+        ], 'remarks' => 'No onions'],
+        ['customer_name' => ''],
+    ]);
+    $path = $response->getFile()->getPathname();
+    $zip = new ZipArchive;
+    $zip->open($path);
+    $xml = simplexml_load_string($zip->getFromName('xl/worksheets/sheet1.xml'));
+    $zip->close();
+    unlink($path);
+    $xml->registerXPathNamespace('s', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
+    expect($xml->xpath('//s:row'))->toHaveCount(3)
+        ->and((string) $xml->xpath('//s:c[@r="C2"]/s:is/s:t')[0])->toBe('=Literal name')
+        ->and($xml->xpath('//s:f'))->toHaveCount(0)
+        ->and((string) $xml->xpath('//s:c[@r="E3"]/s:v')[0])->toBe('2')
+        ->and((string) $xml->xpath('//s:c[@r="G3"]/s:v')[0])->toBe('3')
+        ->and((string) $xml->xpath('//s:c[@r="H3"]/s:v')[0])->toBe('5');
+});
