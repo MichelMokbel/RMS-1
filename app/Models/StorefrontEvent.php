@@ -23,6 +23,8 @@ class StorefrontEvent extends Model
         'quantity_bucket',
         'line_count',
         'lead_day_count',
+        'experiment_variant',
+        'plan_code',
     ];
 
     protected $casts = [

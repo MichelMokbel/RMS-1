@@ -58,17 +58,26 @@ class StorefrontAdministrationService
         if (! preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $cutoff)) {
             throw ValidationException::withMessages(['menu_cutoff_time' => __('The menu cutoff must use HH:MM in Qatar time.')]);
         }
+        $planVariant = array_key_exists('daily_dish_plan_variant', $data)
+            ? trim((string) $data['daily_dish_plan_variant'])
+            : null;
+        if ($planVariant !== null && ! in_array($planVariant, ['balanced', '1', '2', '3'], true)) {
+            throw ValidationException::withMessages([
+                'daily_dish_plan_variant' => __('Choose a supported Daily Dish plan layout.'),
+            ]);
+        }
 
-        return DB::transaction(function () use ($actor, $companyId, $branchId, $cutoff, $data, $expectedRevision): StorefrontSetting {
+        return DB::transaction(function () use ($actor, $companyId, $branchId, $cutoff, $planVariant, $data, $expectedRevision): StorefrontSetting {
             $branch = Branch::query()->whereKey($branchId)->lockForUpdate()->first();
             if (! $branch || ! $branch->is_active || (int) $branch->company_id !== $companyId) {
                 throw ValidationException::withMessages(['portal_branch_id' => __('Choose an active branch from the default company.')]);
             }
             $settings = StorefrontSetting::query()->where('company_id', $companyId)->lockForUpdate()->first();
             $this->assertRevision($settings, $expectedRevision);
+            $resolvedPlanVariant = $planVariant ?? (string) ($settings?->daily_dish_plan_variant ?? 'balanced');
             $before = $settings?->only([
                 'portal_branch_id', 'normal_menu_enabled', 'checkout_upsell_enabled', 'upsell_category_id',
-                'menu_cutoff_time', 'timezone', 'delivery_apps_enabled', 'revision',
+                'menu_cutoff_time', 'timezone', 'delivery_apps_enabled', 'daily_dish_plan_variant', 'revision',
             ]);
             $upsellCategoryId = filter_var($data['upsell_category_id'] ?? null, FILTER_VALIDATE_INT);
             if ($upsellCategoryId === false || $upsellCategoryId <= 0) {
@@ -101,6 +110,7 @@ class StorefrontAdministrationService
                 'menu_cutoff_time' => $cutoff.':00',
                 'timezone' => StorefrontSetting::TIMEZONE,
                 'delivery_apps_enabled' => (bool) ($data['delivery_apps_enabled'] ?? false),
+                'daily_dish_plan_variant' => $resolvedPlanVariant,
                 'revision' => $expectedRevision + 1,
                 'updated_by' => $actor->id,
             ])->save();

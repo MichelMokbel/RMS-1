@@ -61,6 +61,34 @@ it('records only allowlisted anonymous storefront context and accepts an exact r
         ->and(StorefrontEvent::query()->count())->toBe(1);
 });
 
+it('records bounded Daily Dish plan experiment events without customer identity', function (): void {
+    $journeyUuid = (string) Str::uuid();
+
+    $this->postJson('/api/public/storefront/events', [
+        'event_uuid' => (string) Str::uuid(),
+        'journey_uuid' => $journeyUuid,
+        'event_name' => 'plan_selector_viewed',
+        'experiment_variant' => '2',
+    ])->assertStatus(202);
+    $this->postJson('/api/public/storefront/events', [
+        'event_uuid' => (string) Str::uuid(),
+        'journey_uuid' => $journeyUuid,
+        'event_name' => 'plan_selected',
+        'experiment_variant' => '2',
+        'plan_code' => '26',
+    ])->assertStatus(202);
+    $this->postJson('/api/public/storefront/events', [
+        'event_uuid' => (string) Str::uuid(),
+        'journey_uuid' => $journeyUuid,
+        'event_name' => 'plan_selected',
+        'experiment_variant' => '4',
+        'plan_code' => '26',
+    ])->assertUnprocessable();
+
+    expect(StorefrontEvent::query()->where('experiment_variant', '2')->count())->toBe(2)
+        ->and(StorefrontEvent::query()->where('plan_code', '26')->count())->toBe(1);
+});
+
 it('rejects identity fields unsupported references and invalid event values', function (): void {
     $base = [
         'event_uuid' => (string) Str::uuid(),
@@ -162,7 +190,23 @@ it('reports distinct browser journeys and canonical checkout outcomes from one Q
             'quantity_bucket' => 'one',
         ]);
 
-        $makeAttempt = function (string $state, string $startedAt, string $purpose = 'menu_order') use ($company, $branch, $customer, $portalUser, $source): void {
+        foreach ([
+            ['plan_selector_viewed', null],
+            ['plan_selected', '26'],
+        ] as [$eventName, $planCode]) {
+            StorefrontEvent::query()->create([
+                'company_id' => $company->id,
+                'event_uuid' => (string) Str::uuid(),
+                'journey_hash' => $journey,
+                'event_name' => $eventName,
+                'source' => 'browser',
+                'received_at' => '2026-09-01 10:00:00',
+                'experiment_variant' => '2',
+                'plan_code' => $planCode,
+            ]);
+        }
+
+        $makeAttempt = function (string $state, string $startedAt, string $purpose = 'menu_order', ?string $variant = null) use ($company, $branch, $customer, $portalUser, $source): void {
             $uuid = (string) Str::uuid();
             PaymentCheckoutAttempt::query()->create([
                 'reference' => $uuid,
@@ -187,7 +231,7 @@ it('reports distinct browser journeys and canonical checkout outcomes from one Q
                 'completed_at' => $state === 'completed' ? CarbonImmutable::parse($startedAt, 'UTC')->addMinute() : null,
                 'cart_snapshot' => [],
                 'customer_snapshot' => [],
-                'pricing_snapshot' => [],
+                'pricing_snapshot' => $variant ? ['plan_selector_variant' => $variant] : [],
                 'terms_snapshot' => [],
                 'request_snapshot' => [],
                 'source_account_snapshot' => [],
@@ -199,13 +243,21 @@ it('reports distinct browser journeys and canonical checkout outcomes from one Q
         $makeAttempt('completed', '2026-09-02 20:59:59');
         $makeAttempt('completed', '2026-09-02 21:00:00');
         $makeAttempt('completed', '2026-09-01 10:00:00', 'ordinary_order');
+        $makeAttempt('completed', '2026-09-01 11:00:00', 'membership', '2');
+        $makeAttempt('declined', '2026-09-01 12:00:00', 'membership', '2');
 
         $report = app(StorefrontFunnelReportService::class)->report($company->id, '2026-09-01', '2026-09-02');
         expect($report['browser_directional']['item_adds'])->toBe(1)
             ->and($report['checkout_canonical']['checkout_starts'])->toBe(2)
             ->and($report['checkout_canonical']['declines'])->toBe(1)
             ->and($report['checkout_canonical']['paid_processing'])->toBe(0)
-            ->and($report['checkout_canonical']['paid_completions'])->toBe(1);
+            ->and($report['checkout_canonical']['paid_completions'])->toBe(1)
+            ->and($report['plan_experiment']['2']['selector_views'])->toBe(1)
+            ->and($report['plan_experiment']['2']['plan_selections'])->toBe(1)
+            ->and($report['plan_experiment']['2']['plan_26_selections'])->toBe(1)
+            ->and($report['plan_experiment']['2']['checkout_starts'])->toBe(2)
+            ->and($report['plan_experiment']['2']['paid_completions'])->toBe(1)
+            ->and($report['plan_experiment']['2']['paid_amount_cents'])->toBe(1000);
 
         $default = app(StorefrontFunnelReportService::class)->report($company->id);
         expect($default['from'])->toBe('2026-08-10')

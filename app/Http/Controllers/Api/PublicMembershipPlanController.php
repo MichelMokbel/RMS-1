@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\StorefrontSetting;
 use App\Services\Accounting\AccountingContextService;
 use App\Services\Subscriptions\MembershipPlanCatalogService;
 
@@ -24,6 +25,12 @@ class PublicMembershipPlanController extends Controller
 
         return response()->json([
             'data' => $active->map(fn ($plan): array => $plans->present($plan))->values(),
+            'plan_selector' => [
+                'experiment_id' => 'daily_dish_plan_selector_v1',
+                'mode' => (string) (StorefrontSetting::query()
+                    ->where('company_id', $companyId)
+                    ->value('daily_dish_plan_variant') ?: 'balanced'),
+            ],
         ]);
     }
 }

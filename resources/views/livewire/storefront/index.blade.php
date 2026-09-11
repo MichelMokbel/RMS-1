@@ -30,6 +30,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public int|string $upsell_category_id = '';
     public string $menu_cutoff_time = '23:00';
     public bool $delivery_apps_enabled = false;
+    public string $daily_dish_plan_variant = 'balanced';
 
     public ?int $category_id = null;
     public string $category_title = '';
@@ -87,6 +88,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->upsell_category_id = (int) ($settings?->upsell_category_id ?? 0) ?: '';
         $this->menu_cutoff_time = substr((string) ($settings?->menu_cutoff_time ?? '23:00:00'), 0, 5);
         $this->delivery_apps_enabled = (bool) ($settings?->delivery_apps_enabled ?? false);
+        $this->daily_dish_plan_variant = (string) ($settings?->daily_dish_plan_variant ?? 'balanced');
         $this->funnel_to = CarbonImmutable::now(StorefrontSetting::TIMEZONE)->subDay()->toDateString();
         $this->funnel_from = CarbonImmutable::parse($this->funnel_to, StorefrontSetting::TIMEZONE)->subDays(29)->toDateString();
         $this->loadChannels($companyId);
@@ -102,6 +104,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'upsell_category_id' => $this->upsell_category_id,
             'menu_cutoff_time' => $this->menu_cutoff_time,
             'delivery_apps_enabled' => $this->delivery_apps_enabled,
+            'daily_dish_plan_variant' => $this->daily_dish_plan_variant,
         ], $this->revision);
         $this->revision = (int) $settings->revision;
         session()->flash('status', __('Storefront settings saved.'));
@@ -396,6 +399,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             @error('upsell_category_id') <p role="alert" class="text-sm text-red-600">{{ $message }}</p> @enderror
             <label class="flex min-h-11 items-center gap-3"><input wire:model="delivery_apps_enabled" type="checkbox" class="rounded border-zinc-300 text-amber-600"><span>{{ __('Show the delivery applications section') }}</span></label>
+            <div class="rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900">
+                <flux:select wire:model="daily_dish_plan_variant" :label="__('Daily Dish plan layout')" :description="__('Choose one layout for every visitor, or rotate all three evenly for comparison.')">
+                    <flux:select.option value="balanced">{{ __('Balanced test across all variants') }}</flux:select.option>
+                    <flux:select.option value="1">{{ __('Variant 1, stacked choices') }}</flux:select.option>
+                    <flux:select.option value="2">{{ __('Variant 2, focused selector') }}</flux:select.option>
+                    <flux:select.option value="3">{{ __('Variant 3, side by side comparison') }}</flux:select.option>
+                </flux:select>
+                @error('daily_dish_plan_variant') <p role="alert" class="mt-2 text-sm text-red-600">{{ $message }}</p> @enderror
+                <p class="mt-3 text-sm text-zinc-500">{{ __('Results appear in the Funnel section. A fixed variant takes effect on the customer website after settings are saved.') }}</p>
+            </div>
             <p class="text-sm text-zinc-500">{{ __('Revision') }} {{ $revision }} · {{ __('Timezone remains Asia/Qatar. Turning direct ordering off never blocks a payment that already started.') }}</p>
             <div class="flex justify-end"><flux:button type="submit" variant="primary" wire:loading.attr="disabled">{{ __('Save settings') }}</flux:button></div>
         </form>
@@ -523,6 +536,41 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </dl>
                 </section>
             </div>
+            <section class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-amber-700 dark:text-amber-300">{{ __('Daily Dish plan layouts') }}</p>
+                        <h2 class="text-lg font-semibold">{{ __('Variant analysis') }}</h2>
+                    </div>
+                    <p class="text-sm text-zinc-500">{{ __('Active setting: :variant', ['variant' => $daily_dish_plan_variant === 'balanced' ? __('Balanced test') : __('Variant :number', ['number' => $daily_dish_plan_variant])]) }}</p>
+                </div>
+                <p class="mt-2 text-sm text-zinc-500">{{ __('Views and plan choices are anonymous directional signals. Checkout and paid results come from canonical RMS membership payment records.') }}</p>
+                <div class="mt-4 grid gap-4 xl:grid-cols-3">
+                    @foreach(['1' => __('Stacked choices'), '2' => __('Focused selector'), '3' => __('Side by side comparison')] as $variant => $label)
+                        @php($result = $funnelReport['plan_experiment'][$variant])
+                        <article wire:key="plan-variant-{{ $variant }}" class="rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
+                            <div class="flex items-start justify-between gap-3">
+                                <div><p class="text-xs font-medium uppercase tracking-wide text-zinc-500">{{ __('Variant :number', ['number' => $variant]) }}</p><h3 class="font-semibold">{{ $label }}</h3></div>
+                                @if($daily_dish_plan_variant === $variant)<span class="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-900 dark:bg-amber-900 dark:text-amber-100">{{ __('Active') }}</span>@endif
+                            </div>
+                            <dl class="mt-4 divide-y divide-zinc-100 text-sm dark:divide-zinc-700">
+                                @foreach([
+                                    'selector_views' => __('Selector views'),
+                                    'plan_selections' => __('Plan choices'),
+                                    'flexible_selections' => __('Flexible choices'),
+                                    'plan_20_selections' => __('20 meal choices'),
+                                    'plan_26_selections' => __('26 meal choices'),
+                                    'checkout_starts' => __('Membership checkouts'),
+                                    'paid_completions' => __('Paid memberships'),
+                                ] as $key => $metric)
+                                    <div class="flex items-center justify-between gap-3 py-2"><dt class="text-zinc-600 dark:text-zinc-300">{{ $metric }}</dt><dd class="font-semibold">{{ number_format($result[$key]) }}</dd></div>
+                                @endforeach
+                                <div class="flex items-center justify-between gap-3 py-2"><dt class="text-zinc-600 dark:text-zinc-300">{{ __('Paid value') }}</dt><dd class="font-semibold">QAR {{ number_format($result['paid_amount_cents'] / 100, 2) }}</dd></div>
+                            </dl>
+                        </article>
+                    @endforeach
+                </div>
+            </section>
         </div>
     @else
         <div class="space-y-5">

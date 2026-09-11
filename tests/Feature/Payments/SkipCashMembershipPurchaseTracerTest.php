@@ -19,6 +19,7 @@ use App\Models\PaymentProviderEvent;
 use App\Models\PaymentProviderTransaction;
 use App\Models\PaymentSetting;
 use App\Models\PaymentSource;
+use App\Models\StorefrontSetting;
 use App\Models\User;
 use App\Services\Customers\CustomerMergeService;
 use App\Services\Payments\CheckoutCanonicalizer;
@@ -226,6 +227,8 @@ it('publishes the two company owned membership package prices', function (): voi
     $response = $this->getJson('/api/public/membership-plans')->assertOk();
 
     expect($response->json('data'))->toHaveCount(2)
+        ->and($response->json('plan_selector.experiment_id'))->toBe('daily_dish_plan_selector_v1')
+        ->and($response->json('plan_selector.mode'))->toBe('balanced')
         ->and($response->json('data.0.code'))->toBe('20')
         ->and($response->json('data.0.meal_count'))->toBe(20)
         ->and($response->json('data.0.package_price_cents'))->toBe(90000)
@@ -234,6 +237,32 @@ it('publishes the two company owned membership package prices', function (): voi
         ->and($response->json('data.1.code'))->toBe('26')
         ->and($response->json('data.1.meal_count'))->toBe(26)
         ->and($response->json('data.1.package_price_cents'))->toBe(120000);
+
+    StorefrontSetting::query()->create([
+        'company_id' => $this->company->id,
+        'portal_branch_id' => $this->branch->id,
+        'daily_dish_plan_variant' => '3',
+        'created_by' => $this->systemActor->id,
+        'updated_by' => $this->systemActor->id,
+    ]);
+    $this->getJson('/api/public/membership-plans')
+        ->assertOk()
+        ->assertJsonPath('plan_selector.mode', '3');
+});
+
+it('rejects an invalid plan selector attribution before creating a membership checkout', function (): void {
+    $quotePayload = membershipQuotePayload('20');
+    $quote = $this->postJson('/api/customer/checkouts/quote', $quotePayload)->assertOk();
+
+    $this->postJson('/api/customer/checkouts', [
+        'client_uuid' => (string) Str::uuid(),
+        ...$quotePayload,
+        'quote_fingerprint' => $quote->json('quote_fingerprint'),
+        'accepted_terms_version' => 'v1',
+        'plan_selector_variant' => '4',
+    ])->assertUnprocessable();
+
+    expect(PaymentCheckoutAttempt::query()->count())->toBe(0);
 });
 
 it('creates one paid 20 meal allowance without orders invoices or immediate meal use', function (): void {
@@ -254,11 +283,13 @@ it('creates one paid 20 meal allowance without orders invoices or immediate meal
         ...$quotePayload,
         'quote_fingerprint' => $quote->json('quote_fingerprint'),
         'accepted_terms_version' => 'v1',
+        'plan_selector_variant' => '2',
     ])->assertStatus(202)->assertJsonPath('purchase_confirmed', false);
 
     $attempt = PaymentCheckoutAttempt::query()->firstOrFail();
     $request = MealPlanRequest::query()->firstOrFail();
     expect($attempt->purpose)->toBe('membership')
+        ->and($attempt->pricing_snapshot['plan_selector_variant'])->toBe('2')
         ->and($request->status)->toBe('new')
         ->and($request->submission_kind)->toBe('paid_checkout')
         ->and((int) $request->checkout_id)->toBe((int) $attempt->id)

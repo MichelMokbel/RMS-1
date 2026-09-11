@@ -18,6 +18,7 @@ class StorefrontSetting extends Model
         'menu_cutoff_time',
         'timezone',
         'delivery_apps_enabled',
+        'daily_dish_plan_variant',
         'revision',
         'created_by',
         'updated_by',

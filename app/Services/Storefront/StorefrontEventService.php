@@ -26,6 +26,8 @@ class StorefrontEventService
         'upsell_viewed' => ['path_code', 'line_count'],
         'upsell_skipped' => ['path_code'],
         'upsell_item_added' => ['path_code', 'profile_id'],
+        'plan_selector_viewed' => ['experiment_variant'],
+        'plan_selected' => ['experiment_variant', 'plan_code'],
     ];
 
     private const PATH_CODES = [
@@ -134,6 +136,12 @@ class StorefrontEventService
         }
         if (isset($context['quantity_bucket']) && ! in_array($context['quantity_bucket'], ['under_one', 'one', 'two_to_three', 'four_plus'], true)) {
             throw ValidationException::withMessages(['quantity_bucket' => __('This quantity bucket is invalid.')]);
+        }
+        if (isset($context['experiment_variant']) && ! in_array((string) $context['experiment_variant'], ['1', '2', '3'], true)) {
+            throw ValidationException::withMessages(['experiment_variant' => __('This plan layout is invalid.')]);
+        }
+        if (isset($context['plan_code']) && ! in_array((string) $context['plan_code'], ['flexible', '20', '26'], true)) {
+            throw ValidationException::withMessages(['plan_code' => __('This membership plan is invalid.')]);
         }
 
         return $context;

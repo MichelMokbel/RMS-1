@@ -230,6 +230,7 @@ class MembershipCheckoutService
                     'membership_payable_amount_cents' => (int) $quote['membership_payable_amount_cents'],
                     'add_on_amount_cents' => (int) $quote['add_on_amount_cents'],
                     'promotion' => $acceptedPromotion['offer_snapshot'] ?? null,
+                    'plan_selector_variant' => $request['plan_selector_variant'] ?? null,
                 ],
                 'terms_snapshot' => [
                     'version' => $terms['version'],
@@ -247,6 +248,7 @@ class MembershipCheckoutService
                     'promotion_acceptance_fingerprint' => $acceptedPromotion['acceptance_fingerprint'] ?? null,
                     'submitted_quote_fingerprint' => (string) $request['quote_fingerprint'],
                     'accepted_terms_version' => (string) $request['accepted_terms_version'],
+                    'plan_selector_variant' => $request['plan_selector_variant'] ?? null,
                 ],
                 'source_account_snapshot' => [
                     'payment_source_id' => $context['source']->id,
@@ -330,8 +332,8 @@ class MembershipCheckoutService
     /** @param array<string, mixed> $request */
     private function requestFingerprint(array $request): string
     {
-        return $this->canonicalizer->hash([
-            'membership-request-v2',
+        $parts = [
+            array_key_exists('plan_selector_variant', $request) ? 'membership-request-v3' : 'membership-request-v2',
             'membership',
             (string) ($request['selected_branch_id'] ?? ''),
             trim((string) ($request['plan_code'] ?? '')),
@@ -341,7 +343,12 @@ class MembershipCheckoutService
                 : strtoupper(trim((string) $request['promo_code'])),
             (string) ($request['quote_fingerprint'] ?? ''),
             (string) ($request['accepted_terms_version'] ?? ''),
-        ]);
+        ];
+        if (array_key_exists('plan_selector_variant', $request)) {
+            $parts[] = $request['plan_selector_variant'];
+        }
+
+        return $this->canonicalizer->hash($parts);
     }
 
     /** @param array<string, mixed> $request */

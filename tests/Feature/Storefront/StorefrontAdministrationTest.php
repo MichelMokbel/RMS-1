@@ -79,6 +79,7 @@ it('enables one company-owned checkout add-on category and audits the setting', 
         'checkout_upsell_enabled' => false,
         'menu_cutoff_time' => '23:00',
         'delivery_apps_enabled' => false,
+        'daily_dish_plan_variant' => 'balanced',
     ], 0);
     $category = StorefrontCategory::query()->create([
         'company_id' => $company->id,
@@ -123,12 +124,27 @@ it('enables one company-owned checkout add-on category and audits the setting', 
         'upsell_category_id' => $category->id,
         'menu_cutoff_time' => '23:00',
         'delivery_apps_enabled' => false,
+        'daily_dish_plan_variant' => '3',
     ], $settings->revision);
 
     expect($settings->checkout_upsell_enabled)->toBeTrue()
         ->and((int) $settings->upsell_category_id)->toBe((int) $category->id)
         ->and($settings->normal_menu_enabled)->toBeTrue()
+        ->and($settings->daily_dish_plan_variant)->toBe('3')
         ->and(AccountingAuditLog::query()->where('action', 'storefront.settings.updated')->count())->toBe(2);
+});
+
+it('rejects an unsupported Daily Dish plan layout', function (): void {
+    $company = AccountingCompany::query()->where('is_default', true)->firstOrFail();
+    $branch = Branch::query()->findOrFail(1);
+    $branch->update(['company_id' => $company->id, 'is_active' => true]);
+    $admin = storefrontAdministrator();
+
+    expect(fn () => app(StorefrontAdministrationService::class)->saveSettings($admin, [
+        'portal_branch_id' => $branch->id,
+        'menu_cutoff_time' => '23:00',
+        'daily_dish_plan_variant' => 'invented',
+    ], 0))->toThrow(ValidationException::class);
 });
 
 it('saves versioned settings categories and a publishable item with an audit trail', function (): void {

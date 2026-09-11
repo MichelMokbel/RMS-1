@@ -84,6 +84,7 @@ class CustomerCheckoutController extends Controller
                     'promo_code',
                     'quote_fingerprint',
                     'accepted_terms_version',
+                    'plan_selector_variant',
                 ]);
                 $payload = $request->validate([
                     'client_uuid' => ['required', 'uuid'],
@@ -94,6 +95,7 @@ class CustomerCheckoutController extends Controller
                     'promo_code' => ['nullable', 'string', 'max:80'],
                     'quote_fingerprint' => ['required', 'string', 'size:64'],
                     'accepted_terms_version' => ['required', 'string', 'max:80'],
+                    'plan_selector_variant' => ['nullable', 'in:1,2,3'],
                 ]);
                 $result = $this->membershipCheckouts->create($request->user(), $payload);
             } elseif ($purpose === 'menu_order') {

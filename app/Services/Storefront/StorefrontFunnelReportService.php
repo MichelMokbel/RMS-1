@@ -10,7 +10,7 @@ use Illuminate\Validation\ValidationException;
 
 class StorefrontFunnelReportService
 {
-    /** @return array{from:string,to:string,browser_directional:array<string, int>,checkout_canonical:array<string, int>} */
+    /** @return array{from:string,to:string,browser_directional:array<string, int>,checkout_canonical:array<string, int>,plan_experiment:array<string, array<string, int>>} */
     public function report(int $companyId, ?string $from = null, ?string $to = null): array
     {
         $today = CarbonImmutable::now(StorefrontSetting::TIMEZONE)->startOfDay();
@@ -41,6 +41,30 @@ class StorefrontFunnelReportService
         $paidUpsells = $upsellCompletions->filter(
             fn (PaymentCheckoutAttempt $attempt): bool => (int) data_get($attempt->pricing_snapshot, 'add_on_amount_cents', 0) > 0,
         );
+        $membershipAttempts = PaymentCheckoutAttempt::query()
+            ->where('company_id', $companyId)
+            ->where('purpose', 'membership')
+            ->where('started_at', '>=', $fromUtc)
+            ->where('started_at', '<', $toUtcExclusive)
+            ->get(['state', 'payable_amount_cents', 'pricing_snapshot']);
+        $planExperiment = [];
+        foreach (['1', '2', '3'] as $variant) {
+            $variantEvents = (clone $events)->where('experiment_variant', $variant);
+            $variantAttempts = $membershipAttempts->filter(
+                fn (PaymentCheckoutAttempt $attempt): bool => (string) data_get($attempt->pricing_snapshot, 'plan_selector_variant', '') === $variant,
+            );
+            $paidAttempts = $variantAttempts->where('state', 'completed');
+            $planExperiment[$variant] = [
+                'selector_views' => (clone $variantEvents)->where('event_name', 'plan_selector_viewed')->distinct()->count('journey_hash'),
+                'plan_selections' => (clone $variantEvents)->where('event_name', 'plan_selected')->distinct()->count('journey_hash'),
+                'flexible_selections' => (clone $variantEvents)->where('event_name', 'plan_selected')->where('plan_code', 'flexible')->distinct()->count('journey_hash'),
+                'plan_20_selections' => (clone $variantEvents)->where('event_name', 'plan_selected')->where('plan_code', '20')->distinct()->count('journey_hash'),
+                'plan_26_selections' => (clone $variantEvents)->where('event_name', 'plan_selected')->where('plan_code', '26')->distinct()->count('journey_hash'),
+                'checkout_starts' => $variantAttempts->count(),
+                'paid_completions' => $paidAttempts->count(),
+                'paid_amount_cents' => (int) $paidAttempts->sum('payable_amount_cents'),
+            ];
+        }
 
         return [
             'from' => $fromDate->toDateString(),
@@ -66,6 +90,7 @@ class StorefrontFunnelReportService
                     fn (PaymentCheckoutAttempt $attempt): int => (int) data_get($attempt->pricing_snapshot, 'add_on_amount_cents', 0),
                 ),
             ],
+            'plan_experiment' => $planExperiment,
         ];
     }
 
