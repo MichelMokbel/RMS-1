@@ -2,7 +2,6 @@
 <?php
 use App\Models\Customer;
 use App\Models\DailyDishMenu;
-use App\Models\MealSubscription;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderSheet;
@@ -71,17 +70,22 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function loadRows(): void
     {
         $sheet = OrderSheet::with([
+            'entries' => fn ($query) => $query->withContent(),
             'entries.quantities',
             'entries.extras',
+            'entries.order',
         ])->whereDate('sheet_date', $this->sheetDate)->first();
 
         // Lookup: menu_item_id → daily_dish_menu_item_id (for mapping order items → qty columns)
         $menuItemToColumnId = collect($this->menuItems)->keyBy('menu_item_id')->map(fn ($m) => $m['id']);
         $emptyQty = collect($this->menuItems)->mapWithKeys(fn ($item) => [$item['id'] => 0])->all();
 
+        $locations = app(\App\Services\OrderSheet\OrderSheetLocationService::class)
+            ->forOrders(new \Illuminate\Database\Eloquent\Collection($sheet?->entries->pluck('order')->filter()->all() ?? []));
+
         if ($sheet && $sheet->entries->isNotEmpty()) {
             // Sheet has been saved before — load persisted entries
-            $this->rows = $sheet->entries->map(function (OrderSheetEntry $entry) use ($emptyQty) {
+            $this->rows = $sheet->entries->map(function (OrderSheetEntry $entry) use ($emptyQty, $locations) {
                 $qty = collect($this->menuItems)
                     ->mapWithKeys(fn ($item) =>
                         [$item['id'] => (int) optional($entry->quantities->firstWhere('daily_dish_menu_item_id', $item['id']))->quantity ?? 0]
@@ -99,34 +103,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'customer_id'     => $entry->customer_id,
                     'customer_name'   => $entry->customer_name,
                     'customer_search' => $entry->customer_name,
-                    'location'        => $entry->location ?? '',
+                    'location'        => filled($entry->location) ? $entry->location : $locations->get($entry->order_id, ''),
                     'qty'             => $qty,
                     'extras'          => $extras,
                     'remarks'         => $entry->remarks ?? '',
                 ];
             })->toArray();
         } else {
-            // No saved sheet yet — seed from active subscriptions (sorted by name)
-            $subscriptions = MealSubscription::with('customer')
-                ->where('status', 'active')
-                ->where('start_date', '<=', $this->sheetDate)
-                ->where(fn ($q) => $q->whereNull('end_date')->orWhere('end_date', '>=', $this->sheetDate))
-                ->get()
-                ->filter(fn ($s) => $s->customer)
-                ->unique('customer_id')
-                ->sortBy(fn ($s) => $s->customer->name);
-
-            $this->rows = $subscriptions->map(fn ($sub) => [
-                'db_id'           => null,
-                'order_id'        => null,
-                'customer_id'     => $sub->customer_id,
-                'customer_name'   => $sub->customer->name,
-                'customer_search' => $sub->customer->name,
-                'location'        => '',
-                'qty'             => $emptyQty,
-                'extras'          => [],
-                'remarks'         => '',
-            ])->values()->toArray();
+            $this->rows = [];
         }
 
         // Merge daily-dish orders for this date that aren't already linked to a sheet entry
@@ -140,6 +124,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->orderBy('customer_name_snapshot')
             ->get();
 
+        $locations = app(\App\Services\OrderSheet\OrderSheetLocationService::class)->forOrders($existingOrders);
         foreach ($existingOrders as $order) {
             $qty = $emptyQty;
             $extras = [];
@@ -150,7 +135,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 }
                 $colId = $menuItemToColumnId->get($item->menu_item_id);
                 if ($colId) {
-                    $qty[$colId] = (int) round($item->quantity);
+                    $qty[$colId] += (int) round($item->quantity);
                 } else {
                     $extras[] = [
                         'menu_item_id'   => $item->menu_item_id,
@@ -166,7 +151,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'customer_id'     => $order->customer_id,
                 'customer_name'   => $order->customer_name_snapshot,
                 'customer_search' => $order->customer_name_snapshot,
-                'location'        => '',
+                'location'        => $locations->get($order->id, ''),
                 'qty'             => $qty,
                 'extras'          => $extras,
                 'remarks'         => $order->notes ?? '',
@@ -351,6 +336,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     // ── Save ────────────────────────────────────────────────
+
+    public function exportExcel(): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        abort_unless(auth()->user()?->isActive() && auth()->user()->hasAnyRole(['admin', 'manager', 'staff', 'cashier']), 403);
+        $this->validate(['sheetDate' => ['required', 'date_format:Y-m-d']]);
+
+        return app(\App\Services\OrderSheet\OrderSheetExcelExport::class)
+            ->download($this->sheetDate, $this->menuItems, $this->rows);
+    }
 
     public function save(): void
     {
@@ -556,6 +550,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </button>
                 @endif
 
+                <button wire:click="exportExcel" wire:loading.attr="disabled"
+                    class="no-print min-h-[44px] flex items-center gap-2 px-3 py-2 bg-white border border-zinc-200 rounded-lg text-[13px] font-medium hover:bg-zinc-50 disabled:opacity-60">
+                    <span wire:loading.remove wire:target="exportExcel">{{ __('Export Excel') }}</span>
+                    <span wire:loading wire:target="exportExcel">{{ __('Exporting…') }}</span>
+                </button>
                 <button onclick="exportPDF()" class="no-print flex items-center gap-2 px-3 py-2 bg-white border border-zinc-200 rounded-lg text-[13px] font-medium hover:bg-zinc-50">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                     Print
@@ -628,7 +627,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <th class="border border-zinc-300 bg-white/60 align-bottom p-2 h-[120px] min-w-[220px]">
                                     <div class="text-left text-[11px] uppercase tracking-[0.15em] font-semibold text-zinc-600">Customer</div>
                                     <div class="text-right text-[10px] text-zinc-400 mt-1">
-                                        {{ collect($rows)->filter(fn($r) => filled($r['customer_name']))->count() }}/{{ count($rows) }} filled
+                                        {{ collect($rows)->filter(fn($r) => filled($r['customer_name']))->count() }} {{ __('entries') }}
                                     </div>
                                 </th>
                                 <th class="border border-zinc-300 bg-white/60 align-bottom p-1 h-[120px] w-[80px]">
@@ -657,7 +656,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </thead>
                         <tbody>
                             @foreach ($rows as $i => $row)
-                                <tr wire:key="row-{{ $i }}" class="group">
+                                <tr wire:key="row-{{ $i }}" class="group {{ blank($row['customer_name']) ? 'no-print' : '' }}">
 
                                     {{-- Customer --}}
                                     <td class="border border-zinc-300 px-3 py-2"
@@ -1331,6 +1330,17 @@ new #[Layout('components.layouts.app')] class extends Component {
             .replace(/class="[^"]*no-print[^"]*"/g, 'style="display:none"')
             : '<p>No data</p>';
 
+        const blankTable = table?.cloneNode(true);
+        if (blankTable) {
+            blankTable.querySelectorAll('.no-print, tfoot').forEach(el => el.remove());
+            blankTable.querySelector('thead th div:last-child')?.remove();
+            const body = blankTable.querySelector('tbody');
+            const columns = blankTable.querySelectorAll('thead th').length;
+            body.innerHTML = Array.from({length: 14}, () => '<tr>' + '<td>&nbsp;</td>'.repeat(columns) + '</tr>').join('');
+        }
+        const extraPages = blankTable ? Array.from({length: 2}, (_, index) =>
+            `<section class="blank-sheet"><h2>Additional orders — ${prettyDate} (${index + 1}/2)</h2>${blankTable.outerHTML}</section>`).join('') : '';
+
         win.document.write(`<!doctype html><html><head><meta charset="utf-8">
         <title>Layla Kitchen — ${prettyDate}</title>
         <style>
@@ -1363,6 +1373,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 letter-spacing: 0.06em;
                 font-family: 'Times New Roman', Times, serif;
             }
+            .blank-sheet { break-before: page; page-break-before: always; break-inside: avoid; }
+            .blank-sheet table { table-layout: fixed; font-size: 11px; }
+            .blank-sheet th { min-width: 0 !important; width: auto !important; height: 30mm !important; padding: 2px; overflow-wrap: anywhere; }
+            .blank-sheet td { height: 7mm; padding: 0 3px; }
+            .blank-sheet h2 { font-size: 16px; margin: 0 0 8px; }
             /* Strip all input styling — show only the value text */
             input {
                 border: none !important;
@@ -1387,6 +1402,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div style="text-align:right"><div class="sub">Generated ${new Date().toLocaleString('en-GB')}</div></div>
         </div>
         ${printTable}
+        ${extraPages}
         <script>setTimeout(()=>window.print(),300);<\/script>
         </body></html>`);
         win.document.close();

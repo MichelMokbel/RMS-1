@@ -23,6 +23,10 @@
         tfoot td { font-weight: 700; background: #f9fafb; font-family: Arial, sans-serif; font-size: 11px; }
         tfoot td.qty { font-size: 13px; }
         .section-label { margin: 16px 0 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #6b7280; font-family: Arial, sans-serif; }
+        @page { size: A4 landscape; margin: 14mm; }
+        .blank-sheet { break-before: page; page-break-before: always; break-inside: avoid; }
+        .blank-sheet td { height: 7mm; padding: 0 4px; }
+        .blank-sheet th { min-width: 0; }
         @media print {
             .no-print { display: none !important; }
             body { margin: 0; }
@@ -94,6 +98,23 @@
         </table>
     @endif
 
+    @for ($page = 1; $page <= 2; $page++)
+        <section class="blank-sheet">
+            <h2>{{ __('Additional orders') }} — {{ $date->format('d M Y') }} ({{ $page }}/2)</h2>
+            <table>
+                <thead><tr>
+                    <th>{{ __('Customer') }}</th><th>{{ __('Location') }}</th>
+                    @foreach ($menuItems as $item)<th>{{ $item['name'] }}</th>@endforeach
+                    <th>{{ __('Extras') }}</th><th>{{ __('Remarks') }}</th>
+                </tr></thead>
+                <tbody>
+                    @for ($row = 0; $row < 14; $row++)
+                        <tr>@for ($column = 0; $column < count($menuItems) + 4; $column++)<td>&nbsp;</td>@endfor</tr>
+                    @endfor
+                </tbody>
+            </table>
+        </section>
+    @endfor
     @include('reports.print-footer')
 </body>
 </html>

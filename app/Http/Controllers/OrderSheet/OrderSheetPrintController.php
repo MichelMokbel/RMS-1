@@ -20,9 +20,11 @@ class OrderSheetPrintController extends Controller
     private function buildData(Carbon $date): array
     {
         $sheet = OrderSheet::with([
+            'entries' => fn ($query) => $query->withContent(),
             'entries.quantities.dailyDishMenuItem.menuItem',
             'entries.extras',
             'entries.customer',
+            'entries.order',
         ])->whereDate('sheet_date', $date->toDateString())->first();
 
         $menu = DailyDishMenu::with(['items.menuItem'])
@@ -34,37 +36,38 @@ class OrderSheetPrintController extends Controller
             ? $menu->items
                 ->sortBy(fn ($item) => $rolePriority[$item->role] ?? 5)
                 ->map(fn ($item) => [
-                    'id'           => $item->id,
+                    'id' => $item->id,
                     'menu_item_id' => $item->menu_item_id,
-                    'name'         => $item->menuItem?->name ?? '—',
-                    'role'         => $item->role ?? '',
+                    'name' => $item->menuItem?->name ?? '—',
+                    'role' => $item->role ?? '',
                 ])->values()->all()
             : [];
 
+        $locations = app(\App\Services\OrderSheet\OrderSheetLocationService::class)
+            ->forOrders(new \Illuminate\Database\Eloquent\Collection($sheet?->entries->pluck('order')->filter()->all() ?? []));
         $entries = collect();
 
         if ($sheet && $sheet->entries->isNotEmpty()) {
             $entries = $sheet->entries
                 ->filter(fn ($e) => filled($e->customer_name))
-                ->map(function ($entry) use ($menuItems) {
-                    $qty = collect($menuItems)->mapWithKeys(fn ($item) =>
-                        [$item['id'] => (int) optional($entry->quantities->firstWhere('daily_dish_menu_item_id', $item['id']))->quantity ?? 0]
+                ->map(function ($entry) use ($menuItems, $locations) {
+                    $qty = collect($menuItems)->mapWithKeys(fn ($item) => [$item['id'] => (int) optional($entry->quantities->firstWhere('daily_dish_menu_item_id', $item['id']))->quantity ?? 0]
                     )->all();
 
                     $extras = $entry->extras
                         ->filter(fn ($e) => $e->quantity > 0)
                         ->map(fn ($e) => [
-                            'name'     => $e->menu_item_name,
+                            'name' => $e->menu_item_name,
                             'quantity' => $e->quantity,
                         ])->values()->all();
 
                     return [
                         'customer_name' => $entry->customer_name,
-                        'location'      => $entry->location ?? '',
-                        'remarks'       => $entry->remarks ?? '',
-                        'qty'           => $qty,
-                        'extras'        => $extras,
-                        'order_id'      => $entry->order_id,
+                        'location' => filled($entry->location) ? $entry->location : $locations->get($entry->order_id, ''),
+                        'remarks' => $entry->remarks ?? '',
+                        'qty' => $qty,
+                        'extras' => $extras,
+                        'order_id' => $entry->order_id,
                     ];
                 })
                 ->values();
@@ -74,8 +77,8 @@ class OrderSheetPrintController extends Controller
         $dishTotals = [];
         foreach ($menuItems as $item) {
             $dishTotals[$item['id']] = [
-                'name'     => $item['name'],
-                'role'     => $item['role'],
+                'name' => $item['name'],
+                'role' => $item['role'],
                 'quantity' => $entries->sum(fn ($e) => (int) ($e['qty'][$item['id']] ?? 0)),
             ];
         }
