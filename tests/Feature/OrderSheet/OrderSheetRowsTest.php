@@ -183,8 +183,17 @@ it('selects the customer into the requested row and saves with visible feedback'
         ->assertSet('rows.0.customer_name', $this->customer->name)
         ->assertSet('rows.0.customer_search', $this->customer->name)
         ->assertSet('rows.0.location', 'West Bay')
+        ->assertSet('rows.1.customer_name', '')
         ->call('save')->assertHasNoErrors()->assertSee('Sheet saved at');
     expect(OrderSheet::first()->entries()->first()->customer_id)->toBe($this->customer->id);
+});
+
+it('opens customer results from typing without a focus request', function () {
+    Volt::test('order-sheet')
+        ->set('rows.0.customer_search', $this->customer->name)
+        ->assertSet('activeSearchRow', 0)
+        ->assertSet('customerSearchTerm', $this->customer->name)
+        ->assertSee($this->customer->name);
 });
 
 it('creates a customer with name and phone and inserts them into the sheet', function () {
@@ -231,12 +240,16 @@ it('renders only the active layout and keeps common row actions local', function
     $desktop = Volt::test('order-sheet');
     expect(substr_count($desktop->html(), 'wire:key="row-'))->toBe(5)
         ->and($desktop->html())->not->toContain('wire:key="mobile-row-')
+        ->and($desktop->html())->toContain('data-order-sheet-customer-search')
+        ->not->toContain('wire:focus="focusCustomerSearch')
         ->and($desktop->html())->toContain('x-on:click="revealRow"')
         ->not->toContain('wire:click="bump(');
 
     $mobile = Volt::test('order-sheet')->call('setMobileLayout', true);
     expect($mobile->html())->toContain('wire:key="mobile-row-')
         ->not->toContain('wire:key="row-')
+        ->not->toContain('wire:focus="focusCustomerSearch')
+        ->and($mobile->html())->toContain('x-on:click="revealRow"')
         ->and($mobile->html())->toContain('buildOrderSheetPrintTable()');
 });
 

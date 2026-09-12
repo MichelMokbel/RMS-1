@@ -324,12 +324,6 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     // ── Customer search ──────────────────────────────────────
 
-    public function focusCustomerSearch(int $rowIndex): void
-    {
-        $this->activeSearchRow    = $rowIndex;
-        $this->customerSearchTerm = $this->rows[$rowIndex]['customer_search'] ?? '';
-    }
-
     public function updatedCustomerSearchTerm(): void
     {
         unset($this->customerResults);
@@ -619,14 +613,6 @@ new #[Layout('components.layouts.app')] class extends Component {
          totalItems: @js(array_sum($this->dishTotals) + collect($this->extraTotals)->sum('qty')),
          dishTotals: @js($this->dishTotals),
          rowTotals: @js(collect($rows)->map(fn ($row) => array_sum($row['qty']) + collect($row['extras'])->sum('quantity'))->values()),
-         adjustQuantity(current, delta, itemId, rowIndex) {
-             const next = Math.max(0, Number(current) + delta);
-             const applied = next - Number(current);
-             this.totalItems += applied;
-             this.dishTotals[itemId] = Number(this.dishTotals[itemId] || 0) + applied;
-             this.rowTotals[rowIndex] = Number(this.rowTotals[rowIndex] || 0) + applied;
-             return next;
-         },
          revealRow() {
              if (this.visibleRows < this.totalRows) {
                  this.visibleRows++;
@@ -634,6 +620,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                  return;
              }
              this.$wire.addRow();
+         },
+         adjustQuantity(current, delta, itemId, rowIndex) {
+             const next = Math.max(0, Number(current) + delta);
+             const applied = next - Number(current);
+             this.totalItems += applied;
+             this.dishTotals[itemId] = Number(this.dishTotals[itemId] || 0) + applied;
+             this.rowTotals[rowIndex] = Number(this.rowTotals[rowIndex] || 0) + applied;
+             return next;
          },
          isMobile: @js($mobileLayout),
          headerObserver: null,
@@ -700,6 +694,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         .os-grid-btn { display:flex; align-items:center; justify-content:center; width:100%; aspect-ratio:1; border-radius:6px; font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; border:none; cursor:pointer; transition:background 0.1s; }
         .os-grid-btn.empty { background:#f4f4f5; color:#a1a1aa; }
         .os-grid-btn.filled { color:#fff; }
+        .order-sheet-scroll thead th {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+        }
         /* Help Bot trigger is in our top bar — hide the floating one on this page */
         [x-data*="helpBotWidget"] > button:first-child { display: none !important; }
         @@media print {
@@ -838,9 +837,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                 </div>
 
-                <div class="px-6 pb-6 min-h-0 flex-1 overflow-auto">
+                <div class="order-sheet-scroll px-6 pb-6 min-h-0 flex-1 overflow-auto">
                     <table class="w-full border-collapse" style="min-width: 880px;">
-                        <thead class="sticky top-0 z-20 bg-[#f5f3ee]">
+                        <thead class="bg-[#f5f3ee]">
                             <tr>
                                 <th class="border border-zinc-300 bg-white/60 align-bottom p-2 h-[120px] min-w-[220px]">
                                     <div class="text-left text-[11px] uppercase tracking-[0.15em] font-semibold text-zinc-600">Customer</div>
@@ -888,7 +887,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         @endif
                                         <div class="flex items-center gap-1">
                                             <input value="{{ $row['customer_search'] }}" wire:model.live.debounce.250ms="rows.{{ $i }}.customer_search"
-                                                wire:focus="focusCustomerSearch({{ $i }})"
+                                                data-order-sheet-customer-search
                                                 placeholder="Search customer…"
                                                 autocomplete="off"
                                                 class="flex-1 min-w-0 bg-transparent focus:outline-none font-hand text-[20px] text-blue-700 leading-none placeholder:text-zinc-300 placeholder:font-sans placeholder:text-[13px]" />
@@ -1071,7 +1070,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <div class="no-print mt-3">
                         <button x-on:click="revealRow"
                             class="flex items-center gap-2 px-3 py-2 text-[13px] font-medium text-zinc-700 hover:text-zinc-900 border border-dashed border-zinc-300 hover:border-zinc-500 rounded-lg transition">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                            <span aria-hidden="true">+</span>
                             Add row
                         </button>
                     </div>
@@ -1141,7 +1140,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             {{-- Customer name input (always editable inline) --}}
                             <div class="flex-1 min-w-0 relative">
                                 <input value="{{ $row['customer_search'] }}" wire:model.live.debounce.250ms="rows.{{ $i }}.customer_search"
-                                    wire:focus="focusCustomerSearch({{ $i }})"
+                                    data-order-sheet-customer-search
                                     placeholder="Enter customer…"
                                     autocomplete="off"
                                     class="w-full font-semibold text-[15px] bg-transparent focus:outline-none placeholder:text-zinc-300 placeholder:font-normal" />
@@ -1318,8 +1317,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             <button x-on:click="revealRow"
                 class="mt-3 w-full flex items-center justify-center gap-2 px-3 py-3 text-[13px] font-medium text-zinc-700 bg-white border border-dashed border-zinc-300 rounded-xl active:bg-zinc-50">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-                Add person
+                <span aria-hidden="true">+</span>
+                Add row
             </button>
 
             @else
@@ -1345,7 +1344,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <tr wire:key="grid-row-{{ $i }}" class="border-t border-zinc-200/60" x-show="{{ $i }} < visibleRows">
                                 <td class="px-1 py-1.5">
                                     <input value="{{ $row['customer_search'] }}" wire:model.live.debounce.250ms="rows.{{ $i }}.customer_search"
-                                        wire:focus="focusCustomerSearch({{ $i }})"
+                                        data-order-sheet-customer-search
                                         placeholder="Name"
                                         autocomplete="off"
                                         class="w-full text-[12px] font-semibold bg-transparent focus:outline-none focus:bg-white rounded px-1 py-0.5 placeholder:text-zinc-300 placeholder:font-normal" />
@@ -1421,9 +1420,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             <button x-on:click="revealRow"
                 class="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2.5 text-[13px] font-medium text-zinc-700 bg-white border border-dashed border-zinc-300 rounded-xl active:bg-zinc-50">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-                Add person
+                <span aria-hidden="true">+</span>
+                Add row
             </button>
+
             <div class="mt-1.5 text-[10px] text-zinc-400 text-center">Tap = +1 · hold = −1 · "…" for extras / notes</div>
 
             {{-- Compact drawer --}}
