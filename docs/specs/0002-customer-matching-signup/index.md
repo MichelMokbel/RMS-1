@@ -32,6 +32,7 @@ RMS resolves a customer when signup completes, without making uncertain matches 
 * **AC-12**: Account reads and mutations enforce active login, customer role, token ability, and server resolved ownership. Staff cannot use the customer signup flow to gain another role. Nonadmins cannot review or merge. Canonical customer resolution never grants arbitrary access just because a caller supplies a source or destination ID.
 * **AC-13**: The website uses RMS account and verification results, preserves the cart during registration, login, verification, or retry, and never shows internal duplicate review as a checkout prerequisite. A revoked source login loses cached private data and must sign in using the surviving account. No browser field grants identity or marks payment paid.
 * **AC-14**: Rollout preserves existing links and historical records. Restart safe scans identify unresolved accounts, unreliable verification timestamps, missing merge coverage, and review work that was not dispatched. SMS activation has a usable authenticated verification path that does not require already being verified. Both applications must pass the applicable verification matrix before the new identity path is enabled for live payments.
+* **AC-15**: New customer registration replaces the free text delivery address with a required Google Maps pin inside Qatar and a required building or villa detail. Search, map movement, and current location may set the pin. Unit or floor and delivery instructions remain optional. The server validates the coordinates against the Qatar boundary and never trusts the browser country label. A location outside Qatar, a missing pin, or a missing building detail cannot create an account. The selected location remains profile data and does not create a delivery area, fee, eligibility rule, or order fulfillment workflow.
 
 ## Decision
 
@@ -53,8 +54,8 @@ Identifiers reference the actual migrated column types. Existing user and custom
 
 | Record | Identity and relationships | Fields and constraints |
 |---|---|---|
-| users, existing | id; nullable unique customer_id references customers.id. At most one login per customer and one customer per login | Preserve login fields, role assignments, status, and portal profile fields. Lock before assigning customer_id. No new login entity |
-| customers, existing | id; add nullable merged_into_customer_id referencing customers.id with restricted deletion | A customer may have many historical sources. No self reference or cycle. Only the merge service writes the destination; a merged source remains inactive and cannot be reactivated through the ordinary toggle |
+| users, existing | id; nullable unique customer_id references customers.id. At most one login per customer and one customer per login | Add nullable portal delivery latitude, longitude, Google place ID, building detail, unit or floor, and instructions. New registrations require coordinates and building detail. Existing accounts remain compatible. Lock before assigning customer_id. No new login entity |
+| customers, existing | id; add nullable merged_into_customer_id referencing customers.id with restricted deletion | Add the matching nullable delivery location fields. A customer may have many historical sources. No self reference or cycle. Only the merge service writes the destination; a merged source remains inactive and cannot be reactivated through the ordinary toggle |
 | customer_phone_verification_challenges, existing | id; user_id and nullable customer_id retain their original meaning. A user has many challenges | Reuse purpose, phone_e164, verified_at, cancelled_at, provider, attempt and send limits, expiry, and token handling. Add the purpose portal_phone_verify as a supported value, not a new table. Do not reassign old proof records during merge |
 | customer_match_reviews, new | id; required user_id, customer_id, candidate_customer_id; nullable reviewed_by references users.id | Required reason_codes JSON array, profile_fingerprint string(64), status string(20), and timestamps. Status is pending, merged, or different. Nullable ai_suggestion JSON, ai_checked_at, decision_note text, reviewed_at, and merge_audit_id referencing accounting_audit_logs.id. Unique user_id plus customer_id plus candidate_customer_id. customer_id differs from candidate_customer_id |
 | accounting_audit_logs, existing | id; actor, subject type and ID, optional company, structured payload, and created_at | Record customer resolution, verification provenance, scan completion, review decisions, and merge before and after references. Reuse the existing service. A required identity mutation cannot silently succeed if audit storage is missing |
@@ -106,6 +107,18 @@ An active unlinked portal user with an already issued valid token receives HTTP 
 Once linked, automatic resolution returns the existing active owner. It does not rerun matching on every login, email change, or phone change. Inactive users are not repaired or reactivated. An inactive customer without an approved merge destination is a support case, not an instruction to create another financial identity.
 
 Exact repeat registration with the same email preserves the existing 409 conflict contract and creates no second user or customer. Do not return an existing account's access token from email equality or a repeated public signup payload. If signup committed but the response was lost, normal login resumes that same account. Repeated OTP submission may return the established inactive challenge error, but cannot repeat customer creation.
+
+### Qatar delivery location capture
+
+Use Google Maps JavaScript API with the current Places widget. Load it only when the registration location picker is opened. Search results are restricted to Qatar and the map camera is derived from the bundled Qatar boundary. The customer may search, use browser location, tap the map, or move the map under a fixed center pin. The initial Doha camera position is not a selected location. The customer must explicitly choose Use this location, and any later search, current location result, or map movement clears that confirmation. Map failure keeps the form intact and offers a retry. Browser location denial falls back to the Qatar map rather than failing registration.
+
+The browser sends a delivery_location object containing WGS84 latitude, longitude, required building or villa detail, optional unit or floor, optional delivery instructions, and an optional Google place ID. Coordinates come from the explicitly confirmed pin. A place search result moves the same pin and does not create a second address source. Google generated display names and formatted addresses are transient picker aids and are not sent to RMS or retained. Reverse geocoding failure does not prevent confirmation of an otherwise valid Qatar pin.
+
+RMS accepts finite scalar coordinates in their global ranges, normalizes them to six decimal places, then validates the normalized point against the bundled versioned Qatar ADM0 MultiPolygon. Polygon edges are inside and holes are outside. The checked GeoJSON records its dataset, source URL, license, retrieval date, upstream revision and checksum. The same checked artifact and point in polygon semantics are used by RMS and the website. Missing or invalid boundary data fails closed. The browser repeats this check for immediate feedback, but only the server result is authoritative.
+
+Store the portal fields before phone verification so verification retries retain the location. When registration creates or links the customer, atomically copy the complete current portal location tuple into the customer in the existing ownership transaction. Keep the existing delivery_address string as a compatible human readable summary generated only by RMS from customer entered building, unit, instructions, and a canonical coordinate URL. Existing order and subscription snapshots continue to receive that summary, so no new delivery workflow or snapshot model is introduced. Never accept a browser provided coordinate URL. A later text only staff edit replaces delivery_address and clears the structured tuple. A customer merge preserves the destination tuple as a unit. Routine login and retry never overwrite a linked customer's location.
+
+The browser key is stored outside source control and has website restrictions for the exact environment origins plus API restrictions for Maps JavaScript and Places. Development and production use separate keys. Location details and coordinates are personal data. Do not send them to analytics, Gemini, logs, exception messages, or matching fingerprints. The public privacy policy explains the Google Maps use and links to Google's terms and privacy policy.
 
 ### Matching profile fingerprint
 
@@ -189,11 +202,11 @@ The existing registration and account endpoints keep their methods and main resp
 
 | Surface | Method and inputs | Output | Access and errors |
 |---|---|---|---|
-| /api/customer/auth/register/start | POST existing name, email, password, phone, optional address | Existing registration token and masked phone, or immediate bypass token and linked account | Existing throttle. 409 existing email, 422 invalid input, 503 inability to commit or send. A request cannot select bypass |
+| /api/customer/auth/register/start | POST existing name, email, password, phone, and delivery_location object with latitude, longitude, building, optional place_id, unit, and instructions. The object is mandatory after the server controlled cutover switch is enabled | Existing registration token and masked phone, or immediate bypass token and linked account | Existing throttle. Stable nested 422 errors for invalid input or a location outside Qatar, 409 existing email, 503 inability to commit or send. A request cannot select bypass or opt out of the location requirement |
 | /api/customer/auth/register/verify | POST existing registration_token and code | Existing token and now linked account with phone_verification | Challenge scope and expiry. Existing 409 bypass and 422 invalid or consumed challenge behavior; no duplicate identity effect |
 | /api/customer/auth/register/resend | POST existing registration_token | Existing send result | Existing cooldown, count, token, and bypass errors |
 | /api/customer/auth/login | POST existing credentials | Token and account; resolve an active unlinked portal user as described above | Credential and active role checks. Never return a token to a disabled source account |
-| /api/customer/me | GET | Existing account plus phone_verification; preserve the unlinked envelope above for a legacy active unlinked user | HTTP 200 for a valid active portal token, linked or unlinked. Read only, private, no cache |
+| /api/customer/me | GET | Existing account plus phone_verification and optional customer.delivery_location; preserve existing keys and the unlinked envelope for a legacy active unlinked user | HTTP 200 for a valid active portal token, linked or unlinked. Read only, private, no cache |
 | /api/customer/profile/phone/verify-current/start | POST no phone or customer ID | verification_token, effective masked phone, existing challenge timing | Active customer token, but not the phone verified middleware. 409 bypass or already verified, 422 no usable phone, 429 throttle, 503 send failure |
 | /api/customer/profile/phone/verify-current/verify | POST verification_token and code | Updated account and genuine verification result | Token user, original subject, purpose, and current phone must match. 422 invalid or expired proof, 409 stale phone or bypass |
 | /api/customer/profile/phone/verify-current/resend | POST verification_token | Existing resend timing and masked phone | Same authenticated user and purpose; existing send limits and cooldown |
@@ -225,6 +238,7 @@ Phone change and current phone verification must bind the decrypted token's user
 | Read membership balance | Remaining allowance and funding sequence | Distinct retained block and booking history under the canonical customer; formula and original prices from 0001 |
 | Check promotion limits | First purchase state and used counts | Union of completed history and unresolved reservations across canonical customer and merged sources |
 | Recover background work | Accounts needing a candidate scan | Current active resolved account fingerprint, latest customer.identity.resolved or customer.matching.profile_changed event, and absence of a matching customer.matching.scan_completed event |
+| Capture delivery location | Coordinates, location summary, building detail, unit, instructions, and optional place ID | Customer confirmed Google Maps pin and fields, validated by the server Qatar polygon. The browser country label is never authoritative |
 
 ### Authorization, failure handling, and observability
 
@@ -250,6 +264,8 @@ For a disabled source login, clear its bearer token and cached private history. 
 
 Reuse current page components and styles. Verify 360 px, 768 px, and desktop layouts, keyboard labels, loading states, duplicate submit protection, and visible modal actions. These authenticated surfaces add no public SEO or indexing work.
 
+The registration modal presents the location as one clear step after account details. Keep the map touch friendly, keep the center pin visually stable while the map moves, provide search and current location actions with text labels, and announce pin status through an aria live region. Do not require browser location permission. Disable registration submission until a valid Qatar pin and building detail are present. Do not expose raw coordinates as ordinary form copy.
+
 ### Configuration
 
 * CUSTOMER_MATCHING_ENABLED, new, defaults false until both applications and database checks are ready. It controls historical automatic linking and new candidate suggestions only. When false, completed signup and active unlinked account resolution still create an owned fallback customer, existing links remain usable, and no candidate scans or Gemini requests run. Existing reviews and authorized manual merge remain available. Workers recheck the setting before processing or storing suggestions. Reenabling resumes missing current scans but never automatically rematches an already owned account.
@@ -257,6 +273,8 @@ Reuse current page components and styles. Verify 360 px, 768 px, and desktop lay
 * CUSTOMER_PHONE_VERIFICATION_BYPASS, existing, remains the temporary owner accepted policy switch. A cached configuration refresh and worker restart must take effect together during a switch.
 * Existing phone normalization and SMS timing settings remain authoritative.
 * Existing services.gemini configuration and AiProviderInterface remain authoritative. No new Gemini credentials or model choice is assumed.
+* GOOGLE_MAPS_BROWSER_KEY configures only the customer website browser key. Keep it outside source control. Development allows only the approved local origins and the development orders domain. Production receives a separate key restricted to its final orders origin.
+* CUSTOMER_DELIVERY_LOCATION_REQUIRED is a server owned rollout switch and defaults false. Deploy additive RMS acceptance first, deploy the compatible website picker second, then enable the switch at cutover. Requests cannot override it. Existing accounts and already issued signup challenges may complete without a structured location.
 
 Launch checks require the customer role, customer code sequence, customer and audit tables, unique users.customer_id, a shared queue and scheduler for eventual review, and a configured SMS provider before bypass is disabled. Queue failure cannot block a committed signup.
 
@@ -271,6 +289,7 @@ The full matrix is in [verify.md](verify.md).
 * Delayed payment after merge, both membership queues, and duplicate prior promotion uses prove **AC-9**, **AC-10**, and **AC-11** before those payment slices are enabled.
 * Bypass shutdown, current phone verification, retained cart, revoked login, and the proxy conflict envelope prove **AC-3**, **AC-13**, and **AC-14**.
 * Matching disabled and reenabled, a legacy unlinked token continuing through quote without another login, and fingerprint changes versus excluded profile fields prove **AC-1**, **AC-5**, **AC-6**, **AC-7**, **AC-12**, **AC-13**, and **AC-14**.
+* A searched Qatar place, a dragged pin, browser current location, denied browser location, default center rejection, explicit confirmation invalidation, Qatar edges and islands, polygon holes, outside country coordinates, missing coordinates, missing building details, provider failure, stale provider responses, legacy signup completion, and direct API forgery prove **AC-15** without changing customer matching or delivery eligibility.
 
 ## Migration plan
 
@@ -298,6 +317,7 @@ The Tracer Bullet approach proves a thin real customer path through the website,
 5. Add the authenticated current phone verification path, matching website proxies, bypass shutdown behavior, phone change token binding, and migration inventory checks, satisfies **AC-3**, **AC-12**, **AC-13**, and **AC-14**.
 6. In each payment, membership, and promotion slice, implement the corresponding reference matrix extension and prove merged ownership, preserved history, one customer queue, combined promotion limits, and delayed callback behavior before enabling that slice, satisfies **AC-8**, **AC-9**, **AC-10**, **AC-11**, and **AC-14**.
 7. Run the complete current domain suites, scoped formatting and builds, website mock integration checks, and the release matrix. Inspect the final diff for secrets and unrelated work, satisfies **AC-1**, **AC-2**, **AC-3**, **AC-4**, **AC-5**, **AC-6**, **AC-7**, **AC-8**, **AC-9**, **AC-10**, **AC-11**, **AC-12**, **AC-13**, and **AC-14**.
+8. Add additive profile fields and optional backend acceptance, the shared pinned Qatar boundary and validation, the Google Maps location picker, compatible server generated delivery address summary, privacy notice, restricted environment key setup, and focused registration tests. Deploy RMS first, deploy the website second, then enable the server owned requirement, satisfies **AC-15**.
 
 ## Consequences
 
@@ -313,6 +333,7 @@ The Tracer Bullet approach proves a thin real customer path through the website,
 * Uncertain matches can create real duplicate customer records that need eventual admin review.
 * Disabling bypass can require verification for existing accounts whose old timestamps have no genuine proof.
 * Review, canonical owner resolution, and merge tests add work to every future customer owned integration.
+* New registration requires a confirmed pin after cutover. Google Maps failure needs a clear retry path, while a reverse geocoding failure alone must not block a customer who can confirm the pin and enter building details.
 
 ## Follow-up
 
@@ -320,3 +341,4 @@ The Tracer Bullet approach proves a thin real customer path through the website,
 * [ ] Confirm actual deployed schema, configuration, SMS provider readiness, queue, and session storage during implementation. No environment changes are authorized by this document.
 * [ ] Complete the membership, promotion, and payment merge extensions in their owning slices before those features go live.
 * [ ] Revisit the temporary bypass exception as soon as SMS is configured, using the rollout procedure above.
+* [ ] Create a separate restricted production browser key when the production orders origin is ready. Do not reuse the development key.

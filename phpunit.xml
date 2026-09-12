@@ -34,6 +34,7 @@
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SKIPCASH_ENABLED" value="false" force="true"/>
         <env name="CUSTOMER_DIRECT_ORDER_ENABLED" value="true" force="true"/>
+        <env name="CUSTOMER_DELIVERY_LOCATION_REQUIRED" value="false" force="true"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>

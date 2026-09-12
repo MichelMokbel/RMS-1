@@ -5,8 +5,6 @@ use App\Models\User;
 use Spatie\Permission\Models\Role;
 
 use function Pest\Laravel\actingAs;
-use function Pest\Laravel\getJson;
-use function Pest\Laravel\postJson;
 
 function adminCustomerUser(): User
 {
@@ -69,4 +67,35 @@ it('auto-generates customer code when api payload omits it', function () {
     $customer = Customer::query()->where('name', 'API Generated Customer')->firstOrFail();
 
     expect($customer->customer_code)->toBe('CUST-0001');
+});
+
+it('clears a structured pin when staff replace the delivery address with text', function (): void {
+    $user = adminCustomerUser();
+    $customer = Customer::factory()->create([
+        'delivery_address' => 'Pinned address',
+        'delivery_latitude' => '25.285447',
+        'delivery_longitude' => '51.531040',
+        'delivery_place_id' => 'place-id',
+        'delivery_building' => 'Building 12',
+        'delivery_unit' => 'Floor 3',
+        'delivery_instructions' => 'Call on arrival',
+    ]);
+
+    actingAs($user)->putJson('/api/customers/'.$customer->id, [
+        'customer_code' => $customer->customer_code,
+        'name' => $customer->name,
+        'customer_type' => $customer->customer_type,
+        'phone' => $customer->phone,
+        'email' => $customer->email,
+        'delivery_address' => 'Replacement text address',
+        'credit_limit' => $customer->credit_limit,
+        'credit_terms_days' => $customer->credit_terms_days,
+        'is_active' => true,
+    ])->assertOk();
+
+    expect($customer->fresh()->delivery_address)->toBe('Replacement text address')
+        ->and($customer->fresh()->delivery_latitude)->toBeNull()
+        ->and($customer->fresh()->delivery_longitude)->toBeNull()
+        ->and($customer->fresh()->delivery_place_id)->toBeNull()
+        ->and($customer->fresh()->delivery_building)->toBeNull();
 });

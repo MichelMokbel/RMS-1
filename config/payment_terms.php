@@ -28,5 +28,12 @@ return [
             'content_path' => 'resources/legal/payment-terms/2026-09-09-v3.md',
             'content_hash' => '1e68c9f496406d1ac26ecec6f74e6ef68968e3e8f5058c35761a2294d4e82fd4',
         ],
+        [
+            'version' => '2026-09-12-v4',
+            'effective_at' => '2026-09-12T00:00:00+00:00',
+            'url' => env('PAYMENT_TERMS_URL', 'https://layla-kitchen.com/terms-and-conditions'),
+            'content_path' => 'resources/legal/payment-terms/2026-09-12-v4.md',
+            'content_hash' => 'a4733d5ef4f30e22f775f398637c9011df96e15f9cac03d163a7a74772c9d074',
+        ],
     ],
 ];

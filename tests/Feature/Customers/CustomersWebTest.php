@@ -2,8 +2,8 @@
 
 use App\Models\Customer;
 use App\Models\User;
-use Spatie\Permission\Models\Role;
 use Livewire\Volt\Volt;
+use Spatie\Permission\Models\Role;
 
 function adminCustomer(): User
 {
@@ -50,4 +50,47 @@ it('search filter works', function () {
     Volt::test('customers.index')
         ->set('search', 'Acme Unique Name')
         ->assertSee('Acme Unique Name');
+});
+
+it('preserves a structured pin when staff edit another customer field', function (): void {
+    $user = adminCustomer();
+    $customer = Customer::factory()->create([
+        'delivery_address' => 'Villa 238, https://www.google.com/maps?q=25.285447,51.531040',
+        'delivery_latitude' => '25.285447',
+        'delivery_longitude' => '51.531040',
+        'delivery_building' => 'Villa 238',
+    ]);
+
+    $this->actingAs($user);
+
+    Volt::test('customers.edit', ['customer' => $customer])
+        ->set('name', 'Updated customer name')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($customer->fresh()->delivery_latitude)->toBe('25.285447')
+        ->and($customer->fresh()->delivery_longitude)->toBe('51.531040')
+        ->and($customer->fresh()->delivery_building)->toBe('Villa 238');
+});
+
+it('clears a structured pin when staff replace its text address', function (): void {
+    $user = adminCustomer();
+    $customer = Customer::factory()->create([
+        'delivery_address' => 'Villa 238, https://www.google.com/maps?q=25.285447,51.531040',
+        'delivery_latitude' => '25.285447',
+        'delivery_longitude' => '51.531040',
+        'delivery_building' => 'Villa 238',
+    ]);
+
+    $this->actingAs($user);
+
+    Volt::test('customers.edit', ['customer' => $customer])
+        ->set('delivery_address', 'Replacement text address')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($customer->fresh()->delivery_address)->toBe('Replacement text address')
+        ->and($customer->fresh()->delivery_latitude)->toBeNull()
+        ->and($customer->fresh()->delivery_longitude)->toBeNull()
+        ->and($customer->fresh()->delivery_building)->toBeNull();
 });

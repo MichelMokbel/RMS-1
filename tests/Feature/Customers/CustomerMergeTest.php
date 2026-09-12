@@ -23,8 +23,18 @@ it('deactivates the source portal user when the target already has one', functio
     $admin = makeCustomerMergeAdmin();
     $service = app(CustomerMergeService::class);
 
-    $source = Customer::factory()->create(['name' => 'Source Customer']);
-    $target = Customer::factory()->create(['name' => 'Target Customer']);
+    $source = Customer::factory()->create([
+        'name' => 'Source Customer',
+        'delivery_latitude' => '25.300000',
+        'delivery_longitude' => '51.500000',
+        'delivery_building' => 'Source Villa',
+    ]);
+    $target = Customer::factory()->create([
+        'name' => 'Target Customer',
+        'delivery_latitude' => '25.285447',
+        'delivery_longitude' => '51.531040',
+        'delivery_building' => 'Destination Villa',
+    ]);
 
     $sourceUser = User::factory()->create([
         'customer_id' => $source->id,
@@ -43,6 +53,9 @@ it('deactivates the source portal user when the target already has one', functio
     expect($source->fresh()->is_active)->toBeFalse();
     expect($source->fresh()->merged_into_customer_id)->toBe($target->id);
     expect($target->fresh()->is_active)->toBeTrue();
+    expect($target->fresh()->delivery_latitude)->toBe('25.285447');
+    expect($target->fresh()->delivery_longitude)->toBe('51.531040');
+    expect($target->fresh()->delivery_building)->toBe('Destination Villa');
 });
 
 it('moves the source portal user to the target when the target has no user', function () {

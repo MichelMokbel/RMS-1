@@ -25,6 +25,7 @@ The feature handles personal data and access to existing financial and membershi
 | Matching disabled | Keep fallback customer creation and existing links; pause historical automatic linking and new suggestions |
 | Existing unlinked token | Preserve the existing HTTP 200 account shape, session, and cart; resolve ownership before the next quote or checkout |
 | Matching version | Versioned digest of account ID, canonical customer ID, normalized name, and phone; exclude email and address |
+| Delivery location | Google Maps pin, required building detail, Qatar only server validation, and no delivery eligibility or fee behavior |
 
 The exception replaces the earlier requirement for genuine SMS at automatic linking only while the server bypass setting is enabled. It does not authorize taking over an attached login or treating provider phone data as proof.
 
@@ -72,9 +73,13 @@ Preserve event evidence and resolve its current owner through the merge chain. R
 
 Keep suggested candidate limits, local string comparison, queue retries, and technical error handling as implementation recommendations. They are not new business eligibility or customer approval rules. No new external library, provider, hosting, or agent tool is required. (basis: the existing AiProviderInterface and GeminiProvider)
 
+The owner selected Google Maps for delivery location capture on 2026-09-11 and authorized its setup in the existing labeled GCP project. Use the current Places widget because it provides accessible mobile search and automatic session handling. Use a fixed center pin because it works well with one hand on small screens and avoids a tiny draggable target. Repeat the Qatar check on the server because browser restrictions and country labels are user controlled. Keep location capture separate from delivery coverage because the business has not introduced delivery zones, fees, or address eligibility. Persist customer entered details and the customer confirmed coordinate only. Keep provider formatted addresses transient so the durable operational snapshot does not rely on a broader Google Places retention interpretation. (basis: owner decision, Google Maps JavaScript and Places documentation, service specific terms, and the existing portal address contract)
+
 ## Independent cross check
 
 A read only review by gpt-5.5 found three decision gaps: the matching switch boundary, account reads using an existing unlinked token, and the exact fingerprint inputs. The owner approved the recommended clarifications on 2026-08-30. They are incorporated in the design and verification matrix; this records approval of those fixes, not acceptance of the whole specification or proof of implementation.
+
+A second read only review by gpt-6-astra on 2026-09-12 cross checked the Google Maps amendment. It identified boundary provenance, provider content retention, explicit pin confirmation, exact field contracts, atomic tuple handling, staged cutover, and failure and accessibility cases. The owner instructed the implementation to proceed after this cross check. The accepted corrections are incorporated here and in the verification matrix without adding delivery zones, fees, eligibility, or fulfillment behavior.
 
 After those clarifications were applied, the owner separately accepted the complete revised design on 2026-08-30. Scope feature 8 now records its completed design step and remaining implementation milestones. The specification stays Proposed until implementation starts; no application behavior or production setting changed through this acceptance.
 
@@ -125,5 +130,7 @@ This inventory is code evidence, not an assertion that the planned behavior is i
 * Least privilege, data minimization, and explicit risk acceptance.
 * Staged migration with additive schema and compatible rollback.
 * Immutable event identity and idempotent processing.
+* Google Maps Platform API security guidance, current Places widget guidance, and Maps content attribution requirements.
+* geoBoundaries gbOpen Qatar ADM0 boundary QAT-ADM0-15585745 at upstream revision 9469f09, CC BY 4.0.
 
-References use inspected project sources and named practices. No new web research or provider call was needed for this enhancement.
+References use inspected project sources, the named geoBoundary artifact, and current provider documentation. GCP APIs and a restricted development browser key were configured during implementation; no provider generated address content is retained by this design.

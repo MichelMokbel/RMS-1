@@ -1,0 +1,11 @@
+{
+  "dataset": "geoBoundaries gbOpen",
+  "boundary_id": "QAT-ADM0-15585745",
+  "country": "Qatar",
+  "administrative_level": "ADM0",
+  "upstream_revision": "9469f09",
+  "source_url": "https://github.com/wmgeolab/geoBoundaries/blob/9469f09/releaseData/gbOpen/QAT/ADM0/geoBoundaries-QAT-ADM0_simplified.geojson",
+  "license": "CC BY 4.0",
+  "retrieved_at": "2026-09-12",
+  "sha256": "9afaa263f5f2385de40208af9ea0de55a5bc8d9384df241efd7be86b1793eaca"
+}

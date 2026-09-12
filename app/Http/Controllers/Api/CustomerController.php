@@ -6,11 +6,16 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\CustomerStoreRequest;
 use App\Http\Requests\CustomerUpdateRequest;
 use App\Models\Customer;
+use App\Services\Customers\CustomerDeliveryLocationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class CustomerController extends Controller
 {
+    public function __construct(
+        private readonly CustomerDeliveryLocationService $deliveryLocations,
+    ) {}
+
     public function index(Request $request)
     {
         $light = $request->boolean('light', true);
@@ -60,6 +65,9 @@ class CustomerController extends Controller
     public function update(CustomerUpdateRequest $request, Customer $customer)
     {
         $data = $request->validated();
+        if ($request->exists('delivery_address')) {
+            $data += $this->deliveryLocations->clearedCustomerLocationAttributes();
+        }
         $data = $this->applyCreditPolicy($data);
         if (\Illuminate\Support\Facades\Schema::hasColumn('customers', 'updated_by')) {
             $data['updated_by'] = Auth::id();

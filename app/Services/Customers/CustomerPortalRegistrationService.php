@@ -15,10 +15,11 @@ class CustomerPortalRegistrationService
         private readonly CustomerIdentityResolver $identities,
         private readonly PhoneNumberService $phoneNumbers,
         private readonly CustomerPhoneVerificationService $verification,
+        private readonly CustomerDeliveryLocationService $deliveryLocations,
     ) {}
 
     /**
-     * @param  array{name:string,email:string,password:string,phone:string,address?:string|null}  $data
+     * @param  array{name:string,email:string,password:string,phone:string,address?:string|null,delivery_location?:array<string,mixed>|null}  $data
      * @return array{registration_token:string,user:User,challenge:CustomerPhoneVerificationChallenge}
      */
     public function start(array $data, ?string $requestIp = null, ?string $userAgent = null): array
@@ -35,6 +36,7 @@ class CustomerPortalRegistrationService
                 $phoneRaw,
                 $phoneE164,
                 $data['address'] ?? null,
+                $data['delivery_location'] ?? null,
             );
             $challenge = $this->verification->createChallenge(
                 $user,
@@ -58,7 +60,7 @@ class CustomerPortalRegistrationService
     }
 
     /**
-     * @param  array{name:string,email:string,password:string,phone:string,address?:string|null}  $data
+     * @param  array{name:string,email:string,password:string,phone:string,address?:string|null,delivery_location?:array<string,mixed>|null}  $data
      * @return array{user:User}
      */
     public function startWithoutVerification(array $data): array
@@ -75,6 +77,7 @@ class CustomerPortalRegistrationService
                 $phoneRaw,
                 $phoneE164,
                 $data['address'] ?? null,
+                $data['delivery_location'] ?? null,
             );
             $user = $this->identities->resolveForRegistration(
                 $user,
@@ -94,6 +97,7 @@ class CustomerPortalRegistrationService
         string $phoneRaw,
         string $phoneE164,
         ?string $address,
+        ?array $deliveryLocation,
     ): User {
         $user = User::query()
             ->whereRaw('LOWER(email) = ?', [$email])
@@ -108,7 +112,14 @@ class CustomerPortalRegistrationService
             throw new CustomerPortalConflictException('An account already exists for this email.');
         }
 
-        $user = User::create([
+        $locationAttributes = [];
+        if ($deliveryLocation !== null) {
+            $locationAttributes = $this->deliveryLocations->portalAttributes(
+                $this->deliveryLocations->normalize($deliveryLocation)
+            );
+        }
+
+        $user = User::create(array_merge([
             'name' => $name,
             'username' => $this->generateUniqueUsername($email, $name),
             'email' => $email,
@@ -121,7 +132,7 @@ class CustomerPortalRegistrationService
             'status' => 'active',
             'pos_enabled' => false,
             'password' => Hash::make($password),
-        ]);
+        ], $locationAttributes));
 
         if (! $user->hasRole('customer')) {
             $user->assignRole('customer');

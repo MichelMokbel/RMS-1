@@ -3,19 +3,19 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
-use Laravel\Sanctum\HasApiTokens;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable, TwoFactorAuthenticatable, HasRoles;
+    use HasApiTokens, HasFactory, HasRoles, Notifiable, TwoFactorAuthenticatable;
 
     /**
      * The attributes that are mass assignable.
@@ -31,6 +31,12 @@ class User extends Authenticatable
         'portal_phone',
         'portal_phone_e164',
         'portal_delivery_address',
+        'portal_delivery_latitude',
+        'portal_delivery_longitude',
+        'portal_delivery_place_id',
+        'portal_delivery_building',
+        'portal_delivery_unit',
+        'portal_delivery_instructions',
         'portal_phone_verified_at',
         'password',
         'status',
@@ -67,6 +73,8 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'customer_id' => 'integer',
             'portal_phone_verified_at' => 'datetime',
+            'portal_delivery_latitude' => 'decimal:6',
+            'portal_delivery_longitude' => 'decimal:6',
             'password' => 'hashed',
             'pos_enabled' => 'boolean',
         ];

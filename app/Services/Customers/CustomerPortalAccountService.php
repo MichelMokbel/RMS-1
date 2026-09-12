@@ -9,6 +9,7 @@ class CustomerPortalAccountService
 {
     public function __construct(
         private readonly PhoneNumberService $phoneNumbers,
+        private readonly CustomerDeliveryLocationService $deliveryLocations,
     ) {}
 
     public function isLinked(User $user): bool
@@ -89,6 +90,7 @@ class CustomerPortalAccountService
                 'phone_e164' => $customer?->phone_e164 ?? $user->portal_phone_e164,
                 'phone_verified_at' => ($customer?->phone_verified_at ?? $user->portal_phone_verified_at)?->toIso8601String(),
                 'delivery_address' => $customer?->delivery_address ?? $user->portal_delivery_address,
+                'delivery_location' => $this->deliveryLocations->serialize($user, $customer),
                 'billing_address' => $customer?->billing_address,
                 'customer_type' => $customer?->customer_type,
                 'data_source' => $linked ? 'customer' : 'portal',

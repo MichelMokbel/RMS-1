@@ -21,6 +21,7 @@ class CustomerIdentityResolver
         private readonly AccountingAuditLogService $auditLog,
         private readonly CustomerMatchingService $matching,
         private readonly CustomerMatchingDispatchService $dispatches,
+        private readonly CustomerDeliveryLocationService $deliveryLocations,
     ) {}
 
     public function resolveForRegistration(
@@ -93,7 +94,14 @@ class CustomerIdentityResolver
                 ? $eligibleExact->first()
                 : null;
 
-            $customer = $matchedCustomer ?: Customer::query()->create([
+            if ($matchedCustomer) {
+                $matchedCustomer->forceFill(array_merge(
+                    $this->deliveryLocations->customerAttributesFromUser($lockedUser),
+                    ['updated_by' => $lockedUser->id],
+                ))->save();
+            }
+
+            $customer = $matchedCustomer ?: Customer::query()->create(array_merge([
                 'name' => $this->profileName($lockedUser),
                 'customer_type' => Customer::TYPE_RETAIL,
                 'contact_name' => $this->profileName($lockedUser),
@@ -108,7 +116,7 @@ class CustomerIdentityResolver
                 'is_active' => true,
                 'created_by' => $lockedUser->id,
                 'updated_by' => $lockedUser->id,
-            ]);
+            ], $this->deliveryLocations->customerAttributesFromUser($lockedUser)));
 
             $lockedUser->forceFill([
                 'customer_id' => $customer->id,

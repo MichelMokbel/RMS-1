@@ -33,12 +33,20 @@ class CustomerPortalAuthController extends Controller
 
     public function registerStart(Request $request): JsonResponse
     {
+        $locationRule = (bool) config('customers.delivery_location_required', false) ? 'required' : 'nullable';
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255'],
             'password' => ['required', 'string', 'min:8'],
             'phone' => ['required', 'string', 'max:50'],
             'address' => ['nullable', 'string'],
+            'delivery_location' => [$locationRule, 'array:latitude,longitude,place_id,building,unit,instructions'],
+            'delivery_location.latitude' => ['required_with:delivery_location', 'numeric', 'between:-90,90'],
+            'delivery_location.longitude' => ['required_with:delivery_location', 'numeric', 'between:-180,180'],
+            'delivery_location.place_id' => ['nullable', 'string', 'max:255'],
+            'delivery_location.building' => ['required_with:delivery_location', 'string', 'max:200'],
+            'delivery_location.unit' => ['nullable', 'string', 'max:100'],
+            'delivery_location.instructions' => ['nullable', 'string', 'max:1000'],
         ]);
 
         try {

@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Illuminate\Validation\Rule;
+use App\Services\Customers\CustomerDeliveryLocationService;
 
 new #[Layout('components.layouts.app')] class extends Component {
     public Customer $customer;
@@ -46,9 +47,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         ]));
     }
 
-    public function save(): void
+    public function save(CustomerDeliveryLocationService $deliveryLocations): void
     {
         $data = $this->validate($this->rules());
+        if ($data['delivery_address'] !== $this->customer->delivery_address) {
+            $data += $deliveryLocations->clearedCustomerLocationAttributes();
+        }
 
         if ($data['customer_type'] === Customer::TYPE_RETAIL) {
             $data['credit_limit'] = 0;

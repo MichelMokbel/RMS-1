@@ -26,6 +26,7 @@ Use FakePhoneVerificationProvider and a fake AiProviderInterface. Use synthetic 
 | AC-12 | Wrong customer token, inactive user, missing ability, staff role, forged owner ID, stale source request racing with merge, another user's phone token | Server rejects access or mutation. Only the explicitly accepted bypass linking exception is permitted |
 | AC-13 | Cart restoration, login timeout, legacy unlinked me response and quote continuation, revoked source login, transferred login, 409 proxy envelope, three viewport sizes | Customer can continue without another login or manual linking gate, private cache is cleared on identity loss, no destination details leak, no false success or payment result |
 | AC-14 | Fresh and representative existing schema, resumable inventory, missing audit storage, lost job dispatch, duplicate scheduler run, matching pause and resume, genuine SMS activation and rollback | No duplicate records or destructive repair, missing prerequisites surfaced, current matching work resumes safely, usable verification path, compatible owner resolver retained |
+| AC-15 | Qatar place search, map move, current location, denied permission, default center, explicit confirmation reset, stale asynchronous result, provider load or reverse geocode failure, raw and rounded boundary points, islands and holes, Bahrain, Saudi Arabia, UAE, missing or partial coordinates, invalid numeric values, oversized fields, old OTP completion, text only edit, exact match overwrite, merge tuple preservation, and direct API forgery | Only an explicitly confirmed Qatar pin with building detail starts a new registration after cutover. Server rejection is authoritative. Provider labels are not retained. Old challenges and existing account and delivery workflows remain compatible |
 
 ## Approved cross check regression cases
 
@@ -96,8 +97,10 @@ node --test tests/orders-pricing.test.cjs
 npm run build
 ~~~
 
+Inspect the browser key without printing its value. Confirm that it permits only the development orders origin and approved local origins, and that it permits only Maps JavaScript and Places. Confirm the key is absent from Git history, container images, logs, and analytics. Test the picker at 360 px, 768 px, and desktop width with keyboard navigation and a touch sized retry action.
+
 Do not use npm test in either repository. Existing pricing tests alone do not prove signup, review, merge, or payment integration.
 
 ## Documentation checks
 
-Verify all 14 acceptance criteria have both build coverage and verification coverage. Validate local links and source paths, inspect the final diff, and confirm that scope design status is not advanced until the engineer accepts the specification.
+Verify all 15 acceptance criteria have both build coverage and verification coverage. Validate local links and source paths, inspect the final diff, and confirm that scope design status is not advanced until the engineer accepts the specification.
