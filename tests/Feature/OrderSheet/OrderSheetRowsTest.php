@@ -188,12 +188,13 @@ it('selects the customer into the requested row and saves with visible feedback'
     expect(OrderSheet::first()->entries()->first()->customer_id)->toBe($this->customer->id);
 });
 
-it('opens customer results from typing without a focus request', function () {
+it('returns customer results without rendering the full sheet', function () {
     Volt::test('order-sheet')
-        ->set('rows.0.customer_search', $this->customer->name)
-        ->assertSet('activeSearchRow', 0)
-        ->assertSet('customerSearchTerm', $this->customer->name)
-        ->assertSee($this->customer->name);
+        ->call('searchCustomers', $this->customer->name)
+        ->assertReturned(fn (array $results) => collect($results)->contains(
+            fn (array $customer) => $customer['id'] === $this->customer->id
+                && $customer['name'] === $this->customer->name
+        ));
 });
 
 it('creates a customer with name and phone and inserts them into the sheet', function () {
@@ -242,6 +243,8 @@ it('renders only the active layout and keeps common row actions local', function
         ->and($desktop->html())->not->toContain('wire:key="mobile-row-')
         ->and($desktop->html())->toContain('data-order-sheet-customer-search')
         ->not->toContain('wire:focus="focusCustomerSearch')
+        ->not->toContain('wire:model.live.debounce.250ms="rows.')
+        ->and($desktop->html())->toContain('loadCustomerResults(')
         ->and($desktop->html())->toContain('x-on:click="revealRow"')
         ->not->toContain('wire:click="bump(');
 

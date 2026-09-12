@@ -10,6 +10,7 @@ use App\Models\OrderSheetEntryExtra;
 use App\Services\OrderSheet\OrderSheetPublishService;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Renderless;
 use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
@@ -329,6 +330,28 @@ new #[Layout('components.layouts.app')] class extends Component {
         unset($this->customerResults);
     }
 
+    #[Renderless]
+    public function searchCustomers(string $term): array
+    {
+        $term = trim($term);
+        if ($term === '') {
+            return [];
+        }
+
+        return Customer::query()
+            ->active()
+            ->search($term)
+            ->orderBy('name')
+            ->limit(20)
+            ->get(['id', 'name', 'phone'])
+            ->map(fn (Customer $customer) => [
+                'id' => $customer->id,
+                'name' => $customer->name,
+                'phone' => $customer->phone,
+            ])
+            ->all();
+    }
+
     public function selectCustomer(int $customerId, ?int $rowIndex = null): void
     {
         $rowIndex ??= $this->activeSearchRow;
@@ -613,6 +636,45 @@ new #[Layout('components.layouts.app')] class extends Component {
          totalItems: @js(array_sum($this->dishTotals) + collect($this->extraTotals)->sum('qty')),
          dishTotals: @js($this->dishTotals),
          rowTotals: @js(collect($rows)->map(fn ($row) => array_sum($row['qty']) + collect($row['extras'])->sum('quantity'))->values()),
+         customerDrafts: @js(collect($rows)->pluck('customer_search')->values()),
+         customerMatches: [],
+         customerMatchRow: null,
+         customerSearchRequest: 0,
+         customerDropdownX: 0,
+         customerDropdownY: 0,
+         async loadCustomerResults(rowIndex, term, input) {
+             this.$wire.set(`rows.${rowIndex}.customer_search`, term, false);
+             this.customerMatchRow = rowIndex;
+             const rect = input.getBoundingClientRect();
+             this.customerDropdownX = rect.left;
+             this.customerDropdownY = rect.bottom + 2;
+             const request = ++this.customerSearchRequest;
+             if (!term.trim()) {
+                 this.customerMatches = [];
+                 return;
+             }
+             const matches = await this.$wire.searchCustomers(term);
+             if (request === this.customerSearchRequest && this.customerMatchRow === rowIndex) {
+                 this.customerMatches = matches;
+             }
+         },
+         chooseCustomer(customer, rowIndex) {
+             const scrollContainer = this.$root.querySelector('.order-sheet-scroll');
+             const scrollTop = scrollContainer?.scrollTop ?? 0;
+             const scrollLeft = scrollContainer?.scrollLeft ?? 0;
+             const pageX = window.scrollX;
+             const pageY = window.scrollY;
+             this.customerDrafts[rowIndex] = customer.name;
+             this.customerMatches = [];
+             this.customerMatchRow = null;
+             this.$wire.selectCustomer(customer.id, rowIndex).then(() => this.$nextTick(() => {
+                 if (scrollContainer) {
+                     scrollContainer.scrollTop = scrollTop;
+                     scrollContainer.scrollLeft = scrollLeft;
+                 }
+                 window.scrollTo(pageX, pageY);
+             }));
+         },
          revealRow() {
              if (this.visibleRows < this.totalRows) {
                  this.visibleRows++;
@@ -664,6 +726,7 @@ new #[Layout('components.layouts.app')] class extends Component {
          dishTotals = $event.detail.dishTotals;
          rowTotals = $event.detail.rowTotals;
          totalRows = $event.detail.totalRows;
+         while (customerDrafts.length < totalRows) customerDrafts.push('');
          visibleRows = Math.min(Math.max(visibleRows, $event.detail.minimumVisibleRows), totalRows);
      "
 >
@@ -876,9 +939,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <tr wire:key="row-{{ $i }}" class="group {{ blank($row['customer_name']) ? 'no-print' : '' }}" x-show="{{ $i }} < visibleRows">
 
                                     {{-- Customer --}}
-                                    <td class="border border-zinc-300 px-3 py-2"
-                                        x-data="{ dx: 0, dy: 0 }"
-                                        x-on:focusin="const r = $el.getBoundingClientRect(); dx = r.left; dy = r.bottom + 2;">
+                                    <td class="border border-zinc-300 px-3 py-2">
                                         @if ($row['order_id'] ?? null)
                                             <div class="text-[9px] uppercase tracking-wider text-emerald-700 font-semibold mb-0.5 flex items-center gap-1">
                                                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
@@ -886,7 +947,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                                             </div>
                                         @endif
                                         <div class="flex items-center gap-1">
-                                            <input value="{{ $row['customer_search'] }}" wire:model.live.debounce.250ms="rows.{{ $i }}.customer_search"
+                                            <input x-model="customerDrafts[{{ $i }}]"
+                                                x-on:input.debounce.250ms="loadCustomerResults({{ $i }}, customerDrafts[{{ $i }}], $el)"
                                                 data-order-sheet-customer-search
                                                 placeholder="Search customer…"
                                                 autocomplete="off"
@@ -897,22 +959,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                                                 </button>
                                             @endif
                                         </div>
-                                        @if ($activeSearchRow === $i && count($this->customerResults) > 0)
-                                            <div :style="`position:fixed; top:${dy}px; left:${dx}px; width:260px; z-index:9999;`"
-                                                 class="bg-white border border-zinc-200 rounded-md shadow-lg overflow-hidden">
+                                        <div x-cloak x-show="customerMatchRow === {{ $i }} && customerMatches.length > 0"
+                                             x-on:click.outside="customerMatches = []; customerMatchRow = null"
+                                             :style="`position:fixed; top:${customerDropdownY}px; left:${customerDropdownX}px; width:260px; z-index:9999;`"
+                                             class="bg-white border border-zinc-200 rounded-md shadow-lg overflow-hidden">
                                                 <div class="max-h-52 overflow-y-auto">
-                                                    @foreach ($this->customerResults as $customer)
-                                                        <button type="button" wire:click="selectCustomer({{ $customer->id }}, {{ $i }})"
+                                                    <template x-for="customer in customerMatches" :key="customer.id">
+                                                        <button type="button" x-on:click="chooseCustomer(customer, {{ $i }})"
                                                             class="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50">
-                                                            <div class="font-medium text-zinc-900">{{ $customer->name }}</div>
-                                                            @if ($customer->phone)
-                                                                <div class="text-xs text-zinc-500">{{ $customer->phone }}</div>
-                                                            @endif
+                                                            <div class="font-medium text-zinc-900" x-text="customer.name"></div>
+                                                            <div x-show="customer.phone" class="text-xs text-zinc-500" x-text="customer.phone"></div>
                                                         </button>
-                                                    @endforeach
+                                                    </template>
                                                 </div>
                                             </div>
-                                        @endif
                                     </td>
 
                                     {{-- Location --}}
@@ -1139,27 +1199,26 @@ new #[Layout('components.layouts.app')] class extends Component {
 
                             {{-- Customer name input (always editable inline) --}}
                             <div class="flex-1 min-w-0 relative">
-                                <input value="{{ $row['customer_search'] }}" wire:model.live.debounce.250ms="rows.{{ $i }}.customer_search"
+                                <input x-model="customerDrafts[{{ $i }}]"
+                                    x-on:input.debounce.250ms="loadCustomerResults({{ $i }}, customerDrafts[{{ $i }}], $el)"
                                     data-order-sheet-customer-search
                                     placeholder="Enter customer…"
                                     autocomplete="off"
                                     class="w-full font-semibold text-[15px] bg-transparent focus:outline-none placeholder:text-zinc-300 placeholder:font-normal" />
 
-                                @if ($activeSearchRow === $i && count($this->customerResults) > 0)
-                                    <div class="absolute left-0 top-full z-20 mt-0.5 w-[260px] bg-white border border-zinc-200 rounded-md shadow-lg overflow-hidden">
+                                <div x-cloak x-show="customerMatchRow === {{ $i }} && customerMatches.length > 0"
+                                    x-on:click.outside="customerMatches = []; customerMatchRow = null"
+                                    class="absolute left-0 top-full z-20 mt-0.5 w-[260px] bg-white border border-zinc-200 rounded-md shadow-lg overflow-hidden">
                                         <div class="max-h-52 overflow-y-auto">
-                                            @foreach ($this->customerResults as $customer)
-                                                <button type="button" wire:click="selectCustomer({{ $customer->id }}, {{ $i }})"
+                                            <template x-for="customer in customerMatches" :key="customer.id">
+                                                <button type="button" x-on:click="chooseCustomer(customer, {{ $i }})"
                                                     class="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50">
-                                                    <div class="font-medium text-zinc-900">{{ $customer->name }}</div>
-                                                    @if ($customer->phone)
-                                                        <div class="text-xs text-zinc-500">{{ $customer->phone }}</div>
-                                                    @endif
+                                                    <div class="font-medium text-zinc-900" x-text="customer.name"></div>
+                                                    <div x-show="customer.phone" class="text-xs text-zinc-500" x-text="customer.phone"></div>
                                                 </button>
-                                            @endforeach
+                                            </template>
                                         </div>
                                     </div>
-                                @endif
                             </div>
 
                             {{-- Qty badges --}}
@@ -1343,21 +1402,22 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @foreach ($rows as $i => $row)
                             <tr wire:key="grid-row-{{ $i }}" class="border-t border-zinc-200/60" x-show="{{ $i }} < visibleRows">
                                 <td class="px-1 py-1.5">
-                                    <input value="{{ $row['customer_search'] }}" wire:model.live.debounce.250ms="rows.{{ $i }}.customer_search"
+                                    <input x-model="customerDrafts[{{ $i }}]"
+                                        x-on:input.debounce.250ms="loadCustomerResults({{ $i }}, customerDrafts[{{ $i }}], $el)"
                                         data-order-sheet-customer-search
                                         placeholder="Name"
                                         autocomplete="off"
                                         class="w-full text-[12px] font-semibold bg-transparent focus:outline-none focus:bg-white rounded px-1 py-0.5 placeholder:text-zinc-300 placeholder:font-normal" />
-                                    @if ($activeSearchRow === $i && count($this->customerResults) > 0)
-                                        <div class="absolute left-0 z-20 mt-0.5 w-[220px] bg-white border border-zinc-200 rounded-md shadow-lg overflow-hidden">
-                                            @foreach ($this->customerResults as $customer)
-                                                <button type="button" wire:click="selectCustomer({{ $customer->id }}, {{ $i }})"
+                                    <div x-cloak x-show="customerMatchRow === {{ $i }} && customerMatches.length > 0"
+                                        x-on:click.outside="customerMatches = []; customerMatchRow = null"
+                                        class="absolute left-0 z-20 mt-0.5 w-[220px] bg-white border border-zinc-200 rounded-md shadow-lg overflow-hidden">
+                                            <template x-for="customer in customerMatches" :key="customer.id">
+                                                <button type="button" x-on:click="chooseCustomer(customer, {{ $i }})"
                                                     class="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50">
-                                                    <div class="font-medium text-zinc-900 text-[12px]">{{ $customer->name }}</div>
+                                                    <div class="font-medium text-zinc-900 text-[12px]" x-text="customer.name"></div>
                                                 </button>
-                                            @endforeach
+                                            </template>
                                         </div>
-                                    @endif
                                 </td>
                                 @foreach ($menuItems as $item)
                                     @php $q = $row['qty'][$item['id']] ?? 0; $isMain = in_array($item['role'], ['main','diet','vegetarian']); $color = $isMain ? '#dc2626' : '#059669'; @endphp
