@@ -220,7 +220,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|r
 });
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|staff|cashier'])->group(function () {
-    Volt::route('order-sheet', 'order-sheet')->name('order-sheet.index');
+    Volt::route('order-sheet', 'order-sheet-v2')->name('order-sheet.index');
     Route::get('order-sheet/print/by-order', [\App\Http\Controllers\OrderSheet\OrderSheetPrintController::class, 'byOrder'])->name('order-sheet.print.by-order');
     Route::get('order-sheet/print/by-item', [\App\Http\Controllers\OrderSheet\OrderSheetPrintController::class, 'byItemTotals'])->name('order-sheet.print.by-item');
 });
