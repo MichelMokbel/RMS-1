@@ -4,12 +4,15 @@ namespace App\Services\OrderSheet;
 
 use App\Models\Customer;
 use App\Models\DailyDishMenu;
+use App\Models\MealSubscription;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderSheet;
 use App\Models\OrderSheetEntry;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class OrderSheetEditorService
 {
@@ -107,8 +110,44 @@ class OrderSheetEditorService
         return [
             'date' => $date,
             'menuItems' => $menuItems,
-            'rows' => array_values($rows),
+            'rows' => $this->applySubscriptionAppetizers($date, array_values($rows), $menuItems),
         ];
+    }
+
+    /**
+     * @param  array<int, int>  $customerIds
+     * @return Collection<int, array{subscription_id: int, appetizer: array{menu_item_id: int, name: string}|null}>
+     */
+    public function subscriptionBenefits(string $date, array $customerIds): Collection
+    {
+        $customerIds = collect($customerIds)->map(fn ($id) => (int) $id)->filter()->unique()->values()->all();
+        if ($customerIds === []) {
+            return collect();
+        }
+
+        $subscriptions = MealSubscription::with(['days', 'pauses'])
+            ->whereIn('customer_id', $customerIds)
+            ->where('status', 'active')
+            ->whereDate('start_date', '<=', $date)
+            ->where(fn ($query) => $query->whereNull('end_date')->orWhereDate('end_date', '>=', $date))
+            ->orderByDesc('start_date')
+            ->orderByDesc('id')
+            ->get()
+            ->filter(fn (MealSubscription $subscription) => $subscription->isActiveOn($date))
+            ->filter(fn (MealSubscription $subscription) => $subscription->plan_meals_total === null
+                || (int) ($subscription->meals_used ?? 0) < (int) $subscription->plan_meals_total)
+            ->unique('customer_id');
+        $appetizer = $this->defaultSubscriptionAppetizer();
+
+        return $subscriptions->mapWithKeys(fn (MealSubscription $subscription) => [
+            (int) $subscription->customer_id => [
+                'subscription_id' => (int) $subscription->id,
+                'appetizer' => $appetizer ? [
+                    'menu_item_id' => (int) $appetizer->id,
+                    'name' => $appetizer->name,
+                ] : null,
+            ],
+        ]);
     }
 
     /**
@@ -117,7 +156,9 @@ class OrderSheetEditorService
      */
     public function save(string $date, array $rows, array $removedOrderIds = []): void
     {
-        $allowedColumns = collect($this->menuItems($date))->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $menuItems = $this->menuItems($date);
+        $allowedColumns = collect($menuItems)->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $rows = $this->applySubscriptionAppetizers($date, $rows, $menuItems, true);
         $extraIds = collect($rows)->flatMap(fn ($row) => collect($row['extras'] ?? [])->pluck('menu_item_id'))
             ->map(fn ($id) => (int) $id)->filter()->unique()->all();
         $extraNames = MenuItem::whereIn('id', $extraIds)->pluck('name', 'id');
@@ -204,5 +245,68 @@ class OrderSheetEditorService
                 'name' => $item->menuItem?->name ?? __('Unnamed dish'),
                 'role' => $item->role ?? '',
             ])->values()->all() ?? [];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @param  array<int, array<string, mixed>>  $menuItems
+     * @return array<int, array<string, mixed>>
+     */
+    private function applySubscriptionAppetizers(string $date, array $rows, array $menuItems, bool $rejectMissing = false): array
+    {
+        $benefits = $this->subscriptionBenefits($date, collect($rows)->pluck('customer_id')->all());
+        $mainColumnIds = collect($menuItems)
+            ->where('role', 'main')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        return collect($rows)->map(function (array $row, int $index) use ($benefits, $mainColumnIds, $rejectMissing) {
+            $benefit = $benefits->get((int) ($row['customer_id'] ?? 0));
+            $row['has_subscription'] = $benefit !== null;
+            $row['subscription_appetizer'] = $benefit['appetizer'] ?? null;
+            if (! $benefit) {
+                return $row;
+            }
+
+            $mainQuantity = collect($mainColumnIds)->sum(fn ($columnId) => max(0, (int) ($row['quantities'][$columnId] ?? 0)));
+            $appetizer = $benefit['appetizer'];
+            if (! $appetizer) {
+                if ($rejectMissing && $mainQuantity > 0) {
+                    throw ValidationException::withMessages([
+                        "rows.{$index}.extras" => __('The default subscription appetizer is not configured.'),
+                    ]);
+                }
+
+                return $row;
+            }
+
+            $extras = collect($row['extras'] ?? [])
+                ->reject(fn ($extra) => (int) ($extra['menu_item_id'] ?? 0) === $appetizer['menu_item_id'])
+                ->values();
+            if ($mainQuantity > 0) {
+                $extras->push([
+                    'menu_item_id' => $appetizer['menu_item_id'],
+                    'name' => $appetizer['name'],
+                    'quantity' => $mainQuantity,
+                ]);
+            }
+            $row['extras'] = $extras->all();
+
+            return $row;
+        })->all();
+    }
+
+    private function defaultSubscriptionAppetizer(): ?MenuItem
+    {
+        $code = trim((string) config('subscriptions.default_appetizer_code', ''));
+        if ($code === '') {
+            return null;
+        }
+
+        return MenuItem::query()
+            ->where('code', $code)
+            ->where('is_active', true)
+            ->first(['id', 'name']);
     }
 }

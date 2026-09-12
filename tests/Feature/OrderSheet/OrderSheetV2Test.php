@@ -2,10 +2,12 @@
 
 use App\Models\Customer;
 use App\Models\DailyDishMenu;
+use App\Models\MealSubscription;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderSheet;
 use App\Models\User;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Volt;
 use Spatie\Permission\Models\Role;
@@ -58,13 +60,13 @@ it('returns customer search results with the location required by the editor', f
     ]);
 
     Volt::test('order-sheet-v2')
-        ->call('searchCustomers', $this->customer->name)
+        ->call('searchCustomers', $this->customer->name, now()->toDateString())
         ->assertReturned(fn (array $results) => collect($results)->contains(
             fn (array $customer) => $customer['id'] === $this->customer->id
                 && $customer['name'] === $this->customer->name
                 && $customer['location'] === 'Latest meal plan location'
         ))
-        ->call('searchCustomers', $portalCustomer->name)
+        ->call('searchCustomers', $portalCustomer->name, now()->toDateString())
         ->assertReturned(fn (array $results) => collect($results)->contains(
             fn (array $customer) => $customer['id'] === $portalCustomer->id
                 && $customer['location'] === 'Portal profile location'
@@ -115,6 +117,103 @@ it('saves repeatedly and replaces the previous sheet state accurately', function
         ->and($sheet->entries->first()->quantities()->value('quantity'))->toBe(5);
 });
 
+it('automatically keeps the subscription appetizer equal to selected main dishes', function () {
+    Config::set('subscriptions.default_appetizer_code', 'APP-ORDER-SHEET');
+    $appetizer = MenuItem::factory()->create([
+        'code' => 'APP-ORDER-SHEET',
+        'name' => 'Daily Appetizer',
+        'is_active' => true,
+    ]);
+    $mains = collect(['Subscription Main A', 'Subscription Main B', 'Subscription Main C'])
+        ->map(fn (string $name) => MenuItem::factory()->create(['name' => $name]));
+    $salad = MenuItem::factory()->create(['name' => 'Subscription Salad']);
+    $menu = DailyDishMenu::create([
+        'branch_id' => 1,
+        'service_date' => now()->toDateString(),
+        'status' => 'published',
+    ]);
+    $mainColumns = $mains->values()->map(fn (MenuItem $main, int $index) => $menu->items()->create([
+        'menu_item_id' => $main->id,
+        'role' => 'main',
+        'sort_order' => $index + 1,
+    ]));
+    $saladColumn = $menu->items()->create([
+        'menu_item_id' => $salad->id,
+        'role' => 'salad',
+        'sort_order' => 4,
+    ]);
+    $subscription = MealSubscription::factory()->create(['customer_id' => $this->customer->id]);
+    $subscription->days()->create(['weekday' => (int) now()->format('N')]);
+    $row = editorRow([
+        'customer_id' => $this->customer->id,
+        'customer_name' => $this->customer->name,
+        'quantities' => [
+            $mainColumns[0]->id => 2,
+            $mainColumns[1]->id => 3,
+            $mainColumns[2]->id => 1,
+            $saladColumn->id => 8,
+        ],
+        'extras' => [['menu_item_id' => $appetizer->id, 'name' => $appetizer->name, 'quantity' => 99]],
+    ]);
+    $page = Volt::test('order-sheet-v2')
+        ->call('searchCustomers', $this->customer->name, now()->toDateString())
+        ->assertReturned(fn (array $results) => collect($results)->contains(
+            fn (array $customer) => $customer['id'] === $this->customer->id
+                && $customer['has_subscription'] === true
+                && $customer['subscription_appetizer']['menu_item_id'] === $appetizer->id
+        ));
+
+    $page->call('saveSheet', now()->toDateString(), [$row], [])->assertHasNoErrors();
+    expect(OrderSheet::firstOrFail()->entries()->firstOrFail()->extras()->firstOrFail())
+        ->menu_item_id->toBe($appetizer->id)
+        ->quantity->toBe(6);
+
+    $row['quantities'][$mainColumns[0]->id] = 1;
+    $row['quantities'][$mainColumns[1]->id] = 0;
+    $row['quantities'][$mainColumns[2]->id] = 2;
+    $page->call('saveSheet', now()->toDateString(), [$row], [])->assertHasNoErrors();
+    expect(OrderSheet::firstOrFail()->entries()->firstOrFail()->extras()->firstOrFail()->quantity)->toBe(3);
+});
+
+it('rejects a subscribed main selection when the configured appetizer is unavailable', function () {
+    Config::set('subscriptions.default_appetizer_code', 'MISSING-APPETIZER');
+    $main = MenuItem::factory()->create();
+    $menu = DailyDishMenu::create([
+        'branch_id' => 1,
+        'service_date' => now()->toDateString(),
+        'status' => 'published',
+    ]);
+    $column = $menu->items()->create([
+        'menu_item_id' => $main->id,
+        'role' => 'main',
+        'sort_order' => 1,
+    ]);
+    $subscription = MealSubscription::factory()->create(['customer_id' => $this->customer->id]);
+    $subscription->days()->create(['weekday' => (int) now()->format('N')]);
+    $sheet = OrderSheet::create(['sheet_date' => now()->toDateString()]);
+    $sheet->entries()->create(['customer_name' => 'Keep this row']);
+    $row = editorRow([
+        'customer_id' => $this->customer->id,
+        'customer_name' => $this->customer->name,
+        'quantities' => [$column->id => 1],
+    ]);
+
+    Volt::test('order-sheet-v2')
+        ->call('saveSheet', now()->toDateString(), [$row], [])
+        ->assertHasErrors(['rows.0.extras']);
+
+    expect($sheet->entries()->firstOrFail()->customer_name)->toBe('Keep this row');
+});
+
+it('keeps the original order sheet print format', function () {
+    $this->get(route('order-sheet.index'))
+        ->assertOk()
+        ->assertSee('x-on:click="printSheet()"', false)
+        ->assertSee('@page { size: A4 landscape; margin: 14mm; }', false)
+        ->assertSee('Additional orders', false)
+        ->assertSee('Array.from({ length: 2 }', false);
+});
+
 it('downloads current unsaved rows as Excel without saving them', function () {
     $row = editorRow([
         'customer_name' => '=Literal customer',
@@ -159,7 +258,7 @@ it('rejects editor data actions for users outside the order sheet roles', functi
         ->call('loadDate', now()->toDateString())
         ->assertForbidden();
     Volt::test('order-sheet-v2')
-        ->call('searchCustomers', $this->customer->name)
+        ->call('searchCustomers', $this->customer->name, now()->toDateString())
         ->assertForbidden();
     Volt::test('order-sheet-v2')
         ->call('searchDishes', 'dish')

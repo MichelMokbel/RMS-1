@@ -40,9 +40,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     #[Renderless]
-    public function searchCustomers(string $term, OrderSheetLocationService $locations): array
+    public function searchCustomers(
+        string $term,
+        string $date,
+        OrderSheetLocationService $locations,
+        OrderSheetEditorService $editor,
+    ): array
     {
         $this->authorizeEditor();
+        $this->validateDate($date);
         $term = trim($term);
         if (mb_strlen($term) < 1) {
             return [];
@@ -55,14 +61,21 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->limit(15)
             ->get(['id', 'name', 'phone', 'delivery_address']);
         $customerLocations = $locations->forCustomers($customers);
+        $subscriptionBenefits = $editor->subscriptionBenefits($date, $customers->modelKeys());
 
         return $customers
-            ->map(fn (Customer $customer) => [
-                'id' => (int) $customer->id,
-                'name' => $customer->name,
-                'phone' => $customer->phone,
-                'location' => $customerLocations->get($customer->id, ''),
-            ])->all();
+            ->map(function (Customer $customer) use ($customerLocations, $subscriptionBenefits) {
+                $benefit = $subscriptionBenefits->get($customer->id);
+
+                return [
+                    'id' => (int) $customer->id,
+                    'name' => $customer->name,
+                    'phone' => $customer->phone,
+                    'location' => $customerLocations->get($customer->id, ''),
+                    'has_subscription' => $benefit !== null,
+                    'subscription_appetizer' => $benefit['appetizer'] ?? null,
+                ];
+            })->all();
     }
 
     #[Renderless]
@@ -109,6 +122,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'name' => $customer->name,
             'phone' => $customer->phone,
             'location' => $customer->delivery_address ?? '',
+            'has_subscription' => false,
+            'subscription_appetizer' => null,
         ];
     }
 
@@ -255,7 +270,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="flex flex-wrap gap-2">
                 <button x-show="canCreateCustomer" type="button" x-on:click="openCustomerCreator()" class="min-h-11 rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">{{ __('New customer') }}</button>
                 <button type="button" x-on:click="exportExcel()" x-bind:disabled="busy" class="min-h-11 rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">{{ __('Excel') }}</button>
-                <button type="button" x-on:click="window.print()" class="min-h-11 rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">{{ __('Print') }}</button>
+                <button type="button" x-on:click="printSheet()" class="min-h-11 rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">{{ __('Print') }}</button>
                 <a x-bind:href="`{{ route('order-sheet.print.by-order') }}?date=${date}`" target="_blank" class="inline-flex min-h-11 items-center rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">{{ __('By order') }}</a>
                 <a x-bind:href="`{{ route('order-sheet.print.by-item') }}?date=${date}`" target="_blank" class="inline-flex min-h-11 items-center rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">{{ __('Item totals') }}</a>
                 <button type="button" x-on:click="save()" x-bind:disabled="busy" class="min-h-11 rounded-lg bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"><span x-text="saving ? '{{ __('Saving…') }}' : '{{ __('Save') }}'"></span></button>
@@ -314,10 +329,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     <template x-for="(extra, extraIndex) in row.extras" :key="`${row.key}-${extra.menu_item_id}`">
                                         <div class="inline-flex min-h-10 items-center gap-1 rounded-lg bg-amber-50 px-2 text-xs text-amber-900 dark:bg-amber-900/30 dark:text-amber-100">
                                             <span class="max-w-28 truncate font-medium" x-text="extra.name"></span>
-                                            <button type="button" x-on:click="adjustExtra(row, extraIndex, -1)" class="inline-flex size-8 items-center justify-center rounded-md hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 dark:hover:bg-amber-900" x-bind:aria-label="`{{ __('Decrease') }} ${extra.name}`"><flux:icon.minus class="size-3" /></button>
+                                            <span x-show="isSubscriptionAppetizer(row, extra)" class="rounded bg-emerald-100 px-1.5 py-1 font-semibold text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200">{{ __('Subscription') }}</span>
+                                            <button x-show="!isSubscriptionAppetizer(row, extra)" type="button" x-on:click="adjustExtra(row, extraIndex, -1)" class="inline-flex size-8 items-center justify-center rounded-md hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 dark:hover:bg-amber-900" x-bind:aria-label="`{{ __('Decrease') }} ${extra.name}`"><flux:icon.minus class="size-3" /></button>
                                             <span class="min-w-5 text-center font-semibold tabular-nums" x-text="extra.quantity"></span>
-                                            <button type="button" x-on:click="adjustExtra(row, extraIndex, 1)" class="inline-flex size-8 items-center justify-center rounded-md hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 dark:hover:bg-amber-900" x-bind:aria-label="`{{ __('Increase') }} ${extra.name}`"><flux:icon.plus class="size-3" /></button>
-                                            <button type="button" x-on:click="removeExtra(row, extraIndex)" class="inline-flex size-8 items-center justify-center rounded-md text-red-700 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 dark:text-red-300 dark:hover:bg-red-900/30" x-bind:aria-label="`{{ __('Remove') }} ${extra.name}`"><flux:icon.x-mark class="size-3" /></button>
+                                            <button x-show="!isSubscriptionAppetizer(row, extra)" type="button" x-on:click="adjustExtra(row, extraIndex, 1)" class="inline-flex size-8 items-center justify-center rounded-md hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 dark:hover:bg-amber-900" x-bind:aria-label="`{{ __('Increase') }} ${extra.name}`"><flux:icon.plus class="size-3" /></button>
+                                            <button x-show="!isSubscriptionAppetizer(row, extra)" type="button" x-on:click="removeExtra(row, extraIndex)" class="inline-flex size-8 items-center justify-center rounded-md text-red-700 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 dark:text-red-300 dark:hover:bg-red-900/30" x-bind:aria-label="`{{ __('Remove') }} ${extra.name}`"><flux:icon.x-mark class="size-3" /></button>
                                         </div>
                                     </template>
                                     <button type="button" x-on:click="openDishPicker(row)" class="min-h-10 rounded-lg border border-dashed border-zinc-300 bg-white px-3 text-xs font-medium text-zinc-700 hover:border-zinc-500 hover:bg-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">{{ __('Add dish') }}</button>
@@ -363,7 +379,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div x-show="customerSearch.loading" class="px-3 py-3 text-sm text-zinc-500 dark:text-zinc-400">{{ __('Searching…') }}</div>
         <template x-for="(customer, index) in customerSearch.results" :key="customer.id">
             <button type="button" x-on:pointerdown.prevent="selectCustomer(customer)" x-on:mouseenter="customerSearch.activeIndex = index" x-bind:class="index === customerSearch.activeIndex ? 'bg-zinc-100 dark:bg-zinc-800' : ''" class="block w-full px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600" role="option" x-bind:aria-selected="index === customerSearch.activeIndex">
-                <span class="block text-sm font-medium text-zinc-900 dark:text-white" x-text="customer.name"></span>
+                <span class="flex items-center gap-2 text-sm font-medium text-zinc-900 dark:text-white">
+                    <span x-text="customer.name"></span>
+                    <span x-show="customer.has_subscription" class="rounded bg-emerald-100 px-1.5 py-0.5 text-[0.6875rem] font-semibold text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200">{{ __('Subscription') }}</span>
+                </span>
                 <span class="block text-xs text-zinc-500 dark:text-zinc-400" x-text="customer.phone || '{{ __('No phone') }}'"></span>
             </button>
         </template>
@@ -416,35 +435,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         </form>
     </dialog>
 
-    <div class="hidden print:block" aria-hidden="true">
-        <template x-for="page in [1, 2]" :key="page">
-            <section class="break-before-page pt-8">
-                <h2 class="mb-4 text-xl font-semibold">{{ __('Order Sheet') }} · <span x-text="date"></span></h2>
-                <table class="w-full border-collapse text-xs">
-                    <thead><tr><th class="border p-2 text-left">{{ __('Customer') }}</th><th class="border p-2 text-left">{{ __('Location') }}</th><template x-for="item in menuItems" :key="item.id"><th class="border p-2" x-text="item.name"></th></template><th class="border p-2">{{ __('Other dishes') }}</th><th class="border p-2">{{ __('Remarks') }}</th></tr></thead>
-                    <tbody><template x-for="line in 18" :key="line"><tr><td class="h-9 border"></td><td class="border"></td><template x-for="item in menuItems" :key="item.id"><td class="border"></td></template><td class="border"></td><td class="border"></td></tr></template></tbody>
-                </table>
-            </section>
-        </template>
-    </div>
-
     <style>
         [x-cloak] { display: none !important; }
-
-        @media print {
-            body { background: white !important; }
-            [data-order-sheet-v2] { height: auto !important; padding: 0 !important; }
-            [data-order-sheet-v2] > section:first-child,
-            [data-order-sheet-v2] > div.shrink-0,
-            [data-order-sheet-v2] dialog { display: none !important; }
-            [data-order-sheet-v2] > section:nth-of-type(2) { overflow: visible !important; border: 0 !important; box-shadow: none !important; }
-            [data-order-sheet-v2] [data-sheet-scroll] { height: auto !important; overflow: visible !important; }
-            [data-order-sheet-v2] thead,
-            [data-order-sheet-v2] tfoot,
-            [data-order-sheet-v2] th,
-            [data-order-sheet-v2] td { position: static !important; }
-            .break-before-page { break-before: page; }
-        }
 
         @media (max-width: 767px) {
             [data-order-sheet-v2] { height: auto !important; min-height: calc(100dvh - 4rem); }
@@ -518,6 +510,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 customer_id: row.customer_id || null,
                 customer_name: row.customer_name || '',
                 location: row.location || '',
+                has_subscription: Boolean(row.has_subscription),
+                subscription_appetizer: row.subscription_appetizer || null,
                 quantities,
                 extras: (row.extras || []).map((extra) => ({ menu_item_id: Number(extra.menu_item_id), name: extra.name || '', quantity: Math.max(1, Number(extra.quantity || 1)) })),
                 remarks: row.remarks || '',
@@ -531,7 +525,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         blankRow() {
             const quantities = {};
             this.menuItems.forEach((item) => quantities[item.id] = 0);
-            return { key: this.newKey(), order_id: null, customer_id: null, customer_name: '', location: '', quantities, extras: [], remarks: '' };
+            return { key: this.newKey(), order_id: null, customer_id: null, customer_name: '', location: '', has_subscription: false, subscription_appetizer: null, quantities, extras: [], remarks: '' };
         },
 
         rowHasContent(row) {
@@ -560,12 +554,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         setQuantity(row, itemId, value) {
             row.quantities[itemId] = Math.max(0, Math.trunc(Number(value) || 0));
+            this.syncSubscriptionAppetizer(row);
             this.markDirty();
             this.ensureTrailingBlank();
         },
 
         adjustQuantity(row, itemId, delta) {
             row.quantities[itemId] = Math.max(0, this.quantity(row, itemId) + delta);
+            this.syncSubscriptionAppetizer(row);
             this.markDirty();
             this.ensureTrailingBlank();
         },
@@ -579,6 +575,38 @@ new #[Layout('components.layouts.app')] class extends Component {
             return this.rows.reduce((sum, row) => sum + this.quantity(row, itemId), 0);
         },
 
+        mainQuantity(row) {
+            return this.menuItems
+                .filter((item) => item.role === 'main')
+                .reduce((sum, item) => sum + this.quantity(row, item.id), 0);
+        },
+
+        isSubscriptionAppetizer(row, extra) {
+            return Boolean(row.subscription_appetizer)
+                && Number(extra.menu_item_id) === Number(row.subscription_appetizer.menu_item_id);
+        },
+
+        clearSubscriptionAppetizer(row) {
+            if (row.subscription_appetizer) {
+                row.extras = row.extras.filter((extra) => !this.isSubscriptionAppetizer(row, extra));
+            }
+            row.has_subscription = false;
+            row.subscription_appetizer = null;
+        },
+
+        syncSubscriptionAppetizer(row) {
+            if (!row.subscription_appetizer) return;
+            const quantity = this.mainQuantity(row);
+            row.extras = row.extras.filter((extra) => !this.isSubscriptionAppetizer(row, extra));
+            if (quantity > 0) {
+                row.extras.push({
+                    menu_item_id: Number(row.subscription_appetizer.menu_item_id),
+                    name: row.subscription_appetizer.name,
+                    quantity,
+                });
+            }
+        },
+
         removeRow(index) {
             const row = this.rows[index];
             if (!row || !this.rowHasContent(row)) return;
@@ -589,6 +617,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         },
 
         clearCustomer(row) {
+            this.clearSubscriptionAppetizer(row);
             row.customer_id = null;
             row.customer_name = '';
             this.markDirty();
@@ -607,6 +636,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         },
 
         customerInput(row, input) {
+            this.clearSubscriptionAppetizer(row);
             row.customer_id = null;
             this.markDirty();
             this.ensureTrailingBlank();
@@ -625,7 +655,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             this.customerSearch.loading = true;
             this.customerTimer = setTimeout(async () => {
                 try {
-                    const results = await this.$wire.searchCustomers(term);
+                    const results = await this.$wire.searchCustomers(term, this.date);
                     if (request === this.customerRequest) {
                         this.customerSearch.results = results;
                         this.customerSearch.activeIndex = 0;
@@ -658,11 +688,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         selectCustomer(customer) {
             const row = this.rows.find((candidate) => candidate.key === this.customerSearch.rowKey);
             if (!row) return;
+            this.clearSubscriptionAppetizer(row);
             row.customer_id = customer.id;
             row.customer_name = customer.name;
+            row.has_subscription = Boolean(customer.has_subscription);
+            row.subscription_appetizer = customer.subscription_appetizer || null;
             if (!String(row.location || '').trim()) row.location = customer.location || '';
+            this.syncSubscriptionAppetizer(row);
             this.closeCustomerSearch();
             this.markDirty();
+            if (row.has_subscription && !row.subscription_appetizer) {
+                this.error = '{{ __('The default subscription appetizer is not configured.') }}';
+            }
             this.ensureTrailingBlank();
         },
 
@@ -733,6 +770,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             const existing = row.extras.find((extra) => Number(extra.menu_item_id) === Number(dish.id));
             if (existing) existing.quantity += 1;
             else row.extras.push({ menu_item_id: Number(dish.id), name: dish.name, quantity: 1 });
+            this.syncSubscriptionAppetizer(row);
             this.markDirty();
             this.ensureTrailingBlank();
             this.$refs.dishDialog.close();
@@ -853,6 +891,82 @@ new #[Layout('components.layouts.app')] class extends Component {
             } finally {
                 this.publishing = false;
             }
+        },
+
+        printSheet() {
+            const win = window.open('', '_blank');
+            if (!win) {
+                this.error = '{{ __('Allow pop-ups to print the order sheet.') }}';
+                return;
+            }
+
+            const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+            })[character]);
+            const prettyDate = this.date
+                ? new Date(`${this.date}T00:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
+                : '';
+            const headings = ['Customer', 'Location', ...this.menuItems.map((item) => item.name), 'Other dishes', 'Total', 'Remarks'];
+            const printableRows = this.rows.filter((row) => String(row.customer_name || '').trim());
+            const body = printableRows.map((row) => {
+                const extras = (row.extras || []).filter((extra) => Number(extra.quantity) > 0);
+                const quantityCells = this.menuItems
+                    .map((item) => `<td>${this.quantity(row, item.id) || '—'}</td>`)
+                    .join('');
+                const extraNames = extras
+                    .map((extra) => `${escapeHtml(extra.name)} ×${Number(extra.quantity)}`)
+                    .join(', ');
+
+                return `<tr><td>${escapeHtml(row.customer_name)}</td><td>${escapeHtml(row.location)}</td>${quantityCells}<td>${extraNames || '—'}</td><td>${this.rowTotal(row) || '—'}</td><td>${escapeHtml(row.remarks)}</td></tr>`;
+            }).join('');
+            const dishTotals = this.menuItems.map((item) => this.dishTotal(item.id));
+            const extraTotals = new Map();
+            printableRows.flatMap((row) => row.extras || []).forEach((extra) => {
+                if (Number(extra.quantity) > 0) {
+                    extraTotals.set(extra.name, Number(extraTotals.get(extra.name) || 0) + Number(extra.quantity));
+                }
+            });
+            const extraTotal = [...extraTotals.values()].reduce((sum, quantity) => sum + quantity, 0);
+            const extraSummary = [...extraTotals]
+                .map(([name, quantity]) => `${escapeHtml(name)} ×${quantity}`)
+                .join(', ');
+            const grandTotal = dishTotals.reduce((sum, quantity) => sum + quantity, 0) + extraTotal;
+            const totals = `<tr><th>Total</th><td></td>${dishTotals.map((total) => `<td>${total || '—'}</td>`).join('')}<td>${extraSummary || '—'}</td><td>${grandTotal || '—'}</td><td></td></tr>`;
+            const headingHtml = headings.map((heading) => `<th>${escapeHtml(heading)}</th>`).join('');
+            const printTable = `<table><thead><tr>${headingHtml}</tr></thead><tbody>${body}</tbody><tfoot>${totals}</tfoot></table>`;
+            const blankRows = Array.from({ length: 14 }, () => `<tr>${'<td>&nbsp;</td>'.repeat(headings.length)}</tr>`).join('');
+            const blankTable = `<table><thead><tr>${headingHtml}</tr></thead><tbody>${blankRows}</tbody></table>`;
+            const extraPages = Array.from({ length: 2 }, (_, index) =>
+                `<section class="blank-sheet"><h2>Additional orders — ${prettyDate} (${index + 1}/2)</h2>${blankTable}</section>`
+            ).join('');
+
+            win.document.write(`<!doctype html><html><head><meta charset="utf-8">
+            <title>Layla Kitchen — ${prettyDate}</title>
+            <style>
+                @page { size: A4 landscape; margin: 14mm; }
+                * { box-sizing: border-box; }
+                body { font-family: 'Times New Roman', Times, serif; color: #18181b; margin: 0; padding: 20px; font-size: 16px; }
+                h1 { font-size: 28px; margin: 0 0 2px; }
+                .sub { font-size: 13px; color: #71717a; text-transform: uppercase; letter-spacing: 0.18em; }
+                .meta { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #18181b; padding-bottom: 10px; margin-bottom: 16px; }
+                table { width: 100%; border-collapse: collapse; font-size: 16px; }
+                th, td { border: 1px solid #d4d4d8; padding: 6px 10px; vertical-align: middle; }
+                thead th { background: #f4f4f5; font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; font-family: 'Times New Roman', Times, serif; }
+                .blank-sheet { break-before: page; page-break-before: always; break-inside: avoid; }
+                .blank-sheet table { table-layout: fixed; font-size: 11px; }
+                .blank-sheet th { min-width: 0; width: auto; height: 30mm; padding: 2px; overflow-wrap: anywhere; }
+                .blank-sheet td { height: 7mm; padding: 0 3px; }
+                .blank-sheet h2 { font-size: 16px; margin: 0 0 8px; }
+            </style></head><body>
+            <div class="meta">
+                <div><div class="sub">Layla Kitchen — Daily Order Sheet</div><h1>${prettyDate}</h1></div>
+                <div style="text-align:right"><div class="sub">Generated ${new Date().toLocaleString('en-GB')}</div></div>
+            </div>
+            ${printTable}
+            ${extraPages}
+            <script>setTimeout(()=>window.print(),300);<\/script>
+            </body></html>`);
+            win.document.close();
         },
 
         async exportExcel() {
