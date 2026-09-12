@@ -214,6 +214,36 @@ it('keeps the original order sheet print format', function () {
         ->assertSee('Array.from({ length: 2 }', false);
 });
 
+it('prints item totals from current orders before the sheet is saved', function () {
+    $item = MenuItem::factory()->create(['name' => 'Unsaved Sheet Main']);
+    $menu = DailyDishMenu::create([
+        'branch_id' => 1,
+        'service_date' => now()->toDateString(),
+        'status' => 'published',
+    ]);
+    $column = $menu->items()->create([
+        'menu_item_id' => $item->id,
+        'role' => 'main',
+        'sort_order' => 1,
+    ]);
+    $order = Order::factory()->dailyDish()->create(['customer_id' => $this->customer->id]);
+    $order->items()->create([
+        'menu_item_id' => $item->id,
+        'description_snapshot' => $item->name,
+        'quantity' => 4,
+        'unit_price' => 0,
+        'line_total' => 0,
+        'status' => 'Pending',
+    ]);
+
+    $this->get(route('order-sheet.print.by-item'))
+        ->assertOk()
+        ->assertSee('Unsaved Sheet Main')
+        ->assertViewHas('dishTotals', fn (array $totals) => $totals[$column->id]['quantity'] === 4);
+
+    expect(OrderSheet::count())->toBe(0);
+});
+
 it('downloads current unsaved rows as Excel without saving them', function () {
     $row = editorRow([
         'customer_name' => '=Literal customer',
