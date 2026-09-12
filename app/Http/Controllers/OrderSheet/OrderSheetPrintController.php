@@ -37,10 +37,16 @@ class OrderSheetPrintController extends Controller
         // Dish totals
         $dishTotals = [];
         foreach ($menuItems as $item) {
+            $portions = [
+                'plate' => $entries->sum(fn ($e) => (int) ($e['qty'][$item['id']]['plate'] ?? 0)),
+                'half' => $entries->sum(fn ($e) => (int) ($e['qty'][$item['id']]['half'] ?? 0)),
+                'full' => $entries->sum(fn ($e) => (int) ($e['qty'][$item['id']]['full'] ?? 0)),
+            ];
             $dishTotals[$item['id']] = [
                 'name' => $item['name'],
                 'role' => $item['role'],
-                'quantity' => $entries->sum(fn ($e) => (int) ($e['qty'][$item['id']] ?? 0)),
+                'portions' => $portions,
+                'quantity' => array_sum($portions),
             ];
         }
 

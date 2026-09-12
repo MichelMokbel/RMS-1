@@ -59,7 +59,10 @@
                     <th style="text-align:left; width:140px;">Customer</th>
                     <th style="text-align:left; width:90px;">Location</th>
                     @foreach ($menuItems as $item)
-                        <th title="{{ $item['name'] }}">{{ \Illuminate\Support\Str::limit($item['name'], 12, '…') }}</th>
+                        <th title="{{ $item['name'] }}">
+                            {{ \Illuminate\Support\Str::limit($item['name'], 12, '…') }}
+                            @if ($item['role'] === 'main')<br><small>P · H · F</small>@endif
+                        </th>
                     @endforeach
                     <th style="text-align:left;">Extras</th>
                     <th style="text-align:left; width:100px;">Remarks</th>
@@ -71,8 +74,14 @@
                         <td class="name">{{ $row['customer_name'] }}</td>
                         <td class="loc">{{ $row['location'] ?: '—' }}</td>
                         @foreach ($menuItems as $item)
-                            @php $q = (int) ($row['qty'][$item['id']] ?? 0); @endphp
-                            <td class="qty {{ $q === 0 ? 'zero' : '' }}">{{ $q ?: '—' }}</td>
+                            @php
+                                $portions = collect(['P' => 'plate', 'H' => 'half', 'F' => 'full'])
+                                    ->map(fn ($type, $label) => [$label, (int) ($row['qty'][$item['id']][$type] ?? 0)])
+                                    ->filter(fn ($value) => $value[1] > 0)
+                                    ->map(fn ($value) => $value[0].' '.$value[1])
+                                    ->implode(' · ');
+                            @endphp
+                            <td class="qty {{ $portions === '' ? 'zero' : '' }}">{{ $portions ?: '—' }}</td>
                         @endforeach
                         <td class="extras">
                             @foreach ($row['extras'] as $extra)
@@ -87,7 +96,14 @@
                 <tr>
                     <td colspan="2"><strong>Total ({{ $entries->count() }} orders)</strong></td>
                     @foreach ($menuItems as $item)
-                        <td class="qty">{{ $dishTotals[$item['id']]['quantity'] ?? 0 }}</td>
+                        @php
+                            $portions = collect(['P' => 'plate', 'H' => 'half', 'F' => 'full'])
+                                ->map(fn ($type, $label) => [$label, (int) ($dishTotals[$item['id']]['portions'][$type] ?? 0)])
+                                ->filter(fn ($value) => $value[1] > 0)
+                                ->map(fn ($value) => $value[0].' '.$value[1])
+                                ->implode(' · ');
+                        @endphp
+                        <td class="qty">{{ $portions ?: '0' }}</td>
                     @endforeach
                     <td colspan="2">
                         @foreach ($extraTotals as $et)
@@ -105,7 +121,7 @@
             <table>
                 <thead><tr>
                     <th>{{ __('Customer') }}</th><th>{{ __('Location') }}</th>
-                    @foreach ($menuItems as $item)<th>{{ $item['name'] }}</th>@endforeach
+                    @foreach ($menuItems as $item)<th>{{ $item['name'] }}@if ($item['role'] === 'main')<br><small>P · H · F</small>@endif</th>@endforeach
                     <th>{{ __('Extras') }}</th><th>{{ __('Remarks') }}</th>
                 </tr></thead>
                 <tbody>

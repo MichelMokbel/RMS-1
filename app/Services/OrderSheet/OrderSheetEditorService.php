@@ -16,6 +16,8 @@ use Illuminate\Validation\ValidationException;
 
 class OrderSheetEditorService
 {
+    private const PORTION_TYPES = ['plate', 'half', 'full'];
+
     public function __construct(
         protected OrderSheetLocationService $locations,
     ) {}
@@ -33,8 +35,9 @@ class OrderSheetEditorService
             'entries.order',
         ])->where('sheet_date', $date)->first();
 
-        $emptyQuantities = collect($menuItems)->mapWithKeys(fn ($item) => [$item['id'] => 0])->all();
+        $emptyQuantities = collect($menuItems)->mapWithKeys(fn ($item) => [$item['id'] => $this->emptyPortions()])->all();
         $menuItemToColumn = collect($menuItems)->pluck('id', 'menu_item_id');
+        $columnRoles = collect($menuItems)->pluck('role', 'id');
         $savedLocations = $this->locations->forOrders(new EloquentCollection(
             $sheet?->entries->pluck('order')->filter()->all() ?? []
         ));
@@ -43,7 +46,10 @@ class OrderSheetEditorService
             $quantities = $emptyQuantities;
             foreach ($entry->quantities as $quantity) {
                 if (array_key_exists($quantity->daily_dish_menu_item_id, $quantities)) {
-                    $quantities[$quantity->daily_dish_menu_item_id] = (int) $quantity->quantity;
+                    $portionType = in_array($quantity->portion_type, self::PORTION_TYPES, true)
+                        ? $quantity->portion_type
+                        : 'plate';
+                    $quantities[$quantity->daily_dish_menu_item_id][$portionType] += (int) $quantity->quantity;
                 }
             }
 
@@ -85,7 +91,12 @@ class OrderSheetEditorService
                 }
                 $columnId = $menuItemToColumn->get($item->menu_item_id);
                 if ($columnId) {
-                    $quantities[$columnId] += (int) round($item->quantity);
+                    $portionType = $this->portionTypeForOrderItem(
+                        $order,
+                        $item->description_snapshot,
+                        $columnRoles->get($columnId, '')
+                    );
+                    $quantities[$columnId][$portionType] += (int) round($item->quantity);
                 } else {
                     $extras[] = [
                         'menu_item_id' => (int) $item->menu_item_id,
@@ -157,8 +168,19 @@ class OrderSheetEditorService
     public function save(string $date, array $rows, array $removedOrderIds = []): void
     {
         $menuItems = $this->menuItems($date);
-        $allowedColumns = collect($menuItems)->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $allowedColumns = collect($menuItems)->mapWithKeys(fn ($item) => [(int) $item['id'] => $item['role']])->all();
         $rows = $this->applySubscriptionAppetizers($date, $rows, $menuItems, true);
+        foreach ($rows as $index => $row) {
+            foreach ($allowedColumns as $columnId => $role) {
+                if ($role !== 'main'
+                    && ((int) ($row['quantities'][$columnId]['half'] ?? 0) > 0
+                        || (int) ($row['quantities'][$columnId]['full'] ?? 0) > 0)) {
+                    throw ValidationException::withMessages([
+                        "rows.{$index}.quantities.{$columnId}" => __('Portions can only be selected for main dishes.'),
+                    ]);
+                }
+            }
+        }
         $extraIds = collect($rows)->flatMap(fn ($row) => collect($row['extras'] ?? [])->pluck('menu_item_id'))
             ->map(fn ($id) => (int) $id)->filter()->unique()->all();
         $extraNames = MenuItem::whereIn('id', $extraIds)->pluck('name', 'id');
@@ -203,13 +225,17 @@ class OrderSheetEditorService
                     'order_id' => $orderId,
                 ]);
 
-                foreach ($allowedColumns as $columnId) {
-                    $quantity = (int) ($row['quantities'][$columnId] ?? 0);
-                    if ($quantity > 0) {
-                        $entry->quantities()->create([
-                            'daily_dish_menu_item_id' => $columnId,
-                            'quantity' => $quantity,
-                        ]);
+                foreach ($allowedColumns as $columnId => $role) {
+                    $portionTypes = $role === 'main' ? self::PORTION_TYPES : ['plate'];
+                    foreach ($portionTypes as $portionType) {
+                        $quantity = (int) ($row['quantities'][$columnId][$portionType] ?? 0);
+                        if ($quantity > 0) {
+                            $entry->quantities()->create([
+                                'daily_dish_menu_item_id' => $columnId,
+                                'portion_type' => $portionType,
+                                'quantity' => $quantity,
+                            ]);
+                        }
                     }
                 }
 
@@ -269,7 +295,8 @@ class OrderSheetEditorService
                 return $row;
             }
 
-            $mainQuantity = collect($mainColumnIds)->sum(fn ($columnId) => max(0, (int) ($row['quantities'][$columnId] ?? 0)));
+            $mainQuantity = collect($mainColumnIds)->sum(fn ($columnId) => collect(self::PORTION_TYPES)
+                ->sum(fn ($portionType) => max(0, (int) ($row['quantities'][$columnId][$portionType] ?? 0))));
             $appetizer = $benefit['appetizer'];
             if (! $appetizer) {
                 if ($rejectMissing && $mainQuantity > 0) {
@@ -308,5 +335,28 @@ class OrderSheetEditorService
             ->where('code', $code)
             ->where('is_active', true)
             ->first(['id', 'name']);
+    }
+
+    /** @return array{plate: int, half: int, full: int} */
+    private function emptyPortions(): array
+    {
+        return ['plate' => 0, 'half' => 0, 'full' => 0];
+    }
+
+    private function portionTypeForOrderItem(Order $order, string $description, string $role): string
+    {
+        if ($role !== 'main') {
+            return 'plate';
+        }
+        if (stripos($description, '(Half Portion)') !== false) {
+            return 'half';
+        }
+        if (stripos($description, '(Full Portion)') !== false) {
+            return 'full';
+        }
+
+        return in_array($order->daily_dish_portion_type, ['half', 'full'], true)
+            ? $order->daily_dish_portion_type
+            : 'plate';
     }
 }

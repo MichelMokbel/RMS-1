@@ -126,9 +126,9 @@ it('rejects Excel export for a user outside the order sheet roles', function () 
 
 it('exports numeric dish totals and literal text in a valid Excel workbook', function () {
     $response = app(\App\Services\OrderSheet\OrderSheetExcelExport::class)->download('2026-09-10', [
-        ['id' => 7, 'name' => 'Main dish'],
+        ['id' => 7, 'name' => 'Main dish', 'role' => 'main'],
     ], [
-        ['order_id' => 23, 'customer_name' => '=Literal name', 'location' => 'Office', 'qty' => [7 => 2], 'extras' => [
+        ['order_id' => 23, 'customer_name' => '=Literal name', 'location' => 'Office', 'qty' => [7 => ['plate' => 2, 'half' => 0, 'full' => 0]], 'extras' => [
             ['menu_item_name' => 'Salad', 'quantity' => 3],
         ], 'remarks' => 'No onions'],
         ['customer_name' => ''],
@@ -144,8 +144,8 @@ it('exports numeric dish totals and literal text in a valid Excel workbook', fun
         ->and((string) $xml->xpath('//s:c[@r="C2"]/s:is/s:t')[0])->toBe('=Literal name')
         ->and($xml->xpath('//s:f'))->toHaveCount(0)
         ->and((string) $xml->xpath('//s:c[@r="E3"]/s:v')[0])->toBe('2')
-        ->and((string) $xml->xpath('//s:c[@r="G3"]/s:v')[0])->toBe('3')
-        ->and((string) $xml->xpath('//s:c[@r="H3"]/s:v')[0])->toBe('5');
+        ->and((string) $xml->xpath('//s:c[@r="I3"]/s:v')[0])->toBe('3')
+        ->and((string) $xml->xpath('//s:c[@r="J3"]/s:v')[0])->toBe('5');
 });
 
 it('shows online delivery locations on the page and print while preserving manual sheet locations', function () {
