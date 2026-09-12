@@ -74,7 +74,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-4">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
             <flux:input wire:model="service_date" type="date" :label="__('Service Date')" />
-            <flux:input wire:model="branch_id" type="number" :label="__('Branch ID (optional)')" placeholder="{{ __('All branches') }}" />
+            <x-number-input wire:model="branch_id" type="number" :label="__('Branch ID (optional)')" placeholder="{{ __('All branches') }}" />
             <div class="flex items-center gap-3 pt-6">
                 <flux:checkbox wire:model="dry_run" :label="__('Dry Run (no orders)')" />
             </div>

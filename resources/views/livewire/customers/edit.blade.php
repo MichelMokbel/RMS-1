@@ -147,7 +147,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endforeach
                     </select>
                 @else
-                    <flux:input wire:model="default_payment_method_id" type="number" min="1" :label="__('Payment Method ID (optional)')" />
+                    <x-number-input wire:model="default_payment_method_id" type="number" min="1" :label="__('Payment Method ID (optional)')" />
                     <p class="text-xs text-neutral-500 mt-1">{{ __('No payment_methods table detected; enter ID manually if needed.') }}</p>
                 @endif
             </div>
@@ -159,8 +159,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <flux:input wire:model="credit_limit" type="number" step="0.001" min="0" :label="__('Credit Limit')" />
-            <flux:input wire:model="credit_terms_days" type="number" min="0" :label="__('Credit Terms Days')" />
+            <x-number-input wire:model="credit_limit" type="number" min="0" :label="__('Credit Limit')" />
+            <x-number-input wire:model="credit_terms_days" type="number" min="0" :label="__('Credit Terms Days')" />
             <flux:input wire:model="credit_status" :label="__('Credit Status')" maxlength="100" />
         </div>
 

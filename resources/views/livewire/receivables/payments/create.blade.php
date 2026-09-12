@@ -440,7 +440,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @endforeach
                         </select>
                     @else
-                        <flux:input wire:model.live="branch_id" type="number" :label="__('Branch ID')" />
+                        <x-number-input wire:model.live="branch_id" type="number" :label="__('Branch ID')" />
                     @endif
                 </div>
                 <div class="md:col-span-2 relative">
@@ -475,7 +475,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
 
             <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <flux:input wire:model.live="amount" type="number" step="{{ $this->moneyStep() }}" min="0" :label="__('Amount')" />
+                <x-number-input wire:model.live="amount" type="number" min="0" :label="__('Amount')" />
                 <div>
                     <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Method') }}</label>
                     <select wire:model.live="payment_method" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
@@ -581,7 +581,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $alloc['due_date'] }}</td>
                                 <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney($alloc['outstanding_cents']) }}</td>
                                 <td class="px-3 py-2 text-sm text-right">
-                                    <flux:input wire:model.live="allocations.{{ $idx }}.amount" type="number" step="{{ $this->moneyStep() }}" min="0" />
+                                    <x-number-input wire:model.live="allocations.{{ $idx }}.amount" type="number" min="0" />
                                 </td>
                             </tr>
                         @empty
@@ -605,7 +605,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
 
             <div class="w-full">
-                <flux:input wire:model.live="credit_note_amount" type="number" step="{{ $this->moneyStep() }}" min="0" :label="__('Credit Note Amount')" />
+                <x-number-input wire:model.live="credit_note_amount" type="number" min="0" :label="__('Credit Note Amount')" />
                 @error('credit_note_amount') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
             </div>
 

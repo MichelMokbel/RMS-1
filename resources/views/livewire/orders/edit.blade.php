@@ -129,10 +129,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
                             <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $row['description_snapshot'] }}</td>
                             <td class="px-3 py-2 text-sm">
-                                <flux:input wire:model="items.{{ $index }}.quantity" type="number" step="0.001" class="w-24" :disabled="!$itemsEditable" />
+                                <x-number-input wire:model="items.{{ $index }}.quantity" type="number" class="w-24" :disabled="!$itemsEditable" />
                             </td>
                             <td class="px-3 py-2 text-sm">
-                                <flux:input wire:model="items.{{ $index }}.unit_price" type="number" step="0.001" class="w-24" :disabled="!$itemsEditable" />
+                                <x-number-input wire:model="items.{{ $index }}.unit_price" type="number" class="w-24" :disabled="!$itemsEditable" />
                             </td>
                             <td class="px-3 py-2 text-sm">
                                 <select wire:model="items.{{ $index }}.status" class="rounded-md border border-neutral-200 bg-white px-2 py-1 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50" @disabled(! $itemsEditable)>

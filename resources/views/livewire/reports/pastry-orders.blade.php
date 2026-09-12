@@ -127,7 +127,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </select>
             </div>
             <div class="w-28">
-                <flux:input wire:model.live="branch_id" type="number" :label="__('Branch')" />
+                <x-number-input wire:model.live="branch_id" type="number" :label="__('Branch')" />
             </div>
             <div class="w-36">
                 <flux:input wire:model.live="date_from" type="date" :label="__('From')" />

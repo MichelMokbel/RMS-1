@@ -253,7 +253,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <flux:input wire:model="payment_date" type="date" :label="__('Payment Date')" />
             </div>
             <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <flux:input wire:model="amount" type="number" step="0.01" min="0.01" :label="__('Amount')" />
+                <x-number-input wire:model="amount" type="number" min="0.01" :label="__('Amount')" />
                 <div>
                     <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Method') }}</label>
                     <select wire:model="payment_method" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
@@ -325,7 +325,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $alloc['due_date'] }}</td>
                         <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ number_format((float)$alloc['outstanding'], 2) }}</td>
                         <td class="px-3 py-2 text-sm">
-                            <flux:input wire:model="allocations.{{ $idx }}.allocated_amount" type="number" step="0.01" min="0" />
+                            <x-number-input wire:model="allocations.{{ $idx }}.allocated_amount" type="number" min="0" />
                         </td>
                     </tr>
                 @empty

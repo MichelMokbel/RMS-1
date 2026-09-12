@@ -354,8 +354,8 @@ new #[Layout('components.layouts.app')] class extends Component
                             <flux:input wire:model="newInvoice.due_date" type="date" :label="__('Due Date')" />
                             <div><label class="mb-1 block text-sm font-medium">{{ __('Paid') }}</label><select wire:model="newInvoice.paid" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"><option value="0">{{ __('Unpaid') }}</option><option value="1">{{ __('Paid') }}</option></select></div>
                             <flux:input wire:model="newInvoice.description" :label="__('Line Description')" />
-                            <flux:input wire:model="newInvoice.quantity" type="number" step="0.0001" min="0.0001" :label="__('Quantity')" />
-                            <flux:input wire:model="newInvoice.unit_price" type="number" step="0.0001" min="0" :label="__('Unit Price')" />
+                            <x-number-input wire:model="newInvoice.quantity" type="number" min="0.0001" :label="__('Quantity')" />
+                            <x-number-input wire:model="newInvoice.unit_price" type="number" min="0" :label="__('Unit Price')" />
                             <flux:input wire:model="newInvoice.notes" :label="__('Notes')" />
                         </div>
                         <div class="flex justify-end"><flux:button type="submit" variant="primary" icon="plus">{{ __('Add Expense') }}</flux:button></div>

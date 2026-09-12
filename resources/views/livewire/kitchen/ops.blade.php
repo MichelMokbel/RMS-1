@@ -107,7 +107,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <div class="sticky top-0 z-10 rounded-lg border border-neutral-200 bg-white/95 p-4 shadow-sm backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/95 space-y-3">
         <div class="app-filter-grid">
-            <flux:input wire:model.live="branch" type="number" min="1" :label="__('Branch')" class="w-28" />
+            <x-number-input wire:model.live="branch" type="number" min="1" :label="__('Branch')" class="w-28" />
             <flux:input wire:model.live="date" type="date" :label="__('Date')" />
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Department') }}</label>

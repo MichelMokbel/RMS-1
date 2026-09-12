@@ -1005,7 +1005,7 @@ new #[Layout('components.layouts.app')] class extends Component
                                 <option value="annual">{{ __('Annual') }}</option>
                             </select>
                         </div>
-                        <flux:input wire:model="recurring_due_day_offset" type="number" min="0" :label="__('Due in days')" />
+                        <x-number-input wire:model="recurring_due_day_offset" type="number" min="0" :label="__('Due in days')" />
                     </div>
                     <div class="grid gap-4 md:grid-cols-2">
                         <flux:input wire:model="recurring_start_date" type="date" :label="__('Start Date')" />
@@ -1030,8 +1030,8 @@ new #[Layout('components.layouts.app')] class extends Component
                         @foreach($recurring_lines as $index => $line)
                             <div class="grid gap-3 md:grid-cols-[1fr,120px,120px,auto] items-end">
                                 <flux:input wire:model="recurring_lines.{{ $index }}.description" :label="__('Description')" />
-                                <flux:input wire:model="recurring_lines.{{ $index }}.quantity" type="number" step="0.001" :label="__('Qty')" />
-                                <flux:input wire:model="recurring_lines.{{ $index }}.unit_price" type="number" step="0.0001" :label="__('Unit Price')" />
+                                <x-number-input wire:model="recurring_lines.{{ $index }}.quantity" type="number" :label="__('Qty')" />
+                                <x-number-input wire:model="recurring_lines.{{ $index }}.unit_price" type="number" :label="__('Unit Price')" />
                                 @can('finance.write')
                                     <flux:button type="button" wire:click="removeRecurringLine({{ $index }})" variant="ghost" size="sm">{{ __('Remove') }}</flux:button>
                                 @endcan

@@ -235,7 +235,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endforeach
                     </select>
                 @else
-                    <flux:input wire:model.live="branch_id" type="number" />
+                    <x-number-input wire:model.live="branch_id" type="number" />
                 @endif
             </div>
 

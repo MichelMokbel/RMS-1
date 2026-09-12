@@ -735,10 +735,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <flux:input wire:model="lines.{{ $index }}.description" wire:blur="refreshLines" :label="__('Description')" />
                         </div>
                         <div class="md:col-span-2">
-                            <flux:input wire:model.live="lines.{{ $index }}.quantity" type="number" step="0.001" min="0.001" :label="__('Qty')" />
+                            <x-number-input wire:model.live="lines.{{ $index }}.quantity" type="number" min="0.001" :label="__('Qty')" />
                         </div>
                         <div class="md:col-span-2">
-                            <flux:input wire:model="lines.{{ $index }}.unit_price" wire:blur="refreshLines" type="number" step="0.0001" min="0" :label="__('Unit Price')" />
+                            <x-number-input wire:model="lines.{{ $index }}.unit_price" wire:blur="refreshLines" type="number" min="0" :label="__('Unit Price')" />
                         </div>
                         <div class="md:col-span-1">
                             <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Line Total') }}</label>

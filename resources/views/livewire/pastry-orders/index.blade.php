@@ -598,7 +598,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </select>
             </div>
             <div class="w-28">
-                <flux:input wire:model.live="branch_id" type="number" :label="__('Branch')" />
+                <x-number-input wire:model.live="branch_id" type="number" :label="__('Branch')" />
             </div>
         </div>
     </div>
@@ -803,7 +803,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 @foreach ($branches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach
                             </select>
                         @else
-                            <flux:input wire:model="c_branch_id" type="number" />
+                            <x-number-input wire:model="c_branch_id" type="number" />
                         @endif
                     </div>
                     <div>
@@ -940,18 +940,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     </template>
                                 </div>
                                 {{-- Qty — plain input, fully managed by Livewire --}}
-                                <input wire:model="c_items.{{ $idx }}.quantity"
-                                       type="number" step="0.001" min="0.001"
+                                <x-number-input :plain="true" wire:model="c_items.{{ $idx }}.quantity"
+                                       type="number" min="0.001"
                                        class="w-full rounded-md border border-neutral-200 bg-white px-2 py-2 text-sm text-center text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
                                        placeholder="1" />
                                 {{-- Price --}}
-                                <input wire:model="c_items.{{ $idx }}.unit_price"
-                                       type="number" step="0.001" min="0"
+                                <x-number-input :plain="true" wire:model="c_items.{{ $idx }}.unit_price"
+                                       type="number" min="0"
                                        class="w-full rounded-md border border-neutral-200 bg-white px-2 py-2 text-sm text-center text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
                                        placeholder="{{ __('Auto') }}" />
                                 {{-- Disc --}}
-                                <input wire:model="c_items.{{ $idx }}.discount_amount"
-                                       type="number" step="0.001" min="0"
+                                <x-number-input :plain="true" wire:model="c_items.{{ $idx }}.discount_amount"
+                                       type="number" min="0"
                                        class="w-full rounded-md border border-neutral-200 bg-white px-2 py-2 text-sm text-center text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
                                        placeholder="0" />
                                 {{-- Remove --}}
@@ -973,7 +973,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
 
                 {{-- Order discount --}}
-                <flux:input wire:model="c_order_discount" type="number" step="0.001" min="0" :label="__('Order Discount')" />
+                <x-number-input wire:model="c_order_discount" type="number" min="0" :label="__('Order Discount')" />
 
                 <div class="sticky bottom-0 -mx-4 px-4 py-3 flex justify-end gap-3 border-t border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
                     <flux:button type="button" variant="ghost" wire:click="closeCreateDrawer">{{ __('Cancel') }}</flux:button>
@@ -1025,7 +1025,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     @foreach ($branches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach
                                 </select>
                             @else
-                                <flux:input wire:model="e_branch_id" type="number" />
+                                <x-number-input wire:model="e_branch_id" type="number" />
                             @endif
                         </div>
                         <div>
@@ -1179,18 +1179,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         </template>
                                     </div>
                                     {{-- Qty — plain input, fully managed by Livewire --}}
-                                    <input wire:model="e_items.{{ $idx }}.quantity"
-                                           type="number" step="0.001" min="0.001"
+                                    <x-number-input :plain="true" wire:model="e_items.{{ $idx }}.quantity"
+                                           type="number" min="0.001"
                                            class="w-full rounded-md border border-neutral-200 bg-white px-2 py-2 text-sm text-center text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
                                            placeholder="1" />
                                     {{-- Price --}}
-                                    <input wire:model="e_items.{{ $idx }}.unit_price"
-                                           type="number" step="0.001" min="0"
+                                    <x-number-input :plain="true" wire:model="e_items.{{ $idx }}.unit_price"
+                                           type="number" min="0"
                                            class="w-full rounded-md border border-neutral-200 bg-white px-2 py-2 text-sm text-center text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
                                            placeholder="{{ __('Auto') }}" />
                                     {{-- Disc --}}
-                                    <input wire:model="e_items.{{ $idx }}.discount_amount"
-                                           type="number" step="0.001" min="0"
+                                    <x-number-input :plain="true" wire:model="e_items.{{ $idx }}.discount_amount"
+                                           type="number" min="0"
                                            class="w-full rounded-md border border-neutral-200 bg-white px-2 py-2 text-sm text-center text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50"
                                            placeholder="0" />
                                     {{-- Remove --}}
@@ -1211,7 +1211,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </button>
                     </div>
 
-                    <flux:input wire:model="e_order_discount" type="number" step="0.001" min="0" :label="__('Order Discount')" />
+                    <x-number-input wire:model="e_order_discount" type="number" min="0" :label="__('Order Discount')" />
 
                 </fieldset>
 

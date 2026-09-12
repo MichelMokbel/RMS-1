@@ -197,7 +197,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endif
 
                 <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <flux:input wire:model="produce_quantity" type="number" step="0.001" min="0.001" :label="__('Produced Quantity')" />
+                    <x-number-input wire:model="produce_quantity" type="number" min="0.001" :label="__('Produced Quantity')" />
                     <flux:input wire:model="produce_date" type="datetime-local" :label="__('Production Date')" />
                     <flux:input wire:model="produce_reference" :label="__('Reference')" />
                     <flux:input wire:model="produce_notes" :label="__('Notes')" />

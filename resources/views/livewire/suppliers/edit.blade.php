@@ -154,7 +154,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <option value="inactive">{{ __('Inactive') }}</option>
                 </select>
             </div>
-            <flux:input wire:model="approval_threshold" :label="__('Approval Threshold')" type="number" step="0.01" min="0" />
+            <x-number-input wire:model="approval_threshold" :label="__('Approval Threshold')" type="number" min="0" />
         </div>
 
         <flux:textarea wire:model="address" :label="__('Address')" rows="3" />

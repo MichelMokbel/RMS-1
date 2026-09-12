@@ -120,7 +120,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <flux:input wire:model="name" :label="__('Name')" required maxlength="255" />
             <flux:input wire:model="arabic_name" :label="__('Arabic Name')" maxlength="255" />
         </div>
-        <flux:input wire:model="display_order" type="number" min="0" :label="__('Display Order')" />
+        <x-number-input wire:model="display_order" type="number" min="0" :label="__('Display Order')" />
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             @if ($categories->count())
@@ -151,7 +151,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <flux:input wire:model="selling_price_per_unit" type="number" step="0.001" min="0" :label="__('Selling Price')" />
+            <x-number-input wire:model="selling_price_per_unit" type="number" min="0" :label="__('Selling Price')" />
             <div>
                 <label class="block text-sm font-medium text-neutral-800 dark:text-neutral-200 mb-1">{{ __('Unit') }}</label>
                 <select wire:model="unit" class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
@@ -162,7 +162,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         </div>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <flux:input wire:model="tax_rate" type="number" step="0.01" min="0" max="100" :label="__('Tax Rate (%)')" />
+            <x-number-input wire:model="tax_rate" type="number" min="0" max="100" :label="__('Tax Rate (%)')" />
             <div class="flex items-center gap-3">
                 <flux:checkbox wire:model="is_active" :label="__('Active')" />
             </div>

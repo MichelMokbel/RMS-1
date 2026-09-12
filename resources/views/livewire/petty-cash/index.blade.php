@@ -256,8 +256,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 <form wire:submit="saveWallet" class="space-y-4">
                     <flux:input wire:model="walletForm.driver_name" :label="__('Custodian Name')" />
-                    <flux:input wire:model="walletForm.driver_id" type="number" :label="__('Custodian Code')" />
-                    <flux:input wire:model="walletForm.target_float" type="number" step="0.01" min="0" :label="__('Target Float')" />
+                    <x-number-input wire:model="walletForm.driver_id" type="number" :label="__('Custodian Code')" />
+                    <x-number-input wire:model="walletForm.target_float" type="number" min="0" :label="__('Target Float')" />
                     <label class="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
                         <input type="checkbox" wire:model="walletForm.active" class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500">
                         {{ __('Active') }}
@@ -321,7 +321,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </select>
                     </div>
                     <flux:input wire:model="issueForm.issue_date" type="date" :label="__('Issue Date')" />
-                    <flux:input wire:model="issueForm.amount" type="number" step="0.01" min="0.01" :label="__('Amount')" />
+                    <x-number-input wire:model="issueForm.amount" type="number" min="0.01" :label="__('Amount')" />
                     <div>
                         <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Method') }}</label>
                         <select wire:model.live="issueForm.method" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
@@ -407,7 +407,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                     <flux:input wire:model="reconForm.period_start" type="date" :label="__('Period Start')" />
                     <flux:input wire:model="reconForm.period_end" type="date" :label="__('Period End')" />
-                    <flux:input wire:model="reconForm.counted_balance" type="number" step="0.01" :label="__('Counted Balance')" />
+                    <x-number-input wire:model="reconForm.counted_balance" type="number" :label="__('Counted Balance')" />
                     <flux:textarea wire:model="reconForm.note" :label="__('Note')" rows="3" />
                     <flux:button type="submit" :disabled="!$this->canManageMutations()">{{ __('Record Reconciliation') }}</flux:button>
                 </form>

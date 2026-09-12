@@ -64,7 +64,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Branch ID') }}</label>
-                <flux:input wire:model.live="branch_id" type="number" class="w-24" />
+                <x-number-input wire:model.live="branch_id" type="number" class="w-24" />
             </div>
         </div>
     </div>
