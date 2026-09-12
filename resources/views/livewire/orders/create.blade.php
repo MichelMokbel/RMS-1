@@ -420,7 +420,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </select>
                 </div>
             @else
-                <flux:input wire:model="branch_id" type="number" :label="__('Branch ID')" />
+                <x-number-input wire:model="branch_id" type="number" :label="__('Branch ID')" />
             @endif
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Source') }}</label>
@@ -610,13 +610,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     </div>
                                 </td>
                                 <td class="px-3 py-2 align-top">
-                                    <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.quantity" type="number" step="0.001" class="w-20" />
+                                    <x-number-input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.quantity" type="number" class="w-20" />
                                 </td>
                                 <td class="px-3 py-2 align-top">
-                                    <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.unit_price" type="number" step="0.001" class="w-28" :placeholder="__('Auto')" />
+                                    <x-number-input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.unit_price" type="number" class="w-28" :placeholder="__('Auto')" />
                                 </td>
                                 <td class="px-3 py-2 align-top">
-                                    <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.discount_amount" type="number" step="0.001" class="w-24" />
+                                    <x-number-input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.discount_amount" type="number" class="w-24" />
                                 </td>
                                 <td class="px-3 py-2 align-top text-sm text-neutral-700 dark:text-neutral-200">
                                     {{ number_format($lineTotal, 3, '.', '') }}
@@ -643,11 +643,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <div class="flex items-center justify-between text-neutral-600 dark:text-neutral-300">
                         <label for="order_discount_amount" class="text-sm">{{ __('Order Discount') }}</label>
                         <div class="w-full sm:w-32">
-                            <flux:input
+                            <x-number-input
                                 id="order_discount_amount"
                                 wire:model.live.debounce.300ms="order_discount_amount"
                                 type="number"
-                                step="0.001"
                                 class="text-right"
                             />
                         </div>
@@ -761,8 +760,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @foreach($rows as $idx => $row)
                                 <div class="flex flex-wrap items-center gap-3 py-1">
                                     <flux:checkbox wire:model="selected_items.{{ $idx }}.menu_item_id" :value="$row->menu_item_id" :label="($row->menuItem->code ?? '').' '.$row->menuItem->name" />
-                                    <flux:input wire:model="selected_items.{{ $idx }}.quantity" type="number" step="0.001" class="w-28" />
-                                    <flux:input wire:model="selected_items.{{ $idx }}.unit_price" type="number" step="0.001" class="w-28" :placeholder="__('Auto')" />
+                                    <x-number-input wire:model="selected_items.{{ $idx }}.quantity" type="number" class="w-28" />
+                                    <x-number-input wire:model="selected_items.{{ $idx }}.unit_price" type="number" class="w-28" :placeholder="__('Auto')" />
                                 </div>
                             @endforeach
                         </div>
@@ -798,7 +797,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endif
                 </div>
 
-                <flux:input wire:model="menu_item_price" type="number" step="0.001" min="0" :label="__('Selling Price')" />
+                <x-number-input wire:model="menu_item_price" type="number" min="0" :label="__('Selling Price')" />
                 <div class="flex items-center gap-3">
                     <flux:checkbox wire:model="menu_item_is_active" :label="__('Active')" />
                 </div>

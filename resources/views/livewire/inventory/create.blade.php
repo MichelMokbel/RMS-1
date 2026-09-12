@@ -177,13 +177,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <flux:input wire:model="units_per_package" type="number" min="0.001" step="0.001" :label="__('Units per Package')" />
-            <flux:input wire:model="minimum_stock" type="number" min="0" step="0.001" :label="__('Minimum Stock')" />
-            <flux:input wire:model="current_stock" type="number" min="0" step="0.001" :label="__('Initial Stock')" />
+            <x-number-input wire:model="units_per_package" type="number" min="0.001" :label="__('Units per Package')" />
+            <x-number-input wire:model="minimum_stock" type="number" min="0" :label="__('Minimum Stock')" />
+            <x-number-input wire:model="current_stock" type="number" min="0" :label="__('Initial Stock')" />
         </div>
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <flux:input wire:model="cost_per_unit" type="number" step="0.0001" min="0" :label="__('Package Cost')" />
+            <x-number-input wire:model="cost_per_unit" type="number" min="0" :label="__('Package Cost')" />
             <flux:input wire:model="location" :label="__('Location')" maxlength="100" />
             <div>
                 <label class="block text-sm font-medium text-neutral-800 dark:text-neutral-200 mb-1">{{ __('Status') }}</label>

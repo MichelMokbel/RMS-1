@@ -849,10 +849,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @error("lines.$index.description") <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
                         </div>
                         <div class="md:col-span-2">
-                            <flux:input wire:model.live="lines.{{ $index }}.quantity" type="number" step="0.001" min="0.001" :label="__('Qty')" />
+                            <x-number-input wire:model.live="lines.{{ $index }}.quantity" type="number" min="0.001" :label="__('Qty')" />
                         </div>
                         <div class="md:col-span-2">
-                            <flux:input wire:model="lines.{{ $index }}.unit_price" wire:blur="refreshLines" type="number" step="0.0001" min="0" :label="__('Unit Price')" />
+                            <x-number-input wire:model="lines.{{ $index }}.unit_price" wire:blur="refreshLines" type="number" min="0" :label="__('Unit Price')" />
                         </div>
                         <div class="md:col-span-1">
                             <label class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Line Total') }}</label>
@@ -869,7 +869,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             <div class="grid grid-cols-1 gap-4 md:grid-cols-[1fr,180px]">
                 <div></div>
-                <flux:input wire:model="tax_amount" type="number" step="0.01" min="0" :label="__('Tax')" />
+                <x-number-input wire:model="tax_amount" type="number" min="0" :label="__('Tax')" />
             </div>
 
             <div class="flex justify-end">

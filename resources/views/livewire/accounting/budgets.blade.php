@@ -430,10 +430,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </div>
                             <div class="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
                                 @foreach ($periods as $periodIndex => $period)
-                                    <flux:input
+                                    <x-number-input
                                         wire:model="budget_lines.{{ $index }}.period_amounts.{{ $periodIndex }}"
                                         type="number"
-                                        step="0.01"
                                         :label="__('P:period', ['period' => $period->period_number])"
                                     />
                                 @endforeach

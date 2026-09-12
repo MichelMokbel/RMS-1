@@ -44,8 +44,8 @@
             @foreach($importInvoice->rows as $line)
                 <form wire:key="bulk-row-{{ $line->id }}" wire:submit="saveRow({{ $line->id }})" @class(['grid gap-2 rounded-md bg-neutral-50 p-3 md:grid-cols-[minmax(0,1fr)_8rem_10rem_auto] dark:bg-neutral-800', 'opacity-50' => $line->excluded])>
                     <flux:input wire:model="rowForms.{{ $line->id }}.description" :label="__('Description')" :disabled="$line->excluded" />
-                    <flux:input wire:model="rowForms.{{ $line->id }}.quantity" type="number" step="0.001" min="0.001" :label="__('Quantity')" :disabled="$line->excluded" />
-                    <flux:input wire:model="rowForms.{{ $line->id }}.unit_price" type="number" step="0.0001" min="0" :label="__('Unit Price')" :disabled="$line->excluded" />
+                    <x-number-input wire:model="rowForms.{{ $line->id }}.quantity" type="number" min="0.001" :label="__('Quantity')" :disabled="$line->excluded" />
+                    <x-number-input wire:model="rowForms.{{ $line->id }}.unit_price" type="number" min="0" :label="__('Unit Price')" :disabled="$line->excluded" />
                     <div class="flex items-end gap-1">
                         @unless($line->excluded)<flux:button type="submit" size="sm">{{ __('Save') }}</flux:button>@endunless
                         <flux:button type="button" wire:click="toggleRow({{ $line->id }}, {{ $line->excluded ? 'false' : 'true' }})" size="sm" variant="ghost">{{ $line->excluded ? __('Restore') : __('Remove') }}</flux:button>

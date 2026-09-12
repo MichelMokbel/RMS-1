@@ -212,7 +212,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                 </div>
             </div>
-            <flux:input wire:model="branch_id" type="number" :label="__('Branch ID')" />
+            <x-number-input wire:model="branch_id" type="number" :label="__('Branch ID')" />
         </div>
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-4">

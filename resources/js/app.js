@@ -1,3 +1,4 @@
+import './number-input';
 import ApexCharts from 'apexcharts';
 import './help/bot';
 import './quotations/editor';

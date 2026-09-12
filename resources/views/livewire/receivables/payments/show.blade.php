@@ -480,7 +480,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $allocation['due_date'] }}</td>
                                 <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney($allocation['outstanding_cents']) }}</td>
                                 <td class="px-3 py-2 text-sm text-right">
-                                    <flux:input wire:model.live="allocations.{{ $idx }}.amount" type="number" step="{{ $this->moneyStep() }}" min="0" />
+                                    <x-number-input wire:model.live="allocations.{{ $idx }}.amount" type="number" min="0" />
                                 </td>
                             </tr>
                         @empty

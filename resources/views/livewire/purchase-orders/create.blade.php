@@ -507,11 +507,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     @error("lines.$index.item_id") <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                                 </td>
                                 <td class="px-3 py-3 text-sm">
-                                    <flux:input wire:model.live="lines.{{ $index }}.quantity" type="number" min="0.001" step="0.001" />
+                                    <x-number-input wire:model.live="lines.{{ $index }}.quantity" type="number" min="0.001" />
                                     @error("lines.$index.quantity") <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                                 </td>
                                 <td class="px-3 py-3 text-sm">
-                                    <flux:input wire:model.live="lines.{{ $index }}.unit_price" type="number" step="0.01" min="0" />
+                                    <x-number-input wire:model.live="lines.{{ $index }}.unit_price" type="number" min="0" />
                                     @error("lines.$index.unit_price") <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                                 </td>
                                 <td class="px-3 py-3 text-sm text-neutral-900 dark:text-neutral-100">
@@ -559,8 +559,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <flux:input wire:model="new_item_code" :label="__('Item Code')" readonly />
                 <flux:input wire:model="new_item_name" :label="__('Item Name')" required />
                 <flux:input wire:model="new_item_unit_of_measure" :label="__('Unit of Measure')" maxlength="50" />
-                <flux:input wire:model="new_item_units_per_package" type="number" min="0.001" step="0.001" :label="__('Units per Package')" />
-                <flux:input wire:model="new_item_cost_per_unit" type="number" step="0.01" min="0" :label="__('Package Cost')" />
+                <x-number-input wire:model="new_item_units_per_package" type="number" min="0.001" :label="__('Units per Package')" />
+                <x-number-input wire:model="new_item_cost_per_unit" type="number" min="0" :label="__('Package Cost')" />
             </div>
 
             <div class="flex justify-end gap-2">

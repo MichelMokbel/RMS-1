@@ -246,11 +246,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         <flux:textarea wire:model="description" :label="__('Description')" rows="3" />
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <flux:input wire:model="yield_quantity" type="number" step="0.001" min="0.001" :label="__('Yield Quantity')" />
+            <x-number-input wire:model="yield_quantity" type="number" min="0.001" :label="__('Yield Quantity')" />
             <flux:input wire:model="yield_unit" :label="__('Yield Unit')" />
-            <flux:input wire:model="overhead_pct" type="number" step="0.0001" min="0" :label="__('Overhead %')" />
+            <x-number-input wire:model="overhead_pct" type="number" min="0" :label="__('Overhead %')" />
         </div>
-        <flux:input wire:model="selling_price_per_unit" type="number" step="0.01" min="0" :label="__('Selling Price / Unit')" />
+        <x-number-input wire:model="selling_price_per_unit" type="number" min="0" :label="__('Selling Price / Unit')" />
     </div>
 
     <div class="space-y-3 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
@@ -345,7 +345,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 @endif
                             </td>
                             <td class="px-3 py-2 text-sm">
-                                <flux:input wire:model="items.{{ $index }}.quantity" type="number" step="0.001" min="0" />
+                                <x-number-input wire:model="items.{{ $index }}.quantity" type="number" min="0" />
                             </td>
                             <td class="px-3 py-2 text-sm">
                                 <flux:input wire:model="items.{{ $index }}.unit" />

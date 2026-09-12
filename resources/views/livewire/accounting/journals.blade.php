@@ -236,10 +236,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </select>
                         </div>
                         <div class="md:col-span-2">
-                            <flux:input wire:model="lines.{{ $index }}.debit" type="number" step="0.01" min="0" :label="__('Debit')" />
+                            <x-number-input wire:model="lines.{{ $index }}.debit" type="number" min="0" :label="__('Debit')" />
                         </div>
                         <div class="md:col-span-2">
-                            <flux:input wire:model="lines.{{ $index }}.credit" type="number" step="0.01" min="0" :label="__('Credit')" />
+                            <x-number-input wire:model="lines.{{ $index }}.credit" type="number" min="0" :label="__('Credit')" />
                         </div>
                         <div class="md:col-span-2">
                             <label class="mb-1 block text-sm font-medium text-neutral-800 dark:text-neutral-200">{{ __('Branch') }}</label>

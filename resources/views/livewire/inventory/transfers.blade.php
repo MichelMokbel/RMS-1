@@ -222,7 +222,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @endif
                         </div>
                         <div>
-                            <flux:input wire:model="lines.{{ $index }}.quantity" type="number" min="0.001" step="0.001" :label="__('Quantity (packages)')" />
+                            <x-number-input wire:model="lines.{{ $index }}.quantity" type="number" min="0.001" :label="__('Quantity (packages)')" />
                             @error('lines.'.$index.'.quantity') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
                         </div>
                         <div class="flex gap-2">

@@ -142,3 +142,21 @@ select:focus[data-flux-control] {
         @apply hidden sm:block;
     }
 }
+
+/* Whole-unit spinner controls; decimal typing remains available. */
+.whole-unit-number { appearance: textfield; padding-inline-end: 1.75rem !important; }
+.whole-unit-number::-webkit-inner-spin-button,
+.whole-unit-number::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.whole-unit-controls { position: absolute; inset-inline-end: 2px; bottom: 2px; display: flex; flex-direction: column; width: 22px; height: 36px; }
+.whole-unit-controls button { flex: 1; font-size: 12px; line-height: 1; color: inherit; border-radius: 3px; }
+.whole-unit-controls button:hover { background: rgb(127 127 127 / 20%); }
+[data-whole-unit-input]:has(input:disabled) .whole-unit-controls,
+[data-whole-unit-input]:has(input[readonly]) .whole-unit-controls { display: none; }
+@media print { .whole-unit-controls { display: none; } }
+@media (pointer: coarse) {
+    [data-whole-unit-input]:has(input:not(:disabled):not([readonly])) { padding-bottom: 44px; }
+    .whole-unit-controls { flex-direction: row; height: 44px; width: 88px; bottom: 0; }
+    .whole-unit-controls button { min-width: 44px; min-height: 44px; }
+}
+.whole-unit-controls { color: #52525b; }
+.dark .whole-unit-controls { color: #d4d4d8; }

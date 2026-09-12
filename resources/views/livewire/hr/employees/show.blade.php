@@ -175,11 +175,11 @@ new #[Layout('components.layouts.app')] class extends Component
                     <div><flux:heading size="lg">{{ __('New compensation package') }}</flux:heading><flux:subheading>{{ __('Record an effective-dated package. Salary amounts are stored in minor units.') }}</flux:subheading></div>
                     <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                         <flux:input wire:model="comp_effective_from" type="date" :label="__('Effective from')" />
-                        <flux:input wire:model="basic_salary" type="number" step="0.01" :label="__('Basic salary (QAR)')" />
-                        <flux:input wire:model="housing_allowance" type="number" step="0.01" :label="__('Housing allowance')" />
-                        <flux:input wire:model="transport_allowance" type="number" step="0.01" :label="__('Transport allowance')" />
-                        <flux:input wire:model="food_allowance" type="number" step="0.01" :label="__('Food allowance')" />
-                        <flux:input wire:model="other_allowance" type="number" step="0.01" :label="__('Other allowance')" />
+                        <x-number-input wire:model="basic_salary" type="number" :label="__('Basic salary (QAR)')" />
+                        <x-number-input wire:model="housing_allowance" type="number" :label="__('Housing allowance')" />
+                        <x-number-input wire:model="transport_allowance" type="number" :label="__('Transport allowance')" />
+                        <x-number-input wire:model="food_allowance" type="number" :label="__('Food allowance')" />
+                        <x-number-input wire:model="other_allowance" type="number" :label="__('Other allowance')" />
                         <flux:input wire:model="bank_name" :label="__('Bank name')" />
                         <flux:input wire:model="iban" :label="__('IBAN')" />
                     </div>

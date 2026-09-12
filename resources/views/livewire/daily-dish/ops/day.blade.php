@@ -176,7 +176,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
         <div class="flex flex-wrap items-end gap-4">
-            <flux:input wire:model.live="branch" type="number" min="1" :label="__('Branch')" class="w-28" />
+            <x-number-input wire:model.live="branch" type="number" min="1" :label="__('Branch')" class="w-28" />
             <flux:input wire:model.live="date" type="date" :label="__('Date')" class="w-44" />
             <div class="flex-1 min-w-[220px]">
                 <flux:input wire:model.live.debounce.300ms="search" :label="__('Search')" placeholder="{{ __('Order # or customer') }}" />

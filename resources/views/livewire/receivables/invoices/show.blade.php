@@ -560,7 +560,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <option value="voucher">{{ __('Voucher') }}</option>
                             </select>
                         </div>
-                        <flux:input wire:model="payment_amount" type="number" step="{{ $this->moneyStep() }}" :label="__('Amount')" />
+                        <x-number-input wire:model="payment_amount" type="number" :label="__('Amount')" />
                         <div class="flex items-end justify-end">
                             <flux:button type="button" wire:click="receivePayment" variant="primary">{{ __('Apply') }}</flux:button>
                         </div>
@@ -573,7 +573,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="space-y-3">
                     <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Credit Note') }}</h2>
                     <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-                        <flux:input wire:model="credit_amount" type="number" step="{{ $this->moneyStep() }}" :label="__('Credit Amount')" />
+                        <x-number-input wire:model="credit_amount" type="number" :label="__('Credit Amount')" />
                         <div class="md:col-span-2 flex items-end justify-end">
                             <flux:button type="button" wire:click="applyCredit" variant="outline">{{ __('Create & Apply Credit Note') }}</flux:button>
                         </div>
@@ -598,7 +598,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </select>
                             @error('advance_payment_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                         </div>
-                        <flux:input wire:model="advance_amount" type="number" step="{{ $this->moneyStep() }}" :label="__('Amount')" />
+                        <x-number-input wire:model="advance_amount" type="number" :label="__('Amount')" />
                         <div class="flex items-end justify-end">
                             <flux:button type="button" wire:click="applyAdvance" variant="primary">{{ __('Apply Advance') }}</flux:button>
                         </div>
