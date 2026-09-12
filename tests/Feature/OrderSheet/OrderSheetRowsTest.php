@@ -188,6 +188,60 @@ it('selects the customer into the requested row and saves with visible feedback'
     expect(OrderSheet::first()->entries()->first()->customer_id)->toBe($this->customer->id);
 });
 
+it('deletes the requested row without moving another rows identity or quantities', function () {
+    $item = MenuItem::factory()->create();
+    $menu = DailyDishMenu::create(['branch_id' => 1, 'service_date' => now()->toDateString(), 'status' => 'published']);
+    $column = $menu->items()->create(['menu_item_id' => $item->id, 'role' => 'main', 'sort_order' => 1]);
+    $page = Volt::test('order-sheet')
+        ->set('rows.0.customer_name', 'First customer')
+        ->set("rows.0.qty.{$column->id}", 1)
+        ->set('rows.1.customer_name', 'Delete this customer')
+        ->set("rows.1.qty.{$column->id}", 2)
+        ->set('rows.2.customer_name', 'Third customer')
+        ->set("rows.2.qty.{$column->id}", 3);
+
+    $rows = $page->get('rows');
+    $firstKey = $rows[0]['row_key'];
+    $deletedKey = $rows[1]['row_key'];
+    $thirdKey = $rows[2]['row_key'];
+    $page->call('removeRow', $deletedKey);
+
+    $remaining = collect($page->get('rows'))->keyBy('row_key');
+    expect($remaining)->toHaveKeys([$firstKey, $thirdKey])
+        ->not->toHaveKey($deletedKey)
+        ->and($remaining[$firstKey]['customer_name'])->toBe('First customer')
+        ->and($remaining[$firstKey]['qty'][$column->id])->toBe(1)
+        ->and($remaining[$thirdKey]['customer_name'])->toBe('Third customer')
+        ->and($remaining[$thirdKey]['qty'][$column->id])->toBe(3);
+});
+
+it('replaces row identities and item counts when the sheet date changes', function () {
+    $todayItem = MenuItem::factory()->create(['name' => 'Today dish']);
+    $todayMenu = DailyDishMenu::create(['branch_id' => 1, 'service_date' => now()->toDateString(), 'status' => 'published']);
+    $todayColumn = $todayMenu->items()->create(['menu_item_id' => $todayItem->id, 'role' => 'main', 'sort_order' => 1]);
+    $tomorrowItem = MenuItem::factory()->create(['name' => 'Tomorrow dish']);
+    $tomorrowMenu = DailyDishMenu::create(['branch_id' => 1, 'service_date' => now()->addDay()->toDateString(), 'status' => 'published']);
+    $tomorrowColumn = $tomorrowMenu->items()->create(['menu_item_id' => $tomorrowItem->id, 'role' => 'main', 'sort_order' => 1]);
+    $todaySheet = OrderSheet::create(['sheet_date' => now()->toDateString()]);
+    $todayEntry = $todaySheet->entries()->create(['customer_name' => 'Today customer']);
+    $todayEntry->quantities()->create(['daily_dish_menu_item_id' => $todayColumn->id, 'quantity' => 2]);
+    $tomorrowSheet = OrderSheet::create(['sheet_date' => now()->addDay()->toDateString()]);
+    $tomorrowEntry = $tomorrowSheet->entries()->create(['customer_name' => 'Tomorrow customer']);
+    $tomorrowEntry->quantities()->create(['daily_dish_menu_item_id' => $tomorrowColumn->id, 'quantity' => 4]);
+
+    $page = Volt::test('order-sheet');
+    $todayKey = collect($page->get('rows'))->firstWhere('customer_name', 'Today customer')['row_key'];
+    $page->call('nextDay');
+    $tomorrowRow = collect($page->get('rows'))->firstWhere('customer_name', 'Tomorrow customer');
+
+    expect($tomorrowRow['row_key'])->toBe('entry-'.$tomorrowEntry->id)
+        ->not->toBe($todayKey)
+        ->and($tomorrowRow['qty'][$tomorrowColumn->id])->toBe(4)
+        ->and($page->html())->toContain('wire:key="order-sheet-page"')
+        ->and($page->html())->toContain('Tomorrow dish')
+        ->not->toContain('Today dish');
+});
+
 it('returns customer results without rendering the full sheet', function () {
     Volt::test('order-sheet')
         ->call('searchCustomers', $this->customer->name)
@@ -239,20 +293,23 @@ it('rejects invalid quantities without replacing the saved sheet', function () {
 
 it('renders only the active layout and keeps common row actions local', function () {
     $desktop = Volt::test('order-sheet');
-    expect(substr_count($desktop->html(), 'wire:key="row-'))->toBe(5)
+    expect(substr_count($desktop->html(), 'wire:key="desktop-row-'))->toBe(5)
         ->and($desktop->html())->not->toContain('wire:key="mobile-row-')
         ->and($desktop->html())->toContain('data-order-sheet-customer-search')
         ->not->toContain('wire:focus="focusCustomerSearch')
         ->not->toContain('wire:model.live.debounce.250ms="rows.')
         ->and($desktop->html())->toContain('loadCustomerResults(')
-        ->and($desktop->html())->toContain('x-on:click="revealRow"')
+        ->and($desktop->html())->toContain('preserveScroll(() => $wire.removeRow(')
+        ->and($desktop->html())->toContain('quantity(')
+        ->not->toContain('$wire.entangle(\'rows.')
+        ->and($desktop->html())->toContain('x-on:click="revealRow()"')
         ->not->toContain('wire:click="bump(');
 
     $mobile = Volt::test('order-sheet')->call('setMobileLayout', true);
     expect($mobile->html())->toContain('wire:key="mobile-row-')
-        ->not->toContain('wire:key="row-')
+        ->not->toContain('wire:key="desktop-row-')
         ->not->toContain('wire:focus="focusCustomerSearch')
-        ->and($mobile->html())->toContain('x-on:click="revealRow"')
+        ->and($mobile->html())->toContain('x-on:click="revealRow()"')
         ->and($mobile->html())->toContain('buildOrderSheetPrintTable()');
 });
 
