@@ -8,6 +8,35 @@ use Illuminate\Support\Facades\DB;
 
 class OrderSheetLocationService
 {
+    public function forCustomers(Collection $customers): Collection
+    {
+        $customerIds = $customers->modelKeys();
+        if ($customerIds === []) {
+            return collect();
+        }
+
+        $requestAddresses = DB::table('meal_plan_requests')
+            ->whereIn('customer_id', $customerIds)
+            ->whereNotNull('delivery_address')
+            ->where('delivery_address', '!=', '')
+            ->orderByDesc('id')
+            ->get(['customer_id', 'delivery_address'])
+            ->groupBy('customer_id');
+        $portalAddresses = DB::table('users')
+            ->whereIn('customer_id', $customerIds)
+            ->pluck('portal_delivery_address', 'customer_id');
+
+        return $customers->mapWithKeys(function (Customer $customer) use ($requestAddresses, $portalAddresses) {
+            $address = collect([
+                $requestAddresses->get($customer->id)?->first()?->delivery_address,
+                $portalAddresses->get($customer->id),
+                $customer->delivery_address,
+            ])->first(fn ($value) => filled($value));
+
+            return [$customer->id => $address ?? ''];
+        });
+    }
+
     public function forOrders(Collection $orders): Collection
     {
         $ids = $orders->modelKeys();
