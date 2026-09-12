@@ -952,6 +952,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 table { width: 100%; border-collapse: collapse; font-size: 16px; }
                 th, td { border: 1px solid #d4d4d8; padding: 6px 10px; vertical-align: middle; }
                 thead th { background: #f4f4f5; font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; font-family: 'Times New Roman', Times, serif; }
+                tfoot { display: table-row-group; }
                 .blank-sheet { break-before: page; page-break-before: always; break-inside: avoid; }
                 .blank-sheet table { table-layout: fixed; font-size: 11px; }
                 .blank-sheet th { min-width: 0; width: auto; height: 30mm; padding: 2px; overflow-wrap: anywhere; }

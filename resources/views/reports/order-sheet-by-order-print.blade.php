@@ -22,6 +22,7 @@
         td.remarks { font-size: 11px; color: #6b7280; min-width: 100px; }
         tfoot td { font-weight: 700; background: #f9fafb; font-family: Arial, sans-serif; font-size: 11px; }
         tfoot td.qty { font-size: 13px; }
+        tfoot { display: table-row-group; }
         .section-label { margin: 16px 0 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #6b7280; font-family: Arial, sans-serif; }
         @page { size: A4 landscape; margin: 14mm; }
         .blank-sheet { break-before: page; page-break-before: always; break-inside: avoid; }
