@@ -551,14 +551,32 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 } ?>
 
-<div class="min-h-screen py-8 px-4 sm:px-8" style="background:#f5f3ee; font-family: Inter, ui-sans-serif, system-ui, sans-serif;"
+<div class="min-h-0 py-8 px-4 sm:px-8" style="background:#f5f3ee; font-family: Inter, ui-sans-serif, system-ui, sans-serif;"
      x-data="{
          openRow: null,
          isMobile: window.innerWidth < 768,
+         headerObserver: null,
+         onResize: null,
+         fitSheet() {
+             if (this.isMobile || !this.$refs.sheetShell) return;
+             const top = this.$refs.sheetShell.getBoundingClientRect().top;
+             this.$refs.sheetShell.style.height = Math.max(300, window.innerHeight - top - 64) + 'px';
+         },
          init() {
-             const onResize = () => { this.isMobile = window.innerWidth < 768; };
-             window.addEventListener('resize', onResize);
-             this.$el.addEventListener('remove', () => window.removeEventListener('resize', onResize));
+             this.onResize = () => {
+                 this.isMobile = window.innerWidth < 768;
+                 this.$nextTick(() => this.fitSheet());
+             };
+             window.addEventListener('resize', this.onResize);
+             this.$nextTick(() => {
+                 this.headerObserver = new ResizeObserver(() => this.fitSheet());
+                 this.headerObserver.observe(this.$refs.sheetToolbar);
+                 this.fitSheet();
+             });
+         },
+         destroy() {
+             window.removeEventListener('resize', this.onResize);
+             this.headerObserver?.disconnect();
          }
      }"
 >
@@ -594,6 +612,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         @@media print {
             .no-print { display: none !important; }
             body { background: white; }
+            [x-ref="sheetShell"] { height: auto !important; display: block !important; }
+            [x-ref="sheetShell"] > .overflow-auto { overflow: visible !important; }
         }
     </style>
 
@@ -612,7 +632,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 
         {{-- ── Top bar ── --}}
-        <div class="no-print sticky top-0 z-40 flex flex-wrap items-end justify-between gap-4 mb-5 bg-[#f5f3ee] py-3">
+        <div x-ref="sheetToolbar" class="no-print sticky top-0 z-40 flex flex-wrap items-end justify-between gap-4 mb-5 bg-[#f5f3ee] py-3">
             <div class="w-full space-y-2">
             <div wire:loading wire:target="save,publish" role="status" class="rounded-lg bg-blue-50 p-3 text-blue-900">{{ __('Saving your sheet…') }}</div>
             @if ($saveStatus)
@@ -706,10 +726,10 @@ new #[Layout('components.layouts.app')] class extends Component {
              DESKTOP VIEW (md+)
              ══════════════════════════════════════════════════ --}}
         <div x-show="!isMobile">
-            <div class="ledger-paper rounded-sm relative">
+            <div x-ref="sheetShell" class="ledger-paper rounded-sm relative flex flex-col min-h-0">
                 <div class="absolute top-0 right-0 w-20 h-20 overflow-hidden pointer-events-none" style="clip-path:polygon(100% 0,0 0,100% 100%);background:rgba(0,0,0,0.03)"></div>
 
-                <div class="flex items-center justify-between px-6 pt-6 pb-3">
+                <div class="flex shrink-0 items-center justify-between px-6 pt-6 pb-3">
                     <div>
                         <div class="text-[10px] uppercase tracking-[0.25em] text-zinc-500">Order Sheet</div>
                         <div class="font-hand text-3xl text-red-700 leading-tight">
@@ -724,7 +744,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                 </div>
 
-                <div class="px-6 pb-6 overflow-auto max-h-[70dvh]">
+                <div class="px-6 pb-6 min-h-0 flex-1 overflow-auto">
                     <table class="w-full border-collapse" style="min-width: 880px;">
                         <thead class="sticky top-0 z-20 bg-[#f5f3ee]">
                             <tr>
