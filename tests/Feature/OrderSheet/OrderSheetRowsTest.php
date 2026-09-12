@@ -173,3 +173,49 @@ it('falls back to saved meal plan subscription and profile addresses when the or
     expect($service->forOrders(Order::whereKey($order->id)->get())->get($order->id))->toBe('Request location');
     expect(collect(Volt::test('order-sheet')->get('rows'))->firstWhere('order_id', $order->id)['location'])->toBe('Request location');
 });
+
+it('selects the customer into the requested row and saves with visible feedback', function () {
+    $this->customer->update(['delivery_address' => 'West Bay']);
+    $page = Volt::test('order-sheet')
+        ->set('rows.0.customer_search', 'partial')
+        ->call('selectCustomer', $this->customer->id, 0)
+        ->assertSet('rows.0.customer_name', $this->customer->name)
+        ->assertSet('rows.0.customer_search', $this->customer->name)
+        ->assertSet('rows.0.location', 'West Bay')
+        ->call('save')->assertHasNoErrors()->assertSee('Sheet saved at');
+    expect(OrderSheet::first()->entries()->first()->customer_id)->toBe($this->customer->id);
+});
+
+it('creates a customer with name and phone and inserts them into the sheet', function () {
+    $page = Volt::test('order-sheet')->set('rows.0.customer_search', 'New guest')
+        ->call('startCustomerCreation', 0)->assertSet('newCustomerName', 'New guest')
+        ->set('newCustomerPhone', '5551234567')->call('createCustomer')->assertHasNoErrors()
+        ->assertSet('rows.0.customer_name', 'New guest')->assertSet('newCustomerRow', null)
+        ->assertSee('Customer created and added');
+    $customer = Customer::findOrFail($page->get('rows.0.customer_id'));
+    expect($customer->phone)->toBe('5551234567')->and($customer->customer_code)->not->toBeEmpty();
+    $page->set('rows.0.remarks', 'Manual delivery')->call('save')->assertHasNoErrors();
+    expect(OrderSheet::first()->entries()->first()->customer_id)->toBe($customer->id);
+});
+
+it('validates quick customer creation before inserting a customer', function () {
+    $count = Customer::count();
+    Volt::test('order-sheet')->call('startCustomerCreation', 0)->call('createCustomer')
+        ->assertHasErrors(['newCustomerName', 'newCustomerPhone']);
+    expect(Customer::count())->toBe($count);
+});
+
+it('preserves customer creation permissions for order sheet staff', function () {
+    Role::findOrCreate('staff');
+    $this->actingAs(User::factory()->create(['status' => 'active'])->assignRole('staff'));
+    Volt::test('order-sheet')->call('startCustomerCreation', 0)->assertForbidden();
+    Volt::test('order-sheet')->set('newCustomerRow', 0)->set('newCustomerName', 'Forbidden')
+        ->set('newCustomerPhone', '5550000')->call('createCustomer')->assertForbidden();
+});
+
+it('rejects invalid quantities without replacing the saved sheet', function () {
+    $sheet = OrderSheet::create(['sheet_date' => now()->toDateString()]);
+    $entry = $sheet->entries()->create(['customer_name' => 'Keep me', 'remarks' => 'Saved']);
+    Volt::test('order-sheet')->set('rows.0.qty.999', -1)->call('save')->assertHasErrors(['rows.0.qty.999']);
+    expect($entry->fresh()->remarks)->toBe('Saved');
+});

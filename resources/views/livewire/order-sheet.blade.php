@@ -22,6 +22,67 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public ?int $activeSearchRow = null;
     public string $customerSearchTerm = '';
+    public ?int $newCustomerRow = null;
+    public bool $showCustomerForm = false;
+    public string $newCustomerName = '';
+    public string $newCustomerPhone = '';
+    public string $saveStatus = '';
+
+    public function canCreateCustomer(): bool
+    {
+        $user = auth()->user();
+        return $user?->isActive() && ($user->hasAnyRole(['admin', 'manager']) || $user->can('receivables.access'));
+    }
+
+    public function startCustomerCreation(?int $rowIndex = null): void
+    {
+        abort_unless($this->canCreateCustomer(), 403);
+        $this->resetValidation();
+        $rowIndex ??= $this->activeSearchRow ?? array_key_last($this->rows);
+        abort_unless(isset($this->rows[$rowIndex]), 422);
+        if (filled($this->rows[$rowIndex]['customer_id'])) {
+            $this->addRow();
+            $rowIndex = array_key_last($this->rows);
+        }
+        $this->newCustomerRow = $rowIndex;
+        $this->showCustomerForm = true;
+        $this->newCustomerName = $this->rows[$rowIndex]['customer_search'];
+        $this->newCustomerPhone = '';
+        $this->activeSearchRow = null;
+    }
+
+    public function createCustomer(): void
+    {
+        abort_unless($this->canCreateCustomer(), 403);
+        abort_unless($this->newCustomerRow !== null && isset($this->rows[$this->newCustomerRow]), 422);
+        $this->newCustomerName = trim($this->newCustomerName);
+        $this->newCustomerPhone = trim($this->newCustomerPhone);
+        $this->validate([
+            'newCustomerName' => ['required', 'string', 'max:255'],
+            'newCustomerPhone' => array_filter(['required', 'string', 'max:50',
+                config('customers.enforce_unique_phone') ? 'unique:customers,phone' : null]),
+        ]);
+        $customer = Customer::create([
+            'name' => $this->newCustomerName, 'phone' => $this->newCustomerPhone,
+            'customer_type' => Customer::TYPE_RETAIL, 'is_active' => true,
+            'credit_limit' => 0, 'credit_terms_days' => 0, 'created_by' => auth()->id(),
+        ]);
+        $this->selectCustomer($customer->id, $this->newCustomerRow);
+        $this->newCustomerRow = null;
+        $this->showCustomerForm = false;
+        $this->saveStatus = __('Customer created and added. Enter their dishes, then save the sheet.');
+    }
+
+    public function updatedRows(mixed $value, string $key): void
+    {
+        $this->saveStatus = '';
+        if (preg_match('/^(\d+)\.customer_search$/', $key, $matches)) {
+            $this->activeSearchRow = (int) $matches[1];
+            $this->customerSearchTerm = (string) $value;
+            unset($this->customerResults);
+        }
+    }
+
 
     public ?int $activeExtraRow = null;
     public string $extraSearchTerm = '';
@@ -172,6 +233,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function updatedSheetDate(): void
     {
+        $this->saveStatus = '';
+        $this->newCustomerRow = null;
+        $this->showCustomerForm = false;
         $this->activeSearchRow = null;
         $this->customerSearchTerm = '';
         $this->activeExtraRow = null;
@@ -245,19 +309,25 @@ new #[Layout('components.layouts.app')] class extends Component {
         unset($this->customerResults);
     }
 
-    public function selectCustomer(int $customerId): void
+    public function selectCustomer(int $customerId, ?int $rowIndex = null): void
     {
-        if ($this->activeSearchRow === null) {
+        $rowIndex ??= $this->activeSearchRow;
+        if ($rowIndex === null || ! isset($this->rows[$rowIndex])) {
             return;
         }
-        $customer = Customer::find($customerId);
+        $customer = Customer::active()->find($customerId);
         if (! $customer) {
             return;
         }
-        $i = $this->activeSearchRow;
+        $i = $rowIndex;
         $this->rows[$i]['customer_id']     = $customer->id;
         $this->rows[$i]['customer_name']   = $customer->name;
         $this->rows[$i]['customer_search'] = $customer->name;
+        if (blank($this->rows[$i]['location'])) {
+            $this->rows[$i]['location'] = $customer->delivery_address ?? '';
+        }
+        $this->saveStatus = '';
+        $this->ensureTrailingBlankRow();
         $this->activeSearchRow    = null;
         $this->customerSearchTerm = '';
     }
@@ -348,43 +418,53 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function save(): void
     {
-        $sheet = OrderSheet::firstOrCreate(['sheet_date' => $this->sheetDate]);
-        $sheet->entries()->delete();
+        abort_unless(auth()->user()?->isActive() && auth()->user()->hasAnyRole(['admin', 'manager', 'staff', 'cashier']), 403);
+        $this->saveStatus = '';
+        $this->validate([
+            'sheetDate' => ['required', 'date_format:Y-m-d'],
+            'rows.*.customer_name' => ['nullable', 'string', 'max:255'],
+            'rows.*.qty.*' => ['numeric', 'min:0'],
+            'rows.*.extras.*.quantity' => ['numeric', 'min:0'],
+        ]);
+        \Illuminate\Support\Facades\DB::transaction(function () {
+            $sheet = OrderSheet::firstOrCreate(['sheet_date' => $this->sheetDate]);
+            $sheet->entries()->delete();
 
-        foreach ($this->rows as $row) {
-            if (blank($row['customer_name'])) {
-                continue;
-            }
-            $entry = $sheet->entries()->create([
-                'customer_id'   => $row['customer_id'],
-                'customer_name' => $row['customer_name'],
-                'location'      => $row['location'] ?: null,
-                'remarks'       => $row['remarks'] ?: null,
-                'order_id'      => $row['order_id'] ?? null,
-            ]);
+            foreach ($this->rows as $row) {
+                if (blank($row['customer_name'])) {
+                    continue;
+                }
+                $entry = $sheet->entries()->create([
+                    'customer_id'   => $row['customer_id'],
+                    'customer_name' => $row['customer_name'],
+                    'location'      => $row['location'] ?: null,
+                    'remarks'       => $row['remarks'] ?: null,
+                    'order_id'      => $row['order_id'] ?? null,
+                ]);
 
-            foreach ($row['qty'] as $menuItemId => $qty) {
-                if ($qty > 0) {
-                    $entry->quantities()->create([
-                        'daily_dish_menu_item_id' => $menuItemId,
-                        'quantity'                => $qty,
-                    ]);
+                foreach ($row['qty'] as $menuItemId => $qty) {
+                    if ($qty > 0) {
+                        $entry->quantities()->create([
+                            'daily_dish_menu_item_id' => $menuItemId,
+                            'quantity'                => $qty,
+                        ]);
+                    }
+                }
+
+                foreach ($row['extras'] as $extra) {
+                    if (($extra['quantity'] ?? 0) > 0) {
+                        $entry->extras()->create([
+                            'menu_item_id'   => $extra['menu_item_id'],
+                            'menu_item_name' => $extra['menu_item_name'],
+                            'quantity'       => $extra['quantity'],
+                        ]);
+                    }
                 }
             }
 
-            foreach ($row['extras'] as $extra) {
-                if (($extra['quantity'] ?? 0) > 0) {
-                    $entry->extras()->create([
-                        'menu_item_id'   => $extra['menu_item_id'],
-                        'menu_item_name' => $extra['menu_item_name'],
-                        'quantity'       => $extra['quantity'],
-                    ]);
-                }
-            }
-        }
-
+        });
         $this->loadRows();
-        $this->dispatch('toast', message: 'Sheet saved.', type: 'success');
+        $this->saveStatus = __('Sheet saved at :time. Use Publish to create or update orders.', ['time' => now()->format('H:i:s')]);
     }
 
     public function publish(): void
@@ -410,10 +490,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($created > 0) $parts[] = "{$created} order" . ($created === 1 ? '' : 's') . " created";
         if ($updated > 0) $parts[] = "{$updated} order" . ($updated === 1 ? '' : 's') . " updated";
 
-        $this->dispatch('toast',
-            message: $parts ? implode(', ', $parts) . '.' : 'All entries already up to date.',
-            type: 'success'
-        );
+        $this->saveStatus = $parts ? implode(', ', $parts) . '.' : __('All entries already up to date.');
     }
 
     #[Computed]
@@ -521,14 +598,41 @@ new #[Layout('components.layouts.app')] class extends Component {
     </style>
 
     <div class="max-w-[1320px] mx-auto">
+        <div class="no-print mb-4 space-y-3">
+            <flux:modal wire:model="showCustomerForm" class="max-w-md">
+                <form wire:submit="createCustomer" class="rounded-lg border bg-white p-4 space-y-3">
+                    <h2 class="font-semibold text-zinc-900">{{ __('Create customer and add to sheet') }}</h2>
+                    <flux:input wire:model="newCustomerName" :label="__('Name')" required maxlength="255" />
+                    <flux:input wire:model="newCustomerPhone" :label="__('Phone number')" type="tel" required maxlength="50" />
+                    <flux:button type="submit" variant="primary" wire:loading.attr="disabled" wire:target="createCustomer">{{ __('Create and add') }}</flux:button>
+                    <flux:button type="button" wire:click="$set('showCustomerForm', false)">{{ __('Cancel') }}</flux:button>
+                </form>
+            </flux:modal>
+        </div>
+
 
         {{-- ── Top bar ── --}}
-        <div class="no-print flex flex-wrap items-end justify-between gap-4 mb-5">
+        <div class="no-print sticky top-0 z-40 flex flex-wrap items-end justify-between gap-4 mb-5 bg-[#f5f3ee] py-3">
+            <div class="w-full space-y-2">
+            <div wire:loading wire:target="save,publish" role="status" class="rounded-lg bg-blue-50 p-3 text-blue-900">{{ __('Saving your sheet…') }}</div>
+            @if ($saveStatus)
+                <div role="status" class="rounded-lg bg-emerald-50 p-3 text-emerald-900">{{ $saveStatus }}</div>
+            @endif
+            @if ($errors->any())
+                <div role="alert" class="rounded-lg bg-red-50 p-3 text-red-900">
+                    @foreach ($errors->all() as $error)<p>{{ $error }}</p>@endforeach
+                </div>
+            @endif
+            </div>
             <div>
                 <div class="text-[11px] uppercase tracking-[0.2em] text-zinc-500 font-medium">Layla Kitchen</div>
                 <h1 class="text-2xl font-semibold tracking-tight mt-0.5 text-zinc-900">Daily Order Sheet</h1>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
+            @if ($this->canCreateCustomer())
+                <flux:button wire:click="startCustomerCreation" icon="user-plus">{{ __('New customer') }}</flux:button>
+            @endif
+
                 {{-- Day navigation --}}
                 <div class="flex items-center bg-white border border-zinc-200 rounded-lg overflow-hidden">
                     <button wire:click="prevDay" class="px-2 py-2 hover:bg-zinc-50 border-r border-zinc-200" title="Previous day">
@@ -620,9 +724,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                 </div>
 
-                <div class="px-6 pb-6 overflow-x-auto">
+                <div class="px-6 pb-6 overflow-auto max-h-[70dvh]">
                     <table class="w-full border-collapse" style="min-width: 880px;">
-                        <thead>
+                        <thead class="sticky top-0 z-20 bg-[#f5f3ee]">
                             <tr>
                                 <th class="border border-zinc-300 bg-white/60 align-bottom p-2 h-[120px] min-w-[220px]">
                                     <div class="text-left text-[11px] uppercase tracking-[0.15em] font-semibold text-zinc-600">Customer</div>
@@ -669,10 +773,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                                             </div>
                                         @endif
                                         <div class="flex items-center gap-1">
-                                            <input value="{{ $row['customer_search'] }}"
-                                                wire:change="$set('rows.{{ $i }}.customer_search', $event.target.value)"
+                                            <input value="{{ $row['customer_search'] }}" wire:model.live.debounce.250ms="rows.{{ $i }}.customer_search"
                                                 wire:focus="focusCustomerSearch({{ $i }})"
-                                                wire:keyup="$set('customerSearchTerm', $event.target.value)"
                                                 placeholder="Search customer…"
                                                 autocomplete="off"
                                                 class="flex-1 min-w-0 bg-transparent focus:outline-none font-hand text-[20px] text-blue-700 leading-none placeholder:text-zinc-300 placeholder:font-sans placeholder:text-[13px]" />
@@ -687,7 +789,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                                  class="bg-white border border-zinc-200 rounded-md shadow-lg overflow-hidden">
                                                 <div class="max-h-52 overflow-y-auto">
                                                     @foreach ($this->customerResults as $customer)
-                                                        <button type="button" wire:click="selectCustomer({{ $customer->id }})"
+                                                        <button type="button" wire:click="selectCustomer({{ $customer->id }}, {{ $i }})"
                                                             class="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50">
                                                             <div class="font-medium text-zinc-900">{{ $customer->name }}</div>
                                                             @if ($customer->phone)
@@ -919,10 +1021,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
                             {{-- Customer name input (always editable inline) --}}
                             <div class="flex-1 min-w-0 relative">
-                                <input value="{{ $row['customer_search'] }}"
-                                    wire:change="$set('rows.{{ $i }}.customer_search', $event.target.value)"
+                                <input value="{{ $row['customer_search'] }}" wire:model.live.debounce.250ms="rows.{{ $i }}.customer_search"
                                     wire:focus="focusCustomerSearch({{ $i }})"
-                                    wire:keyup="$set('customerSearchTerm', $event.target.value)"
                                     placeholder="Enter customer…"
                                     autocomplete="off"
                                     class="w-full font-semibold text-[15px] bg-transparent focus:outline-none placeholder:text-zinc-300 placeholder:font-normal" />
@@ -931,7 +1031,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     <div class="absolute left-0 top-full z-20 mt-0.5 w-[260px] bg-white border border-zinc-200 rounded-md shadow-lg overflow-hidden">
                                         <div class="max-h-52 overflow-y-auto">
                                             @foreach ($this->customerResults as $customer)
-                                                <button type="button" wire:click="selectCustomer({{ $customer->id }})"
+                                                <button type="button" wire:click="selectCustomer({{ $customer->id }}, {{ $i }})"
                                                     class="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50">
                                                     <div class="font-medium text-zinc-900">{{ $customer->name }}</div>
                                                     @if ($customer->phone)
@@ -1103,7 +1203,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             @else
             {{-- ── Compact tap-grid view ── --}}
-            <div class="overflow-x-auto -mx-1 px-1">
+            <div class="overflow-auto max-h-[70dvh] -mx-1 px-1">
                 <table class="w-full border-collapse" style="table-layout:fixed; min-width: {{ 90 + count($menuItems) * 64 + 48 }}px;">
                     <thead style="position:sticky;top:0;z-index:10;background:#f5f3ee;">
                         <tr>
@@ -1123,17 +1223,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @foreach ($rows as $i => $row)
                             <tr wire:key="grid-row-{{ $i }}" class="border-t border-zinc-200/60">
                                 <td class="px-1 py-1.5">
-                                    <input value="{{ $row['customer_search'] }}"
-                                        wire:change="$set('rows.{{ $i }}.customer_search', $event.target.value)"
+                                    <input value="{{ $row['customer_search'] }}" wire:model.live.debounce.250ms="rows.{{ $i }}.customer_search"
                                         wire:focus="focusCustomerSearch({{ $i }})"
-                                        wire:keyup="$set('customerSearchTerm', $event.target.value)"
                                         placeholder="Name"
                                         autocomplete="off"
                                         class="w-full text-[12px] font-semibold bg-transparent focus:outline-none focus:bg-white rounded px-1 py-0.5 placeholder:text-zinc-300 placeholder:font-normal" />
                                     @if ($activeSearchRow === $i && count($this->customerResults) > 0)
                                         <div class="absolute left-0 z-20 mt-0.5 w-[220px] bg-white border border-zinc-200 rounded-md shadow-lg overflow-hidden">
                                             @foreach ($this->customerResults as $customer)
-                                                <button type="button" wire:click="selectCustomer({{ $customer->id }})"
+                                                <button type="button" wire:click="selectCustomer({{ $customer->id }}, {{ $i }})"
                                                     class="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50">
                                                     <div class="font-medium text-zinc-900 text-[12px]">{{ $customer->name }}</div>
                                                 </button>
@@ -1326,7 +1424,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         const prettyDate = date ? new Date(date + 'T00:00:00').toLocaleDateString('en-GB', {weekday:'long',day:'2-digit',month:'long',year:'numeric'}) : '';
 
         const table = document.querySelector('.ledger-paper table');
-        const printTable = table ? table.outerHTML
+        const populatedTable = table?.cloneNode(true);
+        if (populatedTable) {
+            const inputs = table.querySelectorAll('input');
+            populatedTable.querySelectorAll('input').forEach((input, index) => input.setAttribute('value', inputs[index].value));
+        }
+        const printTable = populatedTable ? populatedTable.outerHTML
             .replace(/class="[^"]*no-print[^"]*"/g, 'style="display:none"')
             : '<p>No data</p>';
 
