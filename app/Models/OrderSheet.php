@@ -7,9 +7,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class OrderSheet extends Model
 {
-    protected $fillable = ['sheet_date'];
+    protected $fillable = ['sheet_date', 'excluded_order_ids'];
 
-    protected $casts = ['sheet_date' => 'date'];
+    protected $casts = [
+        'sheet_date' => 'date',
+        'excluded_order_ids' => 'array',
+    ];
 
     public function entries(): HasMany
     {

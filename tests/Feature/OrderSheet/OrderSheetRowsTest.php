@@ -6,6 +6,7 @@ use App\Models\MealSubscription;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderSheet;
+use App\Models\OrderSheetEntry;
 use App\Models\User;
 use Livewire\Volt\Volt;
 use Spatie\Permission\Models\Role;
@@ -215,6 +216,28 @@ it('deletes the requested row without moving another rows identity or quantities
         ->and($remaining[$thirdKey]['qty'][$column->id])->toBe(3);
 });
 
+it('keeps a deliberately removed order off the sheet after save and reload', function () {
+    $order = Order::factory()->dailyDish()->create(['customer_id' => $this->customer->id]);
+    $sheet = OrderSheet::create(['sheet_date' => now()->toDateString()]);
+    $entry = $sheet->entries()->create([
+        'customer_id' => $this->customer->id,
+        'customer_name' => $this->customer->name,
+        'order_id' => $order->id,
+    ]);
+
+    $page = Volt::test('order-sheet');
+    $rowKey = collect($page->get('rows'))->firstWhere('order_id', $order->id)['row_key'];
+    $page->call('removeRow', $rowKey)->call('save')->assertHasNoErrors();
+
+    expect(Order::whereKey($order->id)->exists())->toBeTrue()
+        ->and(OrderSheet::findOrFail($sheet->id)->excluded_order_ids)->toContain($order->id)
+        ->and(OrderSheetEntry::whereKey($entry->id)->exists())->toBeFalse()
+        ->and(collect($page->get('rows'))->pluck('order_id'))->not->toContain($order->id);
+
+    $reloaded = Volt::test('order-sheet');
+    expect(collect($reloaded->get('rows'))->pluck('order_id'))->not->toContain($order->id);
+});
+
 it('replaces row identities and item counts when the sheet date changes', function () {
     $todayItem = MenuItem::factory()->create(['name' => 'Today dish']);
     $todayMenu = DailyDishMenu::create(['branch_id' => 1, 'service_date' => now()->toDateString(), 'status' => 'published']);
@@ -249,6 +272,37 @@ it('returns customer results without rendering the full sheet', function () {
             fn (array $customer) => $customer['id'] === $this->customer->id
                 && $customer['name'] === $this->customer->name
         ));
+});
+
+it('renders a new blank fallback when the last available row receives a customer', function () {
+    $page = Volt::test('order-sheet');
+    $rows = $page->get('rows');
+    $lastRowKey = $rows[array_key_last($rows)]['row_key'];
+
+    $page->call('selectCustomerAndAppend', $this->customer->id, $lastRowKey)->assertHasNoErrors();
+
+    $updatedRows = $page->get('rows');
+    expect($updatedRows)->toHaveCount(count($rows) + 1)
+        ->and(collect($updatedRows)->firstWhere('row_key', $lastRowKey)['customer_name'])->toBe($this->customer->name)
+        ->and($updatedRows[array_key_last($updatedRows)]['customer_name'])->toBe('');
+});
+
+it('targets extra dishes by stable row identity after another row is removed', function () {
+    $extra = MenuItem::factory()->create(['name' => 'Stable extra']);
+    $page = Volt::test('order-sheet')
+        ->set('rows.0.customer_name', 'Remove me')
+        ->set('rows.1.customer_name', 'Keep me');
+    $removedKey = $page->get('rows.0.row_key');
+    $keptKey = $page->get('rows.1.row_key');
+
+    $page->call('removeRow', $removedKey)
+        ->call('addExtra', $keptKey, $extra->id, $extra->name)
+        ->assertHasNoErrors();
+
+    $keptRow = collect($page->get('rows'))->firstWhere('row_key', $keptKey);
+    expect($keptRow['customer_name'])->toBe('Keep me')
+        ->and($keptRow['extras'])->toHaveCount(1)
+        ->and($keptRow['extras'][0]['menu_item_id'])->toBe($extra->id);
 });
 
 it('creates a customer with name and phone and inserts them into the sheet', function () {
@@ -299,7 +353,7 @@ it('renders only the active layout and keeps common row actions local', function
         ->not->toContain('wire:focus="focusCustomerSearch')
         ->not->toContain('wire:model.live.debounce.250ms="rows.')
         ->and($desktop->html())->toContain('loadCustomerResults(')
-        ->and($desktop->html())->toContain('preserveScroll(() => $wire.removeRow(')
+        ->and($desktop->html())->toContain('removeRowImmediately(')
         ->and($desktop->html())->toContain('quantity(')
         ->not->toContain('$wire.entangle(\'rows.')
         ->and($desktop->html())->toContain('x-on:click="revealRow()"')
