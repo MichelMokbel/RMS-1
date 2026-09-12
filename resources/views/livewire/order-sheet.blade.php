@@ -1251,7 +1251,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                                     </button>
                                                 </div>
                                             @endforeach
-                                            <button x-on:click="openExtraSearch(@js($rowKey), $el)"
+                                            <button x-on:click.stop="openExtraSearch(@js($rowKey), $el)"
                                                 class="no-print inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[11px] text-zinc-500 hover:text-zinc-900 border border-dashed border-zinc-300 hover:border-zinc-500 rounded-md">
                                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
                                                 Add dish
@@ -1508,7 +1508,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         </div>
                                     @endforeach
 
-                                    <button x-on:click="openExtraSearch(@js($rowKey), $el)"
+                                    <button x-on:click.stop="openExtraSearch(@js($rowKey), $el)"
                                         class="w-full flex items-center justify-center gap-1 py-2 text-[12px] font-medium text-amber-800 border border-dashed border-amber-300 rounded-lg bg-amber-50/40">
                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
                                         Add other dish
@@ -1690,7 +1690,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     </button>
                                 </div>
                             @endforeach
-                            <button x-on:click="openExtraSearch(@js($drawerRowKey), $el)"
+                            <button x-on:click.stop="openExtraSearch(@js($drawerRowKey), $el)"
                                 class="w-full flex items-center justify-center gap-1 py-2 text-[12px] font-medium text-amber-800 border border-dashed border-amber-300 rounded-lg bg-amber-50/40">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
                                 Add other dish
