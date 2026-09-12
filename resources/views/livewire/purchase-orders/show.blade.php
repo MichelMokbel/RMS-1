@@ -238,7 +238,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $line->received_quantity ?? 0 }}</td>
                                 <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ $line->remainingToReceive() }}</td>
                                 <td class="px-3 py-3">
-                                    <flux:input
+                                    <x-number-input
                                         wire:model="receipts.{{ $line->id }}"
                                         type="number"
                                         min="0"
@@ -246,10 +246,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     />
                                 </td>
                                 <td class="px-3 py-3">
-                                    <flux:input
+                                    <x-number-input
                                         wire:model="receive_costs.{{ $line->id }}"
                                         type="number"
-                                        step="0.01"
                                         min="0"
                                     />
                                 </td>

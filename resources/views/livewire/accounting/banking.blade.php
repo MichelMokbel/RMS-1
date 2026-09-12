@@ -291,7 +291,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </select>
                     </div>
                     <flux:input wire:model="statement_date" type="date" :label="__('Statement Date')" />
-                    <flux:input wire:model="statement_ending_balance" type="number" step="0.01" :label="__('Statement Ending Balance')" />
+                    <x-number-input wire:model="statement_ending_balance" type="number" :label="__('Statement Ending Balance')" />
                     <div class="flex justify-end">
                         @can('finance.write')
                             <flux:button type="submit">{{ __('Auto Match') }}</flux:button>

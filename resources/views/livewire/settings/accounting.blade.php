@@ -613,7 +613,7 @@ new class extends Component {
                             <flux:input wire:model="bank_institution_name" :label="__('Bank Name')" />
                             <flux:input wire:model="bank_last4" :label="__('Account Number Last 4')" />
                             <flux:input wire:model="bank_currency" :label="__('Currency')" />
-                            <flux:input wire:model="bank_opening_balance" type="number" step="0.01" :label="__('Opening Balance')" />
+                            <x-number-input wire:model="bank_opening_balance" type="number" :label="__('Opening Balance')" />
                             <flux:input wire:model="bank_opening_balance_date" type="date" :label="__('Opening Balance Date')" />
                             <label class="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200"><input type="checkbox" wire:model="bank_is_default" class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500"> {{ __('Default bank account') }}</label>
                             <label class="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200"><input type="checkbox" wire:model="bank_is_active" class="rounded border-neutral-300 text-primary-600 shadow-sm focus:ring-primary-500"> {{ __('Active') }}</label>

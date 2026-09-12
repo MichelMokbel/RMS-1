@@ -58,7 +58,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endforeach
                     </select>
                 @else
-                    <flux:input wire:model.live="branch_id" type="number" :label="__('Branch ID')" />
+                    <x-number-input wire:model.live="branch_id" type="number" :label="__('Branch ID')" />
                 @endif
             </div>
             <div class="min-w-[180px]">

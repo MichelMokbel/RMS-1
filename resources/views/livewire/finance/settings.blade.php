@@ -77,8 +77,8 @@ new class extends Component {
         <div class="mt-6 space-y-4">
             <flux:input wire:model="lock_date" type="date" :label="__('Lock date')" />
             <div class="grid gap-4 md:grid-cols-2">
-                <flux:input wire:model="po_quantity_tolerance_percent" type="number" step="0.001" :label="__('PO quantity tolerance %')" />
-                <flux:input wire:model="po_price_tolerance_percent" type="number" step="0.001" :label="__('PO price tolerance %')" />
+                <x-number-input wire:model="po_quantity_tolerance_percent" type="number" :label="__('PO quantity tolerance %')" />
+                <x-number-input wire:model="po_price_tolerance_percent" type="number" :label="__('PO price tolerance %')" />
             </div>
             <div>
                 <label class="mb-1 block text-sm font-medium text-neutral-800 dark:text-neutral-200">{{ __('Purchase price variance account') }}</label>

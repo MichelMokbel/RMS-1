@@ -683,7 +683,7 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="rounded-md border border-neutral-200 p-4 dark:border-neutral-700 space-y-4">
             <div class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Subscription Settings') }}</div>
             <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <flux:input wire:model="convertBranchId" type="number" min="1" :label="__('Branch')" />
+                <x-number-input wire:model="convertBranchId" type="number" min="1" :label="__('Branch')" />
                 <flux:input wire:model="convertStartDate" type="date" :label="__('Start date')" />
                 <flux:input wire:model="convertDeliveryTime" type="time" :label="__('Delivery time (optional)')" />
             </div>

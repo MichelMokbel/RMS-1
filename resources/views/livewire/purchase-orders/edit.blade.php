@@ -435,11 +435,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @error("lines.$index.item_id") <p class="text-sm text-rose-600 mt-1">{{ $message }}</p> @enderror
                         </div>
                         <div class="md:col-span-2">
-                            <flux:input wire:model.live="lines.{{ $index }}.quantity" type="number" min="0.001" step="0.001" :label="__('Qty (packages)')" />
+                            <x-number-input wire:model.live="lines.{{ $index }}.quantity" type="number" min="0.001" :label="__('Qty (packages)')" />
                             @error("lines.$index.quantity") <p class="text-sm text-rose-600 mt-1">{{ $message }}</p> @enderror
                         </div>
                         <div class="md:col-span-2">
-                            <flux:input wire:model.live="lines.{{ $index }}.unit_price" type="number" step="0.01" min="0" :label="__('Unit Price (pkg)')" />
+                            <x-number-input wire:model.live="lines.{{ $index }}.unit_price" type="number" min="0" :label="__('Unit Price (pkg)')" />
                             @error("lines.$index.unit_price") <p class="text-sm text-rose-600 mt-1">{{ $message }}</p> @enderror
                         </div>
                         <div class="md:col-span-12">

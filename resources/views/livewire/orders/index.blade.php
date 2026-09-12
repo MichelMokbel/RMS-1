@@ -535,7 +535,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </select>
             </div>
             <div class="w-28">
-                <flux:input wire:model.live="branch_id" type="number" :label="__('Branch')" />
+                <x-number-input wire:model.live="branch_id" type="number" :label="__('Branch')" />
             </div>
             <div class="w-48">
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Orders') }}</label>
@@ -722,7 +722,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </div>
                     @else
                         <div>
-                            <flux:input wire:model.live="drawer_branch_id" type="number" :label="__('Branch ID')" class="touch-target" />
+                            <x-number-input wire:model.live="drawer_branch_id" type="number" :label="__('Branch ID')" class="touch-target" />
                         </div>
                     @endif
                     <div>
@@ -839,7 +839,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @if (in_array($drawer_daily_dish_portion_type, ['full', 'half'], true))
                                 <div>
                                     <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Quantity') }}</label>
-                                    <flux:input wire:model.live="drawer_daily_dish_portion_quantity" type="number" min="1" class="touch-target" />
+                                    <x-number-input wire:model.live="drawer_daily_dish_portion_quantity" type="number" min="1" class="touch-target" />
                                 </div>
                             @endif
                         </div>
@@ -937,10 +937,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                                             </td>
                                             <td class="px-2 py-2 align-top text-sm text-neutral-700 dark:text-neutral-200">{{ $unitLabel }}</td>
                                             <td class="px-2 py-2 align-top">
-                                                <flux:input wire:model.live.debounce.300ms="drawer_selected_items.{{ $idx }}.quantity" type="number" step="0.001" class="w-18 touch-target" />
+                                                <x-number-input wire:model.live.debounce.300ms="drawer_selected_items.{{ $idx }}.quantity" type="number" class="w-18 touch-target" />
                                             </td>
                                             <td class="px-2 py-2 align-top">
-                                                <flux:input wire:model.live.debounce.300ms="drawer_selected_items.{{ $idx }}.unit_price" type="number" step="0.001" class="w-22 touch-target" />
+                                                <x-number-input wire:model.live.debounce.300ms="drawer_selected_items.{{ $idx }}.unit_price" type="number" class="w-22 touch-target" />
                                             </td>
                                             <td class="px-2 py-2 align-top">
                                                 <flux:button type="button" size="sm" variant="danger" wire:click="removeDrawerItemRow({{ $idx }})" class="touch-target">{{ __('Remove') }}</flux:button>
@@ -956,7 +956,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </div>
                         <div>
                             <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Order Discount') }}</label>
-                            <flux:input wire:model.live="drawer_order_discount_amount" type="number" step="0.001" class="w-full sm:w-32 touch-target" />
+                            <x-number-input wire:model.live="drawer_order_discount_amount" type="number" class="w-full sm:w-32 touch-target" />
                         </div>
                     </div>
                 @endif

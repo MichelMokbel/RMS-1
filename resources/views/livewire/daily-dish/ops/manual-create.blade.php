@@ -428,7 +428,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </template>
                         </div>
                     </div>
-                    <flux:input wire:model="mains.{{ $i }}.quantity" type="number" step="0.001" min="0.001" :label="__('Qty')" @disabled(! $menu) />
+                    <x-number-input wire:model="mains.{{ $i }}.quantity" type="number" min="0.001" :label="__('Qty')" @disabled(! $menu) />
                     <div class="pt-6">
                         <flux:button type="button" wire:click="removeMain({{ $i }})" variant="ghost">{{ __('Remove') }}</flux:button>
                     </div>
@@ -505,7 +505,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 </template>
                             </div>
                         </div>
-                        <flux:input wire:model="salads.{{ $i }}.quantity" type="number" step="0.001" min="0.001" :label="__('Qty')" @disabled(! $menu) />
+                        <x-number-input wire:model="salads.{{ $i }}.quantity" type="number" min="0.001" :label="__('Qty')" @disabled(! $menu) />
                         <div class="pt-6">
                             <flux:button type="button" wire:click="removeSalad({{ $i }})" variant="ghost">{{ __('Remove') }}</flux:button>
                         </div>
@@ -582,7 +582,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 </template>
                             </div>
                         </div>
-                        <flux:input wire:model="desserts.{{ $i }}.quantity" type="number" step="0.001" min="0.001" :label="__('Qty')" @disabled(! $menu) />
+                        <x-number-input wire:model="desserts.{{ $i }}.quantity" type="number" min="0.001" :label="__('Qty')" @disabled(! $menu) />
                         <div class="pt-6">
                             <flux:button type="button" wire:click="removeDessert({{ $i }})" variant="ghost">{{ __('Remove') }}</flux:button>
                         </div>

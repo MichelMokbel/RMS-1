@@ -912,7 +912,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endforeach
                     </select>
                 @else
-                    <flux:input wire:model.live="branch_id" type="number" :label="__('Branch ID')" />
+                    <x-number-input wire:model.live="branch_id" type="number" :label="__('Branch ID')" />
                 @endif
             </div>
 
@@ -1027,7 +1027,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <option value="fixed">{{ __('Fixed') }}</option>
                         <option value="percent">{{ __('%') }}</option>
                     </select>
-                    <flux:input wire:model.live="invoice_discount_value" type="number" step="{{ $this->moneyStep() }}" />
+                    <x-number-input wire:model.live="invoice_discount_value" type="number" />
                 </div>
             </div>
         </div>
@@ -1158,16 +1158,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 @endif
                             </td>
                             <td class="px-3 py-3 text-sm">
-                                <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.quantity" type="number" step="1" class="w-20" />
+                                <x-number-input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.quantity" type="number" class="w-20" />
                             </td>
                             <td class="px-3 py-3 text-sm">
                                 <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.unit" class="w-20" />
                             </td>
                             <td class="px-3 py-3 text-sm">
-                                <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.unit_price" type="number" step="1" class="w-24" />
+                                <x-number-input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.unit_price" type="number" class="w-24" />
                             </td>
                             <td class="px-3 py-3 text-sm">
-                                <flux:input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.discount_amount" type="number" step="{{ $moneyStep }}" class="w-24" />
+                                <x-number-input wire:model.live.debounce.300ms="selected_items.{{ $idx }}.discount_amount" type="number" class="w-24" />
                             </td>
                             <td class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">
                                 {{ number_format($lineTotal, $moneyDigits, '.', '') }}
@@ -1238,7 +1238,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endif
                 </div>
 
-                <flux:input wire:model="menu_item_price" type="number" step="1" min="0" :label="__('Selling Price')" />
+                <x-number-input wire:model="menu_item_price" type="number" min="0" :label="__('Selling Price')" />
 
                 <div>
                     <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Unit') }}</label>

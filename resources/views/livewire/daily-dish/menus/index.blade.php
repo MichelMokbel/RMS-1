@@ -515,7 +515,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="app-filter-grid">
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Branch ID') }}</label>
-                <flux:input wire:model.defer="filter_branch_id" type="number" min="1" class="w-32" />
+                <x-number-input wire:model.defer="filter_branch_id" type="number" min="1" class="w-32" />
             </div>
             <div>
                 <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Month') }}</label>
@@ -719,7 +719,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         </template>
                                     </div>
                                 </div>
-                                <flux:input wire:model="new_menu_item_price" type="number" step="0.001" min="0" :label="__('Price')" />
+                                <x-number-input wire:model="new_menu_item_price" type="number" min="0" :label="__('Price')" />
                             </div>
                             <div class="mt-3 flex justify-end gap-2">
                                 <flux:button type="button" wire:click="closeDrawerMenuItemForm" variant="ghost">{{ __('Cancel') }}</flux:button>
@@ -846,7 +846,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <flux:input wire:model="clone_from" type="date" :label="__('From Date')" />
                     <flux:input wire:model="clone_to" type="date" :label="__('To Date')" />
-                    <flux:input wire:model="clone_branch_id" type="number" min="1" :label="__('Target Branch ID')" />
+                    <x-number-input wire:model="clone_branch_id" type="number" min="1" :label="__('Target Branch ID')" />
                 </div>
 
                 <div class="mt-4 flex justify-end gap-2">

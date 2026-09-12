@@ -209,7 +209,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <option value="decrease">{{ __('Decrease') }}</option>
                     </select>
                 </div>
-                <flux:input wire:model="quantity" type="number" min="0.001" step="0.001" :label="__('Quantity')" />
+                <x-number-input wire:model="quantity" type="number" min="0.001" :label="__('Quantity')" />
                 <flux:input wire:model="notes" :label="__('Notes')" />
                 <div class="flex gap-2">
                     <flux:button type="submit" variant="primary">{{ __('Apply') }}</flux:button>
@@ -261,7 +261,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @endforeach
                         </select>
                     </div>
-                    <flux:input wire:model="transfer_quantity" type="number" min="0.001" step="0.001" :label="__('Quantity (packages)')" />
+                    <x-number-input wire:model="transfer_quantity" type="number" min="0.001" :label="__('Quantity (packages)')" />
                     <div class="flex gap-2">
                         <flux:button type="submit" variant="primary">{{ __('Transfer') }}</flux:button>
                     </div>

@@ -340,8 +340,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <flux:input wire:model="end_date" type="date" :label="__('End Date')" />
                     </div>
                     <div class="grid gap-4 md:grid-cols-2">
-                        <flux:input wire:model="estimated_revenue" type="number" step="0.01" :label="__('Estimated Revenue')" />
-                        <flux:input wire:model="estimated_cost" type="number" step="0.01" :label="__('Estimated Cost')" />
+                        <x-number-input wire:model="estimated_revenue" type="number" :label="__('Estimated Revenue')" />
+                        <x-number-input wire:model="estimated_cost" type="number" :label="__('Estimated Cost')" />
                     </div>
                     <flux:textarea wire:model="notes" :label="__('Notes')" rows="3" />
                     <div class="flex justify-end">
@@ -555,7 +555,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     @endforeach
                                 </select>
                             </div>
-                            <flux:input wire:model="budget_amount" type="number" step="0.01" :label="__('Budget Amount')" />
+                            <x-number-input wire:model="budget_amount" type="number" :label="__('Budget Amount')" />
                             <div class="flex justify-end">
                                 @can('finance.write')
                                     <flux:button type="submit">{{ __('Save Budget') }}</flux:button>
@@ -631,7 +631,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     @endforeach
                                 </select>
                             </div>
-                            <flux:input wire:model="transaction_amount" type="number" step="0.01" :label="__('Amount')" />
+                            <x-number-input wire:model="transaction_amount" type="number" :label="__('Amount')" />
                             <flux:textarea wire:model="transaction_memo" :label="__('Memo')" rows="2" />
                             <div class="flex justify-end">
                                 @can('finance.write')

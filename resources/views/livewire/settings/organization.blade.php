@@ -765,8 +765,8 @@ new class extends Component {
                             </div>
                             <flux:input wire:model="job_start_date" type="date" :label="__('Start Date')" />
                             <flux:input wire:model="job_end_date" type="date" :label="__('End Date')" />
-                            <flux:input wire:model="job_estimated_revenue" type="number" step="0.01" min="0" :label="__('Estimated Revenue')" />
-                            <flux:input wire:model="job_estimated_cost" type="number" step="0.01" min="0" :label="__('Estimated Cost')" />
+                            <x-number-input wire:model="job_estimated_revenue" type="number" min="0" :label="__('Estimated Revenue')" />
+                            <x-number-input wire:model="job_estimated_cost" type="number" min="0" :label="__('Estimated Cost')" />
                         </div>
 
                         <flux:textarea wire:model="job_notes" :label="__('Notes')" rows="3" />

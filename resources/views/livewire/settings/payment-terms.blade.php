@@ -114,7 +114,7 @@ new class extends Component {
                     {{ $editing_id ? __('Edit Term') : __('New Term') }}
                 </div>
                 <flux:input wire:model="name" :label="__('Name')" placeholder="{{ __('Credit - 30 days from delivery') }}" />
-                <flux:input wire:model="days" type="number" min="0" :label="__('Days from delivery')" />
+                <x-number-input wire:model="days" type="number" min="0" :label="__('Days from delivery')" />
                 <div class="flex items-center gap-4 text-sm">
                     <label class="flex items-center gap-2">
                         <input type="checkbox" wire:model="is_credit" />

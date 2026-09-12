@@ -475,7 +475,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <option value="voucher">{{ __('Voucher') }}</option>
                             </select>
                         </div>
-                        <flux:input wire:model="payment_amount" type="number" step="{{ $this->moneyStep() }}" :label="__('Amount')" />
+                        <x-number-input wire:model="payment_amount" type="number" :label="__('Amount')" />
                         <div class="flex items-end justify-end">
                             <flux:button type="button" wire:click="receivePayment" variant="primary">{{ __('Apply') }}</flux:button>
                         </div>
@@ -488,7 +488,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="space-y-3">
                     <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Credit Note') }}</h2>
                     <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-                        <flux:input wire:model="credit_amount" type="number" step="{{ $this->moneyStep() }}" :label="__('Credit Amount')" />
+                        <x-number-input wire:model="credit_amount" type="number" :label="__('Credit Amount')" />
                         <div class="md:col-span-2 flex items-end justify-end">
                             <flux:button type="button" wire:click="applyCredit" variant="outline">{{ __('Create & Apply Credit Note') }}</flux:button>
                         </div>
@@ -498,6 +498,58 @@ new #[Layout('components.layouts.app')] class extends Component {
             @endif
             @endcan
 
+            @can('finance.write')
+            @if ($active_tab === 'apply-advance' && in_array($invoice->status, ['issued', 'partially_paid'], true))
+                <div class="space-y-3">
+                    <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Apply Advance') }}</h2>
+                    <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+                        <div>
+                            <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Advance Payment') }}</label>
+                            <select wire:model="advance_payment_id" class="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
+                                <option value="">{{ __('Select') }}</option>
+                                @foreach ($available_advances as $adv)
+                                    <option value="{{ $adv['id'] }}">#{{ $adv['id'] }} • {{ $adv['received_at'] }} • {{ $this->formatMoney($adv['remaining_cents']) }}</option>
+                                @endforeach
+                            </select>
+                            @error('advance_payment_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                        </div>
+                        <x-number-input wire:model="advance_amount" type="number" :label="__('Amount')" />
+                        <div class="flex items-end justify-end">
+                            <flux:button type="button" wire:click="applyAdvance" variant="primary">{{ __('Apply Advance') }}</flux:button>
+                        </div>
+                    </div>
+                    @error('advance_amount') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
+
+                    <div class="mt-2">
+                        <div class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{{ __('Available Advances') }}</div>
+                        <div class="mt-2 overflow-x-auto">
+                            <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
+                                <thead class="bg-neutral-50 dark:bg-neutral-800/90">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Payment #') }}</th>
+                                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Date') }}</th>
+                                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Method') }}</th>
+                                        <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Remaining') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                                    @forelse ($available_advances as $adv)
+                                        <tr>
+                                            <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">#{{ $adv['id'] }}</td>
+                                            <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $adv['received_at'] }}</td>
+                                            <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ strtoupper($adv['method'] ?? '—') }}</td>
+                                            <td class="px-3 py-2 text-sm text-right text-neutral-700 dark:text-neutral-200">{{ $this->formatMoney($adv['remaining_cents']) }}</td>
+                                        </tr>
+                                    @empty
+                                        <tr><td colspan="4" class="px-3 py-3 text-sm text-neutral-600 dark:text-neutral-300 text-center">{{ __('No available advances.') }}</td></tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            @endif
+            @endcan
             @if ($active_tab === 'allocations')
                 <div class="space-y-3">
                     <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Allocations') }}</h2>

@@ -385,7 +385,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </template>
                         </div>
                     </div>
-                    <flux:input wire:model="new_menu_item_price" type="number" step="0.001" min="0" :label="__('Price')" />
+                    <x-number-input wire:model="new_menu_item_price" type="number" min="0" :label="__('Price')" />
                 </div>
                 <div class="mt-3 flex justify-end gap-2">
                     <flux:button type="button" wire:click="closeMenuItemForm" variant="ghost">{{ __('Cancel') }}</flux:button>

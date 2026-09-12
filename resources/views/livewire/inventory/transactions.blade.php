@@ -438,7 +438,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 </div>
 
                                 <div>
-                                    <flux:input wire:model="bulk_rows.{{ $index }}.target_quantity" type="number" min="0" step="0.001" :label="__('Target Qty')" />
+                                    <x-number-input wire:model="bulk_rows.{{ $index }}.target_quantity" type="number" min="0" :label="__('Target Qty')" />
                                     @error('bulk_rows.'.$index.'.target_quantity') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
                                 </div>
 
@@ -563,8 +563,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </select>
                     </div>
 
-                    <flux:input wire:model="quantity" type="number" step="0.001" :label="__('Quantity')" />
-                    <flux:input wire:model="unit_cost" type="number" step="0.0001" min="0" :label="__('Unit Cost (optional)')" />
+                    <x-number-input wire:model="quantity" type="number" :label="__('Quantity')" />
+                    <x-number-input wire:model="unit_cost" type="number" min="0" :label="__('Unit Cost (optional)')" />
                     <flux:textarea wire:model="notes" :label="__('Description / Notes')" rows="2" />
 
                     <div class="flex justify-end">
@@ -599,10 +599,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </select>
                     </div>
                 @endif
-                <flux:input wire:model="new_item_units_per_package" type="number" min="0.001" step="0.001" :label="__('Units per Package')" />
+                <x-number-input wire:model="new_item_units_per_package" type="number" min="0.001" :label="__('Units per Package')" />
                 <flux:input wire:model="new_item_package_label" :label="__('Package Label')" maxlength="50" />
                 <flux:input wire:model="new_item_unit_of_measure" :label="__('Unit of Measure')" maxlength="50" />
-                <flux:input wire:model="new_item_cost_per_unit" type="number" min="0" step="0.0001" :label="__('Package Cost (optional)')" />
+                <x-number-input wire:model="new_item_cost_per_unit" type="number" min="0" :label="__('Package Cost (optional)')" />
             </div>
 
             <flux:textarea wire:model="new_item_description" :label="__('Description (optional)')" rows="2" />
