@@ -4,17 +4,27 @@ namespace App\Http\Controllers\Reports;
 
 use App\Http\Controllers\Controller;
 use App\Models\PastryOrder;
+use App\Models\User;
 use App\Services\PastryOrders\PastryOrderImageService;
+use App\Services\Security\BranchAccessService;
 use App\Support\Reports\CsvExport;
 use App\Support\Reports\PdfExport;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PastryOrdersReportController extends Controller
 {
+    public function __construct(
+        private readonly BranchAccessService $branchAccess,
+    ) {}
+
     private function query(Request $request, int $limit = 500)
     {
-        return PastryOrder::query()
+        $query = PastryOrder::query();
+        $this->branchAccess->applyBranchScope($query, $this->actor());
+
+        return $query
             ->when(
                 $request->filled('status') && $request->status !== 'all',
                 fn ($q) => $q->where('status', $request->status)
@@ -52,19 +62,19 @@ class PastryOrdersReportController extends Controller
 
     public function print(Request $request)
     {
-        $orders  = $this->query($request);
+        $orders = $this->query($request);
         $filters = $request->only(['status', 'branch_id', 'scheduled_date', 'date_from', 'date_to', 'search']);
 
         return view('reports.pastry-orders-print', [
-            'orders'      => $orders,
-            'filters'     => $filters,
+            'orders' => $orders,
+            'filters' => $filters,
             'generatedAt' => now(),
         ]);
     }
 
     public function csv(Request $request): StreamedResponse
     {
-        $orders  = $this->query($request, 2000);
+        $orders = $this->query($request, 2000);
         $headers = [
             __('Order #'),
             __('Sales Order #'),
@@ -93,18 +103,19 @@ class PastryOrdersReportController extends Controller
 
     public function pdf(Request $request)
     {
-        $orders  = $this->query($request);
+        $orders = $this->query($request);
         $filters = $request->only(['status', 'branch_id', 'scheduled_date', 'date_from', 'date_to', 'search']);
 
         return PdfExport::download('reports.pastry-orders-print', [
-            'orders'      => $orders,
-            'filters'     => $filters,
+            'orders' => $orders,
+            'filters' => $filters,
             'generatedAt' => now(),
         ], 'pastry-orders-report.pdf');
     }
 
     public function printSingle(PastryOrder $order, PastryOrderImageService $imageService)
     {
+        abort_unless($this->branchAccess->canAccessBranch($this->actor(), (int) $order->branch_id), 404);
         $order->load(['items.menuItem', 'images']);
 
         return view('reports.pastry-order-single-print', [
@@ -116,7 +127,10 @@ class PastryOrdersReportController extends Controller
 
     public function printAll(Request $request, PastryOrderImageService $imageService)
     {
-        $orders = PastryOrder::query()
+        $query = PastryOrder::query();
+        $this->branchAccess->applyBranchScope($query, $this->actor());
+
+        $orders = $query
             ->when(
                 $request->filled('status') && $request->status !== 'all',
                 fn ($q) => $q->where('status', $request->status)
@@ -148,5 +162,13 @@ class PastryOrdersReportController extends Controller
             'imageMap' => $imageMap,
             'generatedAt' => now(),
         ]);
+    }
+
+    private function actor(): User
+    {
+        $actor = Auth::user();
+        abort_unless($actor instanceof User, 403);
+
+        return $actor;
     }
 }

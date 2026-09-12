@@ -16,6 +16,14 @@
                 $isCashier = $user?->hasAnyRole(['admin','manager','cashier']) ?? false;
                 $isStaff = $user?->hasAnyRole(['admin','manager','staff']) ?? false;
                 $isPastryUser = $user?->hasRole('pastry-user') ?? false;
+                $isKitchenUser = $user?->hasRole('kitchen') ?? false;
+                $isProductionDisplayOnly = ! $isManager && ($isKitchenUser || $isPastryUser);
+                $productionBranchId = ($user?->allowedBranchIds() ?? [])[0] ?? null;
+                $productionHome = $isKitchenUser && $productionBranchId
+                    ? route('kitchen.ops', [$productionBranchId, now()->toDateString()])
+                    : ($isPastryUser && $productionBranchId
+                        ? route('pastry-orders.display', [$productionBranchId, now()->toDateString()])
+                        : route('dashboard'));
                 $canAccessMarketing = $user?->can('marketing.access') ?? false;
                 $canAccessHr = $isAdmin || ($user?->can('hr.access') ?? false);
                 $canAccessQuotations = $user?->can('quotations.access') ?? false;
@@ -58,14 +66,16 @@
                 $inHr = request()->routeIs('hr.*');
             @endphp
 
-            <a href="{{ $isAdmin ? route('dashboard') : route('home') }}" class="me-5 flex items-center space-x-2 rtl:space-x-reverse" wire:navigate>
+            <a href="{{ $isProductionDisplayOnly ? $productionHome : route('dashboard') }}" class="me-5 flex items-center space-x-2 rtl:space-x-reverse" wire:navigate>
                 <x-app-logo />
             </a>
 
             <flux:navlist variant="outline">
+                @unless ($isProductionDisplayOnly)
                     <flux:navlist.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:navlist.item>
+                @endunless
 
                 @if ($isAdmin)
                     <flux:navlist.group expandable :expanded="$inAdministration" :heading="__('Administration')">
@@ -99,11 +109,18 @@
                     </flux:navlist.group>
                 @endif
 
-                @if ($isPastryUser && ! $isCashier)
-                    <flux:navlist.group expandable :expanded="$inSales" :heading="__('Sales')">
-                        <flux:navlist.item icon="cake" :href="route('pastry-orders.index')" :current="request()->routeIs('pastry-orders.*')" wire:navigate>
-                            {{ __('Pastry Orders') }}
-                        </flux:navlist.item>
+                @if ($isProductionDisplayOnly && $productionBranchId)
+                    <flux:navlist.group :heading="__('Production')">
+                        @if ($isKitchenUser)
+                            <flux:navlist.item icon="clipboard-document-list" :href="route('kitchen.ops', [$productionBranchId, now()->toDateString()])" :current="request()->routeIs('kitchen.ops')" wire:navigate>
+                                {{ __('Kitchen preparation') }}
+                            </flux:navlist.item>
+                        @endif
+                        @if ($isPastryUser)
+                            <flux:navlist.item icon="cake" :href="route('pastry-orders.display', [$productionBranchId, now()->toDateString()])" :current="request()->routeIs('pastry-orders.display')" wire:navigate>
+                                {{ __('Pastry display') }}
+                            </flux:navlist.item>
+                        @endif
                     </flux:navlist.group>
                 @endif
 
@@ -118,6 +135,11 @@
                         <flux:navlist.item icon="table-cells" :href="route('order-sheet.index')" :current="request()->routeIs('order-sheet.*')" wire:navigate>
                             {{ __('Order Sheet') }}
                         </flux:navlist.item>
+                        @if ($user?->can('order-labels.print'))
+                            <flux:navlist.item icon="printer" :href="route('order-labels.index')" :current="request()->routeIs('order-labels.*')" wire:navigate>
+                                {{ __('Order Labels') }}
+                            </flux:navlist.item>
+                        @endif
                         @if ($canAccessQuotations)
                             <flux:navlist.item icon="document-plus" :href="route('quotations.index')" :current="request()->routeIs('quotations.*')" wire:navigate>
                                 {{ __('Quotations') }}
@@ -288,13 +310,15 @@
                     </flux:navlist.group>
                 @endif
 
-                <flux:navlist.group :heading="__('Support')">
-                    <flux:navlist.item icon="question-mark-circle" :href="route('help.index')" :current="$inSupport" wire:navigate>
-                        {{ __('Help Center') }}
-                    </flux:navlist.item>
-                </flux:navlist.group>
+                @unless ($isProductionDisplayOnly)
+                    <flux:navlist.group :heading="__('Support')">
+                        <flux:navlist.item icon="question-mark-circle" :href="route('help.index')" :current="$inSupport" wire:navigate>
+                            {{ __('Help Center') }}
+                        </flux:navlist.item>
+                    </flux:navlist.group>
+                @endunless
 
-                @if (! ($isAccounting && ! $isCashier))
+                @if (! $isProductionDisplayOnly && ! ($isAccounting && ! $isCashier))
                     <flux:navlist.group :heading="__('Tools')">
                         <flux:navlist.item
                             href="https://laylacardssystem.streamlit.app/"

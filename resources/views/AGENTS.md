@@ -28,6 +28,7 @@ All paths in the first column are relative to `resources/views/livewire/`.
 | `inventory/` | [Inventory and transfers](../../app/Services/Inventory/AGENTS.md). |
 | `suppliers/`, `purchase-orders/` | [Purchasing and supplier references](../../app/Services/Purchasing/AGENTS.md). |
 | `orders/` | [Orders](../../app/Services/Orders/AGENTS.md). |
+| `order-labels/` | [Order label snapshots, printer routing, queue status, and reprints](../../app/Services/Orders/AGENTS.md), [POS delivery](../../app/Services/POS/AGENTS.md). |
 | `storefront/` | [Customer storefront administration, catalog, delivery apps, analytics, and checkout upsells](../../app/Services/Storefront/AGENTS.md). |
 | `daily-dish/` | [Daily menus and preparation](../../app/Services/DailyDish/AGENTS.md), [pricing](../../app/Services/Pricing/AGENTS.md). |
 | `kitchen/` | [Kitchen transitions](../../app/Services/Orders/AGENTS.md). |
@@ -55,7 +56,7 @@ All paths in the first column are relative to `resources/views/livewire/`.
 
 ## Shared settings and dashboard
 
-* Profile, password, appearance, and two factor settings are user settings. Finance, accounting setup, payment terms, POS terminals, organization, and logs are administrative surfaces with separate route gates.
+* Profile, password, appearance, and two factor settings are user settings. Finance, accounting setup, payment terms, POS terminals, order label printers, organization, and logs are administrative surfaces with separate route gates.
 * Organization settings manage accounting companies, branches, departments, and jobs. Those records are security and reporting dimensions, not just display labels.
 * The log page has separate operations and email filters and pagination names. Its query and actions check admin access.
 * The dashboard aggregates several domains directly in its Volt component. You can trace each metric's permission, branch filter, date range, and void handling rather than assuming one shared scope.

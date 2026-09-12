@@ -2,6 +2,7 @@
 
 namespace App\Services\POS;
 
+use App\Models\OrderLabelPrint;
 use App\Models\PosPrintJob;
 use App\Models\PosPrintStreamEvent;
 use App\Models\PosTerminal;
@@ -161,6 +162,91 @@ class PosPrintJobService
     }
 
     /**
+     * Queue an RMS-rendered document without pretending it originated at a POS terminal.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{job:PosPrintJob,target_terminal:PosTerminal,created:bool}
+     */
+    public function enqueueServerDocument(PosTerminal $targetTerminal, array $data, ?int $actorId = null): array
+    {
+        abort_unless((bool) $targetTerminal->active, 422, 'Target terminal is inactive.');
+
+        $serverJobUuid = trim((string) ($data['server_job_uuid'] ?? ''));
+        $branchId = (int) ($data['branch_id'] ?? 0);
+        $target = trim((string) ($data['target'] ?? ''));
+        $docType = trim((string) ($data['doc_type'] ?? ''));
+        $payloadBase64 = (string) ($data['payload_base64'] ?? '');
+        $labelPrintId = (int) ($data['order_label_print_id'] ?? 0);
+
+        if (! Str::isUuid($serverJobUuid) || $branchId <= 0 || $target === '' || $docType === '' || $payloadBase64 === '' || $labelPrintId <= 0) {
+            throw ValidationException::withMessages(['print_job' => 'The server print job is incomplete.']);
+        }
+        if ((int) $targetTerminal->branch_id !== $branchId) {
+            throw ValidationException::withMessages(['branch_id' => 'The target terminal belongs to another branch.']);
+        }
+
+        $existing = PosPrintJob::query()->where('server_job_uuid', $serverJobUuid)->first();
+        if ($existing) {
+            $this->guardIdempotencyCompatibility($existing, (int) $targetTerminal->id);
+
+            return ['job' => $existing, 'target_terminal' => $targetTerminal, 'created' => false];
+        }
+
+        try {
+            $job = DB::transaction(function () use ($targetTerminal, $data, $actorId, $serverJobUuid, $branchId, $target, $docType, $payloadBase64, $labelPrintId) {
+                return PosPrintJob::query()->create([
+                    'client_job_id' => 'server:'.$serverJobUuid,
+                    'server_job_uuid' => $serverJobUuid,
+                    'order_label_print_id' => $labelPrintId,
+                    'source_terminal_id' => null,
+                    'branch_id' => $branchId,
+                    'target_terminal_id' => (int) $targetTerminal->id,
+                    'target' => $target,
+                    'doc_type' => $docType,
+                    'payload_base64' => $payloadBase64,
+                    'client_created_at' => now(),
+                    'job_type' => $docType,
+                    'payload' => [
+                        'target' => $target,
+                        'doc_type' => $docType,
+                        'payload_base64' => $payloadBase64,
+                    ],
+                    'metadata' => (array) ($data['metadata'] ?? []),
+                    'status' => PosPrintJob::STATUS_QUEUED,
+                    'attempt_count' => 0,
+                    'max_attempts' => max(1, min(20, (int) config('pos.print_jobs.max_attempts', 5))),
+                    'created_by' => $actorId,
+                ]);
+            }, 3);
+        } catch (QueryException $exception) {
+            $job = PosPrintJob::query()->where('server_job_uuid', $serverJobUuid)->first();
+            if (! $job) {
+                throw $exception;
+            }
+            $this->guardIdempotencyCompatibility($job, (int) $targetTerminal->id);
+
+            return ['job' => $job, 'target_terminal' => $targetTerminal, 'created' => false];
+        }
+
+        logger()->info('pos_print_enqueue', [
+            'event' => 'enqueue',
+            'result' => 'server_document_created',
+            'job_id' => (int) $job->id,
+            'server_job_uuid' => $serverJobUuid,
+            'target_terminal_id' => (int) $targetTerminal->id,
+            'doc_type' => $docType,
+        ]);
+
+        DB::afterCommit(function () use ($targetTerminal): void {
+            if ($this->isStreamActive($targetTerminal)) {
+                $this->dispatchPendingJobsForTerminal($targetTerminal, source: 'enqueue.server');
+            }
+        });
+
+        return ['job' => $job, 'target_terminal' => $targetTerminal, 'created' => true];
+    }
+
+    /**
      * @return array<int, PosPrintJob>
      */
     public function pull(PosTerminal $terminal, ?int $waitSeconds = null, ?int $limit = null): array
@@ -275,6 +361,7 @@ class PosPrintJobService
                     'last_error_code' => null,
                     'last_error_message' => null,
                 ])->save();
+                $this->syncOrderLabelStatus($job, OrderLabelPrint::STATUS_PRINTED);
 
                 logger()->info('pos_print_ack', [
                     'event' => 'ack',
@@ -310,6 +397,7 @@ class PosPrintJobService
                     'last_error_code' => $errorCode ?: 'PRINT_FAILED',
                     'last_error_message' => $errorMessage ?: 'Print failed and max attempts reached.',
                 ])->save();
+                $this->syncOrderLabelStatus($job, OrderLabelPrint::STATUS_FAILED);
 
                 logger()->info('pos_print_ack', [
                     'event' => 'ack',
@@ -336,6 +424,7 @@ class PosPrintJobService
                     'last_error_code' => $errorCode ?: 'PRINT_FAILED',
                     'last_error_message' => $errorMessage ?: 'Print failed.',
                 ])->save();
+                $this->syncOrderLabelStatus($job, OrderLabelPrint::STATUS_QUEUED);
 
                 logger()->info('pos_print_retry', [
                     'event' => 'retry',
@@ -576,11 +665,15 @@ class PosPrintJobService
     {
         $now = now();
 
-        $reclaimed = PosPrintJob::query()
+        $expired = PosPrintJob::query()
             ->where('target_terminal_id', $terminalId)
             ->where('status', PosPrintJob::STATUS_CLAIMED)
             ->whereNotNull('claim_expires_at')
             ->where('claim_expires_at', '<', $now)
+            ->get(['id', 'order_label_print_id']);
+
+        $reclaimed = PosPrintJob::query()
+            ->whereIn('id', $expired->pluck('id'))
             ->update([
                 'status' => PosPrintJob::STATUS_QUEUED,
                 'claimed_at' => null,
@@ -590,6 +683,13 @@ class PosPrintJobService
                 'next_retry_at' => $now,
                 'updated_at' => $now,
             ]);
+
+        $labelIds = $expired->pluck('order_label_print_id')->filter()->all();
+        if ($labelIds !== []) {
+            OrderLabelPrint::query()->whereIn('id', $labelIds)->update([
+                'status' => OrderLabelPrint::STATUS_QUEUED,
+            ]);
+        }
 
         if ($reclaimed > 0) {
             logger()->info('pos_print_claim_reclaim', [
@@ -631,6 +731,7 @@ class PosPrintJobService
                     'claim_expires_at' => $now->copy()->addSeconds($claimTtlSeconds),
                     'next_retry_at' => null,
                 ])->save();
+                $this->syncOrderLabelStatus($job, OrderLabelPrint::STATUS_CLAIMED);
 
                 logger()->info('pos_print_claim', [
                     'event' => 'claim',
@@ -679,6 +780,7 @@ class PosPrintJobService
                     'claim_expires_at' => $now->copy()->addSeconds($claimTtlSeconds),
                     'next_retry_at' => null,
                 ])->save();
+                $this->syncOrderLabelStatus($job, OrderLabelPrint::STATUS_CLAIMED);
 
                 logger()->info('pos_print_claim', [
                     'event' => 'claim',
@@ -757,5 +859,22 @@ class PosPrintJobService
         $delay = $base * (2 ** $exp);
 
         return (int) min($max, $delay);
+    }
+
+    private function syncOrderLabelStatus(PosPrintJob $job, string $status): void
+    {
+        $labelPrintId = (int) ($job->order_label_print_id ?? 0);
+        if ($labelPrintId <= 0) {
+            return;
+        }
+
+        $timestamps = match ($status) {
+            OrderLabelPrint::STATUS_PRINTED => ['printed_at' => now(), 'failed_at' => null],
+            OrderLabelPrint::STATUS_FAILED => ['failed_at' => now()],
+            OrderLabelPrint::STATUS_QUEUED => ['failed_at' => null],
+            default => [],
+        };
+
+        OrderLabelPrint::query()->whereKey($labelPrintId)->update(['status' => $status, ...$timestamps]);
     }
 }

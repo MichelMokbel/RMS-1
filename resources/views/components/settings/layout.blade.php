@@ -24,6 +24,7 @@
                 <flux:navlist.item :href="route('iam.users.index')" wire:navigate>{{ __('Identity & Access') }}</flux:navlist.item>
                 <flux:navlist.item :href="route('customers.accounts.index')" wire:navigate>{{ __('Customer Accounts') }}</flux:navlist.item>
                 <flux:navlist.item :href="route('settings.mail')" wire:navigate>{{ __('Mail') }}</flux:navlist.item>
+                <flux:navlist.item :href="route('settings.order-label-printers')" wire:navigate>{{ __('Order Label Printers') }}</flux:navlist.item>
             @endif
             @if($canManageFinanceSettings)
                 <flux:navlist.item :href="route('finance.settings')" wire:navigate>{{ __('Finance') }}</flux:navlist.item>

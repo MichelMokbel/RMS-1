@@ -13,7 +13,6 @@ use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
-use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -146,7 +145,7 @@ Route::get('/tools/menu-items/import-arabic-names', function (Request $request) 
 });
 
 Volt::route('dashboard', 'dashboard')
-    ->middleware(['auth', 'active'])
+    ->middleware(['auth', 'active', 'production.display.redirect'])
     ->name('dashboard');
 
 Route::middleware(['auth', 'active'])->group(function () {
@@ -206,6 +205,9 @@ Route::middleware(['auth', 'active', 'role:admin', 'ensure.admin'])->group(funct
     Volt::route('settings/accounting', 'settings.accounting')->name('settings.accounting');
     Volt::route('settings/payment-terms', 'settings.payment-terms')->name('settings.payment-terms');
     Volt::route('settings/pos-terminals', 'settings.pos-terminals')->name('settings.pos-terminals');
+    Volt::route('settings/order-label-printers', 'settings.order-label-printers')->name('settings.order-label-printers');
+    Route::get('settings/order-label-printers/{profile}/preview', \App\Http\Controllers\OrderLabelPrinterPreviewController::class)
+        ->name('settings.order-label-printers.preview');
     Volt::route('settings/organization', 'settings.organization')->name('settings.organization');
     Volt::route('settings/logs', 'settings.logs')->name('settings.logs');
     Volt::route('settings/mail', 'settings.mail')->name('settings.mail');
@@ -299,7 +301,7 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|catalog.a
     })->name('recipes.inventory-items.search');
 });
 
-Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|operations.access'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operations.access'])->group(function () {
     Volt::route('daily-dish/menus', 'daily-dish.menus.index')->name('daily-dish.menus.index');
 });
 
@@ -319,10 +321,13 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|operation
         ->name('meal-plan-requests.print');
 });
 
-Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|cashier|operations.access'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|operations.access'])->group(function () {
     Volt::route('daily-dish/ops/{branch}/{date}', 'daily-dish.ops.day')
         ->middleware('ensure.active-branch')
         ->name('daily-dish.ops.day');
+});
+
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen.display'])->group(function () {
     Volt::route('kitchen/ops/{branch}/{date}', 'kitchen.ops')
         ->middleware('ensure.active-branch')
         ->name('kitchen.ops');
@@ -991,8 +996,13 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|c
     })->name('orders.items');
 });
 
-// ── Pastry Orders (accessible by pastry-user role in addition to the standard roles) ──
-Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|cashier|pastry-user|orders.access|operations.access'])->group(function () {
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|pastry.display'])->group(function () {
+    Volt::route('pastry-orders/display/{branch}/{date}', 'pastry-orders.display')
+        ->middleware('ensure.active-branch')
+        ->name('pastry-orders.display');
+});
+
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|pastry-orders.manage'])->group(function () {
     Volt::route('pastry-orders', 'pastry-orders.index')->name('pastry-orders.index');
     Route::get('pastry-orders/print/all', [\App\Http\Controllers\Reports\PastryOrdersReportController::class, 'printAll'])
         ->name('pastry-orders.print-all');
@@ -1042,6 +1052,10 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|kitchen|c
 
         return response()->json($items);
     })->name('pastry-orders.menu-items.search');
+});
+
+Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|order-labels.print'])->group(function () {
+    Volt::route('order-labels', 'order-labels.index')->name('order-labels.index');
 });
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|operations.access'])->group(function () {

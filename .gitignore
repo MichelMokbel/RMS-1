@@ -7,6 +7,11 @@
 /storage/pail
 /vendor
 .env
+tools/order-label-print-agent/config.json
+tools/order-label-print-agent/state/
+tools/order-label-print-agent/*.sqlite3
+__pycache__/
+*.py[cod]
 gha-creds-*.json
 .env.backup
 .env.production

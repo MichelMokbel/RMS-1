@@ -444,6 +444,32 @@ Show one administrator selected storefront category immediately before final rev
 * [x] Review it: `/check review checkout add-on upsell`
 * [x] Document it: `/document checkout add-on upsell`
 
+## Production operations extension
+
+### 13. Kitchen and pastry displays with order labels · in-progress
+
+Give kitchen workers a branch scoped daily preparation total that does not expose order, customer, price, finance, or status controls. Give pastry workers a branch scoped full screen order display with reference images shown as large as their natural resolution allows, while preserving aspect ratio and hiding every price and management action. Keep the existing admin and manager pages for order creation, editing, finance, reporting, and correction.
+
+Add administrator managed printer profiles and price free order labels using the existing POS print delivery queue. RMS creates a fixed label snapshot and an outbound local agent sends it to an allowlisted operating system printer queue. The first release supports manual one order and one service date batch printing, one label per order by default, bounded copy counts, visible queue health, and auditable explicit reprints. Printer failure cannot block an order or financial workflow.
+
+**Done when:** each worker role can see only its assigned branch and purpose built screen; kitchen totals include every non cancelled scheduled order without requiring state work; pastry images fill the available display without cropping or pixelating; no worker screen, export, print, or direct action leaks prices or unauthorized branches; an authorized operator can print and reprint correctly sized labels through either verified physical printer; queue retry cannot duplicate an acknowledged label; every profile starts inactive and cannot activate until its model, connection, label stock, dimensions, driver, local terminal, and physical sample are verified.
+
+**Spec:** [0013 production operations displays and labels](../specs/0013-production-operations-displays-and-labels/index.md). The screens, server queue, RMS controls, and generic local agent are implemented. Physical model, media, connection, operating system queue, and host details remain required to configure and verify both printers.
+
+* [x] Design it (spec): `/architect production operations displays and order labels`
+* [ ] Build it: `/develop production operations displays and order labels`
+  * [x] Add permissions, route separation, branch scoped query services, and close current pastry management and report authorization gaps (AC-1, AC-6).
+  * [x] Add the read only kitchen preparation display with all non cancelled scheduled quantities (AC-2, AC-3).
+  * [x] Add the read only full screen pastry display with natural size image handling (AC-4, AC-5, AC-6).
+  * [x] Add printer profiles, label snapshots, preview, settings, audit, queue history, and inactive activation gate (AC-7, AC-8, AC-9, AC-12, AC-13).
+  * [x] Extend the existing queue for server originated PDF labels, manual and batch actions, retries, and explicit reprints (AC-8, AC-9, AC-10, AC-13).
+  * [x] Add the cross platform local label agent with queue allowlisting, PDF/media validation, sanitized logs, and durable deduplication (AC-10, AC-11).
+  * [ ] Configure the exact drivers, queue names, host service, and media profiles, then physically verify both confirmed printers (AC-10, AC-11).
+* [ ] Verify it: `/check verify production operations displays and order labels`
+* [x] Test it: `/test production operations displays and order labels`
+* [ ] Review it: `/check review production operations displays and order labels`
+* [ ] Document it: `/document production operations displays and order labels`
+
 ## Deferred
 
 - **Customer use of saved credit at checkout**: no website payment option or automatic application of saved balances for orders or memberships. Only admins in RMS can allocate saved credit; normal daily allocation from a membership's own payment continues.

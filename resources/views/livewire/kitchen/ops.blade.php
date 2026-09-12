@@ -1,237 +1,150 @@
 <?php
 
-use App\Models\Order;
-use App\Models\OrderItem;
-use App\Services\DailyDish\DailyDishOpsQueryService;
-use App\Services\Orders\OrderWorkflowService;
+use App\Models\User;
+use App\Services\Orders\KitchenPreparationQueryService;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
-    public int $branch = 1;
+    public int $branch;
     public string $date;
 
-    public string $department = 'All'; // All|DailyDish|Pastry|Other
-    public string $mode = 'ByOrder'; // ByOrder|ByItemTotals
-
-    public bool $includeSubscription = true;
-    public bool $includeManual = true;
-
-    public string $search = '';
-
-    public function mount(int $branch, string $date): void
+    public function mount(int $branch, string $date, KitchenPreparationQueryService $query): void
     {
-        $this->branch = $branch ?: 1;
-        $this->date = $date ?: now()->toDateString();
+        $this->branch = $branch;
+        $this->date = $this->normalizeDate($date);
+        $query->assertCanView($this->actor(), $this->branch);
     }
 
-    private function canKitchen(): bool
+    public function previousDay(): void
     {
-        return auth()->user()?->hasAnyRole(['admin', 'manager', 'kitchen']) ?? false;
+        $this->date = Carbon::parse($this->date)->subDay()->toDateString();
     }
 
-    public function with(DailyDishOpsQueryService $q): array
+    public function nextDay(): void
     {
-        $orders = $q->getOrdersForDay($this->branch, $this->date, [
-            'statuses' => ['Confirmed', 'InProduction', 'Ready'],
-            'include_subscription' => $this->includeSubscription,
-            'include_manual' => $this->includeManual,
-            'search' => $this->search,
-            'types' => $this->department === 'Pastry' ? ['Pastry'] : null,
-        ]);
-
-        if ($this->department === 'DailyDish') {
-            $orders = $orders->where('is_daily_dish', true)->values();
-        } elseif ($this->department === 'Other') {
-            $orders = $orders->where('is_daily_dish', false)->filter(fn ($o) => $o->type !== 'Pastry')->values();
-        } elseif ($this->department === 'Pastry') {
-            // already filtered above
-        }
-
-        $prepTotals = $q->getPrepTotals($this->branch, $this->date, [
-            'statuses' => ['Confirmed', 'InProduction'],
-            'include_subscription' => $this->includeSubscription,
-            'include_manual' => $this->includeManual,
-            'department' => $this->department,
-        ]);
-
-        return compact('orders', 'prepTotals');
+        $this->date = Carbon::parse($this->date)->addDay()->toDateString();
     }
 
-    public function advanceOrderStatus(int $orderId, string $toStatus): void
+    public function today(): void
     {
-        if (! $this->canKitchen()) {
-            abort(403);
-        }
+        $this->date = now()->toDateString();
+    }
 
+    public function updatedDate(string $date): void
+    {
+        $this->date = $this->normalizeDate($date);
+    }
+
+    public function with(KitchenPreparationQueryService $query): array
+    {
+        $actor = $this->actor();
+        $branches = $query->availableBranches($actor);
+        $totals = $query->totalsForDay($actor, $this->branch, $this->date);
+        $branchName = (string) ($branches->firstWhere('id', $this->branch)?->name ?? __('Kitchen'));
+
+        return [
+            'branches' => $branches,
+            'totals' => $totals,
+            'branchName' => $branchName,
+            'groupedTotals' => $totals->groupBy(fn ($row) => (string) ($row->role ?: __('Other'))),
+            'refreshedAt' => now()->format('H:i:s'),
+        ];
+    }
+
+    public function formatQuantity(string|int|float|null $quantity): string
+    {
+        $formatted = number_format((float) $quantity, 3, '.', '');
+
+        return rtrim(rtrim($formatted, '0'), '.');
+    }
+
+    private function actor(): User
+    {
+        $actor = Auth::user();
+        abort_unless($actor instanceof User, 403);
+
+        return $actor;
+    }
+
+    private function normalizeDate(string $date): string
+    {
         try {
-            /** @var Order $order */
-            $order = Order::findOrFail($orderId);
-            app(OrderWorkflowService::class)->advanceOrder($order, $toStatus, (int) Illuminate\Support\Facades\Auth::id());
-            $this->dispatch('toast', type: 'success', message: __('Order status updated.'));
-        } catch (\Throwable $e) {
-            $this->dispatch('toast', type: 'error', message: __('Could not update order.'));
-        }
-    }
-
-    public function setItemStatus(int $itemId, string $toStatus): void
-    {
-        if (! $this->canKitchen()) {
-            abort(403);
+            $parsed = Carbon::createFromFormat('Y-m-d', $date);
+        } catch (\Throwable) {
+            abort(404);
         }
 
-        try {
-            /** @var OrderItem $item */
-            $item = OrderItem::findOrFail($itemId);
-            app(OrderWorkflowService::class)->setItemStatus($item, $toStatus, (int) Illuminate\Support\Facades\Auth::id());
-            $this->dispatch('toast', type: 'success', message: __('Item status updated.'));
-        } catch (\Throwable $e) {
-            $this->dispatch('toast', type: 'error', message: __('Could not update item.'));
-        }
+        abort_unless($parsed && $parsed->format('Y-m-d') === $date, 404);
+
+        return $date;
     }
 }; ?>
 
-<div class="app-page space-y-6" wire:poll.12s>
-    <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-            <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ __('Kitchen Ops') }}</p>
-            <h1 class="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
-                {{ __('Branch') }} {{ $branch }} · {{ $date }}
-            </h1>
-        </div>
-        <div class="flex flex-wrap gap-2">
-            <flux:button :href="route('daily-dish.ops.day', [$branch, $date])" wire:navigate variant="ghost">{{ __('Daily Dish Ops') }}</flux:button>
-            <flux:button :href="route('orders.index')" wire:navigate variant="ghost">{{ __('Orders') }}</flux:button>
-        </div>
-    </div>
-
-    <div class="sticky top-0 z-10 rounded-lg border border-neutral-200 bg-white/95 p-4 shadow-sm backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/95 space-y-3">
-        <div class="app-filter-grid">
-            <x-number-input wire:model.live="branch" type="number" min="1" :label="__('Branch')" class="w-28" />
-            <flux:input wire:model.live="date" type="date" :label="__('Date')" />
+<main class="app-page min-h-[calc(100vh-2rem)] space-y-5" wire:poll.15s aria-labelledby="kitchen-display-title">
+    <header class="rounded-2xl bg-primary-900 px-5 py-5 text-white shadow-sm sm:px-7">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-                <label class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ __('Department') }}</label>
-                <select wire:model.live="department" class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50">
-                    <option value="All">{{ __('All') }}</option>
-                    <option value="DailyDish">{{ __('Daily Dish') }}</option>
-                    <option value="Pastry">{{ __('Pastry') }}</option>
-                    <option value="Other">{{ __('Other') }}</option>
-                </select>
+                <p class="text-sm font-semibold uppercase tracking-[0.16em] text-primary-200">{{ __('Kitchen preparation') }}</p>
+                <h1 id="kitchen-display-title" class="mt-1 text-3xl font-bold tracking-tight sm:text-4xl">{{ $branchName }}</h1>
+                <p class="mt-2 text-lg text-primary-100">{{ Carbon::parse($date)->translatedFormat('l, j F Y') }}</p>
             </div>
-            <div class="flex items-center gap-3 pt-6">
-                <flux:checkbox wire:model.live="includeSubscription" :label="__('Subscription')" />
-                <flux:checkbox wire:model.live="includeManual" :label="__('Manual')" />
-            </div>
-            <div class="flex-1 min-w-[180px]">
-                <flux:input wire:model.live.debounce.300ms="search" :label="__('Search')" placeholder="{{ __('Order # or customer') }}" />
-            </div>
-            <div class="flex gap-2 pt-6">
-                <flux:button type="button" wire:click="$set('mode','ByOrder')" :variant="$mode==='ByOrder' ? 'primary' : 'ghost'">{{ __('By Order') }}</flux:button>
-                <flux:button type="button" wire:click="$set('mode','ByItemTotals')" :variant="$mode==='ByItemTotals' ? 'primary' : 'ghost'">{{ __('By Item Totals') }}</flux:button>
+
+            <div class="flex flex-wrap items-end gap-2">
+                @if ($branches->count() > 1)
+                    <div>
+                        <label for="kitchen-branch" class="mb-1 block text-xs font-semibold uppercase tracking-wide text-primary-100">{{ __('Branch') }}</label>
+                        <select id="kitchen-branch" wire:model.live="branch" class="min-h-11 rounded-lg border border-primary-600 bg-primary-800 px-3 py-2 text-base text-white focus:border-white focus:ring-2 focus:ring-white">
+                            @foreach ($branches as $availableBranch)
+                                <option value="{{ $availableBranch->id }}">{{ $availableBranch->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                @endif
+
+                <div>
+                    <label for="kitchen-date" class="mb-1 block text-xs font-semibold uppercase tracking-wide text-primary-100">{{ __('Service date') }}</label>
+                    <input id="kitchen-date" wire:model.live="date" type="date" class="min-h-11 rounded-lg border border-primary-600 bg-primary-800 px-3 py-2 text-base text-white focus:border-white focus:ring-2 focus:ring-white" />
+                </div>
+
+                <flux:button type="button" wire:click="previousDay" variant="ghost" class="min-h-11 !text-white hover:!bg-primary-800" aria-label="{{ __('Previous day') }}" icon="chevron-left" />
+                <flux:button type="button" wire:click="today" variant="ghost" class="min-h-11 !text-white hover:!bg-primary-800">{{ __('Today') }}</flux:button>
+                <flux:button type="button" wire:click="nextDay" variant="ghost" class="min-h-11 !text-white hover:!bg-primary-800" aria-label="{{ __('Next day') }}" icon="chevron-right" />
             </div>
         </div>
+    </header>
+
+    <div class="flex items-center justify-between gap-3 text-sm text-neutral-600 dark:text-neutral-300" role="status" aria-live="polite">
+        <p>{{ trans_choice(':count preparation item|:count preparation items', $totals->count(), ['count' => $totals->count()]) }}</p>
+        <p>
+            <span wire:loading.remove>{{ __('Updated at :time', ['time' => $refreshedAt]) }}</span>
+            <span wire:loading>{{ __('Refreshing…') }}</span>
+        </p>
     </div>
 
-    @if($mode === 'ByItemTotals')
-        <div class="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 space-y-2">
-            <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{{ __('Prep Totals') }}</h2>
-            <div class="app-table-scroll">
-                <table class="w-full min-w-full table-auto divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <thead class="bg-neutral-50 dark:bg-neutral-800/90">
-                        <tr>
-                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Role') }}</th>
-                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Item') }}</th>
-                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-100">{{ __('Total Qty') }}</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                        @forelse($prepTotals as $row)
-                            <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/70">
-                                <td class="px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200">{{ $row->role ?? '—' }}</td>
-                                <td class="px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100">{{ $row->description_snapshot }}</td>
-                                <td class="px-3 py-2 text-sm text-right text-neutral-900 dark:text-neutral-100">{{ number_format((float) $row->total_quantity, 3) }}</td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td colspan="3" class="px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200">{{ __('No items to prep.') }}</td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
+    @forelse ($groupedTotals as $role => $rows)
+        <section aria-labelledby="kitchen-group-{{ \Illuminate\Support\Str::slug($role) }}" class="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+            <div class="border-b border-neutral-200 bg-neutral-50 px-5 py-3 dark:border-neutral-700 dark:bg-neutral-800">
+                <h2 id="kitchen-group-{{ \Illuminate\Support\Str::slug($role) }}" class="text-lg font-bold uppercase tracking-wide text-neutral-800 dark:text-neutral-100">{{ $role }}</h2>
             </div>
-            <p class="text-xs text-neutral-600 dark:text-neutral-300">{{ __('Prep totals include Confirmed + InProduction orders only.') }}</p>
-        </div>
-    @else
-        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            @forelse ($orders as $order)
-                @php
-                    $urgent = $order->scheduled_time && ! in_array($order->status, ['Ready','Delivered','Cancelled'], true)
-                        && \Carbon\Carbon::parse($order->scheduled_time)->between(now()->subMinutes(5), now()->addMinutes(30));
-                @endphp
-                <div class="flex flex-col justify-between rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 @if($urgent) ring-2 ring-amber-400 dark:ring-amber-500 @endif">
-                    <div class="flex items-start justify-between gap-3">
-                        <div>
-                            <p class="text-sm font-semibold text-neutral-900 dark:text-neutral-50">{{ $order->customer_name_snapshot ?? '—' }}</p>
-                            <p class="text-xs text-neutral-600 dark:text-neutral-300">{{ $order->order_number }}</p>
-                        </div>
-                        <div class="text-right space-y-1">
-                            <p class="text-xs text-neutral-600 dark:text-neutral-300">{{ $order->scheduled_time ?? __('No time') }}</p>
-                            <span class="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100">{{ $order->status }}</span>
-                            <div class="flex flex-wrap justify-end gap-1 text-[10px]">
-                                <span class="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 dark:bg-neutral-800">{{ $order->type }}</span>
-                                <span class="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 dark:bg-neutral-800">{{ $order->source }}</span>
-                                @if($order->is_daily_dish)
-                                    <span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-800 dark:bg-blue-900 dark:text-blue-100">DD</span>
-                                @endif
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="mt-3 space-y-1 text-xs text-neutral-800 dark:text-neutral-100">
-                        <div>{{ $order->customer_phone_snapshot ?? '—' }}</div>
-                        <div class="line-clamp-2 text-[11px] text-neutral-700 dark:text-neutral-300">{{ $order->delivery_address_snapshot ?? '—' }}</div>
-                    </div>
-
-                    <ul class="mt-3 divide-y divide-neutral-200 text-xs dark:divide-neutral-800">
-                        @foreach ($order->items as $item)
-                            <li class="flex items-center justify-between gap-2 py-1">
-                                <div>
-                                    <div class="text-neutral-900 dark:text-neutral-100">{{ $item->description_snapshot }}</div>
-                                    <div class="text-[11px] text-neutral-600 dark:text-neutral-300">{{ number_format((float) $item->quantity, 3) }}</div>
-                                </div>
-                                <div class="flex items-center gap-2">
-                                    <span class="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100">{{ $item->status }}</span>
-                                    @if(! in_array($order->status, ['Cancelled','Delivered'], true))
-                                        @if ($item->status === 'Pending')
-                                            <flux:button size="xs" wire:click="setItemStatus({{ $item->id }}, 'InProduction')">{{ __('Start') }}</flux:button>
-                                        @elseif ($item->status === 'InProduction')
-                                            <flux:button size="xs" wire:click="setItemStatus({{ $item->id }}, 'Ready')">{{ __('Ready') }}</flux:button>
-                                        @elseif ($item->status === 'Ready')
-                                            <flux:button size="xs" wire:click="setItemStatus({{ $item->id }}, 'Completed')">{{ __('Complete') }}</flux:button>
-                                        @endif
-                                    @endif
-                                </div>
-                            </li>
-                        @endforeach
-                    </ul>
-
-                    <div class="mt-3 flex items-center justify-between">
-                        @php $locked = in_array($order->status, ['Cancelled','Delivered'], true); @endphp
-                        <div class="flex flex-wrap gap-2 text-[11px]">
-                            @if (! $locked && $order->status === 'Confirmed')
-                                <flux:button size="xs" wire:click="advanceOrderStatus({{ $order->id }}, 'InProduction')">{{ __('Start Order') }}</flux:button>
-                            @elseif (! $locked && $order->status === 'InProduction')
-                                <flux:button size="xs" wire:click="advanceOrderStatus({{ $order->id }}, 'Ready')">{{ __('Mark Order Ready') }}</flux:button>
-                            @endif
-                        </div>
-                        <div class="text-right text-[11px] text-neutral-600 dark:text-neutral-300">{{ __('Items') }}: {{ $order->items->count() }}</div>
-                    </div>
-                </div>
-            @empty
-                <p class="text-sm text-neutral-700 dark:text-neutral-200">{{ __('No orders.') }}</p>
-            @endforelse
-        </div>
-    @endif
-</div>
-
-
+            <ul class="divide-y divide-neutral-200 dark:divide-neutral-700">
+                @foreach ($rows as $row)
+                    <li wire:key="kitchen-total-{{ $row->menu_item_id ?: 'snapshot' }}-{{ md5((string) $row->description_snapshot) }}" class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-5 px-5 py-5 sm:px-7">
+                        <span class="text-xl font-semibold leading-tight text-neutral-900 dark:text-white sm:text-2xl">{{ $row->description_snapshot }}</span>
+                        <span class="min-w-20 rounded-xl bg-primary-50 px-4 py-2 text-center text-3xl font-black tabular-nums text-primary-900 dark:bg-primary-950 dark:text-primary-100 sm:text-4xl">
+                            {{ $this->formatQuantity($row->total_quantity) }}
+                        </span>
+                    </li>
+                @endforeach
+            </ul>
+        </section>
+    @empty
+        <section class="flex min-h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-300 bg-white px-6 text-center dark:border-neutral-700 dark:bg-neutral-900">
+            <flux:icon.check-circle class="size-12 text-emerald-600" aria-hidden="true" />
+            <h2 class="mt-4 text-2xl font-bold text-neutral-900 dark:text-white">{{ __('Nothing to prepare') }}</h2>
+            <p class="mt-2 max-w-md text-base text-neutral-600 dark:text-neutral-300">{{ __('There are no active orders scheduled for this date.') }}</p>
+        </section>
+    @endforelse
+</main>

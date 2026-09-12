@@ -1,0 +1,14 @@
+{
+  "base_url": "https://rms.example.com",
+  "token": "POS_SANCTUM_TOKEN",
+  "device_id": "LABEL-AGENT-01",
+  "state_db": "./state/handled-jobs.sqlite3",
+  "allowed_queues": {
+    "Brother_QL_820NWB": {
+      "command": ["lp", "-d", "{printer}", "{file}"]
+    },
+    "BIXOLON_SLP_DX": {
+      "command": ["lp", "-d", "{printer}", "{file}"]
+    }
+  }
+}

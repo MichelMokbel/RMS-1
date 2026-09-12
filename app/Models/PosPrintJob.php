@@ -10,16 +10,25 @@ class PosPrintJob extends Model
     use HasFactory;
 
     public const STATUS_QUEUED = 'queued';
+
     public const STATUS_CLAIMED = 'claimed';
+
     public const STATUS_PRINTED = 'printed';
+
     public const STATUS_FAILED = 'failed';
+
+    public const STATUS_CANCELLED = 'cancelled';
+
     public const STATUS_PENDING = self::STATUS_QUEUED; // backward alias
+
     public const STATUS_COMPLETED = self::STATUS_PRINTED; // backward alias
 
     protected $table = 'pos_print_jobs';
 
     protected $fillable = [
         'client_job_id',
+        'server_job_uuid',
+        'order_label_print_id',
         'source_terminal_id',
         'branch_id',
         'target_terminal_id',
@@ -47,6 +56,7 @@ class PosPrintJob extends Model
 
     protected $casts = [
         'source_terminal_id' => 'integer',
+        'order_label_print_id' => 'integer',
         'branch_id' => 'integer',
         'target_terminal_id' => 'integer',
         'payload' => 'array',

@@ -13,7 +13,7 @@ This area owns POS bootstrap, shifts, checkout, offline synchronization, numberi
 | `PosCheckoutService.php` | Coordinates sale checkout and downstream effects. |
 | `PosSyncService.php` | Replays and records offline events. |
 | `PosSequenceService.php` | Allocates branch and terminal sequences. |
-| `PosPrintJobService.php` | Creates and streams retained print jobs. |
+| `PosPrintJobService.php` | Creates and streams retained POS jobs and server originated order-label PDF jobs. |
 
 ## Conventions
 
@@ -23,12 +23,14 @@ This area owns POS bootstrap, shifts, checkout, offline synchronization, numberi
 - Wrap checkout and sync mutations in transactions and lock shared sequence, shift, table, sale, and sync-event rows in the established order.
 - Allocate receipt and order numbers only through `PosSequenceService`.
 - Create print jobs through the existing service and keep stream cursors and retention behavior compatible.
+- Server originated label jobs use `server_job_uuid`, a nullable source terminal, an assigned target terminal, and the same claim, retry, stream, and acknowledgement contract as receipts.
 
 ## Gotchas
 
 - Offline events may arrive out of order or after another device changes shared state. Test stale, duplicate, and conflicting replay paths.
 - A successful retry must not duplicate payments, stock movements, orders, journal entries, sequence values, or print jobs.
 - Print-stream pruning is scheduled hourly in `bootstrap/app.php`.
+- The local order-label agent accepts only `order_label_pdf`, validates the PDF and media bounds, maps only locally allowlisted queue names, and persists job deduplication before OS submission.
 - Inspect the POS section of `routes/api.php`, `app/Http/Middleware/EnsurePosToken.php`, and `tests/Feature/POS/` before changing authentication or protocol behavior.
 
 ## Related business workflows

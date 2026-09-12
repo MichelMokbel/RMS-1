@@ -208,6 +208,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'customer.portal' => EnsureCustomerPortalUser::class,
             'customer.phone.verified' => EnsureVerifiedCustomerPhone::class,
             'reject.customer.backoffice' => RejectCustomerBackofficeAccess::class,
+            'production.display.redirect' => \App\Http\Middleware\RedirectProductionDisplayUsers::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

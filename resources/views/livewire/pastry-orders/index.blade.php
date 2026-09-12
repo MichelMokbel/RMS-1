@@ -7,6 +7,7 @@ use App\Models\PastryOrderImage;
 use App\Services\PastryOrders\PastryOrderCreateService;
 use App\Services\PastryOrders\PastryOrderImageService;
 use App\Services\PastryOrders\PastryOrderUpdateService;
+use App\Services\Security\BranchAccessService;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithFileUploads;
@@ -90,6 +91,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
+        $this->authorize('pastry-orders.manage');
         $this->c_scheduled_date = now()->toDateString();
     }
 
@@ -114,9 +116,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             $editCustomers = Customer::query()->active()->search($this->e_customer_search)->orderBy('name')->limit(25)->get();
         }
 
-        $branches = Schema::hasTable('branches')
-            ? DB::table('branches')->where('is_active', 1)->orderBy('name')->get()
-            : collect();
+        $branches = collect();
+        if (Schema::hasTable('branches')) {
+            $branchQuery = DB::table('branches')->where('is_active', 1)->orderBy('name');
+            app(BranchAccessService::class)->applyBranchScope($branchQuery, $this->actor(), 'id');
+            $branches = $branchQuery->get();
+        }
 
         return compact('orders', 'branches', 'createCustomers', 'editCustomers');
     }
@@ -125,7 +130,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function openCreateDrawer(): void
     {
-        $this->c_branch_id            = 1;
+        $this->authorize('pastry-orders.manage');
+        $this->c_branch_id            = $this->actor()->allowedBranchIds()[0] ?? 1;
         $this->c_status               = 'Draft';
         $this->c_type                 = 'Pickup';
         $this->c_customer_id          = null;
@@ -208,6 +214,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function saveCreate(PastryOrderCreateService $service): void
     {
         $this->authorize('pastry-orders.manage');
+        abort_unless(app(BranchAccessService::class)->canAccessBranch($this->actor(), $this->c_branch_id), 403);
 
         $items = collect($this->c_items)
             ->filter(fn ($r) => ! empty($r['menu_item_id']))
@@ -272,7 +279,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function openEditDrawer(int $orderId, PastryOrderImageService $imageService): void
     {
-        $order = PastryOrder::with(['items', 'images'])->find($orderId);
+        $this->authorize('pastry-orders.manage');
+        $order = $this->authorizedOrderQuery()->with(['items', 'images'])->find($orderId);
         if (! $order) return;
 
         $this->e_id                   = $order->id;
@@ -386,9 +394,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function saveEdit(PastryOrderUpdateService $service): void
     {
         $this->authorize('pastry-orders.manage');
+        abort_unless(app(BranchAccessService::class)->canAccessBranch($this->actor(), $this->e_branch_id), 403);
 
         if (! $this->e_id) return;
-        $order = PastryOrder::find($this->e_id);
+        $order = $this->authorizedOrderQuery()->find($this->e_id);
         if (! $order) {
             session()->flash('error_message', __('Order not found.'));
             $this->closeEditDrawer();
@@ -458,7 +467,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function quickStatus(int $orderId, string $newStatus): void
     {
-        $order = PastryOrder::find($orderId);
+        $this->authorize('pastry-orders.manage');
+        abort_unless(in_array($newStatus, ['Draft', 'Confirmed', 'InProduction', 'Ready', 'Delivered', 'Cancelled'], true), 422);
+
+        $order = $this->authorizedOrderQuery()->find($orderId);
         if (! $order || $order->isInvoiced()) return;
         $order->update(['status' => $newStatus]);
         session()->flash('status_message', __('Status updated.'));
@@ -468,7 +480,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function openViewDrawer(int $orderId, PastryOrderImageService $imageService): void
     {
-        $order = PastryOrder::with(['items', 'images'])->find($orderId);
+        $this->authorize('pastry-orders.manage');
+        $order = $this->authorizedOrderQuery()->with(['items', 'images'])->find($orderId);
         if (! $order) return;
 
         $this->v_order_id             = $order->id;
@@ -497,7 +510,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private function buildQuery()
     {
-        return PastryOrder::query()
+        return $this->authorizedOrderQuery()
             ->when($this->status !== 'all', fn ($q) => $q->where('status', $this->status))
             ->when($this->type, fn ($q) => $q->where('type', $this->type))
             ->when($this->branch_id, fn ($q) => $q->where('branch_id', $this->branch_id))
@@ -514,6 +527,22 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->orderByDesc('id')
             ->withCount('items')
             ->with('images');
+    }
+
+    private function authorizedOrderQuery()
+    {
+        $query = PastryOrder::query();
+        app(BranchAccessService::class)->applyBranchScope($query, $this->actor());
+
+        return $query;
+    }
+
+    private function actor(): \App\Models\User
+    {
+        $actor = Auth::user();
+        abort_unless($actor instanceof \App\Models\User, 403);
+
+        return $actor;
     }
 }; ?>
 
