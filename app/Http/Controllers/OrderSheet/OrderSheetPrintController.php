@@ -3,8 +3,7 @@
 namespace App\Http\Controllers\OrderSheet;
 
 use App\Http\Controllers\Controller;
-use App\Models\DailyDishMenu;
-use App\Models\OrderSheet;
+use App\Services\OrderSheet\OrderSheetEditorService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 
@@ -19,67 +18,35 @@ class OrderSheetPrintController extends Controller
 
     private function buildData(Carbon $date): array
     {
-        $sheet = OrderSheet::with([
-            'entries' => fn ($query) => $query->withContent(),
-            'entries.quantities.dailyDishMenuItem.menuItem',
-            'entries.extras',
-            'entries.customer',
-            'entries.order',
-        ])->whereDate('sheet_date', $date->toDateString())->first();
-
-        $menu = DailyDishMenu::with(['items.menuItem'])
-            ->whereDate('service_date', $date->toDateString())
-            ->first();
-
-        $rolePriority = ['main' => 0, 'diet' => 1, 'vegetarian' => 2, 'salad' => 3, 'dessert' => 4];
-        $menuItems = $menu
-            ? $menu->items
-                ->sortBy(fn ($item) => $rolePriority[$item->role] ?? 5)
-                ->map(fn ($item) => [
-                    'id' => $item->id,
-                    'menu_item_id' => $item->menu_item_id,
-                    'name' => $item->menuItem?->name ?? '—',
-                    'role' => $item->role ?? '',
-                ])->values()->all()
-            : [];
-
-        $locations = app(\App\Services\OrderSheet\OrderSheetLocationService::class)
-            ->forOrders(new \Illuminate\Database\Eloquent\Collection($sheet?->entries->pluck('order')->filter()->all() ?? []));
-        $entries = collect();
-
-        if ($sheet && $sheet->entries->isNotEmpty()) {
-            $entries = $sheet->entries
-                ->filter(fn ($e) => filled($e->customer_name))
-                ->map(function ($entry) use ($menuItems, $locations) {
-                    $qty = collect($menuItems)->mapWithKeys(fn ($item) => [$item['id'] => (int) optional($entry->quantities->firstWhere('daily_dish_menu_item_id', $item['id']))->quantity ?? 0]
-                    )->all();
-
-                    $extras = $entry->extras
-                        ->filter(fn ($e) => $e->quantity > 0)
-                        ->map(fn ($e) => [
-                            'name' => $e->menu_item_name,
-                            'quantity' => $e->quantity,
-                        ])->values()->all();
-
-                    return [
-                        'customer_name' => $entry->customer_name,
-                        'location' => filled($entry->location) ? $entry->location : $locations->get($entry->order_id, ''),
-                        'remarks' => $entry->remarks ?? '',
-                        'qty' => $qty,
-                        'extras' => $extras,
-                        'order_id' => $entry->order_id,
-                    ];
-                })
-                ->values();
-        }
+        $payload = app(OrderSheetEditorService::class)->snapshot($date->toDateString());
+        $menuItems = $payload['menuItems'];
+        $entries = collect($payload['rows'])
+            ->filter(fn ($row) => filled($row['customer_name']))
+            ->map(fn ($row) => [
+                'customer_name' => $row['customer_name'],
+                'location' => $row['location'],
+                'remarks' => $row['remarks'] ?? '',
+                'qty' => $row['quantities'],
+                'extras' => collect($row['extras'] ?? [])->map(fn ($extra) => [
+                    'name' => $extra['name'],
+                    'quantity' => (int) $extra['quantity'],
+                ])->all(),
+                'order_id' => $row['order_id'],
+            ])->values();
 
         // Dish totals
         $dishTotals = [];
         foreach ($menuItems as $item) {
+            $portions = [
+                'plate' => $entries->sum(fn ($e) => (int) ($e['qty'][$item['id']]['plate'] ?? 0)),
+                'half' => $entries->sum(fn ($e) => (int) ($e['qty'][$item['id']]['half'] ?? 0)),
+                'full' => $entries->sum(fn ($e) => (int) ($e['qty'][$item['id']]['full'] ?? 0)),
+            ];
             $dishTotals[$item['id']] = [
                 'name' => $item['name'],
                 'role' => $item['role'],
-                'quantity' => $entries->sum(fn ($e) => (int) ($e['qty'][$item['id']] ?? 0)),
+                'portions' => $portions,
+                'quantity' => array_sum($portions),
             ];
         }
 

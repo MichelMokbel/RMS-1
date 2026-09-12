@@ -10,6 +10,7 @@ use App\Models\OrderSheetEntryExtra;
 use App\Services\OrderSheet\OrderSheetPublishService;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Renderless;
 use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
@@ -18,16 +19,87 @@ new #[Layout('components.layouts.app')] class extends Component {
     public array $rows = [];
 
     public string $mobileView = 'card';   // 'card' | 'grid'
-    public ?int $compactDrawerRow = null;
+    public bool $mobileLayout = false;
+    public ?string $compactDrawerRow = null;
 
     public ?int $activeSearchRow = null;
     public string $customerSearchTerm = '';
+    public ?int $newCustomerRow = null;
+    public bool $showCustomerForm = false;
+    public string $newCustomerName = '';
+    public string $newCustomerPhone = '';
+    public string $saveStatus = '';
 
-    public ?int $activeExtraRow = null;
-    public string $extraSearchTerm = '';
+    public function canCreateCustomer(): bool
+    {
+        $user = auth()->user();
+        return $user?->isActive() && ($user->hasAnyRole(['admin', 'manager']) || $user->can('receivables.access'));
+    }
+
+    public function startCustomerCreation(?int $rowIndex = null): void
+    {
+        abort_unless($this->canCreateCustomer(), 403);
+        $this->resetValidation();
+        if ($rowIndex === null) {
+            $rowIndex = $this->activeSearchRow;
+        }
+        if ($rowIndex === null) {
+            $blankRow = collect($this->rows)
+                ->search(fn ($row) => blank($row['customer_name']) && blank($row['order_id']));
+            if ($blankRow === false) {
+                $this->addRow();
+                $blankRow = array_key_last($this->rows);
+            }
+            $rowIndex = $blankRow;
+        }
+        abort_unless(isset($this->rows[$rowIndex]), 422);
+        if (filled($this->rows[$rowIndex]['customer_id'])) {
+            $this->addRow();
+            $rowIndex = array_key_last($this->rows);
+        }
+        $this->newCustomerRow = $rowIndex;
+        $this->showCustomerForm = true;
+        $this->newCustomerName = $this->rows[$rowIndex]['customer_search'];
+        $this->newCustomerPhone = '';
+        $this->activeSearchRow = null;
+    }
+
+    public function createCustomer(): void
+    {
+        abort_unless($this->canCreateCustomer(), 403);
+        abort_unless($this->newCustomerRow !== null && isset($this->rows[$this->newCustomerRow]), 422);
+        $this->newCustomerName = trim($this->newCustomerName);
+        $this->newCustomerPhone = trim($this->newCustomerPhone);
+        $this->validate([
+            'newCustomerName' => ['required', 'string', 'max:255'],
+            'newCustomerPhone' => array_filter(['required', 'string', 'max:50',
+                config('customers.enforce_unique_phone') ? 'unique:customers,phone' : null]),
+        ]);
+        $customer = Customer::create([
+            'name' => $this->newCustomerName, 'phone' => $this->newCustomerPhone,
+            'customer_type' => Customer::TYPE_RETAIL, 'is_active' => true,
+            'credit_limit' => 0, 'credit_terms_days' => 0, 'created_by' => auth()->id(),
+        ]);
+        $this->selectCustomer($customer->id, $this->newCustomerRow);
+        $this->newCustomerRow = null;
+        $this->showCustomerForm = false;
+        $this->saveStatus = __('Customer created and added. Enter their dishes, then save the sheet.');
+    }
+
+    public function updatedRows(mixed $value, string $key): void
+    {
+        $this->saveStatus = '';
+        if (preg_match('/^(\d+)\.customer_search$/', $key, $matches)) {
+            $this->activeSearchRow = (int) $matches[1];
+            $this->customerSearchTerm = (string) $value;
+            unset($this->customerResults);
+        }
+    }
+
 
     public function mount(): void
     {
+        $this->mobileLayout = (bool) preg_match('/Android|iPhone|iPad|iPod|Mobile/i', request()->userAgent() ?? '');
         $this->sheetDate = now()->toDateString();
         $this->loadMenuItems();
         $this->loadRows();
@@ -55,6 +127,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function blankRow(): array
     {
         return [
+            'row_key'         => 'blank-'.(string) \Illuminate\Support\Str::uuid(),
             'db_id'           => null,
             'order_id'        => null,
             'customer_id'     => null,
@@ -98,6 +171,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ])->toArray();
 
                 return [
+                    'row_key'         => 'entry-'.$entry->id,
                     'db_id'           => $entry->id,
                     'order_id'        => $entry->order_id,
                     'customer_id'     => $entry->customer_id,
@@ -115,12 +189,18 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // Merge daily-dish orders for this date that aren't already linked to a sheet entry
         $linkedOrderIds = collect($this->rows)->pluck('order_id')->filter()->all();
+        $excludedOrderIds = collect($sheet?->excluded_order_ids ?? [])
+            ->map(fn ($orderId) => (int) $orderId)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
 
         $existingOrders = Order::with(['items.menuItem'])
             ->where('is_daily_dish', 1)
             ->whereDate('scheduled_date', $this->sheetDate)
             ->whereNotIn('status', ['Cancelled'])
-            ->whereNotIn('id', $linkedOrderIds)
+            ->whereNotIn('id', array_values(array_unique([...$linkedOrderIds, ...$excludedOrderIds])))
             ->orderBy('customer_name_snapshot')
             ->get();
 
@@ -146,6 +226,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
 
             $this->rows[] = [
+                'row_key'         => 'order-'.$order->id,
                 'db_id'           => null,
                 'order_id'        => $order->id,
                 'customer_id'     => $order->customer_id,
@@ -162,22 +243,32 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->ensureTrailingBlankRow();
     }
 
-    private function ensureTrailingBlankRow(): void
+    private function ensureTrailingBlankRow(int $minimum = 5): void
     {
-        $last = end($this->rows);
-        if ($last === false || filled($last['customer_name'])) {
+        $blankRows = 0;
+        foreach (array_reverse($this->rows) as $row) {
+            if (filled($row['customer_name']) || filled($row['order_id'])) {
+                break;
+            }
+            $blankRows++;
+        }
+
+        while ($blankRows < $minimum) {
             $this->rows[] = $this->blankRow();
+            $blankRows++;
         }
     }
 
     public function updatedSheetDate(): void
     {
+        $this->saveStatus = '';
+        $this->newCustomerRow = null;
+        $this->showCustomerForm = false;
         $this->activeSearchRow = null;
         $this->customerSearchTerm = '';
-        $this->activeExtraRow = null;
-        $this->extraSearchTerm = '';
         $this->loadMenuItems();
         $this->loadRows();
+        $this->syncBrowserState();
     }
 
     public function goToToday(): void
@@ -201,14 +292,50 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function addRow(): void
     {
         $this->rows[] = $this->blankRow();
+        $this->syncBrowserState(count($this->rows));
     }
 
-    public function removeRow(int $index): void
+    private function rowIndex(string $rowKey): ?int
     {
-        $dbId = $this->rows[$index]['db_id'] ?? null;
-        if ($dbId) {
-            OrderSheetEntry::destroy($dbId);
+        foreach ($this->rows as $index => $row) {
+            if (($row['row_key'] ?? null) === $rowKey) {
+                return $index;
+            }
         }
+
+        return null;
+    }
+
+    #[Renderless]
+    public function removeRow(string $rowKey): void
+    {
+        $index = $this->rowIndex($rowKey);
+        if ($index === null) {
+            return;
+        }
+
+        $row = $this->rows[$index];
+        $dbId = $row['db_id'] ?? null;
+        $orderId = $row['order_id'] ?? null;
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($dbId, $orderId) {
+            if ($orderId) {
+                $sheet = OrderSheet::whereDate('sheet_date', $this->sheetDate)->lockForUpdate()->first()
+                    ?? OrderSheet::create(['sheet_date' => $this->sheetDate]);
+                $excludedOrderIds = collect($sheet->excluded_order_ids ?? [])
+                    ->push((int) $orderId)
+                    ->map(fn ($id) => (int) $id)
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->all();
+                $sheet->update(['excluded_order_ids' => $excludedOrderIds]);
+            }
+
+            if ($dbId) {
+                OrderSheetEntry::whereKey($dbId)->delete();
+            }
+        });
         unset($this->rows[$index]);
         $this->rows = array_values($this->rows);
 
@@ -216,112 +343,175 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->activeSearchRow = null;
             $this->customerSearchTerm = '';
         }
+        $this->ensureTrailingBlankRow(1);
+        $this->syncBrowserState();
     }
 
-    public function clearRow(int $index): void
+    public function clearRow(string $rowKey): void
     {
+        $index = $this->rowIndex($rowKey);
+        if ($index === null) {
+            return;
+        }
+
         $qty = collect($this->menuItems)->mapWithKeys(fn ($item) => [$item['id'] => 0])->all();
         $this->rows[$index]['qty']    = $qty;
         $this->rows[$index]['extras'] = [];
         $this->rows[$index]['remarks'] = '';
+        $this->syncBrowserState();
     }
 
     public function bump(int $index, int $menuItemId, int $delta): void
     {
         $current = (int) ($this->rows[$index]['qty'][$menuItemId] ?? 0);
         $this->rows[$index]['qty'][$menuItemId] = max(0, $current + $delta);
+        $this->syncBrowserState();
     }
 
     // ── Customer search ──────────────────────────────────────
-
-    public function focusCustomerSearch(int $rowIndex): void
-    {
-        $this->activeSearchRow    = $rowIndex;
-        $this->customerSearchTerm = $this->rows[$rowIndex]['customer_search'] ?? '';
-    }
 
     public function updatedCustomerSearchTerm(): void
     {
         unset($this->customerResults);
     }
 
-    public function selectCustomer(int $customerId): void
+    #[Renderless]
+    public function searchCustomers(string $term): array
     {
-        if ($this->activeSearchRow === null) {
+        $term = trim($term);
+        if ($term === '') {
+            return [];
+        }
+
+        return Customer::query()
+            ->active()
+            ->search($term)
+            ->orderBy('name')
+            ->limit(20)
+            ->get(['id', 'name', 'phone', 'delivery_address'])
+            ->map(fn (Customer $customer) => [
+                'id' => $customer->id,
+                'name' => $customer->name,
+                'phone' => $customer->phone,
+                'delivery_address' => $customer->delivery_address,
+            ])
+            ->all();
+    }
+
+    #[Renderless]
+    public function selectCustomer(int $customerId, string|int|null $rowReference = null): void
+    {
+        $rowIndex = is_string($rowReference)
+            ? $this->rowIndex($rowReference)
+            : ($rowReference ?? $this->activeSearchRow);
+        if ($rowIndex === null || ! isset($this->rows[$rowIndex])) {
             return;
         }
-        $customer = Customer::find($customerId);
+        $customer = Customer::active()->find($customerId);
         if (! $customer) {
             return;
         }
-        $i = $this->activeSearchRow;
+        $i = $rowIndex;
         $this->rows[$i]['customer_id']     = $customer->id;
         $this->rows[$i]['customer_name']   = $customer->name;
         $this->rows[$i]['customer_search'] = $customer->name;
+        if (blank($this->rows[$i]['location'])) {
+            $this->rows[$i]['location'] = $customer->delivery_address ?? '';
+        }
+        $this->saveStatus = '';
+        $this->ensureTrailingBlankRow(1);
         $this->activeSearchRow    = null;
         $this->customerSearchTerm = '';
+        $this->syncBrowserState($i + 2);
     }
 
-    public function clearCustomer(int $rowIndex): void
+    public function selectCustomerAndAppend(int $customerId, string $rowKey): void
     {
+        $this->selectCustomer($customerId, $rowKey);
+    }
+
+    #[Renderless]
+    public function clearCustomer(string $rowKey): void
+    {
+        $rowIndex = $this->rowIndex($rowKey);
+        if ($rowIndex === null) {
+            return;
+        }
+
         $this->rows[$rowIndex]['customer_id']     = null;
         $this->rows[$rowIndex]['customer_name']   = '';
         $this->rows[$rowIndex]['customer_search'] = '';
+        $this->syncBrowserState();
     }
 
     // ── Extra dish search ────────────────────────────────────
 
-    public function focusExtraSearch(int $rowIndex): void
+    #[Renderless]
+    public function searchMenuItems(string $term): array
     {
-        $this->activeExtraRow  = $rowIndex;
-        $this->extraSearchTerm = '';
+        $term = trim($term);
+        if (mb_strlen($term) < 2) {
+            return [];
+        }
+
+        return MenuItem::query()
+            ->search($term)
+            ->orderBy('name')
+            ->limit(15)
+            ->get(['id', 'name'])
+            ->map(fn (MenuItem $item) => ['id' => $item->id, 'name' => $item->name])
+            ->all();
     }
 
-    public function updatedExtraSearchTerm(): void
+    public function addExtra(string $rowKey, int $menuItemId, string $name): void
     {
-        unset($this->extraResults);
-    }
-
-    public function selectExtra(int $menuItemId, string $name): void
-    {
-        if ($this->activeExtraRow === null) {
+        $rowIndex = $this->rowIndex($rowKey);
+        if ($rowIndex === null) {
             return;
         }
-        $i = $this->activeExtraRow;
-        // Prevent duplicate
-        foreach ($this->rows[$i]['extras'] as $e) {
-            if ($e['menu_item_id'] === $menuItemId) {
-                $this->activeExtraRow  = null;
-                $this->extraSearchTerm = '';
+
+        foreach ($this->rows[$rowIndex]['extras'] as $extra) {
+            if ((int) $extra['menu_item_id'] === $menuItemId) {
                 return;
             }
         }
-        $this->rows[$i]['extras'][] = [
-            'menu_item_id'   => $menuItemId,
+
+        $this->rows[$rowIndex]['extras'][] = [
+            'menu_item_id' => $menuItemId,
             'menu_item_name' => $name,
-            'quantity'       => 1,
+            'quantity' => 1,
         ];
-        $this->activeExtraRow  = null;
-        $this->extraSearchTerm = '';
+        $this->syncBrowserState();
     }
 
-    public function removeExtra(int $rowIndex, int $extraIndex): void
+    public function removeExtra(string $rowKey, int $extraIndex): void
     {
+        $rowIndex = $this->rowIndex($rowKey);
+        if ($rowIndex === null || ! isset($this->rows[$rowIndex]['extras'][$extraIndex])) {
+            return;
+        }
         unset($this->rows[$rowIndex]['extras'][$extraIndex]);
         $this->rows[$rowIndex]['extras'] = array_values($this->rows[$rowIndex]['extras']);
+        $this->syncBrowserState();
     }
 
-    public function bumpExtra(int $rowIndex, int $extraIndex, int $delta): void
+    public function bumpExtra(string $rowKey, int $extraIndex, int $delta): void
     {
+        $rowIndex = $this->rowIndex($rowKey);
+        if ($rowIndex === null || ! isset($this->rows[$rowIndex]['extras'][$extraIndex])) {
+            return;
+        }
         $current = (int) ($this->rows[$rowIndex]['extras'][$extraIndex]['quantity'] ?? 1);
         $this->rows[$rowIndex]['extras'][$extraIndex]['quantity'] = max(1, $current + $delta);
+        $this->syncBrowserState();
     }
 
-    public function openDrawer(int $index): void
+    public function openDrawer(string $rowKey): void
     {
-        $this->compactDrawerRow = $index;
-        $this->activeExtraRow   = null;
-        $this->extraSearchTerm  = '';
+        if ($this->rowIndex($rowKey) === null) {
+            return;
+        }
+        $this->compactDrawerRow = $rowKey;
     }
 
     public function closeDrawer(): void
@@ -333,6 +523,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->mobileView = $this->mobileView === 'card' ? 'grid' : 'card';
         $this->compactDrawerRow = null;
+    }
+
+    public function setMobileLayout(bool $mobile): void
+    {
+        $this->mobileLayout = $mobile;
+        $this->compactDrawerRow = null;
+        $this->activeSearchRow = null;
     }
 
     // ── Save ────────────────────────────────────────────────
@@ -348,43 +545,54 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function save(): void
     {
-        $sheet = OrderSheet::firstOrCreate(['sheet_date' => $this->sheetDate]);
-        $sheet->entries()->delete();
+        abort_unless(auth()->user()?->isActive() && auth()->user()->hasAnyRole(['admin', 'manager', 'staff', 'cashier']), 403);
+        $this->saveStatus = '';
+        $this->validate([
+            'sheetDate' => ['required', 'date_format:Y-m-d'],
+            'rows.*.customer_name' => ['nullable', 'string', 'max:255'],
+            'rows.*.qty.*' => ['numeric', 'min:0'],
+            'rows.*.extras.*.quantity' => ['numeric', 'min:0'],
+        ]);
+        \Illuminate\Support\Facades\DB::transaction(function () {
+            $sheet = OrderSheet::firstOrCreate(['sheet_date' => $this->sheetDate]);
+            $sheet->entries()->delete();
 
-        foreach ($this->rows as $row) {
-            if (blank($row['customer_name'])) {
-                continue;
-            }
-            $entry = $sheet->entries()->create([
-                'customer_id'   => $row['customer_id'],
-                'customer_name' => $row['customer_name'],
-                'location'      => $row['location'] ?: null,
-                'remarks'       => $row['remarks'] ?: null,
-                'order_id'      => $row['order_id'] ?? null,
-            ]);
+            foreach ($this->rows as $row) {
+                if (blank($row['customer_name'])) {
+                    continue;
+                }
+                $entry = $sheet->entries()->create([
+                    'customer_id'   => $row['customer_id'],
+                    'customer_name' => $row['customer_name'],
+                    'location'      => $row['location'] ?: null,
+                    'remarks'       => $row['remarks'] ?: null,
+                    'order_id'      => $row['order_id'] ?? null,
+                ]);
 
-            foreach ($row['qty'] as $menuItemId => $qty) {
-                if ($qty > 0) {
-                    $entry->quantities()->create([
-                        'daily_dish_menu_item_id' => $menuItemId,
-                        'quantity'                => $qty,
-                    ]);
+                foreach ($row['qty'] as $menuItemId => $qty) {
+                    if ($qty > 0) {
+                        $entry->quantities()->create([
+                            'daily_dish_menu_item_id' => $menuItemId,
+                            'quantity'                => $qty,
+                        ]);
+                    }
+                }
+
+                foreach ($row['extras'] as $extra) {
+                    if (($extra['quantity'] ?? 0) > 0) {
+                        $entry->extras()->create([
+                            'menu_item_id'   => $extra['menu_item_id'],
+                            'menu_item_name' => $extra['menu_item_name'],
+                            'quantity'       => $extra['quantity'],
+                        ]);
+                    }
                 }
             }
 
-            foreach ($row['extras'] as $extra) {
-                if (($extra['quantity'] ?? 0) > 0) {
-                    $entry->extras()->create([
-                        'menu_item_id'   => $extra['menu_item_id'],
-                        'menu_item_name' => $extra['menu_item_name'],
-                        'quantity'       => $extra['quantity'],
-                    ]);
-                }
-            }
-        }
-
+        });
         $this->loadRows();
-        $this->dispatch('toast', message: 'Sheet saved.', type: 'success');
+        $this->saveStatus = __('Sheet saved at :time. Use Publish to create or update orders.', ['time' => now()->format('H:i:s')]);
+        $this->syncBrowserState();
     }
 
     public function publish(): void
@@ -410,9 +618,32 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($created > 0) $parts[] = "{$created} order" . ($created === 1 ? '' : 's') . " created";
         if ($updated > 0) $parts[] = "{$updated} order" . ($updated === 1 ? '' : 's') . " updated";
 
-        $this->dispatch('toast',
-            message: $parts ? implode(', ', $parts) . '.' : 'All entries already up to date.',
-            type: 'success'
+        $this->saveStatus = $parts ? implode(', ', $parts) . '.' : __('All entries already up to date.');
+        $this->syncBrowserState();
+    }
+
+    private function syncBrowserState(?int $minimumVisibleRows = null): void
+    {
+        $dishTotals = $this->dishTotals();
+        $rowTotals = collect($this->rows)->mapWithKeys(fn ($row) => [
+            $row['row_key'] => array_sum($row['qty']) + collect($row['extras'])->sum('quantity'),
+        ])->all();
+        $minimumVisibleRows ??= collect($this->rows)
+            ->takeUntil(fn ($row) => blank($row['customer_name']) && blank($row['order_id']))
+            ->count() + 1;
+
+        $this->dispatch('order-sheet-state',
+            sheetDate: $this->sheetDate,
+            totalItems: array_sum($dishTotals) + collect($this->extraTotals())->sum('qty'),
+            dishTotals: $dishTotals,
+            rowTotals: $rowTotals,
+            quantities: collect($this->rows)->mapWithKeys(fn ($row) => [$row['row_key'] => $row['qty']])->all(),
+            customerDrafts: collect($this->rows)->mapWithKeys(fn ($row) => [$row['row_key'] => $row['customer_search']])->all(),
+            locations: collect($this->rows)->mapWithKeys(fn ($row) => [$row['row_key'] => $row['location']])->all(),
+            remarks: collect($this->rows)->mapWithKeys(fn ($row) => [$row['row_key'] => $row['remarks']])->all(),
+            rowIndexes: collect($this->rows)->mapWithKeys(fn ($row, $index) => [$row['row_key'] => $index])->all(),
+            totalRows: count($this->rows),
+            minimumVisibleRows: min($minimumVisibleRows, count($this->rows)),
         );
     }
 
@@ -434,19 +665,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->orderBy('name')
             ->limit(20)
             ->get(['id', 'name', 'phone', 'customer_code']);
-    }
-
-    #[Computed]
-    public function extraResults(): \Illuminate\Support\Collection
-    {
-        if ($this->activeExtraRow === null || strlen($this->extraSearchTerm) < 2) {
-            return collect();
-        }
-        return MenuItem::query()
-            ->search($this->extraSearchTerm)
-            ->orderBy('name')
-            ->limit(15)
-            ->get(['id', 'name']);
     }
 
     #[Computed]
@@ -474,16 +692,238 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 } ?>
 
-<div class="min-h-screen py-8 px-4 sm:px-8" style="background:#f5f3ee; font-family: Inter, ui-sans-serif, system-ui, sans-serif;"
+<div wire:key="order-sheet-page" wire:ignore.self data-order-sheet-page
+     class="min-h-0 py-3 px-4 sm:px-8" style="background:#f5f3ee; font-family: Inter, ui-sans-serif, system-ui, sans-serif;"
      x-data="{
          openRow: null,
-         isMobile: window.innerWidth < 768,
+         visibleRows: @js(collect($rows)->takeUntil(fn ($row) => blank($row['customer_name']) && blank($row['order_id']))->count() + 1),
+         totalRows: @js(count($rows)),
+         currentSheetDate: @js($sheetDate),
+         totalItems: @js(array_sum($this->dishTotals) + collect($this->extraTotals)->sum('qty')),
+         dishTotals: @js($this->dishTotals),
+         rowTotals: @js(collect($rows)->mapWithKeys(fn ($row) => [$row['row_key'] => array_sum($row['qty']) + collect($row['extras'])->sum('quantity')])),
+         quantities: @js(collect($rows)->mapWithKeys(fn ($row) => [$row['row_key'] => $row['qty']])),
+         customerDrafts: @js(collect($rows)->mapWithKeys(fn ($row) => [$row['row_key'] => $row['customer_search']])),
+         locations: @js(collect($rows)->mapWithKeys(fn ($row) => [$row['row_key'] => $row['location']])),
+         remarks: @js(collect($rows)->mapWithKeys(fn ($row) => [$row['row_key'] => $row['remarks']])),
+         rowIndexes: @js(collect($rows)->mapWithKeys(fn ($row, $index) => [$row['row_key'] => $index])),
+         removedRows: {},
+         customerMatches: [],
+         customerMatchRow: null,
+         customerSearchRequest: 0,
+         customerDropdownX: 0,
+         customerDropdownY: 0,
+         extraSearchRow: null,
+         extraSearchTerm: '',
+         extraMatches: [],
+         extraSearchRequest: 0,
+         extraDropdownX: 0,
+         extraDropdownY: 0,
+         async loadCustomerResults(rowKey, term, input) {
+             const rowIndex = this.rowIndexes[rowKey];
+             if (rowIndex === undefined) return;
+             this.$wire.set(`rows.${rowIndex}.customer_search`, term, false);
+             this.customerMatchRow = rowKey;
+             const rect = input.getBoundingClientRect();
+             this.customerDropdownX = rect.left;
+             this.customerDropdownY = rect.bottom + 2;
+             const request = ++this.customerSearchRequest;
+             if (!term.trim()) {
+                 this.customerMatches = [];
+                 return;
+             }
+             const matches = await this.$wire.searchCustomers(term);
+             if (request === this.customerSearchRequest && this.customerMatchRow === rowKey) {
+                 this.customerMatches = matches;
+             }
+         },
+         openExtraSearch(rowKey, trigger) {
+             const rect = trigger.getBoundingClientRect();
+             this.extraSearchRow = rowKey;
+             this.extraSearchTerm = '';
+             this.extraMatches = [];
+             this.extraDropdownX = Math.max(8, Math.min(rect.left, window.innerWidth - 288));
+             this.extraDropdownY = Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - 320));
+             this.$nextTick(() => this.$refs.extraSearchInput?.focus());
+         },
+         async loadExtraResults() {
+             const request = ++this.extraSearchRequest;
+             const term = this.extraSearchTerm.trim();
+             if (term.length < 2) {
+                 this.extraMatches = [];
+                 return;
+             }
+             const matches = await this.$wire.searchMenuItems(term);
+             if (request === this.extraSearchRequest) this.extraMatches = matches;
+         },
+         chooseExtra(item) {
+             const rowKey = this.extraSearchRow;
+             const root = document.querySelector('[data-order-sheet-page]');
+             const scrollContainer = root.querySelector('.order-sheet-scroll');
+             const scrollTop = scrollContainer?.scrollTop ?? 0;
+             const scrollLeft = scrollContainer?.scrollLeft ?? 0;
+             const pageX = window.scrollX;
+             const pageY = window.scrollY;
+             this.extraSearchRow = null;
+             this.extraSearchTerm = '';
+             this.extraMatches = [];
+             this.$wire.addExtra(rowKey, item.id, item.name)
+                 .then(() => this.restoreScroll(root, scrollTop, scrollLeft, pageX, pageY));
+         },
+         chooseCustomer(customer, rowKey) {
+             const needsRenderedBlank = this.rowIndexes[rowKey] === this.totalRows - 1;
+             this.customerDrafts[rowKey] = customer.name;
+             if (!String(this.locations[rowKey] || '').trim()) {
+                 this.locations[rowKey] = customer.delivery_address || '';
+             }
+             this.customerMatches = [];
+             this.customerMatchRow = null;
+             if (needsRenderedBlank) {
+                 this.preserveScroll(() => this.$wire.selectCustomerAndAppend(customer.id, rowKey));
+             } else {
+                 this.$wire.selectCustomer(customer.id, rowKey);
+             }
+         },
+         revealRow() {
+             if (this.visibleRows < this.totalRows) {
+                 this.visibleRows++;
+                 this.$nextTick(() => this.fitSheet());
+                 return;
+             }
+             this.$wire.addRow();
+         },
+         quantity(rowKey, itemId) {
+             return Number(this.quantities[rowKey]?.[itemId] || 0);
+         },
+         updateRowField(rowKey, field, value) {
+             const rowIndex = this.rowIndexes[rowKey];
+             if (rowIndex === undefined) return;
+             this.$wire.set(`rows.${rowIndex}.${field}`, value, false);
+         },
+         adjustQuantity(rowKey, itemId, delta) {
+             const rowIndex = this.rowIndexes[rowKey];
+             if (rowIndex === undefined) return;
+             const current = this.quantity(rowKey, itemId);
+             const next = Math.max(0, Number(current) + delta);
+             const applied = next - Number(current);
+             this.quantities[rowKey][itemId] = next;
+             this.$wire.set(`rows.${rowIndex}.qty.${itemId}`, next, false);
+             this.totalItems += applied;
+             this.dishTotals[itemId] = Number(this.dishTotals[itemId] || 0) + applied;
+             this.rowTotals[rowKey] = Number(this.rowTotals[rowKey] || 0) + applied;
+             return next;
+         },
+         isRowVisible(rowKey, rowIndex) {
+             return !this.removedRows[rowKey] && rowIndex < this.visibleRows;
+         },
+         rowHasContent(rowKey) {
+             return Boolean(String(this.customerDrafts[rowKey] || '').trim()
+                 || String(this.locations[rowKey] || '').trim()
+                 || String(this.remarks[rowKey] || '').trim()
+                 || Number(this.rowTotals[rowKey] || 0));
+         },
+         removeRowImmediately(rowKey) {
+             if (!this.rowHasContent(rowKey) || this.removedRows[rowKey] || this.rowIndexes[rowKey] === undefined) return;
+             const rowElements = [...document.querySelectorAll('[data-order-sheet-row]')]
+                 .filter((element) => element.dataset.orderSheetRow === rowKey);
+             const previousTotal = this.totalItems;
+             const previousDishTotals = { ...this.dishTotals };
+             this.removedRows = { ...this.removedRows, [rowKey]: true };
+             rowElements.forEach((element) => element.style.display = 'none');
+             this.totalItems = Math.max(0, this.totalItems - Number(this.rowTotals[rowKey] || 0));
+             Object.entries(this.quantities[rowKey] || {}).forEach(([itemId, quantity]) => {
+                 this.dishTotals[itemId] = Math.max(0, Number(this.dishTotals[itemId] || 0) - Number(quantity || 0));
+             });
+             this.$wire.removeRow(rowKey).catch(() => {
+                 const restoredRows = { ...this.removedRows };
+                 delete restoredRows[rowKey];
+                 this.removedRows = restoredRows;
+                 rowElements.forEach((element) => element.style.display = '');
+                 this.totalItems = previousTotal;
+                 this.dishTotals = previousDishTotals;
+             });
+         },
+         restoreScroll(root, scrollTop, scrollLeft, pageX, pageY) {
+             const restore = () => {
+                 this.fitSheet();
+                 const currentScrollContainer = root.querySelector('.order-sheet-scroll');
+                 if (currentScrollContainer) {
+                     currentScrollContainer.scrollTop = scrollTop;
+                     currentScrollContainer.scrollLeft = scrollLeft;
+                 }
+                 window.scrollTo(pageX, pageY);
+             };
+             this.$nextTick(() => {
+                 restore();
+                 requestAnimationFrame(() => {
+                     restore();
+                     requestAnimationFrame(restore);
+                 });
+                 setTimeout(restore, 100);
+             });
+         },
+         preserveScroll(action) {
+             const root = document.querySelector('[data-order-sheet-page]');
+             const scrollContainer = root.querySelector('.order-sheet-scroll');
+             const scrollTop = scrollContainer?.scrollTop ?? 0;
+             const scrollLeft = scrollContainer?.scrollLeft ?? 0;
+             const pageX = window.scrollX;
+             const pageY = window.scrollY;
+             return Promise.resolve(action()).then(() => this.restoreScroll(root, scrollTop, scrollLeft, pageX, pageY));
+         },
+         isMobile: @js($mobileLayout),
+         onResize: null,
+         fitSheet() {
+             const sheetShell = document.querySelector('[data-order-sheet-page] [x-ref=sheetShell]');
+             if (this.isMobile || !sheetShell) return;
+             const top = sheetShell.getBoundingClientRect().top + window.scrollY;
+             sheetShell.style.height = Math.max(300, window.innerHeight - top - 44) + 'px';
+         },
+         refreshSheetLayout() {
+             const refresh = () => this.fitSheet();
+             this.$nextTick(() => {
+                 refresh();
+                 requestAnimationFrame(refresh);
+                 setTimeout(refresh, 100);
+             });
+         },
          init() {
-             const onResize = () => { this.isMobile = window.innerWidth < 768; };
-             window.addEventListener('resize', onResize);
-             this.$el.addEventListener('remove', () => window.removeEventListener('resize', onResize));
+             this.onResize = () => {
+                 const nextMobile = window.innerWidth < 768;
+                 if (nextMobile !== this.isMobile) {
+                     this.isMobile = nextMobile;
+                     this.$wire.setMobileLayout(nextMobile);
+                 }
+                 this.$nextTick(() => this.fitSheet());
+             };
+             window.addEventListener('resize', this.onResize);
+             this.$nextTick(() => {
+                 this.onResize();
+                 this.refreshSheetLayout();
+             });
+         },
+         destroy() {
+             window.removeEventListener('resize', this.onResize);
          }
      }"
+     x-on:order-sheet-state.window="
+         const changedDate = currentSheetDate !== $event.detail.sheetDate;
+         currentSheetDate = $event.detail.sheetDate;
+         totalItems = $event.detail.totalItems;
+         dishTotals = $event.detail.dishTotals;
+         rowTotals = $event.detail.rowTotals;
+         quantities = $event.detail.quantities;
+         customerDrafts = $event.detail.customerDrafts;
+         locations = $event.detail.locations;
+         remarks = $event.detail.remarks;
+         rowIndexes = $event.detail.rowIndexes;
+         totalRows = $event.detail.totalRows;
+         visibleRows = changedDate
+             ? $event.detail.minimumVisibleRows
+             : Math.min(Math.max(visibleRows, $event.detail.minimumVisibleRows), totalRows);
+         if (changedDate) removedRows = {};
+         refreshSheetLayout();
+     "
 >
 
     <style>
@@ -512,23 +952,58 @@ new #[Layout('components.layouts.app')] class extends Component {
         .os-grid-btn { display:flex; align-items:center; justify-content:center; width:100%; aspect-ratio:1; border-radius:6px; font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; border:none; cursor:pointer; transition:background 0.1s; }
         .os-grid-btn.empty { background:#f4f4f5; color:#a1a1aa; }
         .os-grid-btn.filled { color:#fff; }
+        .order-sheet-scroll {
+            overscroll-behavior: contain;
+            scrollbar-gutter: stable;
+        }
+        .order-sheet-scroll thead th {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            background: #f8f7f2;
+        }
         /* Help Bot trigger is in our top bar — hide the floating one on this page */
         [x-data*="helpBotWidget"] > button:first-child { display: none !important; }
         @@media print {
             .no-print { display: none !important; }
             body { background: white; }
+            [x-ref="sheetShell"] { height: auto !important; display: block !important; }
+            [x-ref="sheetShell"] > .overflow-auto { overflow: visible !important; }
         }
     </style>
 
     <div class="max-w-[1320px] mx-auto">
+        <div class="no-print space-y-3">
+            <flux:modal wire:model="showCustomerForm" class="max-w-md">
+                <form wire:submit="createCustomer" class="rounded-lg border bg-white p-4 space-y-3">
+                    <h2 class="font-semibold text-zinc-900">{{ __('Create customer and add to sheet') }}</h2>
+                    <flux:input wire:model="newCustomerName" :label="__('Name')" required maxlength="255" />
+                    <flux:input wire:model="newCustomerPhone" :label="__('Phone number')" type="tel" required maxlength="50" />
+                    <flux:button type="submit" variant="primary" wire:loading.attr="disabled" wire:target="createCustomer">{{ __('Create and add') }}</flux:button>
+                    <flux:button type="button" wire:click="$set('showCustomerForm', false)">{{ __('Cancel') }}</flux:button>
+                </form>
+            </flux:modal>
+        </div>
+
 
         {{-- ── Top bar ── --}}
-        <div class="no-print flex flex-wrap items-end justify-between gap-4 mb-5">
-            <div>
-                <div class="text-[11px] uppercase tracking-[0.2em] text-zinc-500 font-medium">Layla Kitchen</div>
-                <h1 class="text-2xl font-semibold tracking-tight mt-0.5 text-zinc-900">Daily Order Sheet</h1>
+        <div x-ref="sheetToolbar" class="no-print sticky top-0 z-40 flex flex-wrap items-center justify-end gap-2 mb-3 bg-[#f5f3ee] py-1">
+            <div class="w-full space-y-2">
+            <div wire:loading wire:target="save,publish" role="status" class="rounded-lg bg-blue-50 p-3 text-blue-900">{{ __('Saving your sheet…') }}</div>
+            @if ($saveStatus)
+                <div role="status" class="rounded-lg bg-emerald-50 p-3 text-emerald-900">{{ $saveStatus }}</div>
+            @endif
+            @if ($errors->any())
+                <div role="alert" class="rounded-lg bg-red-50 p-3 text-red-900">
+                    @foreach ($errors->all() as $error)<p>{{ $error }}</p>@endforeach
+                </div>
+            @endif
             </div>
-            <div class="flex items-center gap-2 flex-wrap">
+            <div class="flex w-full items-center justify-end gap-2 flex-wrap">
+            @if ($this->canCreateCustomer())
+                <flux:button wire:click="startCustomerCreation" icon="user-plus">{{ __('New customer') }}</flux:button>
+            @endif
+
                 {{-- Day navigation --}}
                 <div class="flex items-center bg-white border border-zinc-200 rounded-lg overflow-hidden">
                     <button wire:click="prevDay" class="px-2 py-2 hover:bg-zinc-50 border-r border-zinc-200" title="Previous day">
@@ -590,6 +1065,30 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         </div>
 
+        <template x-if="extraSearchRow">
+            <div class="no-print fixed z-[9999] w-[280px] overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-xl"
+                :style="`top:${extraDropdownY}px;left:${extraDropdownX}px`"
+                x-on:click.outside="extraSearchRow = null; extraSearchTerm = ''; extraMatches = []">
+                <div class="border-b border-zinc-100 p-2">
+                    <input x-ref="extraSearchInput" x-model="extraSearchTerm"
+                        x-on:input.debounce.200ms="loadExtraResults()"
+                        placeholder="Search dishes…" autocomplete="off"
+                        class="w-full rounded-md border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none" />
+                </div>
+                <div class="max-h-60 overflow-y-auto p-1">
+                    <template x-for="item in extraMatches" :key="item.id">
+                        <button type="button" x-on:click="chooseExtra(item)"
+                            class="w-full rounded-md px-3 py-2 text-left text-sm font-medium text-zinc-900 hover:bg-zinc-50"
+                            x-text="item.name"></button>
+                    </template>
+                    <div x-show="extraSearchTerm.trim().length >= 2 && extraMatches.length === 0"
+                        class="px-3 py-4 text-center text-xs text-zinc-400">No matching dishes</div>
+                    <div x-show="extraSearchTerm.trim().length < 2"
+                        class="px-3 py-4 text-center text-xs text-zinc-400">Type at least 2 characters</div>
+                </div>
+            </div>
+        </template>
+
         @if (empty($menuItems))
             <div class="mb-4 flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -601,28 +1100,29 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{-- ══════════════════════════════════════════════════
              DESKTOP VIEW (md+)
              ══════════════════════════════════════════════════ --}}
-        <div x-show="!isMobile">
-            <div class="ledger-paper rounded-sm relative">
+        @if (! $mobileLayout)
+        <div>
+            <div x-ref="sheetShell" class="ledger-paper rounded-sm relative flex flex-col min-h-0">
                 <div class="absolute top-0 right-0 w-20 h-20 overflow-hidden pointer-events-none" style="clip-path:polygon(100% 0,0 0,100% 100%);background:rgba(0,0,0,0.03)"></div>
 
-                <div class="flex items-center justify-between px-6 pt-6 pb-3">
+                <div class="flex shrink-0 items-center justify-between px-4 pt-3 pb-2">
                     <div>
                         <div class="text-[10px] uppercase tracking-[0.25em] text-zinc-500">Order Sheet</div>
-                        <div class="font-hand text-3xl text-red-700 leading-tight">
+                        <div class="font-hand text-2xl text-red-700 leading-tight">
                             {{ \Carbon\Carbon::parse($sheetDate)->format('D, d M Y') }}
                         </div>
                     </div>
                     <div class="text-right">
                         <div class="text-[10px] uppercase tracking-[0.25em] text-zinc-500">Total items</div>
-                        <div class="font-hand text-3xl text-zinc-800">
+                        <div class="font-hand text-2xl text-zinc-800" x-text="totalItems">
                             {{ array_sum($this->dishTotals) + collect($this->extraTotals)->sum('qty') }}
                         </div>
                     </div>
                 </div>
 
-                <div class="px-6 pb-6 overflow-x-auto">
+                <div class="order-sheet-scroll px-4 pb-4 min-h-0 flex-1 overflow-auto">
                     <table class="w-full border-collapse" style="min-width: 880px;">
-                        <thead>
+                        <thead class="bg-[#f5f3ee]">
                             <tr>
                                 <th class="border border-zinc-300 bg-white/60 align-bottom p-2 h-[120px] min-w-[220px]">
                                     <div class="text-left text-[11px] uppercase tracking-[0.15em] font-semibold text-zinc-600">Customer</div>
@@ -656,12 +1156,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </thead>
                         <tbody>
                             @foreach ($rows as $i => $row)
-                                <tr wire:key="row-{{ $i }}" class="group {{ blank($row['customer_name']) ? 'no-print' : '' }}">
+                                @php $rowKey = $row['row_key']; @endphp
+                                <tr wire:key="desktop-row-{{ $sheetDate }}-{{ $rowKey }}" data-order-sheet-row="{{ $rowKey }}" class="group {{ blank($row['customer_name']) ? 'no-print' : '' }}" x-show="isRowVisible(@js($rowKey), {{ $i }})">
 
                                     {{-- Customer --}}
-                                    <td class="border border-zinc-300 px-3 py-2"
-                                        x-data="{ dx: 0, dy: 0 }"
-                                        x-on:focusin="const r = $el.getBoundingClientRect(); dx = r.left; dy = r.bottom + 2;">
+                                    <td class="border border-zinc-300 px-3 py-2">
                                         @if ($row['order_id'] ?? null)
                                             <div class="text-[9px] uppercase tracking-wider text-emerald-700 font-semibold mb-0.5 flex items-center gap-1">
                                                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
@@ -669,41 +1168,39 @@ new #[Layout('components.layouts.app')] class extends Component {
                                             </div>
                                         @endif
                                         <div class="flex items-center gap-1">
-                                            <input value="{{ $row['customer_search'] }}"
-                                                wire:change="$set('rows.{{ $i }}.customer_search', $event.target.value)"
-                                                wire:focus="focusCustomerSearch({{ $i }})"
-                                                wire:keyup="$set('customerSearchTerm', $event.target.value)"
+                                            <input x-model="customerDrafts[@js($rowKey)]"
+                                                x-on:input.debounce.250ms="loadCustomerResults(@js($rowKey), customerDrafts[@js($rowKey)], $el)"
+                                                data-order-sheet-customer-search
                                                 placeholder="Search customer…"
                                                 autocomplete="off"
                                                 class="flex-1 min-w-0 bg-transparent focus:outline-none font-hand text-[20px] text-blue-700 leading-none placeholder:text-zinc-300 placeholder:font-sans placeholder:text-[13px]" />
-                                            @if ($row['customer_id'])
-                                                <button wire:click="clearCustomer({{ $i }})" class="no-print text-zinc-300 hover:text-red-500 p-0.5">
-                                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                                </button>
-                                            @endif
+                                            <button x-show="customerDrafts[@js($rowKey)]"
+                                                x-on:click="customerDrafts[@js($rowKey)] = ''; $wire.clearCustomer(@js($rowKey))"
+                                                class="no-print text-zinc-300 hover:text-red-500 p-0.5">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                            </button>
                                         </div>
-                                        @if ($activeSearchRow === $i && count($this->customerResults) > 0)
-                                            <div :style="`position:fixed; top:${dy}px; left:${dx}px; width:260px; z-index:9999;`"
-                                                 class="bg-white border border-zinc-200 rounded-md shadow-lg overflow-hidden">
+                                        <template x-if="customerMatchRow === @js($rowKey) && customerMatches.length > 0">
+                                            <div x-on:click.outside="customerMatches = []; customerMatchRow = null"
+                                                 :style="`top:${customerDropdownY}px; left:${customerDropdownX}px;`"
+                                                 class="fixed z-[9999] w-[260px] bg-white border border-zinc-200 rounded-md shadow-lg overflow-hidden">
                                                 <div class="max-h-52 overflow-y-auto">
-                                                    @foreach ($this->customerResults as $customer)
-                                                        <button type="button" wire:click="selectCustomer({{ $customer->id }})"
+                                                    <template x-for="customer in customerMatches" :key="customer.id">
+                                                        <button type="button" x-on:click="chooseCustomer(customer, @js($rowKey))"
                                                             class="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50">
-                                                            <div class="font-medium text-zinc-900">{{ $customer->name }}</div>
-                                                            @if ($customer->phone)
-                                                                <div class="text-xs text-zinc-500">{{ $customer->phone }}</div>
-                                                            @endif
+                                                            <div class="font-medium text-zinc-900" x-text="customer.name"></div>
+                                                            <div x-show="customer.phone" class="text-xs text-zinc-500" x-text="customer.phone"></div>
                                                         </button>
-                                                    @endforeach
+                                                    </template>
                                                 </div>
                                             </div>
-                                        @endif
+                                        </template>
                                     </td>
 
                                     {{-- Location --}}
                                     <td class="border border-zinc-300 px-2 py-2">
-                                        <input value="{{ $row['location'] }}"
-                                            wire:change="$set('rows.{{ $i }}.location', $event.target.value)"
+                                        <input x-model="locations[@js($rowKey)]"
+                                            x-on:change="updateRowField(@js($rowKey), 'location', locations[@js($rowKey)])"
                                             placeholder="—"
                                             class="w-full bg-transparent focus:outline-none text-[13px] text-zinc-700 text-center" />
                                     </td>
@@ -713,25 +1210,24 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         <td class="border border-zinc-300 px-1 py-2 text-center">
                                             <div class="inline-flex items-center gap-0.5 py-0.5">
                                                 <button class="stepper-btn no-print"
-                                                    wire:click="bump({{ $i }}, {{ $item['id'] }}, -1)"
-                                                    @disabled(($row['qty'][$item['id']] ?? 0) === 0)>
-                                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>
+                                                    x-on:click="adjustQuantity(@js($rowKey), {{ $item['id'] }}, -1)"
+                                                    x-bind:disabled="quantity(@js($rowKey), {{ $item['id'] }}) === 0">
+                                                    <span aria-hidden="true">−</span>
                                                 </button>
-                                                <span class="inline-block w-5 text-center font-semibold tabular-nums text-[13px]
-                                                    {{ ($row['qty'][$item['id']] ?? 0) === 0 ? 'text-zinc-300' : 'text-zinc-900' }}">
-                                                    {{ $row['qty'][$item['id']] ?? 0 }}
+                                                <span class="inline-block w-5 text-center font-semibold tabular-nums text-[13px]"
+                                                    x-bind:class="quantity(@js($rowKey), {{ $item['id'] }}) === 0 ? 'text-zinc-300' : 'text-zinc-900'"
+                                                    x-text="quantity(@js($rowKey), {{ $item['id'] }})">
                                                 </span>
                                                 <button class="stepper-btn no-print"
-                                                    wire:click="bump({{ $i }}, {{ $item['id'] }}, 1)">
-                                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                                                    x-on:click="adjustQuantity(@js($rowKey), {{ $item['id'] }}, 1)">
+                                                    <span aria-hidden="true">+</span>
                                                 </button>
                                             </div>
                                         </td>
                                     @endforeach
 
                                     {{-- Extras --}}
-                                    <td class="border border-zinc-300 px-2 py-2"
-                                        x-data="{ dx: 0, dy: 0 }">
+                                    <td class="border border-zinc-300 px-2 py-2">
                                         <div class="flex flex-wrap items-center gap-1.5">
                                             @foreach ($row['extras'] as $ei => $extra)
                                                 <div class="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 rounded-md pl-2 pr-1 py-0.5">
@@ -739,61 +1235,34 @@ new #[Layout('components.layouts.app')] class extends Component {
                                                     <span class="text-zinc-300 text-[11px]">×</span>
                                                     <div class="inline-flex items-center gap-0.5">
                                                         <button class="stepper-btn no-print" style="width:16px;height:16px"
-                                                            wire:click="bumpExtra({{ $i }}, {{ $ei }}, -1)"
+                                                            x-on:click="preserveScroll(() => $wire.bumpExtra(@js($rowKey), {{ $ei }}, -1))"
                                                             @disabled($extra['quantity'] <= 1)>
                                                             <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>
                                                         </button>
                                                         <span class="text-[12px] font-semibold tabular-nums w-4 text-center">{{ $extra['quantity'] }}</span>
                                                         <button class="stepper-btn no-print" style="width:16px;height:16px"
-                                                            wire:click="bumpExtra({{ $i }}, {{ $ei }}, 1)">
+                                                            x-on:click="preserveScroll(() => $wire.bumpExtra(@js($rowKey), {{ $ei }}, 1))">
                                                             <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
                                                         </button>
                                                     </div>
-                                                    <button wire:click="removeExtra({{ $i }}, {{ $ei }})"
+                                                    <button x-on:click="preserveScroll(() => $wire.removeExtra(@js($rowKey), {{ $ei }}))"
                                                         class="no-print text-zinc-400 hover:text-red-600 p-0.5" title="Remove">
                                                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
                                                     </button>
                                                 </div>
                                             @endforeach
-                                            <button
-                                                x-on:click="const r = $el.getBoundingClientRect(); dx = r.left; dy = r.bottom + 4;"
-                                                wire:click="focusExtraSearch({{ $i }})"
+                                            <button x-on:click.stop="openExtraSearch(@js($rowKey), $el)"
                                                 class="no-print inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[11px] text-zinc-500 hover:text-zinc-900 border border-dashed border-zinc-300 hover:border-zinc-500 rounded-md">
                                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
                                                 Add dish
                                             </button>
                                         </div>
-
-                                        @if ($activeExtraRow === $i)
-                                            <div :style="`position:fixed; top:${dy}px; left:${dx}px; width:260px; z-index:9999;`"
-                                                 class="bg-white border border-zinc-200 rounded-md shadow-lg p-2">
-                                                <input wire:model.live.debounce.250ms="extraSearchTerm"
-                                                    placeholder="Search menu items…"
-                                                    class="w-full px-2 py-1.5 text-[13px] border border-zinc-200 rounded focus:outline-none focus:border-zinc-900"
-                                                    autofocus />
-                                                @if (count($this->extraResults) > 0)
-                                                    <div class="mt-1 max-h-48 overflow-y-auto">
-                                                        @foreach ($this->extraResults as $mi)
-                                                            <button type="button"
-                                                                wire:click="selectExtra({{ $mi->id }}, '{{ addslashes($mi->name) }}')"
-                                                                class="w-full px-2 py-1.5 text-left text-[13px] hover:bg-zinc-50 rounded">
-                                                                {{ $mi->name }}
-                                                            </button>
-                                                        @endforeach
-                                                    </div>
-                                                @elseif (strlen($extraSearchTerm) >= 2)
-                                                    <div class="py-2 text-[12px] text-zinc-500 text-center">No items found</div>
-                                                @endif
-                                                <button wire:click="$set('activeExtraRow', null)"
-                                                    class="mt-1 w-full text-[11px] text-zinc-400 hover:text-zinc-600 py-1">Cancel</button>
-                                            </div>
-                                        @endif
                                     </td>
 
                                     {{-- Remarks --}}
                                     <td class="border border-zinc-300 px-2 py-2">
-                                        <input value="{{ $row['remarks'] }}"
-                                            wire:change="$set('rows.{{ $i }}.remarks', $event.target.value)"
+                                        <input x-model="remarks[@js($rowKey)]"
+                                            x-on:change="updateRowField(@js($rowKey), 'remarks', remarks[@js($rowKey)])"
                                             placeholder="—"
                                             class="w-full bg-transparent focus:outline-none text-[12px] text-zinc-600 font-hand" />
                                     </td>
@@ -801,11 +1270,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     {{-- Row actions --}}
                                     <td class="no-print px-1 text-center">
                                         <div class="flex flex-col items-center gap-0.5 opacity-0 group-hover:opacity-100 transition">
-                                            <button wire:click="clearRow({{ $i }})" title="Clear row"
+                                            <button x-on:click="preserveScroll(() => $wire.clearRow(@js($rowKey)))" title="Clear row"
                                                 class="p-1 rounded hover:bg-amber-50 text-zinc-400 hover:text-amber-700">
                                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-.867 12.142A2 2 0 0116.138 20H7.862a2 2 0 01-1.995-1.858L5 6"/></svg>
                                             </button>
-                                            <button wire:click="removeRow({{ $i }})" title="Delete row"
+                                            <button x-on:click="removeRowImmediately(@js($rowKey))" title="Delete row"
+                                                x-bind:disabled="!rowHasContent(@js($rowKey))"
+                                                x-bind:class="!rowHasContent(@js($rowKey)) ? 'opacity-20 cursor-default' : ''"
                                                 class="p-1 rounded hover:bg-red-50 text-zinc-400 hover:text-red-600">
                                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
                                             </button>
@@ -820,11 +1291,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <td class="border border-zinc-300"></td>
                                 @foreach ($menuItems as $item)
                                     <td class="border border-zinc-300 px-1 py-1.5 text-center">
-                                        @if (($this->dishTotals[$item['id']] ?? 0) > 0)
-                                            <span class="font-hand text-[22px] text-red-700">{{ $this->dishTotals[$item['id']] }}</span>
-                                        @else
-                                            <span class="text-zinc-300">—</span>
-                                        @endif
+                                        <span class="font-hand text-[22px]"
+                                            x-bind:class="dishTotals[{{ $item['id'] }}] > 0 ? 'text-red-700' : 'text-zinc-300'"
+                                            x-text="dishTotals[{{ $item['id'] }}] > 0 ? dishTotals[{{ $item['id'] }}] : '—'">
+                                            {{ ($this->dishTotals[$item['id']] ?? 0) ?: '—' }}
+                                        </span>
                                     </td>
                                 @endforeach
                                 <td class="border border-zinc-300 px-3 py-1.5">
@@ -842,7 +1313,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 </td>
                                 <td class="border border-zinc-300 px-2 py-1.5 text-right">
                                     <span class="text-[10px] uppercase tracking-wider text-zinc-500">Grand: </span>
-                                    <span class="font-hand text-[22px] text-red-700">
+                                    <span class="font-hand text-[22px] text-red-700" x-text="totalItems || '—'">
                                         {{ array_sum($this->dishTotals) + collect($this->extraTotals)->sum('qty') ?: '—' }}
                                     </span>
                                 </td>
@@ -852,20 +1323,22 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </table>
 
                     <div class="no-print mt-3">
-                        <button wire:click="addRow"
+                        <button x-on:click="revealRow()"
                             class="flex items-center gap-2 px-3 py-2 text-[13px] font-medium text-zinc-700 hover:text-zinc-900 border border-dashed border-zinc-300 hover:border-zinc-500 rounded-lg transition">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                            <span aria-hidden="true">+</span>
                             Add row
                         </button>
                     </div>
                 </div>
             </div>
         </div>
+        @endif
 
         {{-- ══════════════════════════════════════════════════
              MOBILE VIEW (<md)
              ══════════════════════════════════════════════════ --}}
-        <div x-show="isMobile" style="padding-bottom: 120px;">
+        @if ($mobileLayout)
+        <div style="padding-bottom: 120px;">
 
             {{-- Mobile sub-bar: view toggle --}}
             <div class="flex items-center gap-1 bg-zinc-100 rounded-lg p-0.5 mb-3 self-start">
@@ -887,7 +1360,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <div class="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-zinc-200">
                             <span class="w-1.5 h-1.5 rounded-full bg-red-600"></span>
                             <span class="text-[11px] text-zinc-600 font-medium max-w-[90px] truncate">{{ $item['name'] }}</span>
-                            <span class="text-[12px] font-bold tabular-nums {{ $t === 0 ? 'text-zinc-300' : 'text-red-700' }}">{{ $t }}</span>
+                            <span class="text-[12px] font-bold tabular-nums"
+                                x-bind:class="dishTotals[{{ $item['id'] }}] > 0 ? 'text-red-700' : 'text-zinc-300'"
+                                x-text="dishTotals[{{ $item['id'] }}] || 0">{{ $t }}</span>
                         </div>
                     @endforeach
                     @foreach ($this->extraTotals as $total)
@@ -904,13 +1379,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="space-y-2">
                 @foreach ($rows as $i => $row)
                     @php
+                        $rowKey = $row['row_key'];
                         $sum = array_sum($row['qty']) + collect($row['extras'])->sum('quantity');
                     @endphp
-                    <div wire:key="mobile-row-{{ $i }}" class="bg-white rounded-xl border border-zinc-200 overflow-hidden">
+                    <div wire:key="mobile-row-{{ $sheetDate }}-{{ $rowKey }}" data-order-sheet-row="{{ $rowKey }}" x-show="isRowVisible(@js($rowKey), {{ $i }})" class="bg-white rounded-xl border border-zinc-200 overflow-hidden">
 
                         {{-- Card header (always visible) --}}
                         <div class="flex items-center gap-2 px-3 py-2.5">
-                            <button x-on:click="openRow = (openRow === {{ $i }}) ? null : {{ $i }}"
+                            <button x-on:click="openRow = (openRow === @js($rowKey)) ? null : @js($rowKey)"
                                 class="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center flex-shrink-0">
                                 <span class="text-[13px] font-semibold text-zinc-600">
                                     {{ strtoupper(substr($row['customer_name'] ?: '?', 0, 1)) }}
@@ -919,67 +1395,63 @@ new #[Layout('components.layouts.app')] class extends Component {
 
                             {{-- Customer name input (always editable inline) --}}
                             <div class="flex-1 min-w-0 relative">
-                                <input value="{{ $row['customer_search'] }}"
-                                    wire:change="$set('rows.{{ $i }}.customer_search', $event.target.value)"
-                                    wire:focus="focusCustomerSearch({{ $i }})"
-                                    wire:keyup="$set('customerSearchTerm', $event.target.value)"
+                                <input x-model="customerDrafts[@js($rowKey)]"
+                                    x-on:input.debounce.250ms="loadCustomerResults(@js($rowKey), customerDrafts[@js($rowKey)], $el)"
+                                    data-order-sheet-customer-search
                                     placeholder="Enter customer…"
                                     autocomplete="off"
                                     class="w-full font-semibold text-[15px] bg-transparent focus:outline-none placeholder:text-zinc-300 placeholder:font-normal" />
 
-                                @if ($activeSearchRow === $i && count($this->customerResults) > 0)
-                                    <div class="absolute left-0 top-full z-20 mt-0.5 w-[260px] bg-white border border-zinc-200 rounded-md shadow-lg overflow-hidden">
+                                <template x-if="customerMatchRow === @js($rowKey) && customerMatches.length > 0">
+                                    <div x-on:click.outside="customerMatches = []; customerMatchRow = null"
+                                        class="absolute left-0 top-full z-20 mt-0.5 w-[260px] bg-white border border-zinc-200 rounded-md shadow-lg overflow-hidden">
                                         <div class="max-h-52 overflow-y-auto">
-                                            @foreach ($this->customerResults as $customer)
-                                                <button type="button" wire:click="selectCustomer({{ $customer->id }})"
+                                            <template x-for="customer in customerMatches" :key="customer.id">
+                                                <button type="button" x-on:click="chooseCustomer(customer, @js($rowKey))"
                                                     class="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50">
-                                                    <div class="font-medium text-zinc-900">{{ $customer->name }}</div>
-                                                    @if ($customer->phone)
-                                                        <div class="text-xs text-zinc-500">{{ $customer->phone }}</div>
-                                                    @endif
+                                                    <div class="font-medium text-zinc-900" x-text="customer.name"></div>
+                                                    <div x-show="customer.phone" class="text-xs text-zinc-500" x-text="customer.phone"></div>
                                                 </button>
-                                            @endforeach
+                                            </template>
                                         </div>
                                     </div>
-                                @endif
+                                </template>
                             </div>
 
                             {{-- Qty badges --}}
                             <div class="flex items-center gap-0.5 flex-shrink-0">
                                 @foreach ($menuItems as $idx => $item)
-                                    @if (($row['qty'][$item['id']] ?? 0) > 0)
-                                        <span class="text-[10px] font-bold tabular-nums w-5 h-5 rounded flex items-center justify-center bg-red-600 text-white">
-                                            {{ $row['qty'][$item['id']] }}
+                                    <span x-show="quantity(@js($rowKey), {{ $item['id'] }}) > 0"
+                                        x-text="quantity(@js($rowKey), {{ $item['id'] }})"
+                                        class="text-[10px] font-bold tabular-nums w-5 h-5 rounded flex items-center justify-center bg-red-600 text-white">
+                                            {{ $row['qty'][$item['id']] ?? 0 }}
                                         </span>
-                                    @endif
                                 @endforeach
                                 @if (collect($row['extras'])->sum('quantity') > 0)
                                     <span class="text-[10px] font-bold tabular-nums w-5 h-5 rounded flex items-center justify-center bg-amber-500 text-white">
                                         +{{ collect($row['extras'])->sum('quantity') }}
                                     </span>
                                 @endif
-                                @if ($sum === 0)
-                                    <span class="text-[11px] text-zinc-300">—</span>
-                                @endif
+                                <span x-show="rowTotals[@js($rowKey)] === 0" class="text-[11px] text-zinc-300">—</span>
                             </div>
 
-                            <button x-on:click="openRow = (openRow === {{ $i }}) ? null : {{ $i }}" class="p-1">
+                            <button x-on:click="openRow = (openRow === @js($rowKey)) ? null : @js($rowKey)" class="p-1">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                                     class="text-zinc-400 transition-transform" :class="openRow === {{ $i }} ? 'rotate-90' : ''">
+                                     class="text-zinc-400 transition-transform" :class="openRow === @js($rowKey) ? 'rotate-90' : ''">
                                     <path d="M9 5l7 7-7 7"/>
                                 </svg>
                             </button>
                         </div>
 
                         {{-- Card body (expanded) --}}
-                        <div x-show="openRow === {{ $i }}" x-collapse
+                        <div x-show="openRow === @js($rowKey)" x-collapse
                              class="border-t border-zinc-100 px-3.5 py-3 bg-zinc-50/50">
 
                             {{-- Location --}}
                             <div class="mb-3">
                                 <div class="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold mb-1">Location</div>
-                                <input value="{{ $row['location'] }}"
-                                    wire:change="$set('rows.{{ $i }}.location', $event.target.value)"
+                                <input x-model="locations[@js($rowKey)]"
+                                    x-on:change="updateRowField(@js($rowKey), 'location', locations[@js($rowKey)])"
                                     placeholder="—"
                                     class="w-full px-2.5 py-1.5 text-[13px] bg-white border border-zinc-200 rounded-md focus:outline-none focus:border-zinc-900" />
                             </div>
@@ -994,16 +1466,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                                                 <span class="text-[13px] truncate">{{ $item['name'] }}</span>
                                             </div>
                                             <div class="inline-flex items-center gap-2 flex-shrink-0">
-                                                <button wire:click="bump({{ $i }}, {{ $item['id'] }}, -1)"
-                                                    class="mobile-stepper-btn" @disabled(($row['qty'][$item['id']] ?? 0) === 0)>
-                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>
+                                                <button x-on:click="adjustQuantity(@js($rowKey), {{ $item['id'] }}, -1)"
+                                                    class="mobile-stepper-btn" x-bind:disabled="quantity(@js($rowKey), {{ $item['id'] }}) === 0">
+                                                    <span aria-hidden="true">−</span>
                                                 </button>
-                                                <span class="w-6 text-center text-[17px] font-semibold tabular-nums {{ ($row['qty'][$item['id']] ?? 0) === 0 ? 'text-zinc-300' : 'text-red-700' }}">
-                                                    {{ $row['qty'][$item['id']] ?? 0 }}
+                                                <span class="w-6 text-center text-[17px] font-semibold tabular-nums"
+                                                    x-bind:class="quantity(@js($rowKey), {{ $item['id'] }}) === 0 ? 'text-zinc-300' : 'text-red-700'"
+                                                    x-text="quantity(@js($rowKey), {{ $item['id'] }})">
                                                 </span>
-                                                <button wire:click="bump({{ $i }}, {{ $item['id'] }}, 1)"
+                                                <button x-on:click="adjustQuantity(@js($rowKey), {{ $item['id'] }}, 1)"
                                                     class="mobile-stepper-btn inc">
-                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                                                    <span aria-hidden="true">+</span>
                                                 </button>
                                             </div>
                                         </div>
@@ -1019,71 +1492,52 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         <div class="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
                                             <span class="flex-1 text-[13px] text-amber-900 font-medium">{{ $extra['menu_item_name'] }}</span>
                                             <div class="inline-flex items-center gap-2">
-                                                <button wire:click="bumpExtra({{ $i }}, {{ $ei }}, -1)"
+                                                <button x-on:click="preserveScroll(() => $wire.bumpExtra(@js($rowKey), {{ $ei }}, -1))"
                                                     class="mobile-stepper-btn" style="width:28px;height:28px" @disabled($extra['quantity'] <= 1)>
                                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>
                                                 </button>
                                                 <span class="w-5 text-center text-[14px] font-semibold tabular-nums text-amber-800">{{ $extra['quantity'] }}</span>
-                                                <button wire:click="bumpExtra({{ $i }}, {{ $ei }}, 1)"
+                                                <button x-on:click="preserveScroll(() => $wire.bumpExtra(@js($rowKey), {{ $ei }}, 1))"
                                                     class="mobile-stepper-btn inc" style="width:28px;height:28px">
                                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
                                                 </button>
                                             </div>
-                                            <button wire:click="removeExtra({{ $i }}, {{ $ei }})" class="text-zinc-400 active:text-red-600 p-1">
+                                            <button x-on:click="preserveScroll(() => $wire.removeExtra(@js($rowKey), {{ $ei }}))" class="text-zinc-400 active:text-red-600 p-1">
                                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
                                             </button>
                                         </div>
                                     @endforeach
 
-                                    <button wire:click="focusExtraSearch({{ $i }})"
+                                    <button x-on:click.stop="openExtraSearch(@js($rowKey), $el)"
                                         class="w-full flex items-center justify-center gap-1 py-2 text-[12px] font-medium text-amber-800 border border-dashed border-amber-300 rounded-lg bg-amber-50/40">
                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
                                         Add other dish
                                     </button>
-
-                                    @if ($activeExtraRow === $i)
-                                        <div class="mt-1 p-2 bg-white border border-zinc-200 rounded-lg">
-                                            <input wire:model.live.debounce.250ms="extraSearchTerm"
-                                                placeholder="Search menu items…"
-                                                class="w-full px-2 py-1.5 text-[13px] border border-zinc-200 rounded focus:outline-none"
-                                                autofocus />
-                                            @if (count($this->extraResults) > 0)
-                                                <div class="mt-1 max-h-40 overflow-y-auto">
-                                                    @foreach ($this->extraResults as $mi)
-                                                        <button type="button"
-                                                            wire:click="selectExtra({{ $mi->id }}, '{{ addslashes($mi->name) }}')"
-                                                            class="w-full px-2 py-1.5 text-left text-[13px] hover:bg-zinc-50 rounded">
-                                                            {{ $mi->name }}
-                                                        </button>
-                                                    @endforeach
-                                                </div>
-                                            @endif
-                                            <button wire:click="$set('activeExtraRow', null)"
-                                                class="mt-1 w-full text-[11px] text-zinc-400 py-1">Cancel</button>
-                                        </div>
-                                    @endif
                                 </div>
                             </div>
 
                             {{-- Remarks --}}
                             <div class="mb-3">
                                 <div class="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold mb-1">Remarks</div>
-                                <input value="{{ $row['remarks'] }}"
-                                    wire:change="$set('rows.{{ $i }}.remarks', $event.target.value)"
+                                <input x-model="remarks[@js($rowKey)]"
+                                    x-on:change="updateRowField(@js($rowKey), 'remarks', remarks[@js($rowKey)])"
                                     placeholder="—"
                                     class="w-full px-2.5 py-1.5 text-[13px] bg-white border border-zinc-200 rounded-md focus:outline-none focus:border-zinc-900" />
                             </div>
 
                             {{-- Row actions --}}
                             <div class="pt-3 border-t border-zinc-200/70 flex items-center justify-between">
-                                <span class="text-[11px] text-zinc-500">{{ $sum }} item{{ $sum === 1 ? '' : 's' }}</span>
+                                <span class="text-[11px] text-zinc-500"
+                                    x-text="`${rowTotals[@js($rowKey)]} item${rowTotals[@js($rowKey)] === 1 ? '' : 's'}`">{{ $sum }} item{{ $sum === 1 ? '' : 's' }}</span>
                                 <div class="flex items-center gap-1">
-                                    <button wire:click="clearRow({{ $i }})"
-                                        class="flex items-center gap-1 text-[12px] text-amber-700 px-2 py-1 rounded-md active:bg-amber-50 {{ $sum === 0 ? 'opacity-30' : '' }}">
+                                    <button x-on:click="preserveScroll(() => $wire.clearRow(@js($rowKey)))"
+                                        class="flex items-center gap-1 text-[12px] text-amber-700 px-2 py-1 rounded-md active:bg-amber-50"
+                                        x-bind:class="rowTotals[@js($rowKey)] === 0 ? 'opacity-30' : ''">
                                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-.867 12.142A2 2 0 0116.138 20H7.862a2 2 0 01-1.995-1.858L5 6"/></svg>
                                         Clear
                                     </button>
-                                    <button wire:click="removeRow({{ $i }})"
+                                    <button x-on:click="removeRowImmediately(@js($rowKey))"
+                                        x-bind:disabled="!rowHasContent(@js($rowKey))"
                                         class="flex items-center gap-1 text-[12px] text-red-600 px-2 py-1 rounded-md active:bg-red-50">
                                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
                                         Delete
@@ -1095,15 +1549,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endforeach
             </div>
 
-            <button wire:click="addRow"
+            <button x-on:click="revealRow()"
                 class="mt-3 w-full flex items-center justify-center gap-2 px-3 py-3 text-[13px] font-medium text-zinc-700 bg-white border border-dashed border-zinc-300 rounded-xl active:bg-zinc-50">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-                Add person
+                <span aria-hidden="true">+</span>
+                Add row
             </button>
 
             @else
             {{-- ── Compact tap-grid view ── --}}
-            <div class="overflow-x-auto -mx-1 px-1">
+            <div class="overflow-auto max-h-[70dvh] -mx-1 px-1">
                 <table class="w-full border-collapse" style="table-layout:fixed; min-width: {{ 90 + count($menuItems) * 64 + 48 }}px;">
                     <thead style="position:sticky;top:0;z-index:10;background:#f5f3ee;">
                         <tr>
@@ -1121,45 +1575,45 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </thead>
                     <tbody>
                         @foreach ($rows as $i => $row)
-                            <tr wire:key="grid-row-{{ $i }}" class="border-t border-zinc-200/60">
+                            @php $rowKey = $row['row_key']; @endphp
+                            <tr wire:key="grid-row-{{ $sheetDate }}-{{ $rowKey }}" data-order-sheet-row="{{ $rowKey }}" class="border-t border-zinc-200/60" x-show="isRowVisible(@js($rowKey), {{ $i }})">
                                 <td class="px-1 py-1.5">
-                                    <input value="{{ $row['customer_search'] }}"
-                                        wire:change="$set('rows.{{ $i }}.customer_search', $event.target.value)"
-                                        wire:focus="focusCustomerSearch({{ $i }})"
-                                        wire:keyup="$set('customerSearchTerm', $event.target.value)"
+                                    <input x-model="customerDrafts[@js($rowKey)]"
+                                        x-on:input.debounce.250ms="loadCustomerResults(@js($rowKey), customerDrafts[@js($rowKey)], $el)"
+                                        data-order-sheet-customer-search
                                         placeholder="Name"
                                         autocomplete="off"
                                         class="w-full text-[12px] font-semibold bg-transparent focus:outline-none focus:bg-white rounded px-1 py-0.5 placeholder:text-zinc-300 placeholder:font-normal" />
-                                    @if ($activeSearchRow === $i && count($this->customerResults) > 0)
-                                        <div class="absolute left-0 z-20 mt-0.5 w-[220px] bg-white border border-zinc-200 rounded-md shadow-lg overflow-hidden">
-                                            @foreach ($this->customerResults as $customer)
-                                                <button type="button" wire:click="selectCustomer({{ $customer->id }})"
+                                    <template x-if="customerMatchRow === @js($rowKey) && customerMatches.length > 0">
+                                        <div x-on:click.outside="customerMatches = []; customerMatchRow = null"
+                                            class="absolute left-0 z-20 mt-0.5 w-[220px] bg-white border border-zinc-200 rounded-md shadow-lg overflow-hidden">
+                                            <template x-for="customer in customerMatches" :key="customer.id">
+                                                <button type="button" x-on:click="chooseCustomer(customer, @js($rowKey))"
                                                     class="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50">
-                                                    <div class="font-medium text-zinc-900 text-[12px]">{{ $customer->name }}</div>
+                                                    <div class="font-medium text-zinc-900 text-[12px]" x-text="customer.name"></div>
                                                 </button>
-                                            @endforeach
+                                            </template>
                                         </div>
-                                    @endif
+                                    </template>
                                 </td>
                                 @foreach ($menuItems as $item)
                                     @php $q = $row['qty'][$item['id']] ?? 0; $isMain = in_array($item['role'], ['main','diet','vegetarian']); $color = $isMain ? '#dc2626' : '#059669'; @endphp
                                     <td class="px-0.5 py-1 text-center">
-                                        <button wire:click="bump({{ $i }}, {{ $item['id'] }}, 1)"
-                                            class="os-grid-btn {{ $q === 0 ? 'empty' : 'filled' }}"
-                                            style="{{ $q > 0 ? "background-color:{$color};" : '' }}">
-                                            {{ $q === 0 ? '+' : $q }}
+                                        <button x-on:click="adjustQuantity(@js($rowKey), {{ $item['id'] }}, 1)"
+                                            class="os-grid-btn"
+                                            x-bind:class="quantity(@js($rowKey), {{ $item['id'] }}) === 0 ? 'empty' : 'filled'"
+                                            x-bind:style="quantity(@js($rowKey), {{ $item['id'] }}) > 0 ? 'background-color:{{ $color }}' : ''"
+                                            x-text="quantity(@js($rowKey), {{ $item['id'] }}) === 0 ? '+' : quantity(@js($rowKey), {{ $item['id'] }})">
                                         </button>
-                                        @if ($q > 0)
-                                            <button wire:click="bump({{ $i }}, {{ $item['id'] }}, -1)"
+                                            <button x-show="quantity(@js($rowKey), {{ $item['id'] }}) > 0" x-on:click="adjustQuantity(@js($rowKey), {{ $item['id'] }}, -1)"
                                                 style="display:block;width:100%;margin-top:2px;font-size:11px;font-weight:700;color:{{ $color }};background:none;border:none;cursor:pointer;line-height:1;padding:1px 0;">
                                                 −
                                             </button>
-                                        @endif
                                     </td>
                                 @endforeach
                                 <td class="px-0.5 py-1 text-center">
                                     @php $extraSum = collect($row['extras'])->sum('quantity'); @endphp
-                                    <button wire:click="openDrawer({{ $i }})"
+                                    <button wire:click="openDrawer(@js($rowKey))"
                                         class="os-grid-btn {{ $extraSum === 0 ? '' : 'filled' }}"
                                         style="{{ $extraSum > 0 ? 'background-color:#f59e0b;' : 'background:#fff;border:1px dashed #d4d4d8;color:#a1a1aa;' }}">
                                         {{ $extraSum === 0 ? '…' : $extraSum }}
@@ -1173,7 +1627,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <td class="px-1 py-2 text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Total</td>
                             @foreach ($menuItems as $item)
                                 @php $t = $this->dishTotals[$item['id']] ?? 0; @endphp
-                                <td class="px-0.5 py-2 text-center font-hand text-[18px] {{ $t === 0 ? 'text-zinc-300' : (in_array($item['role'],['salad','dessert']) ? 'text-emerald-700' : 'text-red-700') }}">
+                                <td class="px-0.5 py-2 text-center font-hand text-[18px]"
+                                    x-bind:class="dishTotals[{{ $item['id'] }}] > 0 ? '{{ in_array($item['role'], ['salad', 'dessert']) ? 'text-emerald-700' : 'text-red-700' }}' : 'text-zinc-300'"
+                                    x-text="dishTotals[{{ $item['id'] }}] > 0 ? dishTotals[{{ $item['id'] }}] : '—'">
                                     {{ $t > 0 ? $t : '—' }}
                                 </td>
                             @endforeach
@@ -1198,16 +1654,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
             @endif
 
-            <button wire:click="addRow"
+            <button x-on:click="revealRow()"
                 class="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2.5 text-[13px] font-medium text-zinc-700 bg-white border border-dashed border-zinc-300 rounded-xl active:bg-zinc-50">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-                Add person
+                <span aria-hidden="true">+</span>
+                Add row
             </button>
+
             <div class="mt-1.5 text-[10px] text-zinc-400 text-center">Tap = +1 · hold = −1 · "…" for extras / notes</div>
 
             {{-- Compact drawer --}}
-            @if ($compactDrawerRow !== null && isset($rows[$compactDrawerRow]))
-                @php $dr = $rows[$compactDrawerRow]; $di = $compactDrawerRow; @endphp
+            @php $di = $compactDrawerRow === null ? false : collect($rows)->search(fn ($row) => $row['row_key'] === $compactDrawerRow); @endphp
+            @if ($di !== false)
+                @php $dr = $rows[$di]; $drawerRowKey = $dr['row_key']; @endphp
                 <div class="fixed inset-0 z-40 flex flex-col justify-end" style="background:rgba(0,0,0,0.4);"
                      wire:click.self="closeDrawer">
                     <div class="bg-white rounded-t-2xl px-4 pt-3 pb-8 max-h-[75vh] overflow-y-auto" wire:click.stop>
@@ -1220,54 +1678,42 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @foreach ($dr['extras'] as $ei => $extra)
                                 <div class="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
                                     <span class="flex-1 text-[13px] text-amber-900 font-medium">{{ $extra['menu_item_name'] }}</span>
-                                    <button wire:click="bumpExtra({{ $di }}, {{ $ei }}, -1)" class="mobile-stepper-btn" style="width:28px;height:28px" @disabled($extra['quantity']<=1)>
+                                    <button x-on:click="preserveScroll(() => $wire.bumpExtra(@js($drawerRowKey), {{ $ei }}, -1))" class="mobile-stepper-btn" style="width:28px;height:28px" @disabled($extra['quantity']<=1)>
                                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>
                                     </button>
                                     <span class="w-5 text-center text-[13px] font-semibold tabular-nums">{{ $extra['quantity'] }}</span>
-                                    <button wire:click="bumpExtra({{ $di }}, {{ $ei }}, 1)" class="mobile-stepper-btn inc" style="width:28px;height:28px">
+                                    <button x-on:click="preserveScroll(() => $wire.bumpExtra(@js($drawerRowKey), {{ $ei }}, 1))" class="mobile-stepper-btn inc" style="width:28px;height:28px">
                                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
                                     </button>
-                                    <button wire:click="removeExtra({{ $di }}, {{ $ei }})" class="text-zinc-400 p-1">
+                                    <button x-on:click="preserveScroll(() => $wire.removeExtra(@js($drawerRowKey), {{ $ei }}))" class="text-zinc-400 p-1">
                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
                                     </button>
                                 </div>
                             @endforeach
-                            <button wire:click="focusExtraSearch({{ $di }})"
+                            <button x-on:click.stop="openExtraSearch(@js($drawerRowKey), $el)"
                                 class="w-full flex items-center justify-center gap-1 py-2 text-[12px] font-medium text-amber-800 border border-dashed border-amber-300 rounded-lg bg-amber-50/40">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
                                 Add other dish
                             </button>
-                            @if ($activeExtraRow === $di)
-                                <div class="p-2 bg-zinc-50 border border-zinc-200 rounded-lg mt-1">
-                                    <input wire:model.live.debounce.250ms="extraSearchTerm"
-                                        placeholder="Search menu items…"
-                                        class="w-full px-2 py-1.5 text-[13px] border border-zinc-200 rounded focus:outline-none" autofocus />
-                                    @foreach ($this->extraResults as $mi)
-                                        <button type="button" wire:click="selectExtra({{ $mi->id }}, '{{ addslashes($mi->name) }}')"
-                                            class="w-full px-2 py-1.5 text-left text-[13px] hover:bg-zinc-50 rounded">{{ $mi->name }}</button>
-                                    @endforeach
-                                    <button wire:click="$set('activeExtraRow', null)" class="mt-1 w-full text-[11px] text-zinc-400 py-1">Cancel</button>
-                                </div>
-                            @endif
                         </div>
 
                         {{-- Remarks --}}
                         <div class="mb-4">
                             <div class="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold mb-1">Remarks</div>
-                            <input value="{{ $dr['remarks'] }}"
-                                wire:change="$set('rows.{{ $di }}.remarks', $event.target.value)"
+                            <input x-model="remarks[@js($drawerRowKey)]"
+                                x-on:change="updateRowField(@js($drawerRowKey), 'remarks', remarks[@js($drawerRowKey)])"
                                 placeholder="—"
                                 class="w-full px-2.5 py-1.5 text-[13px] bg-white border border-zinc-200 rounded-md focus:outline-none" />
                         </div>
 
                         {{-- Actions --}}
                         <div class="grid grid-cols-2 gap-2">
-                            <button wire:click="clearRow({{ $di }}); closeDrawer()"
+                            <button x-on:click="preserveScroll(() => $wire.clearRow(@js($drawerRowKey))); $wire.closeDrawer()"
                                 class="flex items-center justify-center gap-1 py-2.5 text-[13px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-.867 12.142A2 2 0 0116.138 20H7.862a2 2 0 01-1.995-1.858L5 6"/></svg>
                                 Clear row
                             </button>
-                            <button wire:click="removeRow({{ $di }}); closeDrawer()"
+                            <button x-on:click="removeRowImmediately(@js($drawerRowKey)); $wire.closeDrawer()"
                                 class="flex items-center justify-center gap-1 py-2.5 text-[13px] font-semibold text-white bg-red-600 rounded-lg">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
                                 Delete
@@ -1286,7 +1732,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <div class="min-w-0">
                         <div class="text-[10px] uppercase tracking-[0.2em] text-zinc-400">Sheet total</div>
                         <div class="text-[15px] font-semibold tabular-nums leading-tight">
-                            {{ array_sum($this->dishTotals) + collect($this->extraTotals)->sum('qty') }} items
+                            <span x-text="totalItems">{{ array_sum($this->dishTotals) + collect($this->extraTotals)->sum('qty') }}</span> items
                             · {{ collect($rows)->filter(fn($r) => filled($r['customer_name']))->count() }} people
                         </div>
                     </div>
@@ -1314,10 +1760,46 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
             </div>
         </div>
+        @endif
     </div>
 
     {{-- Print / PDF export --}}
     <script>
+    function buildOrderSheetPrintTable() {
+        const root = document.querySelector('[wire\\:key^="order-sheet-"]');
+        const componentRoot = root?.closest('[wire\\:id]');
+        const component = componentRoot ? window.Livewire?.find(componentRoot.getAttribute('wire:id')) : null;
+        const rows = component?.get('rows') || [];
+        const menuItems = component?.get('menuItems') || [];
+        const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+        })[character]);
+        const table = document.createElement('table');
+        const headings = ['Customer', 'Location', ...menuItems.map(item => item.name), 'Other dishes', 'Total', 'Remarks'];
+        const printableRows = rows.filter(row => row.customer_name);
+        const body = printableRows.map(row => {
+            const extras = (row.extras || []).filter(extra => Number(extra.quantity) > 0);
+            const quantityCells = menuItems.map(item => `<td>${Number(row.qty?.[item.id] || 0) || '—'}</td>`).join('');
+            const total = Object.values(row.qty || {}).reduce((sum, quantity) => sum + Number(quantity || 0), 0)
+                + extras.reduce((sum, extra) => sum + Number(extra.quantity || 0), 0);
+            const extraNames = extras.map(extra => `${escapeHtml(extra.menu_item_name)} ×${Number(extra.quantity)}`).join(', ');
+            return `<tr><td>${escapeHtml(row.customer_name)}</td><td>${escapeHtml(row.location)}</td>${quantityCells}<td>${extraNames || '—'}</td><td>${total || '—'}</td><td>${escapeHtml(row.remarks)}</td></tr>`;
+        }).join('');
+        const dishTotals = menuItems.map(item => printableRows.reduce((sum, row) => sum + Number(row.qty?.[item.id] || 0), 0));
+        const extraTotals = new Map();
+        printableRows.flatMap(row => row.extras || []).forEach(extra => {
+            if (Number(extra.quantity) > 0) {
+                extraTotals.set(extra.menu_item_name, Number(extraTotals.get(extra.menu_item_name) || 0) + Number(extra.quantity));
+            }
+        });
+        const extraTotal = [...extraTotals.values()].reduce((sum, quantity) => sum + quantity, 0);
+        const extraSummary = [...extraTotals].map(([name, quantity]) => `${escapeHtml(name)} ×${quantity}`).join(', ');
+        const grandTotal = dishTotals.reduce((sum, quantity) => sum + quantity, 0) + extraTotal;
+        const totals = `<tr><th>Total</th><td></td>${dishTotals.map(total => `<td>${total || '—'}</td>`).join('')}<td>${extraSummary || '—'}</td><td>${grandTotal || '—'}</td><td></td></tr>`;
+        table.innerHTML = `<thead><tr>${headings.map(heading => `<th>${escapeHtml(heading)}</th>`).join('')}</tr></thead><tbody>${body}</tbody><tfoot>${totals}</tfoot>`;
+        return table;
+    }
+
     function exportPDF() {
         const win = window.open('', '_blank');
         if (!win) { alert('Allow pop-ups to export PDF.'); return; }
@@ -1325,8 +1807,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         const date = document.querySelector('input[type=date]')?.value || '';
         const prettyDate = date ? new Date(date + 'T00:00:00').toLocaleDateString('en-GB', {weekday:'long',day:'2-digit',month:'long',year:'numeric'}) : '';
 
-        const table = document.querySelector('.ledger-paper table');
-        const printTable = table ? table.outerHTML
+        const table = document.querySelector('.ledger-paper table') || buildOrderSheetPrintTable();
+        const populatedTable = table?.cloneNode(true);
+        if (populatedTable) {
+            const inputs = table.querySelectorAll('input');
+            populatedTable.querySelectorAll('input').forEach((input, index) => input.setAttribute('value', inputs[index].value));
+        }
+        const printTable = populatedTable ? populatedTable.outerHTML
             .replace(/class="[^"]*no-print[^"]*"/g, 'style="display:none"')
             : '<p>No data</p>';
 

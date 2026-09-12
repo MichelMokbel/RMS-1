@@ -39,9 +39,8 @@ class OrderSheetPublishService
 
         // Pre-load menu item names in one query
         $menuItemNames = MenuItem::whereIn('id',
-            $sheet->entries->flatMap(fn ($e) =>
-                $e->quantities->map(fn ($q) => $q->dailyDishMenuItem?->menu_item_id)->filter()
-                    ->merge($e->extras->pluck('menu_item_id'))
+            $sheet->entries->flatMap(fn ($e) => $e->quantities->map(fn ($q) => $q->dailyDishMenuItem?->menu_item_id)->filter()
+                ->merge($e->extras->pluck('menu_item_id'))
             )->unique()->all()
         )->pluck('name', 'id')->all();
 
@@ -55,6 +54,7 @@ class OrderSheetPublishService
                 }
 
                 $items = $this->buildItems($entry, $menuRoleByMenuItemId, $menuItemNames);
+                $portion = $this->portionSummary($entry);
 
                 if ($entry->order_id) {
                     // ── Update existing order ──────────────────────────────
@@ -64,6 +64,7 @@ class OrderSheetPublishService
                         $entry->update(['order_id' => null]);
                         $this->createOrder($entry, $items, $sheet, $defaultBranchId, $actorId);
                         $created++;
+
                         continue;
                     }
 
@@ -72,7 +73,9 @@ class OrderSheetPublishService
                     $this->insertItems($order->id, $items);
                     $order->update([
                         'customer_name_snapshot' => $entry->customer_name,
-                        'notes'                  => $entry->remarks ?: null,
+                        'notes' => $entry->remarks ?: null,
+                        'daily_dish_portion_type' => $portion['type'],
+                        'daily_dish_portion_quantity' => $portion['quantity'],
                     ]);
                     $this->totals->recalc($order);
                     $updated++;
@@ -98,12 +101,19 @@ class OrderSheetPublishService
                 continue;
             }
             $mid = $q->dailyDishMenuItem->menu_item_id;
+            $portionType = in_array($q->portion_type, ['half', 'full'], true) ? $q->portion_type : 'plate';
+            $portionLabel = match ($portionType) {
+                'half' => 'Half Portion',
+                'full' => 'Full Portion',
+                default => null,
+            };
+            $description = $menuItemNames[$mid] ?? $q->dailyDishMenuItem->menuItem?->name ?? 'Unknown';
             $items[] = [
-                'menu_item_id'         => $mid,
-                'description_snapshot' => $menuItemNames[$mid] ?? $q->dailyDishMenuItem->menuItem?->name ?? 'Unknown',
-                'quantity'             => $q->quantity,
-                'role'                 => $menuRoleByMenuItemId[$mid] ?? $q->dailyDishMenuItem->role ?? 'main',
-                'sort_order'           => $sort++,
+                'menu_item_id' => $mid,
+                'description_snapshot' => $portionLabel ? "Daily Dish ({$portionLabel}) - {$description}" : $description,
+                'quantity' => $q->quantity,
+                'role' => $menuRoleByMenuItemId[$mid] ?? $q->dailyDishMenuItem->role ?? 'main',
+                'sort_order' => $sort++,
             ];
         }
 
@@ -112,11 +122,11 @@ class OrderSheetPublishService
                 continue;
             }
             $items[] = [
-                'menu_item_id'         => $extra->menu_item_id,
+                'menu_item_id' => $extra->menu_item_id,
                 'description_snapshot' => $menuItemNames[$extra->menu_item_id] ?? $extra->menu_item_name,
-                'quantity'             => $extra->quantity,
-                'role'                 => 'addon',
-                'sort_order'           => $sort++,
+                'quantity' => $extra->quantity,
+                'role' => 'addon',
+                'sort_order' => $sort++,
             ];
         }
 
@@ -127,22 +137,23 @@ class OrderSheetPublishService
     {
         foreach ($items as $item) {
             OrderItem::create([
-                'order_id'             => $orderId,
-                'menu_item_id'         => $item['menu_item_id'],
+                'order_id' => $orderId,
+                'menu_item_id' => $item['menu_item_id'],
                 'description_snapshot' => $item['description_snapshot'],
-                'quantity'             => $item['quantity'],
-                'unit_price'           => 0,
-                'discount_amount'      => 0,
-                'line_total'           => 0,
-                'status'               => 'Pending',
-                'sort_order'           => $item['sort_order'],
-                'role'                 => $item['role'],
+                'quantity' => $item['quantity'],
+                'unit_price' => 0,
+                'discount_amount' => 0,
+                'line_total' => 0,
+                'status' => 'Pending',
+                'sort_order' => $item['sort_order'],
+                'role' => $item['role'],
             ]);
         }
     }
 
     private function createOrder($entry, array $items, OrderSheet $sheet, int $defaultBranchId, ?int $actorId): Order
     {
+        $portion = $this->portionSummary($entry);
         $source = 'Backoffice';
         if ($entry->customer_id) {
             $hasSub = MealSubscription::where('customer_id', $entry->customer_id)
@@ -156,27 +167,50 @@ class OrderSheetPublishService
         }
 
         $order = Order::create([
-            'order_number'            => $this->numbers->generate(),
-            'branch_id'               => $defaultBranchId,
-            'source'                  => $source,
-            'is_daily_dish'           => true,
-            'daily_dish_portion_type' => 'plate',
-            'type'                    => 'Delivery',
-            'status'                  => 'Confirmed',
-            'customer_id'             => $entry->customer_id,
-            'customer_name_snapshot'  => $entry->customer_name,
-            'scheduled_date'          => $sheet->sheet_date,
-            'notes'                   => $entry->remarks ?: null,
-            'order_discount_amount'   => 0,
-            'total_before_tax'        => 0,
-            'tax_amount'              => 0,
-            'total_amount'            => 0,
-            'created_by'              => $actorId,
+            'order_number' => $this->numbers->generate(),
+            'branch_id' => $defaultBranchId,
+            'source' => $source,
+            'is_daily_dish' => true,
+            'daily_dish_portion_type' => $portion['type'],
+            'daily_dish_portion_quantity' => $portion['quantity'],
+            'type' => 'Delivery',
+            'status' => 'Confirmed',
+            'customer_id' => $entry->customer_id,
+            'customer_name_snapshot' => $entry->customer_name,
+            'scheduled_date' => $sheet->sheet_date,
+            'notes' => $entry->remarks ?: null,
+            'order_discount_amount' => 0,
+            'total_before_tax' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+            'created_by' => $actorId,
         ]);
 
         $this->insertItems($order->id, $items);
         $this->totals->recalc($order);
 
         return $order;
+    }
+
+    /** @return array{type: ?string, quantity: ?int} */
+    private function portionSummary($entry): array
+    {
+        $mainQuantities = $entry->quantities
+            ->filter(fn ($quantity) => $quantity->quantity > 0 && $quantity->dailyDishMenuItem?->role === 'main');
+        $types = $mainQuantities
+            ->map(fn ($quantity) => in_array($quantity->portion_type, ['half', 'full'], true) ? $quantity->portion_type : 'plate')
+            ->unique()
+            ->values();
+
+        if ($types->count() !== 1) {
+            return ['type' => null, 'quantity' => null];
+        }
+
+        $type = $types->first();
+
+        return [
+            'type' => $type,
+            'quantity' => $type === 'plate' ? null : (int) $mainQuantities->sum('quantity'),
+        ];
     }
 }
