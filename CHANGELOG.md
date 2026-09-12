@@ -14,3 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Extended SkipCash checkout accounting so eligible add-ons share the dated order, invoice, payment, and allocation while remaining outside membership meal credits and promotion discounts.
+
+### Fixed
+
+- Kept printable blank Order Sheet pages compatible with Livewire's Linux-side component root detection.
+- Made customer item price-history lookup portable across the supported MySQL and MariaDB databases.
+
+### Security
+
+- Updated Livewire and the Tiptap browser dependency set to releases containing their current security fixes.

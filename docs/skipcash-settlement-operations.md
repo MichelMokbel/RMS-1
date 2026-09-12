@@ -8,6 +8,8 @@ Keep `SKIPCASH_SETTLEMENTS_ENABLED=false` until every readiness item below is co
 
 Use the development environment for the first controlled run. Do not upload the historical customer workbook to tests or commit it to git. Use a provider generated sandbox report containing a known sandbox payment.
 
+The supplied merchant workbook format was parsed read-only during release preparation. Its required headers, `Sale` and `Settlement Fee` row types, merchant and provider branch values, and gross-minus-deductions-equals-net arithmetic were accepted without row errors. This proves format compatibility only. It does not prove the report-to-payment identifier mapping and does not authorize an import or posting against a different database copy.
+
 ## Required deployment configuration
 
 Configure these values for the environment that owns the payments:

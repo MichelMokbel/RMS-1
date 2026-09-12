@@ -1336,10 +1336,23 @@ new #[Layout('components.layouts.app')] class extends Component {
             blankTable.querySelector('thead th div:last-child')?.remove();
             const body = blankTable.querySelector('tbody');
             const columns = blankTable.querySelectorAll('thead th').length;
-            body.innerHTML = Array.from({length: 14}, () => '<tr>' + '<td>&nbsp;</td>'.repeat(columns) + '</tr>').join('');
+            body.replaceChildren();
+            Array.from({length: 14}, () => {
+                const row = body.insertRow();
+                Array.from({length: columns}, () => {
+                    row.insertCell().textContent = '\u00a0';
+                });
+            });
         }
-        const extraPages = blankTable ? Array.from({length: 2}, (_, index) =>
-            `<section class="blank-sheet"><h2>Additional orders — ${prettyDate} (${index + 1}/2)</h2>${blankTable.outerHTML}</section>`).join('') : '';
+        const extraPages = blankTable ? Array.from({length: 2}, (_, index) => {
+            const section = document.createElement('section');
+            section.className = 'blank-sheet';
+            const heading = document.createElement('h2');
+            heading.textContent = `Additional orders — ${prettyDate} (${index + 1}/2)`;
+            section.append(heading, blankTable.cloneNode(true));
+
+            return section.outerHTML;
+        }).join('') : '';
 
         win.document.write(`<!doctype html><html><head><meta charset="utf-8">
         <title>Layla Kitchen — ${prettyDate}</title>

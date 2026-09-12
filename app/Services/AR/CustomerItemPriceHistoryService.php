@@ -26,30 +26,47 @@ class CustomerItemPriceHistoryService
         }
 
         $companyId = $this->context->resolveCompanyId($branchId);
-        $ranked = DB::table('ar_invoice_items as item')
+        $scopeEligibleInvoices = function ($query, string $invoiceAlias) use ($branchId, $companyId, $customerId, $excludeInvoiceId) {
+            return $query
+                ->where("{$invoiceAlias}.branch_id", $branchId)
+                ->where(function ($query) use ($invoiceAlias, $companyId) {
+                    // Legacy invoices have no company; their branch still scopes them.
+                    $query->whereNull("{$invoiceAlias}.company_id");
+                    if ($companyId) {
+                        $query->orWhere("{$invoiceAlias}.company_id", $companyId);
+                    }
+                })
+                ->where("{$invoiceAlias}.customer_id", $customerId)
+                ->where("{$invoiceAlias}.currency", (string) config('pos.currency'))
+                ->where("{$invoiceAlias}.type", 'invoice')
+                ->whereIn("{$invoiceAlias}.status", ['issued', 'partially_paid', 'paid'])
+                ->whereNull("{$invoiceAlias}.voided_at")
+                ->whereNotNull("{$invoiceAlias}.issue_date")
+                ->when($excludeInvoiceId, fn ($query) => $query->where("{$invoiceAlias}.id", '<>', $excludeInvoiceId));
+        };
+
+        $history = DB::table('ar_invoice_items as item')
             ->join('ar_invoices as invoice', 'invoice.id', '=', 'item.invoice_id')
-            ->where('invoice.branch_id', $branchId)
-            ->where(function ($query) use ($companyId) {
-                // Legacy invoices have no company; their branch still scopes them.
-                $query->whereNull('invoice.company_id');
-                if ($companyId) {
-                    $query->orWhere('invoice.company_id', $companyId);
-                }
-            })
-            ->where('invoice.customer_id', $customerId)
-            ->where('invoice.currency', (string) config('pos.currency'))
-            ->where('invoice.type', 'invoice')
-            ->whereIn('invoice.status', ['issued', 'partially_paid', 'paid'])
-            ->whereNull('invoice.voided_at')
-            ->whereNotNull('invoice.issue_date')
-            ->when($excludeInvoiceId, fn ($query) => $query->where('invoice.id', '<>', $excludeInvoiceId))
             ->where('item.sellable_type', MenuItem::class)
             ->whereIn('item.sellable_id', $itemIds)
-            ->select('item.sellable_id', 'item.unit_price_cents', 'item.unit', 'invoice.issue_date', 'invoice.currency')
-            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY item.sellable_id ORDER BY invoice.issue_date DESC, invoice.id DESC, item.id DESC) as price_rank');
+            ->where('item.id', '=', function ($query) use ($scopeEligibleInvoices) {
+                $query->select('candidate_item.id')
+                    ->from('ar_invoice_items as candidate_item')
+                    ->join('ar_invoices as candidate_invoice', 'candidate_invoice.id', '=', 'candidate_item.invoice_id')
+                    ->whereColumn('candidate_item.sellable_type', 'item.sellable_type')
+                    ->whereColumn('candidate_item.sellable_id', 'item.sellable_id');
 
-        return DB::query()->fromSub($ranked, 'history')
-            ->where('price_rank', 1)
+                $scopeEligibleInvoices($query, 'candidate_invoice')
+                    ->orderByDesc('candidate_invoice.issue_date')
+                    ->orderByDesc('candidate_invoice.id')
+                    ->orderByDesc('candidate_item.id')
+                    ->limit(1);
+            })
+            ->select('item.sellable_id', 'item.unit_price_cents', 'item.unit', 'invoice.issue_date', 'invoice.currency');
+
+        $scopeEligibleInvoices($history, 'invoice');
+
+        return $history
             ->get()
             ->mapWithKeys(fn ($row) => [(int) $row->sellable_id => [
                 'unit_price_cents' => (int) $row->unit_price_cents,

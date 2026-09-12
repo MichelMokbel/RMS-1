@@ -27,7 +27,7 @@ This area owns customer invoices, credit notes, payment allocation, voids, and c
 
 * `ArPaymentDeleteService` voids financial history rather than simply deleting it. A settled payment requires its clearing settlement to be voided first.
 * `InvoiceIssued` affects subscription usage through an automatically discovered listener. Issuing is not only a status update.
-* Clearing currently concerns gross card or cheque receipts. The planned gateway fee and payout flow in `docs/scope/scope.md` is not an implemented provider integration.
+* Card and cheque clearing continue through `ArClearingSettlementService`. SkipCash uses the separate gateway settlement workflow in `app/Services/Payments/`, which imports provider evidence, records commission and settlement-fee expenses, and moves the net payout from the original SkipCash clearing account to the default bank. Keep settlement mutations disabled until the controlled evidence gate in `docs/skipcash-settlement-operations.md` passes.
 * Relevant suites are `tests/Feature/AR/`, `tests/Feature/Receivables/`, `tests/Feature/Subscriptions/`, and `tests/Feature/Accounting/`.
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

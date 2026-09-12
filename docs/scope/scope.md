@@ -458,6 +458,6 @@ Show one administrator selected storefront category immediately before final rev
 
 **Feature lifecycle:** `planned` becomes `in-progress` when design or build starts, then `done` when you accept the verified result. `existing` describes work that predates this workflow.
 
-**Next step:** complete checkout add-on verification and release checks, then enable normal menu ordering on the development deployment. The existing payment activation gates still apply before live enablement: prove one real SkipCash payout against the retained report and bank evidence.
+**Next step:** use the current production database copy to clean and publish eligible menu items, then follow the production cutover runbook. Keep normal-menu ordering and checkout upsells disabled in production until that cleanup is approved. Settlement posting remains independently disabled until one retained SkipCash transaction proves the report identifier mapping and the first controlled payout reconciles to bank evidence.
 
 **Workflow:** GA means payment features normally run `/architect`, `/develop`, `/check verify`, `/test`, a fresh `/check review`, and `/document`.
