@@ -18,6 +18,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public array $rows = [];
 
     public string $mobileView = 'card';   // 'card' | 'grid'
+    public bool $mobileLayout = false;
     public ?int $compactDrawerRow = null;
 
     public ?int $activeSearchRow = null;
@@ -38,7 +39,18 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         abort_unless($this->canCreateCustomer(), 403);
         $this->resetValidation();
-        $rowIndex ??= $this->activeSearchRow ?? array_key_last($this->rows);
+        if ($rowIndex === null) {
+            $rowIndex = $this->activeSearchRow;
+        }
+        if ($rowIndex === null) {
+            $blankRow = collect($this->rows)
+                ->search(fn ($row) => blank($row['customer_name']) && blank($row['order_id']));
+            if ($blankRow === false) {
+                $this->addRow();
+                $blankRow = array_key_last($this->rows);
+            }
+            $rowIndex = $blankRow;
+        }
         abort_unless(isset($this->rows[$rowIndex]), 422);
         if (filled($this->rows[$rowIndex]['customer_id'])) {
             $this->addRow();
@@ -89,6 +101,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
+        $this->mobileLayout = (bool) preg_match('/Android|iPhone|iPad|iPod|Mobile/i', request()->userAgent() ?? '');
         $this->sheetDate = now()->toDateString();
         $this->loadMenuItems();
         $this->loadRows();
@@ -225,9 +238,17 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private function ensureTrailingBlankRow(): void
     {
-        $last = end($this->rows);
-        if ($last === false || filled($last['customer_name'])) {
+        $blankRows = 0;
+        foreach (array_reverse($this->rows) as $row) {
+            if (filled($row['customer_name']) || filled($row['order_id'])) {
+                break;
+            }
+            $blankRows++;
+        }
+
+        while ($blankRows < 5) {
             $this->rows[] = $this->blankRow();
+            $blankRows++;
         }
     }
 
@@ -242,6 +263,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->extraSearchTerm = '';
         $this->loadMenuItems();
         $this->loadRows();
+        $this->syncBrowserState();
     }
 
     public function goToToday(): void
@@ -265,6 +287,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function addRow(): void
     {
         $this->rows[] = $this->blankRow();
+        $this->syncBrowserState(count($this->rows));
     }
 
     public function removeRow(int $index): void
@@ -280,6 +303,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->activeSearchRow = null;
             $this->customerSearchTerm = '';
         }
+        $this->syncBrowserState();
     }
 
     public function clearRow(int $index): void
@@ -288,12 +312,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->rows[$index]['qty']    = $qty;
         $this->rows[$index]['extras'] = [];
         $this->rows[$index]['remarks'] = '';
+        $this->syncBrowserState();
     }
 
     public function bump(int $index, int $menuItemId, int $delta): void
     {
         $current = (int) ($this->rows[$index]['qty'][$menuItemId] ?? 0);
         $this->rows[$index]['qty'][$menuItemId] = max(0, $current + $delta);
+        $this->syncBrowserState();
     }
 
     // ── Customer search ──────────────────────────────────────
@@ -330,6 +356,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->ensureTrailingBlankRow();
         $this->activeSearchRow    = null;
         $this->customerSearchTerm = '';
+        $this->syncBrowserState($i + 2);
     }
 
     public function clearCustomer(int $rowIndex): void
@@ -373,18 +400,21 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
         $this->activeExtraRow  = null;
         $this->extraSearchTerm = '';
+        $this->syncBrowserState();
     }
 
     public function removeExtra(int $rowIndex, int $extraIndex): void
     {
         unset($this->rows[$rowIndex]['extras'][$extraIndex]);
         $this->rows[$rowIndex]['extras'] = array_values($this->rows[$rowIndex]['extras']);
+        $this->syncBrowserState();
     }
 
     public function bumpExtra(int $rowIndex, int $extraIndex, int $delta): void
     {
         $current = (int) ($this->rows[$rowIndex]['extras'][$extraIndex]['quantity'] ?? 1);
         $this->rows[$rowIndex]['extras'][$extraIndex]['quantity'] = max(1, $current + $delta);
+        $this->syncBrowserState();
     }
 
     public function openDrawer(int $index): void
@@ -403,6 +433,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->mobileView = $this->mobileView === 'card' ? 'grid' : 'card';
         $this->compactDrawerRow = null;
+    }
+
+    public function setMobileLayout(bool $mobile): void
+    {
+        $this->mobileLayout = $mobile;
+        $this->compactDrawerRow = null;
+        $this->activeSearchRow = null;
+        $this->activeExtraRow = null;
     }
 
     // ── Save ────────────────────────────────────────────────
@@ -465,6 +503,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         });
         $this->loadRows();
         $this->saveStatus = __('Sheet saved at :time. Use Publish to create or update orders.', ['time' => now()->format('H:i:s')]);
+        $this->syncBrowserState();
     }
 
     public function publish(): void
@@ -491,6 +530,26 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($updated > 0) $parts[] = "{$updated} order" . ($updated === 1 ? '' : 's') . " updated";
 
         $this->saveStatus = $parts ? implode(', ', $parts) . '.' : __('All entries already up to date.');
+        $this->syncBrowserState();
+    }
+
+    private function syncBrowserState(?int $minimumVisibleRows = null): void
+    {
+        $dishTotals = $this->dishTotals();
+        $rowTotals = collect($this->rows)->map(fn ($row) =>
+            array_sum($row['qty']) + collect($row['extras'])->sum('quantity')
+        )->values()->all();
+        $minimumVisibleRows ??= collect($this->rows)
+            ->takeUntil(fn ($row) => blank($row['customer_name']) && blank($row['order_id']))
+            ->count() + 1;
+
+        $this->dispatch('order-sheet-state',
+            totalItems: array_sum($dishTotals) + collect($this->extraTotals())->sum('qty'),
+            dishTotals: $dishTotals,
+            rowTotals: $rowTotals,
+            totalRows: count($this->rows),
+            minimumVisibleRows: min($minimumVisibleRows, count($this->rows)),
+        );
     }
 
     #[Computed]
@@ -551,10 +610,32 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 } ?>
 
-<div class="min-h-0 py-8 px-4 sm:px-8" style="background:#f5f3ee; font-family: Inter, ui-sans-serif, system-ui, sans-serif;"
+<div wire:key="order-sheet-{{ $sheetDate }}-{{ $mobileLayout ? 'mobile' : 'desktop' }}"
+     class="min-h-0 py-8 px-4 sm:px-8" style="background:#f5f3ee; font-family: Inter, ui-sans-serif, system-ui, sans-serif;"
      x-data="{
          openRow: null,
-         isMobile: window.innerWidth < 768,
+         visibleRows: @js(collect($rows)->takeUntil(fn ($row) => blank($row['customer_name']) && blank($row['order_id']))->count() + 1),
+         totalRows: @js(count($rows)),
+         totalItems: @js(array_sum($this->dishTotals) + collect($this->extraTotals)->sum('qty')),
+         dishTotals: @js($this->dishTotals),
+         rowTotals: @js(collect($rows)->map(fn ($row) => array_sum($row['qty']) + collect($row['extras'])->sum('quantity'))->values()),
+         adjustQuantity(current, delta, itemId, rowIndex) {
+             const next = Math.max(0, Number(current) + delta);
+             const applied = next - Number(current);
+             this.totalItems += applied;
+             this.dishTotals[itemId] = Number(this.dishTotals[itemId] || 0) + applied;
+             this.rowTotals[rowIndex] = Number(this.rowTotals[rowIndex] || 0) + applied;
+             return next;
+         },
+         revealRow() {
+             if (this.visibleRows < this.totalRows) {
+                 this.visibleRows++;
+                 this.$nextTick(() => this.fitSheet());
+                 return;
+             }
+             this.$wire.addRow();
+         },
+         isMobile: @js($mobileLayout),
          headerObserver: null,
          onResize: null,
          fitSheet() {
@@ -564,11 +645,16 @@ new #[Layout('components.layouts.app')] class extends Component {
          },
          init() {
              this.onResize = () => {
-                 this.isMobile = window.innerWidth < 768;
+                 const nextMobile = window.innerWidth < 768;
+                 if (nextMobile !== this.isMobile) {
+                     this.isMobile = nextMobile;
+                     this.$wire.setMobileLayout(nextMobile);
+                 }
                  this.$nextTick(() => this.fitSheet());
              };
              window.addEventListener('resize', this.onResize);
              this.$nextTick(() => {
+                 this.onResize();
                  this.headerObserver = new ResizeObserver(() => this.fitSheet());
                  this.headerObserver.observe(this.$refs.sheetToolbar);
                  this.fitSheet();
@@ -579,6 +665,13 @@ new #[Layout('components.layouts.app')] class extends Component {
              this.headerObserver?.disconnect();
          }
      }"
+     x-on:order-sheet-state.window="
+         totalItems = $event.detail.totalItems;
+         dishTotals = $event.detail.dishTotals;
+         rowTotals = $event.detail.rowTotals;
+         totalRows = $event.detail.totalRows;
+         visibleRows = Math.min(Math.max(visibleRows, $event.detail.minimumVisibleRows), totalRows);
+     "
 >
 
     <style>
@@ -725,7 +818,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{-- ══════════════════════════════════════════════════
              DESKTOP VIEW (md+)
              ══════════════════════════════════════════════════ --}}
-        <div x-show="!isMobile">
+        @if (! $mobileLayout)
+        <div>
             <div x-ref="sheetShell" class="ledger-paper rounded-sm relative flex flex-col min-h-0">
                 <div class="absolute top-0 right-0 w-20 h-20 overflow-hidden pointer-events-none" style="clip-path:polygon(100% 0,0 0,100% 100%);background:rgba(0,0,0,0.03)"></div>
 
@@ -738,7 +832,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                     <div class="text-right">
                         <div class="text-[10px] uppercase tracking-[0.25em] text-zinc-500">Total items</div>
-                        <div class="font-hand text-3xl text-zinc-800">
+                        <div class="font-hand text-3xl text-zinc-800" x-text="totalItems">
                             {{ array_sum($this->dishTotals) + collect($this->extraTotals)->sum('qty') }}
                         </div>
                     </div>
@@ -780,7 +874,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </thead>
                         <tbody>
                             @foreach ($rows as $i => $row)
-                                <tr wire:key="row-{{ $i }}" class="group {{ blank($row['customer_name']) ? 'no-print' : '' }}">
+                                <tr wire:key="row-{{ $i }}" class="group {{ blank($row['customer_name']) ? 'no-print' : '' }}" x-show="{{ $i }} < visibleRows">
 
                                     {{-- Customer --}}
                                     <td class="border border-zinc-300 px-3 py-2"
@@ -833,19 +927,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     {{-- Dish quantities --}}
                                     @foreach ($menuItems as $item)
                                         <td class="border border-zinc-300 px-1 py-2 text-center">
-                                            <div class="inline-flex items-center gap-0.5 py-0.5">
+                                            <div class="inline-flex items-center gap-0.5 py-0.5"
+                                                x-data="{ quantity: $wire.entangle('rows.{{ $i }}.qty.{{ $item['id'] }}') }">
                                                 <button class="stepper-btn no-print"
-                                                    wire:click="bump({{ $i }}, {{ $item['id'] }}, -1)"
-                                                    @disabled(($row['qty'][$item['id']] ?? 0) === 0)>
-                                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>
+                                                    x-on:click="quantity = adjustQuantity(quantity, -1, {{ $item['id'] }}, {{ $i }})"
+                                                    x-bind:disabled="quantity === 0">
+                                                    <span aria-hidden="true">−</span>
                                                 </button>
-                                                <span class="inline-block w-5 text-center font-semibold tabular-nums text-[13px]
-                                                    {{ ($row['qty'][$item['id']] ?? 0) === 0 ? 'text-zinc-300' : 'text-zinc-900' }}">
-                                                    {{ $row['qty'][$item['id']] ?? 0 }}
+                                                <span class="inline-block w-5 text-center font-semibold tabular-nums text-[13px]"
+                                                    x-bind:class="quantity === 0 ? 'text-zinc-300' : 'text-zinc-900'"
+                                                    x-text="quantity">
                                                 </span>
                                                 <button class="stepper-btn no-print"
-                                                    wire:click="bump({{ $i }}, {{ $item['id'] }}, 1)">
-                                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                                                    x-on:click="quantity = adjustQuantity(quantity, 1, {{ $item['id'] }}, {{ $i }})">
+                                                    <span aria-hidden="true">+</span>
                                                 </button>
                                             </div>
                                         </td>
@@ -942,11 +1037,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <td class="border border-zinc-300"></td>
                                 @foreach ($menuItems as $item)
                                     <td class="border border-zinc-300 px-1 py-1.5 text-center">
-                                        @if (($this->dishTotals[$item['id']] ?? 0) > 0)
-                                            <span class="font-hand text-[22px] text-red-700">{{ $this->dishTotals[$item['id']] }}</span>
-                                        @else
-                                            <span class="text-zinc-300">—</span>
-                                        @endif
+                                        <span class="font-hand text-[22px]"
+                                            x-bind:class="dishTotals[{{ $item['id'] }}] > 0 ? 'text-red-700' : 'text-zinc-300'"
+                                            x-text="dishTotals[{{ $item['id'] }}] > 0 ? dishTotals[{{ $item['id'] }}] : '—'">
+                                            {{ ($this->dishTotals[$item['id']] ?? 0) ?: '—' }}
+                                        </span>
                                     </td>
                                 @endforeach
                                 <td class="border border-zinc-300 px-3 py-1.5">
@@ -964,7 +1059,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 </td>
                                 <td class="border border-zinc-300 px-2 py-1.5 text-right">
                                     <span class="text-[10px] uppercase tracking-wider text-zinc-500">Grand: </span>
-                                    <span class="font-hand text-[22px] text-red-700">
+                                    <span class="font-hand text-[22px] text-red-700" x-text="totalItems || '—'">
                                         {{ array_sum($this->dishTotals) + collect($this->extraTotals)->sum('qty') ?: '—' }}
                                     </span>
                                 </td>
@@ -974,7 +1069,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </table>
 
                     <div class="no-print mt-3">
-                        <button wire:click="addRow"
+                        <button x-on:click="revealRow"
                             class="flex items-center gap-2 px-3 py-2 text-[13px] font-medium text-zinc-700 hover:text-zinc-900 border border-dashed border-zinc-300 hover:border-zinc-500 rounded-lg transition">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
                             Add row
@@ -983,11 +1078,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
             </div>
         </div>
+        @endif
 
         {{-- ══════════════════════════════════════════════════
              MOBILE VIEW (<md)
              ══════════════════════════════════════════════════ --}}
-        <div x-show="isMobile" style="padding-bottom: 120px;">
+        @if ($mobileLayout)
+        <div style="padding-bottom: 120px;">
 
             {{-- Mobile sub-bar: view toggle --}}
             <div class="flex items-center gap-1 bg-zinc-100 rounded-lg p-0.5 mb-3 self-start">
@@ -1009,7 +1106,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <div class="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-zinc-200">
                             <span class="w-1.5 h-1.5 rounded-full bg-red-600"></span>
                             <span class="text-[11px] text-zinc-600 font-medium max-w-[90px] truncate">{{ $item['name'] }}</span>
-                            <span class="text-[12px] font-bold tabular-nums {{ $t === 0 ? 'text-zinc-300' : 'text-red-700' }}">{{ $t }}</span>
+                            <span class="text-[12px] font-bold tabular-nums"
+                                x-bind:class="dishTotals[{{ $item['id'] }}] > 0 ? 'text-red-700' : 'text-zinc-300'"
+                                x-text="dishTotals[{{ $item['id'] }}] || 0">{{ $t }}</span>
                         </div>
                     @endforeach
                     @foreach ($this->extraTotals as $total)
@@ -1028,7 +1127,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @php
                         $sum = array_sum($row['qty']) + collect($row['extras'])->sum('quantity');
                     @endphp
-                    <div wire:key="mobile-row-{{ $i }}" class="bg-white rounded-xl border border-zinc-200 overflow-hidden">
+                    <div wire:key="mobile-row-{{ $i }}" x-show="{{ $i }} < visibleRows" class="bg-white rounded-xl border border-zinc-200 overflow-hidden">
 
                         {{-- Card header (always visible) --}}
                         <div class="flex items-center gap-2 px-3 py-2.5">
@@ -1067,20 +1166,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                             {{-- Qty badges --}}
                             <div class="flex items-center gap-0.5 flex-shrink-0">
                                 @foreach ($menuItems as $idx => $item)
-                                    @if (($row['qty'][$item['id']] ?? 0) > 0)
-                                        <span class="text-[10px] font-bold tabular-nums w-5 h-5 rounded flex items-center justify-center bg-red-600 text-white">
-                                            {{ $row['qty'][$item['id']] }}
+                                    <span x-data="{ quantity: $wire.entangle('rows.{{ $i }}.qty.{{ $item['id'] }}') }"
+                                        x-show="quantity > 0" x-text="quantity"
+                                        class="text-[10px] font-bold tabular-nums w-5 h-5 rounded flex items-center justify-center bg-red-600 text-white">
+                                            {{ $row['qty'][$item['id']] ?? 0 }}
                                         </span>
-                                    @endif
                                 @endforeach
                                 @if (collect($row['extras'])->sum('quantity') > 0)
                                     <span class="text-[10px] font-bold tabular-nums w-5 h-5 rounded flex items-center justify-center bg-amber-500 text-white">
                                         +{{ collect($row['extras'])->sum('quantity') }}
                                     </span>
                                 @endif
-                                @if ($sum === 0)
-                                    <span class="text-[11px] text-zinc-300">—</span>
-                                @endif
+                                <span x-show="rowTotals[{{ $i }}] === 0" class="text-[11px] text-zinc-300">—</span>
                             </div>
 
                             <button x-on:click="openRow = (openRow === {{ $i }}) ? null : {{ $i }}" class="p-1">
@@ -1113,17 +1210,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                                                 <span class="w-1.5 h-1.5 rounded-full bg-red-600 flex-shrink-0"></span>
                                                 <span class="text-[13px] truncate">{{ $item['name'] }}</span>
                                             </div>
-                                            <div class="inline-flex items-center gap-2 flex-shrink-0">
-                                                <button wire:click="bump({{ $i }}, {{ $item['id'] }}, -1)"
-                                                    class="mobile-stepper-btn" @disabled(($row['qty'][$item['id']] ?? 0) === 0)>
-                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>
+                                            <div class="inline-flex items-center gap-2 flex-shrink-0"
+                                                x-data="{ quantity: $wire.entangle('rows.{{ $i }}.qty.{{ $item['id'] }}') }">
+                                                <button x-on:click="quantity = adjustQuantity(quantity, -1, {{ $item['id'] }}, {{ $i }})"
+                                                    class="mobile-stepper-btn" x-bind:disabled="quantity === 0">
+                                                    <span aria-hidden="true">−</span>
                                                 </button>
-                                                <span class="w-6 text-center text-[17px] font-semibold tabular-nums {{ ($row['qty'][$item['id']] ?? 0) === 0 ? 'text-zinc-300' : 'text-red-700' }}">
-                                                    {{ $row['qty'][$item['id']] ?? 0 }}
+                                                <span class="w-6 text-center text-[17px] font-semibold tabular-nums"
+                                                    x-bind:class="quantity === 0 ? 'text-zinc-300' : 'text-red-700'"
+                                                    x-text="quantity">
                                                 </span>
-                                                <button wire:click="bump({{ $i }}, {{ $item['id'] }}, 1)"
+                                                <button x-on:click="quantity = adjustQuantity(quantity, 1, {{ $item['id'] }}, {{ $i }})"
                                                     class="mobile-stepper-btn inc">
-                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                                                    <span aria-hidden="true">+</span>
                                                 </button>
                                             </div>
                                         </div>
@@ -1196,10 +1295,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
                             {{-- Row actions --}}
                             <div class="pt-3 border-t border-zinc-200/70 flex items-center justify-between">
-                                <span class="text-[11px] text-zinc-500">{{ $sum }} item{{ $sum === 1 ? '' : 's' }}</span>
+                                <span class="text-[11px] text-zinc-500"
+                                    x-text="`${rowTotals[{{ $i }}]} item${rowTotals[{{ $i }}] === 1 ? '' : 's'}`">{{ $sum }} item{{ $sum === 1 ? '' : 's' }}</span>
                                 <div class="flex items-center gap-1">
                                     <button wire:click="clearRow({{ $i }})"
-                                        class="flex items-center gap-1 text-[12px] text-amber-700 px-2 py-1 rounded-md active:bg-amber-50 {{ $sum === 0 ? 'opacity-30' : '' }}">
+                                        class="flex items-center gap-1 text-[12px] text-amber-700 px-2 py-1 rounded-md active:bg-amber-50"
+                                        x-bind:class="rowTotals[{{ $i }}] === 0 ? 'opacity-30' : ''">
                                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-.867 12.142A2 2 0 0116.138 20H7.862a2 2 0 01-1.995-1.858L5 6"/></svg>
                                         Clear
                                     </button>
@@ -1215,7 +1316,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endforeach
             </div>
 
-            <button wire:click="addRow"
+            <button x-on:click="revealRow"
                 class="mt-3 w-full flex items-center justify-center gap-2 px-3 py-3 text-[13px] font-medium text-zinc-700 bg-white border border-dashed border-zinc-300 rounded-xl active:bg-zinc-50">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
                 Add person
@@ -1241,7 +1342,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </thead>
                     <tbody>
                         @foreach ($rows as $i => $row)
-                            <tr wire:key="grid-row-{{ $i }}" class="border-t border-zinc-200/60">
+                            <tr wire:key="grid-row-{{ $i }}" class="border-t border-zinc-200/60" x-show="{{ $i }} < visibleRows">
                                 <td class="px-1 py-1.5">
                                     <input value="{{ $row['customer_search'] }}" wire:model.live.debounce.250ms="rows.{{ $i }}.customer_search"
                                         wire:focus="focusCustomerSearch({{ $i }})"
@@ -1261,18 +1362,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 </td>
                                 @foreach ($menuItems as $item)
                                     @php $q = $row['qty'][$item['id']] ?? 0; $isMain = in_array($item['role'], ['main','diet','vegetarian']); $color = $isMain ? '#dc2626' : '#059669'; @endphp
-                                    <td class="px-0.5 py-1 text-center">
-                                        <button wire:click="bump({{ $i }}, {{ $item['id'] }}, 1)"
-                                            class="os-grid-btn {{ $q === 0 ? 'empty' : 'filled' }}"
-                                            style="{{ $q > 0 ? "background-color:{$color};" : '' }}">
-                                            {{ $q === 0 ? '+' : $q }}
+                                    <td class="px-0.5 py-1 text-center"
+                                        x-data="{ quantity: $wire.entangle('rows.{{ $i }}.qty.{{ $item['id'] }}') }">
+                                        <button x-on:click="quantity = adjustQuantity(quantity, 1, {{ $item['id'] }}, {{ $i }})"
+                                            class="os-grid-btn"
+                                            x-bind:class="quantity === 0 ? 'empty' : 'filled'"
+                                            x-bind:style="quantity > 0 ? 'background-color:{{ $color }}' : ''"
+                                            x-text="quantity === 0 ? '+' : quantity">
                                         </button>
-                                        @if ($q > 0)
-                                            <button wire:click="bump({{ $i }}, {{ $item['id'] }}, -1)"
+                                            <button x-show="quantity > 0" x-on:click="quantity = adjustQuantity(quantity, -1, {{ $item['id'] }}, {{ $i }})"
                                                 style="display:block;width:100%;margin-top:2px;font-size:11px;font-weight:700;color:{{ $color }};background:none;border:none;cursor:pointer;line-height:1;padding:1px 0;">
                                                 −
                                             </button>
-                                        @endif
                                     </td>
                                 @endforeach
                                 <td class="px-0.5 py-1 text-center">
@@ -1291,7 +1392,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <td class="px-1 py-2 text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Total</td>
                             @foreach ($menuItems as $item)
                                 @php $t = $this->dishTotals[$item['id']] ?? 0; @endphp
-                                <td class="px-0.5 py-2 text-center font-hand text-[18px] {{ $t === 0 ? 'text-zinc-300' : (in_array($item['role'],['salad','dessert']) ? 'text-emerald-700' : 'text-red-700') }}">
+                                <td class="px-0.5 py-2 text-center font-hand text-[18px]"
+                                    x-bind:class="dishTotals[{{ $item['id'] }}] > 0 ? '{{ in_array($item['role'], ['salad', 'dessert']) ? 'text-emerald-700' : 'text-red-700' }}' : 'text-zinc-300'"
+                                    x-text="dishTotals[{{ $item['id'] }}] > 0 ? dishTotals[{{ $item['id'] }}] : '—'">
                                     {{ $t > 0 ? $t : '—' }}
                                 </td>
                             @endforeach
@@ -1316,7 +1419,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
             @endif
 
-            <button wire:click="addRow"
+            <button x-on:click="revealRow"
                 class="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2.5 text-[13px] font-medium text-zinc-700 bg-white border border-dashed border-zinc-300 rounded-xl active:bg-zinc-50">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
                 Add person
@@ -1404,7 +1507,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <div class="min-w-0">
                         <div class="text-[10px] uppercase tracking-[0.2em] text-zinc-400">Sheet total</div>
                         <div class="text-[15px] font-semibold tabular-nums leading-tight">
-                            {{ array_sum($this->dishTotals) + collect($this->extraTotals)->sum('qty') }} items
+                            <span x-text="totalItems">{{ array_sum($this->dishTotals) + collect($this->extraTotals)->sum('qty') }}</span> items
                             · {{ collect($rows)->filter(fn($r) => filled($r['customer_name']))->count() }} people
                         </div>
                     </div>
@@ -1432,10 +1535,46 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
             </div>
         </div>
+        @endif
     </div>
 
     {{-- Print / PDF export --}}
     <script>
+    function buildOrderSheetPrintTable() {
+        const root = document.querySelector('[wire\\:key^="order-sheet-"]');
+        const componentRoot = root?.closest('[wire\\:id]');
+        const component = componentRoot ? window.Livewire?.find(componentRoot.getAttribute('wire:id')) : null;
+        const rows = component?.get('rows') || [];
+        const menuItems = component?.get('menuItems') || [];
+        const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+        })[character]);
+        const table = document.createElement('table');
+        const headings = ['Customer', 'Location', ...menuItems.map(item => item.name), 'Other dishes', 'Total', 'Remarks'];
+        const printableRows = rows.filter(row => row.customer_name);
+        const body = printableRows.map(row => {
+            const extras = (row.extras || []).filter(extra => Number(extra.quantity) > 0);
+            const quantityCells = menuItems.map(item => `<td>${Number(row.qty?.[item.id] || 0) || '—'}</td>`).join('');
+            const total = Object.values(row.qty || {}).reduce((sum, quantity) => sum + Number(quantity || 0), 0)
+                + extras.reduce((sum, extra) => sum + Number(extra.quantity || 0), 0);
+            const extraNames = extras.map(extra => `${escapeHtml(extra.menu_item_name)} ×${Number(extra.quantity)}`).join(', ');
+            return `<tr><td>${escapeHtml(row.customer_name)}</td><td>${escapeHtml(row.location)}</td>${quantityCells}<td>${extraNames || '—'}</td><td>${total || '—'}</td><td>${escapeHtml(row.remarks)}</td></tr>`;
+        }).join('');
+        const dishTotals = menuItems.map(item => printableRows.reduce((sum, row) => sum + Number(row.qty?.[item.id] || 0), 0));
+        const extraTotals = new Map();
+        printableRows.flatMap(row => row.extras || []).forEach(extra => {
+            if (Number(extra.quantity) > 0) {
+                extraTotals.set(extra.menu_item_name, Number(extraTotals.get(extra.menu_item_name) || 0) + Number(extra.quantity));
+            }
+        });
+        const extraTotal = [...extraTotals.values()].reduce((sum, quantity) => sum + quantity, 0);
+        const extraSummary = [...extraTotals].map(([name, quantity]) => `${escapeHtml(name)} ×${quantity}`).join(', ');
+        const grandTotal = dishTotals.reduce((sum, quantity) => sum + quantity, 0) + extraTotal;
+        const totals = `<tr><th>Total</th><td></td>${dishTotals.map(total => `<td>${total || '—'}</td>`).join('')}<td>${extraSummary || '—'}</td><td>${grandTotal || '—'}</td><td></td></tr>`;
+        table.innerHTML = `<thead><tr>${headings.map(heading => `<th>${escapeHtml(heading)}</th>`).join('')}</tr></thead><tbody>${body}</tbody><tfoot>${totals}</tfoot>`;
+        return table;
+    }
+
     function exportPDF() {
         const win = window.open('', '_blank');
         if (!win) { alert('Allow pop-ups to export PDF.'); return; }
@@ -1443,7 +1582,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         const date = document.querySelector('input[type=date]')?.value || '';
         const prettyDate = date ? new Date(date + 'T00:00:00').toLocaleDateString('en-GB', {weekday:'long',day:'2-digit',month:'long',year:'numeric'}) : '';
 
-        const table = document.querySelector('.ledger-paper table');
+        const table = document.querySelector('.ledger-paper table') || buildOrderSheetPrintTable();
         const populatedTable = table?.cloneNode(true);
         if (populatedTable) {
             const inputs = table.querySelectorAll('input');

@@ -58,7 +58,8 @@ it('does not include cancelled or other-date orders or empty subscribers', funct
     $page = Volt::test('order-sheet');
     $rows = collect($page->get('rows'))->where('customer_id', $this->customer->id);
     expect($rows)->toHaveCount(0);
-    expect($page->get('rows'))->toHaveCount(1); // One editable blank row remains.
+    expect($page->get('rows'))->toHaveCount(5)
+        ->and(collect($page->get('rows'))->every(fn ($row) => blank($row['customer_name'])))->toBeTrue();
 });
 
 it('sums repeated dish lines instead of overwriting quantities', function () {
@@ -101,7 +102,7 @@ it('keeps saved manual dish quantities and extras without an order', function ()
     $extra = $sheet->entries()->create(['customer_name' => 'Manual extra']);
     $extra->extras()->create(['menu_item_id' => $item->id, 'menu_item_name' => $item->name, 'quantity' => 4]);
     $page = Volt::test('order-sheet')->assertSee('Manual meal')->assertSee('Manual extra');
-    expect($page->get('rows'))->toHaveCount(3);
+    expect($page->get('rows'))->toHaveCount(7);
     $this->get(route('order-sheet.print.by-order'))->assertOk()
         ->assertViewHas('dishTotals', fn ($totals) => $totals[$column->id]['quantity'] === 2)
         ->assertViewHas('extraTotals', fn ($totals) => $totals[$item->name]['quantity'] === 4);
@@ -205,6 +206,12 @@ it('validates quick customer creation before inserting a customer', function () 
     expect(Customer::count())->toBe($count);
 });
 
+it('opens quick customer creation on the first visible blank row', function () {
+    Volt::test('order-sheet')->call('startCustomerCreation')
+        ->assertSet('newCustomerRow', 0)
+        ->assertSet('showCustomerForm', true);
+});
+
 it('preserves customer creation permissions for order sheet staff', function () {
     Role::findOrCreate('staff');
     $this->actingAs(User::factory()->create(['status' => 'active'])->assignRole('staff'));
@@ -218,4 +225,38 @@ it('rejects invalid quantities without replacing the saved sheet', function () {
     $entry = $sheet->entries()->create(['customer_name' => 'Keep me', 'remarks' => 'Saved']);
     Volt::test('order-sheet')->set('rows.0.qty.999', -1)->call('save')->assertHasErrors(['rows.0.qty.999']);
     expect($entry->fresh()->remarks)->toBe('Saved');
+});
+
+it('renders only the active layout and keeps common row actions local', function () {
+    $desktop = Volt::test('order-sheet');
+    expect(substr_count($desktop->html(), 'wire:key="row-'))->toBe(5)
+        ->and($desktop->html())->not->toContain('wire:key="mobile-row-')
+        ->and($desktop->html())->toContain('x-on:click="revealRow"')
+        ->not->toContain('wire:click="bump(');
+
+    $mobile = Volt::test('order-sheet')->call('setMobileLayout', true);
+    expect($mobile->html())->toContain('wire:key="mobile-row-')
+        ->not->toContain('wire:key="row-')
+        ->and($mobile->html())->toContain('buildOrderSheetPrintTable()');
+});
+
+it('preserves pending quantities through layout changes and save', function () {
+    $item = MenuItem::factory()->create();
+    $menu = DailyDishMenu::create(['branch_id' => 1, 'service_date' => now()->toDateString(), 'status' => 'published']);
+    $column = $menu->items()->create(['menu_item_id' => $item->id, 'role' => 'main', 'sort_order' => 1]);
+
+    $page = Volt::test('order-sheet')
+        ->set('rows.0.customer_id', $this->customer->id)
+        ->set('rows.0.customer_name', $this->customer->name)
+        ->set("rows.0.qty.{$column->id}", 3)
+        ->call('setMobileLayout', true)
+        ->assertSet("rows.0.qty.{$column->id}", 3)
+        ->call('setMobileLayout', false)
+        ->assertSet("rows.0.qty.{$column->id}", 3)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect(OrderSheet::first()->entries()->first()->quantities()->value('quantity'))->toBe(3);
+    $page->set('sheetDate', now()->toDateString());
+    expect($page->get("rows.0.qty.{$column->id}"))->toBe(3);
 });
