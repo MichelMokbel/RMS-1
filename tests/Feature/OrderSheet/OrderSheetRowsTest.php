@@ -353,6 +353,7 @@ it('renders only the active layout and keeps common row actions local', function
         ->not->toContain('wire:focus="focusCustomerSearch')
         ->not->toContain('wire:model.live.debounce.250ms="rows.')
         ->and($desktop->html())->toContain('loadCustomerResults(')
+        ->and($desktop->html())->toContain('x-on:click.stop="openExtraSearch(')
         ->and($desktop->html())->toContain('removeRowImmediately(')
         ->and($desktop->html())->toContain('quantity(')
         ->not->toContain('$wire.entangle(\'rows.')
@@ -363,6 +364,7 @@ it('renders only the active layout and keeps common row actions local', function
     expect($mobile->html())->toContain('wire:key="mobile-row-')
         ->not->toContain('wire:key="desktop-row-')
         ->not->toContain('wire:focus="focusCustomerSearch')
+        ->and($mobile->html())->toContain('x-on:click.stop="openExtraSearch(')
         ->and($mobile->html())->toContain('x-on:click="revealRow()"')
         ->and($mobile->html())->toContain('buildOrderSheetPrintTable()');
 });
