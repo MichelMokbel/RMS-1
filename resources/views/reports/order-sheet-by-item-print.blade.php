@@ -62,21 +62,27 @@
                         <tr>
                             <th>Dish</th>
                             <th style="width:80px;">Category</th>
+                            <th style="width:90px;">Portion</th>
                             <th style="width:60px; text-align:right;">Qty</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach ($filledDishes as $dish)
-                            <tr>
-                                <td>{{ $dish['name'] }}</td>
-                                <td class="role">{{ ucfirst($dish['role']) }}</td>
-                                <td class="qty">{{ $dish['quantity'] }}</td>
-                            </tr>
+                            @foreach (['plate' => 'Plate', 'half' => 'Half Portion', 'full' => 'Full Portion'] as $portionType => $portionLabel)
+                                @if (($dish['portions'][$portionType] ?? 0) > 0)
+                                    <tr>
+                                        <td>{{ $dish['name'] }}</td>
+                                        <td class="role">{{ ucfirst($dish['role']) }}</td>
+                                        <td>{{ $portionLabel }}</td>
+                                        <td class="qty">{{ $dish['portions'][$portionType] }}</td>
+                                    </tr>
+                                @endif
+                            @endforeach
                         @endforeach
                     </tbody>
                     <tfoot>
                         <tr>
-                            <td colspan="2"><strong>Grand Total</strong></td>
+                            <td colspan="3"><strong>Grand Total</strong></td>
                             <td class="qty">{{ $grandTotal }}</td>
                         </tr>
                     </tfoot>

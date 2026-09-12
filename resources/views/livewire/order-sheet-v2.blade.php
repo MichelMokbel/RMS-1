@@ -218,7 +218,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             'rows.*.location' => ['nullable', 'string', 'max:1000'],
             'rows.*.remarks' => ['nullable', 'string', 'max:2000'],
             'rows.*.quantities' => ['array'],
-            'rows.*.quantities.*' => ['integer', 'min:0', 'max:10000'],
+            'rows.*.quantities.*' => ['array:plate,half,full'],
+            'rows.*.quantities.*.plate' => ['required', 'integer', 'min:0', 'max:10000'],
+            'rows.*.quantities.*.half' => ['required', 'integer', 'min:0', 'max:10000'],
+            'rows.*.quantities.*.full' => ['required', 'integer', 'min:0', 'max:10000'],
             'rows.*.extras' => ['array', 'max:100'],
             'rows.*.extras.*.menu_item_id' => ['required', 'integer'],
             'rows.*.extras.*.name' => ['required', 'string', 'max:255'],
@@ -285,13 +288,16 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
 
         <div class="h-full overflow-auto overscroll-contain" data-sheet-scroll>
-            <table class="min-w-full border-separate border-spacing-0 text-sm" x-bind:style="`min-width:${1104 + menuItems.length * 112}px`">
+            <table class="min-w-full border-separate border-spacing-0 text-sm" x-bind:style="`min-width:${1104 + menuItems.length * 168}px`">
                 <thead class="sticky top-0 z-10 bg-zinc-50 dark:bg-zinc-800">
                     <tr>
                         <th scope="col" class="sticky left-0 z-20 w-64 min-w-64 border-b border-r border-zinc-200 bg-zinc-50 px-3 py-3 text-left font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">{{ __('Customer') }}</th>
                         <th scope="col" class="w-48 min-w-48 border-b border-r border-zinc-200 px-3 py-3 text-left font-semibold text-zinc-700 dark:border-zinc-700 dark:text-zinc-200">{{ __('Location') }}</th>
                         <template x-for="item in menuItems" :key="item.id">
-                            <th scope="col" class="w-28 min-w-28 border-b border-r border-zinc-200 px-2 py-3 text-center font-semibold text-zinc-700 dark:border-zinc-700 dark:text-zinc-200" x-text="item.name"></th>
+                            <th scope="col" class="w-40 min-w-40 border-b border-r border-zinc-200 px-2 py-3 text-center font-semibold text-zinc-700 dark:border-zinc-700 dark:text-zinc-200">
+                                <span class="block" x-text="item.name"></span>
+                                <span x-show="item.role === 'main'" class="mt-1 block text-[0.625rem] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ __('Plate') }} · {{ __('Half') }} · {{ __('Full') }}</span>
+                            </th>
                         </template>
                         <th scope="col" class="w-64 min-w-64 border-b border-r border-zinc-200 px-3 py-3 text-left font-semibold text-zinc-700 dark:border-zinc-700 dark:text-zinc-200">{{ __('Other dishes') }}</th>
                         <th scope="col" class="w-56 min-w-56 border-b border-r border-zinc-200 px-3 py-3 text-left font-semibold text-zinc-700 dark:border-zinc-700 dark:text-zinc-200">{{ __('Remarks') }}</th>
@@ -316,12 +322,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </td>
                             <template x-for="item in menuItems" :key="`${row.key}-${item.id}`">
                                 <td class="border-b border-r border-zinc-200 p-2 align-top dark:border-zinc-700">
-                                    <div class="flex items-center justify-center gap-1">
-                                        <button type="button" x-on:click="adjustQuantity(row, item.id, -1)" x-bind:disabled="quantity(row, item.id) === 0" class="inline-flex size-10 items-center justify-center rounded-lg border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 disabled:opacity-30 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200" x-bind:aria-label="`{{ __('Decrease') }} ${item.name}`"><flux:icon.minus class="size-4" /></button>
-                                        <label class="sr-only" x-bind:for="`quantity-${row.key}-${item.id}`" x-text="`${item.name} {{ __('quantity') }}`"></label>
-                                        <input x-bind:id="`quantity-${row.key}-${item.id}`" type="number" min="0" step="1" x-bind:value="quantity(row, item.id)" x-on:change="setQuantity(row, item.id, $event.target.value)" class="h-10 w-12 rounded-lg border border-zinc-300 bg-white px-1 text-center font-semibold tabular-nums text-zinc-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 dark:border-zinc-600 dark:bg-zinc-800 dark:text-white" />
-                                        <button type="button" x-on:click="adjustQuantity(row, item.id, 1)" class="inline-flex size-10 items-center justify-center rounded-lg bg-zinc-900 text-white hover:bg-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 dark:bg-white dark:text-zinc-900" x-bind:aria-label="`{{ __('Increase') }} ${item.name}`"><flux:icon.plus class="size-4" /></button>
+                                    <div x-show="item.role === 'main'" class="grid grid-cols-3 gap-1">
+                                        <template x-for="portion in portions" :key="`${row.key}-${item.id}-${portion.key}`">
+                                            <label class="block text-center">
+                                                <span class="block text-[0.625rem] font-semibold uppercase text-zinc-500 dark:text-zinc-400" x-text="portion.short"></span>
+                                                <input type="number" min="0" step="1" inputmode="numeric" x-bind:value="portionQuantity(row, item.id, portion.key)" x-on:input="setPortionQuantity(row, item.id, portion.key, $event.target.value)" x-bind:aria-label="`${item.name} ${portion.label} {{ __('quantity') }}`" class="mt-1 h-10 w-full rounded-lg border border-zinc-300 bg-white px-1 text-center font-semibold tabular-nums text-zinc-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 dark:border-zinc-600 dark:bg-zinc-800 dark:text-white" />
+                                            </label>
+                                        </template>
                                     </div>
+                                    <label x-show="item.role !== 'main'" class="block text-center">
+                                        <span class="sr-only" x-text="`${item.name} {{ __('quantity') }}`"></span>
+                                        <input type="number" min="0" step="1" inputmode="numeric" x-bind:value="portionQuantity(row, item.id, 'plate')" x-on:input="setPortionQuantity(row, item.id, 'plate', $event.target.value)" x-bind:aria-label="`${item.name} {{ __('quantity') }}`" class="h-10 w-16 rounded-lg border border-zinc-300 bg-white px-1 text-center font-semibold tabular-nums text-zinc-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 dark:border-zinc-600 dark:bg-zinc-800 dark:text-white" />
+                                    </label>
                                 </td>
                             </template>
                             <td class="border-b border-r border-zinc-200 p-2 align-top dark:border-zinc-700">
@@ -355,7 +367,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <th scope="row" class="sticky left-0 z-20 border-r border-t border-zinc-300 bg-zinc-100 px-3 py-3 text-left dark:border-zinc-600 dark:bg-zinc-800">{{ __('Totals') }}</th>
                         <td class="border-r border-t border-zinc-300 dark:border-zinc-600"></td>
                         <template x-for="item in menuItems" :key="`total-${item.id}`">
-                            <td class="border-r border-t border-zinc-300 px-2 py-3 text-center tabular-nums dark:border-zinc-600" x-text="dishTotal(item.id)"></td>
+                            <td class="border-r border-t border-zinc-300 px-2 py-3 text-center text-xs tabular-nums dark:border-zinc-600" x-text="dishTotalLabel(item.id)"></td>
                         </template>
                         <td class="border-r border-t border-zinc-300 px-3 py-3 dark:border-zinc-600" x-text="extraSummary"></td>
                         <td class="border-r border-t border-zinc-300 dark:border-zinc-600"></td>
@@ -469,6 +481,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         customerSearch: { open: false, rowKey: null, term: '', results: [], loading: false, activeIndex: 0, top: 0, left: 0, width: 320 },
         dishSearch: { rowKey: null, term: '', results: [], loading: false, activeIndex: 0 },
         customerCreator: { rowKey: null, name: '', phone: '', saving: false, error: '' },
+        portions: [
+            { key: 'plate', short: 'P', label: '{{ __('Plate') }}' },
+            { key: 'half', short: 'H', label: '{{ __('Half Portion') }}' },
+            { key: 'full', short: 'F', label: '{{ __('Full Portion') }}' },
+        ],
 
         init() {
             this.applyPayload(initialPayload);
@@ -503,7 +520,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         normalizeRow(row) {
             const quantities = {};
-            this.menuItems.forEach((item) => quantities[item.id] = Math.max(0, Number(row.quantities?.[item.id] || 0)));
+            this.menuItems.forEach((item) => {
+                const source = row.quantities?.[item.id] || {};
+                quantities[item.id] = {
+                    plate: Math.max(0, Math.trunc(Number(source.plate || 0))),
+                    half: Math.max(0, Math.trunc(Number(source.half || 0))),
+                    full: Math.max(0, Math.trunc(Number(source.full || 0))),
+                };
+            });
             return {
                 key: row.key || this.newKey(),
                 order_id: row.order_id || null,
@@ -524,7 +548,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         blankRow() {
             const quantities = {};
-            this.menuItems.forEach((item) => quantities[item.id] = 0);
+            this.menuItems.forEach((item) => quantities[item.id] = { plate: 0, half: 0, full: 0 });
             return { key: this.newKey(), order_id: null, customer_id: null, customer_name: '', location: '', has_subscription: false, subscription_appetizer: null, quantities, extras: [], remarks: '' };
         },
 
@@ -548,31 +572,41 @@ new #[Layout('components.layouts.app')] class extends Component {
             this.error = '';
         },
 
+        portionQuantity(row, itemId, portionType) {
+            return Math.max(0, Number(row.quantities?.[itemId]?.[portionType] || 0));
+        },
+
+        setPortionQuantity(row, itemId, portionType, value) {
+            row.quantities[itemId][portionType] = Math.max(0, Math.trunc(Number(value) || 0));
+            this.syncSubscriptionAppetizer(row);
+            this.markDirty();
+            this.ensureTrailingBlank();
+        },
+
         quantity(row, itemId) {
-            return Math.max(0, Number(row.quantities?.[itemId] || 0));
-        },
-
-        setQuantity(row, itemId, value) {
-            row.quantities[itemId] = Math.max(0, Math.trunc(Number(value) || 0));
-            this.syncSubscriptionAppetizer(row);
-            this.markDirty();
-            this.ensureTrailingBlank();
-        },
-
-        adjustQuantity(row, itemId, delta) {
-            row.quantities[itemId] = Math.max(0, this.quantity(row, itemId) + delta);
-            this.syncSubscriptionAppetizer(row);
-            this.markDirty();
-            this.ensureTrailingBlank();
+            return this.portions.reduce((sum, portion) => sum + this.portionQuantity(row, itemId, portion.key), 0);
         },
 
         rowTotal(row) {
-            return Object.values(row.quantities || {}).reduce((sum, quantity) => sum + Number(quantity || 0), 0)
+            return Object.keys(row.quantities || {}).reduce((sum, itemId) => sum + this.quantity(row, itemId), 0)
                 + row.extras.reduce((sum, extra) => sum + Number(extra.quantity || 0), 0);
         },
 
         dishTotal(itemId) {
             return this.rows.reduce((sum, row) => sum + this.quantity(row, itemId), 0);
+        },
+
+        dishPortionTotal(itemId, portionType) {
+            return this.rows.reduce((sum, row) => sum + this.portionQuantity(row, itemId, portionType), 0);
+        },
+
+        dishTotalLabel(itemId) {
+            const item = this.menuItems.find((candidate) => Number(candidate.id) === Number(itemId));
+            if (item?.role !== 'main') return String(this.dishTotal(itemId));
+            const values = this.portions
+                .map((portion) => `${portion.short} ${this.dishPortionTotal(itemId, portion.key)}`)
+                .filter((label) => !label.endsWith(' 0'));
+            return values.length ? values.join(' · ') : '0';
         },
 
         mainQuantity(row) {
@@ -911,7 +945,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             const body = printableRows.map((row) => {
                 const extras = (row.extras || []).filter((extra) => Number(extra.quantity) > 0);
                 const quantityCells = this.menuItems
-                    .map((item) => `<td>${this.quantity(row, item.id) || '—'}</td>`)
+                    .map((item) => {
+                        const values = this.portions
+                            .map((portion) => [portion.short, this.portionQuantity(row, item.id, portion.key)])
+                            .filter(([, quantity]) => quantity > 0)
+                            .map(([label, quantity]) => `${label} ${quantity}`)
+                            .join(' · ');
+                        return `<td>${values || '—'}</td>`;
+                    })
                     .join('');
                 const extraNames = extras
                     .map((extra) => `${escapeHtml(extra.name)} ×${Number(extra.quantity)}`)
@@ -931,7 +972,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 .map(([name, quantity]) => `${escapeHtml(name)} ×${quantity}`)
                 .join(', ');
             const grandTotal = dishTotals.reduce((sum, quantity) => sum + quantity, 0) + extraTotal;
-            const totals = `<tr><th>Total</th><td></td>${dishTotals.map((total) => `<td>${total || '—'}</td>`).join('')}<td>${extraSummary || '—'}</td><td>${grandTotal || '—'}</td><td></td></tr>`;
+            const totals = `<tr><th>Total</th><td></td>${this.menuItems.map((item) => `<td>${this.dishTotalLabel(item.id) || '—'}</td>`).join('')}<td>${extraSummary || '—'}</td><td>${grandTotal || '—'}</td><td></td></tr>`;
             const headingHtml = headings.map((heading) => `<th>${escapeHtml(heading)}</th>`).join('');
             const printTable = `<table><thead><tr>${headingHtml}</tr></thead><tbody>${body}</tbody><tfoot>${totals}</tfoot></table>`;
             const blankRows = Array.from({ length: 14 }, () => `<tr>${'<td>&nbsp;</td>'.repeat(headings.length)}</tr>`).join('');

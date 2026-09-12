@@ -32,6 +32,11 @@ function editorRow(array $overrides = []): array
     ], $overrides);
 }
 
+function orderSheetPortions(int $plate = 0, int $half = 0, int $full = 0): array
+{
+    return compact('plate', 'half', 'full');
+}
+
 it('routes the order sheet to the replacement editor', function () {
     $this->get(route('order-sheet.index'))
         ->assertOk()
@@ -102,12 +107,12 @@ it('saves repeatedly and replaces the previous sheet state accurately', function
         'customer_id' => $this->customer->id,
         'customer_name' => $this->customer->name,
         'location' => 'West Bay',
-        'quantities' => [$column->id => 2],
+        'quantities' => [$column->id => orderSheetPortions(2)],
     ]);
     $page = Volt::test('order-sheet-v2');
 
     $page->call('saveSheet', now()->toDateString(), [$row], [])->assertHasNoErrors();
-    $row['quantities'][$column->id] = 5;
+    $row['quantities'][$column->id] = orderSheetPortions(5);
     $row['remarks'] = 'Second save';
     $page->call('saveSheet', now()->toDateString(), [$row], [])->assertHasNoErrors();
 
@@ -115,6 +120,80 @@ it('saves repeatedly and replaces the previous sheet state accurately', function
     expect($sheet->entries)->toHaveCount(1)
         ->and($sheet->entries->first()->remarks)->toBe('Second save')
         ->and($sheet->entries->first()->quantities()->value('quantity'))->toBe(5);
+});
+
+it('saves, prints, and publishes plate, half portion, and full portion quantities separately', function () {
+    $item = MenuItem::factory()->create(['name' => 'Portion Main']);
+    $menu = DailyDishMenu::create([
+        'branch_id' => 1,
+        'service_date' => now()->toDateString(),
+        'status' => 'published',
+    ]);
+    $column = $menu->items()->create([
+        'menu_item_id' => $item->id,
+        'role' => 'main',
+        'sort_order' => 1,
+    ]);
+    $row = editorRow([
+        'customer_id' => $this->customer->id,
+        'customer_name' => $this->customer->name,
+        'quantities' => [$column->id => orderSheetPortions(2, 3, 4)],
+    ]);
+
+    Volt::test('order-sheet-v2')
+        ->call('saveSheet', now()->toDateString(), [$row], [])
+        ->assertHasNoErrors()
+        ->call('publishSheet', now()->toDateString(), [$row], [])
+        ->assertHasNoErrors();
+
+    $entry = OrderSheet::firstOrFail()->entries()->firstOrFail();
+    expect($entry->quantities()->pluck('quantity', 'portion_type')->all())
+        ->toMatchArray(['plate' => 2, 'half' => 3, 'full' => 4]);
+
+    $order = Order::whereKey($entry->order_id)->with('items')->firstOrFail();
+    expect($order->items)->toHaveCount(3)
+        ->and($order->items->firstWhere('quantity', '3.000')->description_snapshot)->toContain('(Half Portion)')
+        ->and($order->items->firstWhere('quantity', '4.000')->description_snapshot)->toContain('(Full Portion)');
+
+    $this->get(route('order-sheet.print.by-item'))
+        ->assertOk()
+        ->assertSee('Half Portion')
+        ->assertSee('Full Portion')
+        ->assertViewHas('dishTotals', fn (array $totals) => $totals[$column->id]['portions'] === [
+            'plate' => 2,
+            'half' => 3,
+            'full' => 4,
+        ]);
+});
+
+it('recognizes portion labels from online daily dish orders', function () {
+    $item = MenuItem::factory()->create(['name' => 'Online Portion Main']);
+    $menu = DailyDishMenu::create([
+        'branch_id' => 1,
+        'service_date' => now()->toDateString(),
+        'status' => 'published',
+    ]);
+    $column = $menu->items()->create([
+        'menu_item_id' => $item->id,
+        'role' => 'main',
+        'sort_order' => 1,
+    ]);
+    $order = Order::factory()->dailyDish()->create(['customer_id' => $this->customer->id]);
+    foreach ([['Plate', 1], ['Half Portion', 2], ['Full Portion', 3]] as [$label, $quantity]) {
+        $order->items()->create([
+            'menu_item_id' => $item->id,
+            'description_snapshot' => "Daily Dish ({$label}) - {$item->name}",
+            'quantity' => $quantity,
+            'unit_price' => 0,
+            'line_total' => 0,
+            'status' => 'Pending',
+        ]);
+    }
+
+    $payload = app(\App\Services\OrderSheet\OrderSheetEditorService::class)->snapshot(now()->toDateString());
+    $row = collect($payload['rows'])->firstWhere('order_id', $order->id);
+
+    expect($row['quantities'][$column->id])->toBe(orderSheetPortions(1, 2, 3));
 });
 
 it('automatically keeps the subscription appetizer equal to selected main dishes', function () {
@@ -148,10 +227,10 @@ it('automatically keeps the subscription appetizer equal to selected main dishes
         'customer_id' => $this->customer->id,
         'customer_name' => $this->customer->name,
         'quantities' => [
-            $mainColumns[0]->id => 2,
-            $mainColumns[1]->id => 3,
-            $mainColumns[2]->id => 1,
-            $saladColumn->id => 8,
+            $mainColumns[0]->id => orderSheetPortions(2),
+            $mainColumns[1]->id => orderSheetPortions(3),
+            $mainColumns[2]->id => orderSheetPortions(1),
+            $saladColumn->id => orderSheetPortions(8),
         ],
         'extras' => [['menu_item_id' => $appetizer->id, 'name' => $appetizer->name, 'quantity' => 99]],
     ]);
@@ -168,9 +247,9 @@ it('automatically keeps the subscription appetizer equal to selected main dishes
         ->menu_item_id->toBe($appetizer->id)
         ->quantity->toBe(6);
 
-    $row['quantities'][$mainColumns[0]->id] = 1;
-    $row['quantities'][$mainColumns[1]->id] = 0;
-    $row['quantities'][$mainColumns[2]->id] = 2;
+    $row['quantities'][$mainColumns[0]->id] = orderSheetPortions(1);
+    $row['quantities'][$mainColumns[1]->id] = orderSheetPortions();
+    $row['quantities'][$mainColumns[2]->id] = orderSheetPortions(2);
     $page->call('saveSheet', now()->toDateString(), [$row], [])->assertHasNoErrors();
     expect(OrderSheet::firstOrFail()->entries()->firstOrFail()->extras()->firstOrFail()->quantity)->toBe(3);
 });
@@ -195,7 +274,7 @@ it('rejects a subscribed main selection when the configured appetizer is unavail
     $row = editorRow([
         'customer_id' => $this->customer->id,
         'customer_name' => $this->customer->name,
-        'quantities' => [$column->id => 1],
+        'quantities' => [$column->id => orderSheetPortions(1)],
     ]);
 
     Volt::test('order-sheet-v2')
@@ -298,11 +377,11 @@ it('rejects editor data actions for users outside the order sheet roles', functi
 it('rejects invalid quantities before replacing saved data', function () {
     $sheet = OrderSheet::create(['sheet_date' => now()->toDateString()]);
     $sheet->entries()->create(['customer_name' => 'Keep me', 'remarks' => 'Saved']);
-    $row = editorRow(['customer_name' => 'Invalid', 'quantities' => [999 => -1]]);
+    $row = editorRow(['customer_name' => 'Invalid', 'quantities' => [999 => orderSheetPortions(-1)]]);
 
     Volt::test('order-sheet-v2')
         ->call('saveSheet', now()->toDateString(), [$row], [])
-        ->assertHasErrors(['rows.0.quantities.999']);
+        ->assertHasErrors(['rows.0.quantities.999.plate']);
 
     expect($sheet->entries()->first()->customer_name)->toBe('Keep me');
 });
