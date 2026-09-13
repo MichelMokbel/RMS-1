@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\Accounting\AccountingAuditLogService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class OrderLabelPrinterProfileService
@@ -23,7 +24,7 @@ class OrderLabelPrinterProfileService
         $this->assertCanManage($actor);
         $data = Validator::make($input, [
             'branch_id' => ['required', 'integer', 'min:1'],
-            'terminal_id' => ['required', 'integer', 'min:1'],
+            'terminal_id' => ['nullable', 'integer', 'min:1'],
             'code' => ['required', 'string', 'max:40', 'regex:/^[A-Z0-9_-]+$/'],
             'name' => ['required', 'string', 'max:100'],
             'department' => ['required', 'string', 'in:kitchen,pastry,packing'],
@@ -52,16 +53,23 @@ class OrderLabelPrinterProfileService
         $companyId = (int) (($branch->company_id ?? null) ?: AccountingCompany::query()->where('is_default', true)->value('id'));
         abort_unless($companyId > 0, 422, __('Configure a default company before adding printers.'));
 
-        $terminal = PosTerminal::query()->whereKey($data['terminal_id'])->where('active', true)->first();
-        abort_unless($terminal && (int) $terminal->branch_id === (int) $data['branch_id'], 422, __('Choose an active terminal from the same branch.'));
+        $terminal = ! empty($data['terminal_id'])
+            ? PosTerminal::query()->whereKey($data['terminal_id'])->where('active', true)->first()
+            : null;
+        if (! empty($data['terminal_id'])) {
+            abort_unless($terminal && (int) $terminal->branch_id === (int) $data['branch_id'], 422, __('Choose an active print device from the same branch.'));
+        }
 
-        return DB::transaction(function () use ($profile, $data, $expectedRevision, $actor, $companyId): OrderLabelPrinterProfile {
+        return DB::transaction(function () use ($profile, $data, $expectedRevision, $actor, $companyId, $terminal): OrderLabelPrinterProfile {
             $locked = $profile?->exists
                 ? OrderLabelPrinterProfile::query()->lockForUpdate()->findOrFail($profile->id)
                 : null;
             if ($locked && (int) $locked->revision !== $expectedRevision) {
                 throw ValidationException::withMessages(['revision' => __('This printer profile changed in another session. Refresh and try again.')]);
             }
+
+            $terminal ??= $this->provisionPrintTerminal((int) $data['branch_id'], (string) $data['name']);
+            $data['terminal_id'] = (int) $terminal->id;
 
             $before = $locked?->only(array_keys($data)) ?? [];
             $criticalFields = [
@@ -187,5 +195,38 @@ class OrderLabelPrinterProfileService
     private function assertCanManage(User $actor): void
     {
         abort_unless($actor->hasRole('admin') && $actor->can('order-label-printers.manage'), 403);
+    }
+
+    private function provisionPrintTerminal(int $branchId, string $profileName): PosTerminal
+    {
+        $usedCodes = PosTerminal::query()
+            ->where('branch_id', $branchId)
+            ->lockForUpdate()
+            ->pluck('code')
+            ->map(fn ($code): string => (string) $code)
+            ->all();
+
+        $code = null;
+        for ($number = 99; $number >= 1; $number--) {
+            $candidate = sprintf('T%02d', $number);
+            if (! in_array($candidate, $usedCodes, true)) {
+                $code = $candidate;
+                break;
+            }
+        }
+
+        if ($code === null) {
+            throw ValidationException::withMessages([
+                'terminal_id' => __('No print device code is available for this branch.'),
+            ]);
+        }
+
+        return PosTerminal::query()->create([
+            'branch_id' => $branchId,
+            'code' => $code,
+            'name' => Str::limit(__('Label agent: :name', ['name' => $profileName]), 80, ''),
+            'device_id' => (string) Str::uuid(),
+            'active' => true,
+        ]);
     }
 }

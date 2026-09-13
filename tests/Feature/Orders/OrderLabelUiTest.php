@@ -25,7 +25,8 @@ it('lets administrators configure printers and open the label queue', function (
         ->get('/settings/order-label-printers')
         ->assertOk()
         ->assertSee('Order Label Printers')
-        ->assertSee('Profiles remain inactive');
+        ->assertSee('download Windows setup on the printer PC')
+        ->assertDontSee('Choose terminal');
 
     $this->actingAs($admin)
         ->get('/order-labels')

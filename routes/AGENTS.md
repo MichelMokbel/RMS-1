@@ -26,7 +26,7 @@ This area declares browser, internal API, public website, customer portal, POS, 
 | Public Company Food | Independent project slug and edit token flow, intentionally unthrottled in current routes. |
 | POS setup and login | Credentialed controller actions outside the operational token group. |
 | POS terminal status | Sanctum authentication without the nested `pos.token` middleware. |
-| POS operational APIs | Sanctum plus `pos.token` for bootstrap, sequences, sync, and printing. |
+| POS operational APIs | Sanctum plus `pos.token`; normal POS operations require `pos:*`, while label agent stream, pull, and acknowledgement accept the narrower `pos.print` ability with the same device and branch checks. |
 | HR | `auth`, `active`, module permission, then action permissions and service access checks. |
 
 ## Conventions

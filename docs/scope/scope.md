@@ -452,9 +452,9 @@ Give kitchen workers a branch scoped daily preparation total that does not expos
 
 Add administrator managed printer profiles and price free order labels using the existing POS print delivery queue. RMS creates a fixed label snapshot and an outbound local agent sends it to an allowlisted operating system printer queue. The first release supports manual one order and one service date batch printing, one label per order by default, bounded copy counts, visible queue health, and auditable explicit reprints. Printer failure cannot block an order or financial workflow.
 
-**Done when:** each worker role can see only its assigned branch and purpose built screen; kitchen totals include every non cancelled scheduled order without requiring state work; pastry images fill the available display without cropping or pixelating; no worker screen, export, print, or direct action leaks prices or unauthorized branches; an authorized operator can print and reprint correctly sized labels through either verified physical printer; queue retry cannot duplicate an acknowledged label; every profile starts inactive and cannot activate until its model, connection, label stock, dimensions, driver, local terminal, and physical sample are verified.
+**Done when:** each worker role can see only its assigned branch and purpose built screen; kitchen totals include every non cancelled scheduled order without requiring state work; pastry images fill the available display without cropping or pixelating; no worker screen, export, print, or direct action leaks prices or unauthorized branches; an authorized operator can print and reprint correctly sized labels through either verified physical printer; queue retry cannot duplicate an acknowledged label; every profile starts inactive and cannot activate until its model, connection, 57 × 37 mm label stock, driver, automatically managed print device, and physical sample are verified.
 
-**Spec:** [0013 production operations displays and labels](../specs/0013-production-operations-displays-and-labels/index.md). The screens, server queue, RMS controls, and generic local agent are implemented. Physical model, media, connection, operating system queue, and host details remain required to configure and verify both printers.
+**Spec:** [0013 production operations displays and labels](../specs/0013-production-operations-displays-and-labels/index.md). The screens, server queue, RMS controls, generic local agent, and RMS-generated Windows setup are implemented. The user must still install each official printer driver, enter its exact Windows queue name, run the generated setup on the USB-connected PC, and verify a physical 57 × 37 mm sample from both printers.
 
 * [x] Design it (spec): `/architect production operations displays and order labels`
 * [ ] Build it: `/develop production operations displays and order labels`
@@ -464,6 +464,7 @@ Add administrator managed printer profiles and price free order labels using the
   * [x] Add printer profiles, label snapshots, preview, settings, audit, queue history, and inactive activation gate (AC-7, AC-8, AC-9, AC-12, AC-13).
   * [x] Extend the existing queue for server originated PDF labels, manual and batch actions, retries, and explicit reprints (AC-8, AC-9, AC-10, AC-13).
   * [x] Add the cross platform local label agent with queue allowlisting, PDF/media validation, sanitized logs, and durable deduplication (AC-10, AC-11).
+  * [x] Add RMS-generated Windows setup, automatic print-device identity, print-only credentials, a native PowerShell agent, protected configuration, and startup registration (AC-7, AC-10, AC-11, AC-13).
   * [ ] Configure the exact drivers, queue names, host service, and media profiles, then physically verify both confirmed printers (AC-10, AC-11).
 * [ ] Verify it: `/check verify production operations displays and order labels`
 * [x] Test it: `/test production operations displays and order labels`

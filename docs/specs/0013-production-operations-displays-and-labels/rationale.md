@@ -6,7 +6,7 @@ The current kitchen page combines preparation totals, individual customer orders
 
 The current pastry page combines management and worker use. It displays order totals to pastry users, exposes status controls without an authorization check inside the action, and builds its list without applying the user's allowed branch scope unless the user voluntarily chooses a branch filter. Its image drawer is useful for management but too small for a production screen.
 
-The current POS print service already provides terminal identity, branch alignment, queueing, claims, at least once delivery, acknowledgements, bounded retries, heartbeat, and failure visibility. Reimplementing these properties for labels would introduce two competing print systems. The missing parts are server originated jobs, label profiles and snapshots, a PDF label document type, and a local printer adapter.
+The current POS print service already provides terminal identity, branch alignment, queueing, claims, at least once delivery, acknowledgements, bounded retries, heartbeat, and failure visibility. Reimplementing these properties for labels would introduce two competing print systems. The first local adapter proved the protocol but required Python, manual JSON, a manually created POS terminal, user credentials, and a copied token. That setup is unsuitable for a restaurant operator and caused the first physical test to stall before the agent connected.
 
 Cloud hosted RMS code cannot safely or reliably open direct connections to USB or private LAN printers. Printing must be completed by an outbound local process that can reach both RMS and the operating system printer queues.
 
@@ -63,6 +63,8 @@ This creates a new application and print queue dedicated to production operation
 Option 2 fixes the current authorization problems and improves production usability without redesigning orders, invoices, fulfilment, or inventory. It respects the current one person operation by making both worker views read only and by using manual label printing first.
 
 Extending the existing print queue is smaller and safer than a second delivery system. Rendering PDF through an official operating system driver avoids hardcoding one vendor language, while the printer profile holds the media facts needed to produce a label that actually fits.
+
+Keep the proven queue and replace only the workstation provisioning. Windows already includes PowerShell, so an authenticated RMS download can install the agent without adding Bash, WSL, Git, or a system Python runtime. A generated least privilege identity avoids storing an administrator password. A pinned portable PDF renderer provides a deterministic unattended print command while its checksum prevents a substituted download.
 
 ## Current implementation evidence
 

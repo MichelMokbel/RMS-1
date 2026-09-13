@@ -17,7 +17,7 @@ This area owns POS bootstrap, shifts, checkout, offline synchronization, numberi
 
 ## Conventions
 
-- POS APIs require Sanctum authentication plus `pos.token`; preserve token abilities and middleware checks.
+- POS APIs require Sanctum authentication plus `pos.token`; preserve token abilities and middleware checks. Print polling and acknowledgement also accept the narrower `pos.print` ability, while normal POS tokens retain access through `pos:*`.
 - Verify user, token, device, terminal, active shift, and branch alignment before accepting a mutation.
 - Use the established client event UUID or idempotency key so an exact retry returns the prior result without duplicating effects.
 - Wrap checkout and sync mutations in transactions and lock shared sequence, shift, table, sale, and sync-event rows in the established order.
@@ -31,6 +31,7 @@ This area owns POS bootstrap, shifts, checkout, offline synchronization, numberi
 - A successful retry must not duplicate payments, stock movements, orders, journal entries, sequence values, or print jobs.
 - Print-stream pruning is scheduled hourly in `bootstrap/app.php`.
 - The local order-label agent accepts only `order_label_pdf`, validates the PDF and media bounds, maps only locally allowlisted queue names, and persists job deduplication before OS submission.
+- The RMS-generated Windows label agent uses a dedicated active user with only `pos.login`, one branch, and a device-bound token limited to `pos.print`. That token must remain forbidden from bootstrap, sync, checkout, and every other POS mutation.
 - Inspect the POS section of `routes/api.php`, `app/Http/Middleware/EnsurePosToken.php`, and `tests/Feature/POS/` before changing authentication or protocol behavior.
 
 ## Related business workflows

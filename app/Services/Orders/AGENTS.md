@@ -17,7 +17,8 @@ This area owns ordinary orders, daily dish orders, subscription generation, kitc
 | `SubscriptionOrderGenerationService.php` | Dated subscription order generation and run logs. |
 | `KitchenPreparationQueryService.php` | Branch scoped, read only preparation totals for all non cancelled scheduled orders. |
 | `OrderLabelService.php`, `OrderLabelPdfRenderer.php` | Immutable price free order snapshots, fixed size PDF rendering, queueing, reprints, cancellation, and reassignment. |
-| `OrderLabelPrinterProfileService.php`, `OrderLabelPrinterTestService.php` | Audited printer configuration, test labels, verification, and activation gating. |
+| `OrderLabelPrinterProfileService.php`, `OrderLabelPrinterTestService.php` | Audited printer configuration, automatic print-device provisioning, test labels, verification, and activation gating. |
+| `OrderLabelAgentInstallerService.php` | Generates the restricted Windows workstation setup and rotates its print-only device token while the profile is inactive. |
 
 ## Conventions
 
@@ -34,5 +35,6 @@ This area owns ordinary orders, daily dish orders, subscription generation, kitc
 * Order source alone does not distinguish all daily dish paths. You can also inspect `is_daily_dish`, portion fields, subscription mappings, and user ownership.
 * Relevant suites are `tests/Feature/Orders/`, `tests/Feature/KitchenOps/`, `tests/Feature/SubscriptionGeneration/`, and `tests/Feature/CustomerPortal/`.
 * Printer profiles remain inactive until an acknowledged test created after the latest hardware configuration is verified. Hardware field changes reset verification and activation.
+* The normal Windows path is generated from the inactive RMS printer profile. It uses a dedicated branch-scoped service user and a device-bound `pos.print` token; it does not require a cashier login, manual terminal selection, Python, or Bash.
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

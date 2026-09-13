@@ -34,9 +34,11 @@ If acknowledgement is lost after the operating system accepts a job, the persist
 
 ## Printer profiles
 
-Profiles are configured in RMS Settings and begin inactive. Required fields are company, branch, name, department, assigned terminal, verified model code, operating system queue name, connection description, resolution, media type, width, height or continuous bounds, and default copies.
+Profiles are configured in RMS Settings and begin inactive. Required fields are company, branch, name, department, verified model code, operating system queue name, connection description, resolution, media type, width, height or continuous bounds, and default copies. RMS provisions a dedicated print device automatically instead of asking the administrator for a POS terminal ID.
 
-The agent has its own local queue allowlist. A server profile cannot make it print to a queue that was not approved locally. This prevents a compromised or mistaken RMS value from reaching an arbitrary device or file printer.
+The administrator downloads one generated Windows setup script from the profile. It installs a native PowerShell agent as a system startup task, stores a token limited to print endpoints and one device, and creates the local queue allowlist from the profile. It downloads the pinned portable PDF renderer from its official HTTPS origin and verifies its checksum before use. The operator does not install Python or Bash, enter credentials, copy tokens, choose terminal IDs, or edit JSON.
+
+A server profile cannot make the agent print to a queue outside the generated allowlist. Hardware changes invalidate verification and require a new setup download and physical test. Generating a replacement setup rotates the prior device token while the profile is inactive.
 
 ## Hardware adaptation
 
@@ -44,4 +46,4 @@ Brother QL 820NWB supports a 58 mm maximum printing width, 300 dpi output, USB, 
 
 The supplied BIXOLON name must be verified from the physical label. Official material was found for SLP DX220, which supports direct thermal stock up to 60 mm wide, with different printable widths and resolutions for DX220 and DX223. The build must not choose a resolution or printable width from the family name alone.
 
-Both devices should use their official operating system driver and a fixed PDF page from RMS. Manufacturer command languages remain adapter options only if driver printing proves unreliable during the physical test.
+Both devices use their official Windows driver, USB, and fixed 57 mm by 37 mm label stock. RMS renders that exact PDF page. Manufacturer command languages remain adapter options only if driver printing proves unreliable during the physical test.

@@ -32,11 +32,11 @@ Give kitchen and pastry staff dedicated read only screens that show only what th
 * **AC-4**: A pastry worker sees a read only daily list of non cancelled orders and a full screen order display with the order number, customer name, scheduled date and time, type, destination, notes, item quantities, and reference images. It contains no prices, totals, discounts, invoice data, exports, editing, cancellation, or status actions.
 * **AC-5**: Pastry images preserve their aspect ratio, scale down to fit the available viewport, do not scale above their natural dimensions, and support multiple images without cropping. Missing or unavailable images produce a clear placeholder while retaining the order details.
 * **AC-6**: Admin and manager management pages retain their existing price and workflow capabilities. Every pastry mutation, direct record view, print view, report, and export applies its own permission and branch checks instead of relying on hidden controls.
-* **AC-7**: An administrator can create an active printer profile for an owned company and branch, assign it to a registered local print terminal, select its department, OS printer queue, verified model, resolution, media mode, exact media dimensions, and default copy count, then preview a sample label before activation. Changes are revision protected and audited.
+* **AC-7**: An administrator can create a printer profile for an owned company and branch, select its department, OS printer queue, verified model, resolution, media mode, exact media dimensions, and default copy count, then preview a sample label before activation. RMS provisions the dedicated print device automatically. Changes are revision protected and audited.
 * **AC-8**: An authorized operator can print one label for one ordinary or pastry order, or print labels for the eligible orders on one service date. The default label contains the Layla Kitchen name, order number, service date and time, customer name, destination, compact item quantities, copy number, and a small machine readable order reference. It never contains a price, discount, payment method, invoice balance, or customer phone number.
 * **AC-9**: The server creates a fixed label snapshot before enqueueing. Editing the order later does not alter an already printed label. An explicit reprint creates a new numbered print attempt from the current approved snapshot and records the actor, reason, source label, printer, time, and outcome.
 * **AC-10**: Label jobs use the current at least once POS print delivery contract with a nullable server origin, a unique server job identifier, a target terminal, a printer profile, a claim token, bounded retries, and an acknowledgement. Repeated delivery of one claim cannot produce a second physical label, while an explicit authorized reprint can.
-* **AC-11**: The local print agent accepts only assigned terminal jobs and allowlisted label document types. It routes each job only to the configured local OS printer queue, rejects arbitrary paths or commands, validates payload size and media metadata, and reports printed or failed without logging customer details.
+* **AC-11**: The local print agent accepts only assigned terminal jobs and allowlisted label document types. It routes each job only to the configured local OS printer queue, rejects arbitrary paths or commands, validates payload size and media metadata, and reports printed or failed without logging customer details. An administrator downloads one generated Windows setup script from RMS. It installs the agent as a background startup task with a least privilege device token, a pinned and checksum verified PDF renderer, protected local configuration, and no Python, Bash, POS application, manual token, terminal ID, or JSON setup.
 * **AC-12**: Label printing is disabled by default until a profile has verified model, media, terminal, and successful device test evidence. Disabling a profile blocks new jobs but does not erase job history. Queued jobs can be cancelled or reassigned by an administrator without changing the underlying order.
 * **AC-13**: RMS shows printer availability, agent heartbeat, queued jobs, failures, retry count, printed time, and reprint lineage. A failed or offline printer does not block order creation, invoice creation, payment, kitchen totals, or pastry viewing.
 
@@ -62,7 +62,7 @@ Printer delivery is operationally separate from commerce. Orders and payments co
 
 | Record | Purpose | Main constraints |
 |---|---|---|
-| Existing users, roles, permissions, and branch access | Worker identity and scope | Add `kitchen.display`, `pastry.display`, `order-labels.print`, and `order-label-printers.manage`. Kitchen and pastry roles receive only their display permission by default |
+| Existing users, roles, permissions, and branch access | Worker identity, scope, and dedicated label agent identity | Add `kitchen.display`, `pastry.display`, `order-labels.print`, and `order-label-printers.manage`. Kitchen and pastry roles receive only their display permission by default. Each managed label terminal gets a non interactive user with only `pos.login`, one branch, and a token limited to print endpoints and its device ID |
 | Existing orders and order items | Kitchen source and ordinary label source | Preparation totals exclude only `Cancelled`. Reads are branch and service date scoped |
 | Existing pastry orders, items, and images | Pastry display and pastry label source | Reads are branch and service date scoped. Image access stays presigned and time limited |
 | `order_label_printer_profiles` | Audited RMS configuration for one physical printer | Company and branch foreign keys, target POS terminal, department, unique profile code, verified model code, OS queue name, DPI, fixed or continuous media, width and height in tenths of a millimetre, copies, active state, version, actor timestamps |
@@ -89,7 +89,7 @@ No label state changes the linked order. Cancelling or voiding an order does not
 |---|---|---|---|---|---|
 | Existing kitchen Volt route | GET | branch, service date | preparation totals and refresh time | `kitchen.display` plus branch access | 403, 404 |
 | `/pastry-orders/display/{branch}/{date}` | GET | branch, service date, optional selected order | scoped daily list and selected order display | `pastry.display` plus branch access | 403, 404 |
-| RMS printer settings routes | Livewire actions | profile fields and expected revision | saved profile and sample preview | `order-label-printers.manage` plus company and branch access | 403, 409, 422 |
+| RMS printer settings routes | Livewire actions | profile fields and expected revision | saved profile, sample preview, and generated Windows setup download | `order-label-printers.manage` plus company and branch access | 403, 409, 422 |
 | RMS order label action | Livewire action | source type, source ID, profile, copies, request UUID | label record and queue status | `order-labels.print` plus branch access | 403, 404, 409, 422, 503 |
 | RMS service date label action | Livewire action | source type, branch, date, profile, request UUID | eligible count and job statuses | `order-labels.print` plus branch access | 403, 409, 422, 503 |
 | Existing `/api/pos/print-jobs/stream` and pull routes | GET | terminal identity and cursor | assigned label PDF job and claim | terminal token plus branch alignment | 403, 409 |
@@ -109,6 +109,7 @@ No label state changes the linked order. Cancelling or voiding an order does not
 | Render label items | description and quantity | selected order item description and quantity snapshots ordered by sort order and ID |
 | Render page size | PDF width and height | active printer profile media dimensions. Continuous media height is calculated from content within the configured minimum and maximum |
 | Select physical printer | operating system printer queue | active printer profile queue name delivered only to its assigned terminal |
+| Provision Windows agent | device ID, least privilege token, queue allowlist, media bounds, and setup task | selected printer profile, its automatically provisioned terminal, current RMS origin, generated service user, and pinned installer template |
 | Deduplicate delivery | one physical output per claim | label UUID, POS job server UUID, job ID, and claim token stored by the local agent |
 | Record reprint | next sequence and lineage | locked latest `order_label_prints` row for profile and source, explicit reason, actor |
 | Show health | online, queued, failed, printed | terminal heartbeat, POS job status, acknowledgement, and label print timestamps |
@@ -130,11 +131,11 @@ Admins receive all four new permissions. Managers receive both display permissio
 
 The kitchen projection excludes all personal and financial fields. The pastry projection includes only the customer and fulfilment details needed to identify and prepare its order. Label actions resolve the source record by allowed branch rather than accepting a trusted company or branch from the browser.
 
-The local agent uses the existing POS terminal authentication and branch alignment. The agent never accepts shell commands, paths, URLs, or printer queue overrides from a label payload. Queue names come from an active server profile assigned to that terminal and are checked against the agent's local allowlist.
+The local agent uses the existing POS terminal authentication and branch alignment through a dedicated non interactive user. Its token carries only `pos.print` and one device ability, so it cannot call bootstrap, sync, checkout, sequence, or other POS endpoints. The agent never accepts shell commands, paths, URLs, or printer queue overrides from a label payload. Queue names come from an active server profile assigned to that terminal and are checked against the generated local allowlist.
 
 ### Configuration required
 
-No printer secret is stored in an environment file. RMS stores the profile and target terminal. The local agent requires its existing terminal identity, RMS base URL, locally allowlisted printer queue names, and an encrypted local credential or token provisioned during device registration.
+No printer secret is stored in an environment file. RMS stores the profile and target terminal. The authenticated setup download embeds a rotated device scoped token and profile configuration, stores them under the Windows system data directory with access limited to administrators and the system account, and registers the agent as a system startup task. The setup downloads SumatraPDF 3.6.1 only from its official HTTPS URL and verifies SHA256 `98b33a518d42986856d225064b0cd2d3643ecf78cbf84ab873d26cc51877a544` before installation.
 
 Before a profile can become active, the administrator must confirm the exact printer model, connection, driver, installed label stock, printable width and height, DPI, and successful sample output.
 
@@ -157,7 +158,8 @@ Before a profile can become active, the administrator must confirm the exact pri
 4. [x] Add printer profile and label print schema, services, permissions, audit, RMS configuration, preview, and feature off gate, satisfies **AC-7**, **AC-8**, **AC-9**, **AC-12**, **AC-13**.
 5. [x] Extend the existing POS print service with server origin label jobs, fixed PDF snapshots, terminal routing, explicit reprints, batch enqueue, and operational history, satisfies **AC-8**, **AC-9**, **AC-10**, **AC-13**.
 6. [x] Add the cross platform local agent label handler with local queue allowlisting, payload validation, sanitized logging, and durable claim deduplication. Exact OS commands remain local configuration, satisfies the software portion of **AC-10**, **AC-11**.
-7. [ ] Run the complete automated, browser, printer, role, branch, responsive, queue recovery, and deployment verification matrix before activating either printer profile, satisfies **AC-1** through **AC-13**.
+7. [x] Add the RMS generated Windows setup download, automatic dedicated terminal and least privilege identity provisioning, native PowerShell agent, protected configuration, verified PDF renderer installation, and startup task, satisfies **AC-7**, **AC-10**, **AC-11**, **AC-13**.
+8. [ ] Run the complete automated, browser, printer, role, branch, responsive, queue recovery, and deployment verification matrix before activating either printer profile, satisfies **AC-1** through **AC-13**.
 
 ## Migration plan
 
@@ -186,9 +188,9 @@ Before a profile can become active, the administrator must confirm the exact pri
 
 **Negative and tradeoffs**:
 
-* A small local agent must remain online inside the restaurant.
+* A small Windows background task must remain online inside the restaurant.
 * Exact printer models, drivers, connections, and label stock must be verified on the physical hardware.
-* The existing print agent must learn one new PDF label document type.
+* SumatraPDF is downloaded from its official site during Windows setup and pinned by version and checksum.
 
 **Neutral**:
 
@@ -197,5 +199,5 @@ Before a profile can become active, the administrator must confirm the exact pri
 
 ## Follow up
 
-* [ ] Confirm each physical printer model from its label, its connection method, installed media dimensions, and the operating system of the always on local agent computer.
+* [ ] Confirm each physical printer model from its label and its installed Windows queue name. Both profiles use fixed 57 mm by 37 mm media over USB on Windows.
 * [ ] Confirm the preferred BIXOLON and Brother printer for kitchen and pastry after the sample labels are compared.

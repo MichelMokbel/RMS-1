@@ -3,6 +3,7 @@
 use App\Models\OrderLabelPrinterProfile;
 use App\Models\PosTerminal;
 use App\Models\User;
+use App\Services\Orders\OrderLabelAgentInstallerService;
 use App\Services\Orders\OrderLabelPrinterProfileService;
 use App\Services\Orders\OrderLabelPrinterTestService;
 use Illuminate\Support\Facades\Auth;
@@ -20,11 +21,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $department = 'packing';
     public string $modelCode = '';
     public string $osQueueName = '';
-    public string $connectionDescription = '';
+    public string $connectionDescription = 'USB · Windows';
     public int $resolutionDpi = 300;
     public string $mediaMode = 'fixed';
-    public string $widthMm = '58';
-    public string $heightMm = '62';
+    public string $widthMm = '57';
+    public string $heightMm = '37';
     public string $minHeightMm = '50';
     public string $maxHeightMm = '120';
     public int $defaultCopies = 1;
@@ -57,17 +58,17 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->editingId = null;
         $this->expectedRevision = 0;
         $this->branchId = (int) (DB::table('branches')->where('is_active', 1)->orderBy('id')->value('id') ?? 1);
-        $this->terminalId = (int) (PosTerminal::query()->where('branch_id', $this->branchId)->where('active', true)->value('id') ?? 0);
+        $this->terminalId = 0;
         $this->code = '';
         $this->name = '';
         $this->department = 'packing';
         $this->modelCode = '';
         $this->osQueueName = '';
-        $this->connectionDescription = '';
+        $this->connectionDescription = 'USB · Windows';
         $this->resolutionDpi = 300;
         $this->mediaMode = 'fixed';
-        $this->widthMm = '58';
-        $this->heightMm = '62';
+        $this->widthMm = '57';
+        $this->heightMm = '37';
         $this->minHeightMm = '50';
         $this->maxHeightMm = '120';
         $this->defaultCopies = 1;
@@ -76,7 +77,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function updatedBranchId(): void
     {
-        $this->terminalId = (int) (PosTerminal::query()->where('branch_id', $this->branchId)->where('active', true)->value('id') ?? 0);
+        if (! $this->editingId) {
+            $this->terminalId = 0;
+        }
     }
 
     public function edit(int $id): void
@@ -108,7 +111,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $profile = $this->editingId ? OrderLabelPrinterProfile::query()->findOrFail($this->editingId) : null;
         $saved = $service->save($profile, [
             'branch_id' => $this->branchId,
-            'terminal_id' => $this->terminalId,
+            'terminal_id' => $this->terminalId ?: null,
             'code' => strtoupper(trim($this->code)),
             'name' => trim($this->name),
             'department' => $this->department,
@@ -126,6 +129,26 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->edit((int) $saved->id);
         session()->flash('status', __('Printer profile saved. Hardware changes require a new successful test.'));
+    }
+
+    public function downloadInstaller(int $id, OrderLabelAgentInstallerService $service): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $profile = OrderLabelPrinterProfile::query()->findOrFail($id);
+        $forwardedScheme = strtolower(trim(explode(',', (string) request()->header('X-Forwarded-Proto'))[0]));
+        $scheme = in_array($forwardedScheme, ['http', 'https'], true) ? $forwardedScheme : request()->getScheme();
+        $package = $service->build($profile, $this->actor(), $scheme.'://'.request()->getHttpHost());
+
+        return response()->streamDownload(
+            function () use ($package): void {
+                echo $package['contents'];
+            },
+            $package['filename'],
+            [
+                'Content-Type' => 'text/plain; charset=UTF-8',
+                'Cache-Control' => 'no-store, private',
+                'Pragma' => 'no-cache',
+            ]
+        );
     }
 
     public function sendTest(int $id, OrderLabelPrinterTestService $service): void
@@ -207,6 +230,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <div class="flex flex-wrap gap-2">
                                 <flux:button size="sm" variant="ghost" wire:click="edit({{ $profile->id }})">{{ __('Edit') }}</flux:button>
                                 <flux:button size="sm" variant="ghost" :href="route('settings.order-label-printers.preview', $profile)" target="_blank">{{ __('Preview') }}</flux:button>
+                                @if (! $profile->is_active)
+                                    <flux:button size="sm" variant="primary" wire:click="downloadInstaller({{ $profile->id }})" wire:loading.attr="disabled">{{ __('Download Windows setup') }}</flux:button>
+                                @endif
                                 <flux:button size="sm" variant="ghost" wire:click="sendTest({{ $profile->id }})" wire:loading.attr="disabled">{{ __('Send test') }}</flux:button>
                                 @if (! $profile->is_verified)
                                     <flux:button size="sm" variant="ghost" wire:click="verify({{ $profile->id }})">{{ __('Verify printed test') }}</flux:button>
@@ -233,11 +259,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </select>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm font-medium">{{ __('Print terminal') }}</label>
-                    <select wire:model="terminalId" class="min-h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 dark:border-neutral-700 dark:bg-neutral-950">
-                        <option value="0">{{ __('Choose terminal') }}</option>
-                        @foreach ($terminals->where('branch_id', $branchId) as $terminal)<option value="{{ $terminal->id }}">{{ $terminal->code }} · {{ $terminal->name }}</option>@endforeach
-                    </select>
+                    <label class="mb-1 block text-sm font-medium">{{ __('Windows print agent') }}</label>
+                    <div class="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-3 text-sm text-neutral-700 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200">
+                        @if ($terminalId && ($terminal = $terminals->firstWhere('id', $terminalId)))
+                            <span class="font-medium">{{ $terminal->code }}</span>
+                            <span class="text-neutral-500">· {{ __('Managed automatically by RMS') }}</span>
+                        @else
+                            {{ __('RMS will create the secure print device automatically when you save this profile.') }}
+                        @endif
+                    </div>
                 </div>
                 <flux:input wire:model="code" :label="__('Profile code')" placeholder="BROTHER_PACKING" />
                 <flux:input wire:model="name" :label="__('Display name')" placeholder="Packing labels" />
@@ -249,7 +279,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 <flux:input wire:model="modelCode" :label="__('Exact model code')" placeholder="QL-820NWB" />
                 <flux:input wire:model="osQueueName" :label="__('Operating system queue')" placeholder="Brother_QL_820NWB" />
-                <flux:input wire:model="connectionDescription" :label="__('Connection')" placeholder="Ethernet · packing Mac" />
+                <flux:input wire:model="connectionDescription" :label="__('Connection')" placeholder="USB · Windows" />
                 <div class="grid grid-cols-2 gap-3">
                     <div><label class="mb-1 block text-sm font-medium">{{ __('Resolution') }}</label><select wire:model="resolutionDpi" class="min-h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 dark:border-neutral-700 dark:bg-neutral-950"><option value="203">203 dpi</option><option value="300">300 dpi</option><option value="600">600 dpi</option></select></div>
                     <div><label class="mb-1 block text-sm font-medium">{{ __('Media') }}</label><select wire:model.live="mediaMode" class="min-h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 dark:border-neutral-700 dark:bg-neutral-950"><option value="fixed">{{ __('Fixed') }}</option><option value="continuous">{{ __('Continuous') }}</option></select></div>
@@ -262,7 +292,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endif
                 <flux:input wire:model="defaultCopies" type="number" min="1" max="10" :label="__('Default copies')" />
                 <flux:button type="submit" variant="primary" class="w-full" wire:loading.attr="disabled">{{ __('Save printer profile') }}</flux:button>
-                <p class="text-xs leading-relaxed text-neutral-500">{{ __('Profiles remain inactive until a test label is acknowledged, verified, and activated.') }}</p>
+                <p class="text-xs leading-relaxed text-neutral-500">{{ __('After saving, download Windows setup on the printer PC. Then send a test, verify the printed label, and activate the profile.') }}</p>
             </form>
         </div>
     </x-settings.layout>

@@ -136,3 +136,18 @@ it('rejects a terminal from another branch', function () {
         ->toThrow(\Symfony\Component\HttpKernel\Exception\HttpException::class);
     expect(OrderLabelPrinterProfile::query()->count())->toBe(0);
 });
+
+it('provisions a dedicated print device when a profile is created without a terminal', function () {
+    $fixture = profileFixture();
+    $data = profileData($fixture['terminal']);
+    $data['terminal_id'] = null;
+
+    $profile = app(OrderLabelPrinterProfileService::class)->save(null, $data, 0, $fixture['actor']);
+    $terminal = $profile->terminal()->firstOrFail();
+
+    expect($terminal->branch_id)->toBe(1)
+        ->and($terminal->code)->toBe('T99')
+        ->and($terminal->name)->toBe('Label agent: Brother labels')
+        ->and($terminal->device_id)->not->toBeNull()
+        ->and($terminal->active)->toBeTrue();
+});

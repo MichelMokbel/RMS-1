@@ -385,6 +385,9 @@ Route::prefix('pos')->group(function () {
             Route::post('sync', PosSyncController::class);
 
             Route::post('print-jobs', [PosPrintJobController::class, 'store']);
+        });
+
+        Route::middleware(['pos.token:pos.print'])->group(function () {
             Route::get('print-jobs/stream', [PosPrintJobController::class, 'stream']);
             Route::get('print-jobs/pull', [PosPrintJobController::class, 'pull']);
             Route::post('print-jobs/{job_id}/ack', [PosPrintJobController::class, 'ack'])->whereNumber('job_id');

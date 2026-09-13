@@ -2,7 +2,13 @@
 
 This outbound-only agent pulls `order_label_pdf` jobs from the existing RMS POS print queue and submits each PDF to a locally allowlisted operating-system printer queue. It does not accept commands, paths, URLs, or document types from RMS.
 
-## Provisioning
+## Windows production setup
+
+Do not use the Python files in this directory for a normal Windows printer workstation. In RMS, open **Settings → Order Label Printers**, save the printer profile, and select **Download Windows setup**. Run that generated PowerShell setup as an administrator on the Windows PC connected to the printer. RMS creates the print device and restricted credentials automatically; the setup installs the native Windows agent and starts it at boot.
+
+The Python implementation below remains only as a developer and non-Windows fallback.
+
+## Manual fallback provisioning
 
 1. Install the printer's official driver and print a test page from the operating system.
 2. Register this computer as an active RMS POS terminal with a unique `device_id`.
