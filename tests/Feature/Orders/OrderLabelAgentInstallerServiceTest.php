@@ -84,6 +84,8 @@ it('builds a configured Windows agent with a dedicated least privilege identity'
         ->and($package['contents'])->not->toContain('__AGENT_SCRIPT_BASE64__')
         ->and($package['contents'])->not->toContain('__CONFIG_BASE64__')
         ->and($package['contents'])->not->toMatch('/__[A-Z0-9_]+__/')
+        ->and($package['contents'])->toContain('Stop-ScheduledTask -TaskName $TaskName')
+        ->and(strpos($package['contents'], 'Stop-ScheduledTask'))->toBeLessThan(strpos($package['contents'], '[IO.File]::WriteAllText($ConfigPath'))
         ->and($agentScript)->toContain('/api/pos/print-jobs/pull')
         ->and($agentScript)->not->toContain('UseBasicParsing')
         ->and($agentScript)->toContain('Start-Process')

@@ -28,6 +28,20 @@ try {
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
     icacls $InstallDir /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" | Out-Null
 
+    $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($existingTask) {
+        Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+        $stopDeadline = (Get-Date).AddSeconds(15)
+        do {
+            Start-Sleep -Milliseconds 250
+            $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+        } while ($existingTask -and $existingTask.State -eq "Running" -and (Get-Date) -lt $stopDeadline)
+
+        if ($existingTask -and $existingTask.State -eq "Running") {
+            throw "The existing print agent could not be stopped. Restart Windows, then run setup again."
+        }
+    }
+
     $agentText = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("__AGENT_SCRIPT_BASE64__"))
     $configText = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("__CONFIG_BASE64__"))
     $sumatraUrl = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("__SUMATRA_URL_BASE64__"))
