@@ -85,7 +85,14 @@
                         @endforeach
                         <td class="extras">
                             @foreach ($row['extras'] as $extra)
-                                {{ $extra['name'] }} × {{ $extra['quantity'] }}<br>
+                                @php
+                                    $portionLabel = match ($extra['portion_type'] ?? 'plate') {
+                                        'half' => 'H',
+                                        'full' => 'F',
+                                        default => 'P',
+                                    };
+                                @endphp
+                                {{ $extra['name'] }} ({{ $portionLabel }}) × {{ $extra['quantity'] }}<br>
                             @endforeach
                         </td>
                         <td class="remarks">{{ $row['remarks'] ?: '' }}</td>
@@ -107,7 +114,14 @@
                     @endforeach
                     <td colspan="2">
                         @foreach ($extraTotals as $et)
-                            {{ $et['name'] }}: {{ $et['quantity'] }}&nbsp;&nbsp;
+                            @php
+                                $portionLabel = match ($et['portion_type'] ?? 'plate') {
+                                    'half' => 'H',
+                                    'full' => 'F',
+                                    default => 'P',
+                                };
+                            @endphp
+                            {{ $et['name'] }} ({{ $portionLabel }}): {{ $et['quantity'] }}&nbsp;&nbsp;
                         @endforeach
                     </td>
                 </tr>
