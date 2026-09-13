@@ -39,8 +39,10 @@ class OrderSheetPublishService
 
         // Pre-load menu item names in one query
         $menuItemNames = MenuItem::whereIn('id',
-            $sheet->entries->flatMap(fn ($e) => $e->quantities->map(fn ($q) => $q->dailyDishMenuItem?->menu_item_id)->filter()
-                ->merge($e->extras->pluck('menu_item_id'))
+            $sheet->entries->flatMap(fn ($e) => collect($e->quantities
+                ->map(fn ($q) => $q->dailyDishMenuItem?->menu_item_id)
+                ->filter()
+                ->all())->merge($e->extras->pluck('menu_item_id'))
             )->unique()->all()
         )->pluck('name', 'id')->all();
 
@@ -121,9 +123,16 @@ class OrderSheetPublishService
             if ($extra->quantity <= 0) {
                 continue;
             }
+            $portionType = in_array($extra->portion_type, ['half', 'full'], true) ? $extra->portion_type : 'plate';
+            $portionLabel = match ($portionType) {
+                'half' => 'Half Portion',
+                'full' => 'Full Portion',
+                default => null,
+            };
+            $description = $menuItemNames[$extra->menu_item_id] ?? $extra->menu_item_name;
             $items[] = [
                 'menu_item_id' => $extra->menu_item_id,
-                'description_snapshot' => $menuItemNames[$extra->menu_item_id] ?? $extra->menu_item_name,
+                'description_snapshot' => $portionLabel ? "Daily Dish ({$portionLabel}) - {$description}" : $description,
                 'quantity' => $extra->quantity,
                 'role' => 'addon',
                 'sort_order' => $sort++,
