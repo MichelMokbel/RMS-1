@@ -55,7 +55,7 @@ class OrderLabelBrowserPrintController extends Controller
             ->orderByRaw('CASE WHEN scheduled_time IS NULL THEN 1 ELSE 0 END')
             ->orderBy('scheduled_time')
             ->orderBy('id')
-            ->limit(200)
+            ->limit(300)
             ->pluck('id')
             ->all();
         $document = $labels->browserDocument(
@@ -81,6 +81,6 @@ class OrderLabelBrowserPrintController extends Controller
     {
         return response()->view('prints.order-label-browser', $document)
             ->header('Cache-Control', 'private, no-store')
-            ->header('Content-Security-Policy', "default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'self'");
+            ->header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'self'");
     }
 }

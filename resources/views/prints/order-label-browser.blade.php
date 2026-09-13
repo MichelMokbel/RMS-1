@@ -10,14 +10,12 @@
         html, body { width: {{ $page_width_mm }}mm; margin: 0; padding: 0; color: #000; background: #fff; font-family: Arial, sans-serif; }
         .label { page: order-label-landscape; position: relative; width: {{ $page_width_mm }}mm; height: {{ $page_height_mm }}mm; padding: 1.5mm; break-after: page; page-break-after: always; overflow: hidden; }
         .label:last-of-type { break-after: auto; page-break-after: auto; }
-        .heading { position: relative; min-height: 10mm; padding-right: 11mm; border-bottom: .3mm solid #000; }
+        .heading { min-height: 10mm; border-bottom: .3mm solid #000; }
         .brand { font-size: 5.5pt; font-weight: 700; line-height: 1; text-transform: uppercase; letter-spacing: .35pt; }
         .order { margin-top: .4mm; overflow: hidden; font-size: 12pt; font-weight: 800; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
         .service { margin-top: .7mm; font-size: 6.5pt; font-weight: 700; line-height: 1; }
-        .qr { position: absolute; top: 0; right: 0; width: 9.5mm; height: 9.5mm; }
         .customer { margin-top: .7mm; overflow: hidden; font-size: 9pt; font-weight: 800; line-height: 1.05; text-overflow: ellipsis; white-space: nowrap; }
-        .destination { margin-top: .35mm; max-height: 4mm; overflow: hidden; font-size: 6.5pt; line-height: 1.05; }
-        .items { max-height: 14mm; margin: .7mm 0 0; padding: 0; overflow: hidden; list-style: none; }
+        .items { max-height: 18mm; margin: .7mm 0 0; padding: 0; overflow: hidden; list-style: none; }
         .items li { overflow: hidden; border-top: .15mm solid #888; padding: .35mm 0; font-size: 6.7pt; font-weight: 700; line-height: 1.05; text-overflow: ellipsis; white-space: nowrap; }
         .qty { display: inline-block; min-width: 5.5mm; font-size: 7.4pt; font-weight: 800; }
         .copy { position: absolute; right: 12mm; bottom: .4mm; font-size: 5.5pt; font-weight: 700; }
@@ -37,10 +35,8 @@
                     {{ $label['snapshot']['service_date'] ?: __('No date') }}
                     @if ($label['snapshot']['service_time']) · {{ $label['snapshot']['service_time'] }} @endif
                 </div>
-                <img class="qr" src="{{ $label['qr_data_uri'] }}" alt="">
             </div>
             <div class="customer">{{ $label['snapshot']['customer_name'] }}</div>
-            <div class="destination">{{ $label['snapshot']['destination'] }}</div>
             <ul class="items">
                 @foreach ($label['snapshot']['items'] as $item)
                     <li><span class="qty">{{ $item['quantity'] }}×</span>{{ $item['description'] }}</li>

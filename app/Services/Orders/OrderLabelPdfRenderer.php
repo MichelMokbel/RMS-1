@@ -3,10 +3,6 @@
 namespace App\Services\Orders;
 
 use App\Models\OrderLabelPrinterProfile;
-use BaconQrCode\Renderer\Image\SvgImageBackEnd;
-use BaconQrCode\Renderer\ImageRenderer;
-use BaconQrCode\Renderer\RendererStyle\RendererStyle;
-use BaconQrCode\Writer;
 use Barryvdh\DomPDF\Facade\Pdf;
 
 class OrderLabelPdfRenderer
@@ -19,21 +15,12 @@ class OrderLabelPdfRenderer
             'snapshot' => $snapshot,
             'copies' => $copies,
             'sequence' => $sequence,
-            'qrDataUri' => $this->qrDataUri($snapshot),
             'pageWidthMm' => $width / 10,
             'pageHeightMm' => $height / 10,
         ]);
         $pdf->setPaper([0, 0, $this->points($width), $this->points($height)]);
 
         return $pdf->output();
-    }
-
-    public function qrDataUri(array $snapshot): string
-    {
-        $qrValue = strtoupper((string) $snapshot['source_type']).':'.(int) $snapshot['source_id'];
-        $writer = new Writer(new ImageRenderer(new RendererStyle(120, 1), new SvgImageBackEnd));
-
-        return 'data:image/svg+xml;base64,'.base64_encode($writer->writeString($qrValue));
     }
 
     public function heightTenthsMm(array $snapshot, OrderLabelPrinterProfile $profile): int
@@ -62,9 +49,8 @@ class OrderLabelPdfRenderer
         $itemLines = collect($snapshot['items'] ?? [])->sum(function (array $item): int {
             return max(1, (int) ceil(mb_strlen((string) ($item['description'] ?? '')) / 28));
         });
-        $destinationLines = max(1, (int) ceil(mb_strlen((string) ($snapshot['destination'] ?? '')) / 32));
 
-        return 360 + ($itemLines * 52) + ($destinationLines * 38);
+        return 360 + ($itemLines * 52);
     }
 
     private function points(int $tenthsMm): float

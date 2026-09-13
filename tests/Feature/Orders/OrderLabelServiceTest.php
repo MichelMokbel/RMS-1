@@ -64,7 +64,9 @@ function labelFixture(): array
     ]);
     $actor = User::factory()->create(['status' => 'active']);
     $actor->assignRole('admin');
-    $menuItem = MenuItem::factory()->create();
+    $menuItem = MenuItem::factory()->create([
+        'name' => 'Chicken Machboos',
+    ]);
     $order = Order::factory()->create([
         'branch_id' => 1,
         'status' => 'Draft',
@@ -78,13 +80,13 @@ function labelFixture(): array
     OrderItem::factory()->create([
         'order_id' => $order->id,
         'menu_item_id' => $menuItem->id,
-        'description_snapshot' => 'Chicken Machboos',
+        'description_snapshot' => 'Daily Dish (Main) - '.$menuItem->code.' Chicken Machboos',
         'quantity' => 2,
         'unit_price' => 388.5,
         'line_total' => 777,
     ]);
 
-    return compact('company', 'terminal', 'profile', 'actor', 'order');
+    return compact('company', 'terminal', 'profile', 'actor', 'menuItem', 'order');
 }
 
 it('renders and queues an immutable price-free server label idempotently', function () {
@@ -107,6 +109,7 @@ it('renders and queues an immutable price-free server label idempotently', funct
             'customer_name' => 'Label Customer',
             'destination' => 'West Bay, Building 10',
         ])
+        ->and($label->snapshot['items'][0]['description'])->toBe('Chicken Machboos')
         ->and(json_encode($label->snapshot))->not->toContain('66752347')
         ->and(json_encode($label->snapshot))->not->toContain('777');
 
@@ -262,9 +265,13 @@ it('opens an inactive label format in the local browser print dialog without que
         ->assertSee('window.print()', false)
         ->assertSee('class="heading"', false)
         ->assertDontSee('class="footer"', false)
+        ->assertDontSee('class="qr"', false)
+        ->assertDontSee('class="destination"', false)
         ->assertSee('Label Customer')
-        ->assertSee('West Bay, Building 10')
+        ->assertDontSee('West Bay, Building 10')
         ->assertSee('Chicken Machboos')
+        ->assertDontSee('Daily Dish (Main)')
+        ->assertDontSee($fixture['menuItem']->code)
         ->assertDontSee('66752347')
         ->assertDontSee('QAR')
         ->assertDontSee('388.5');

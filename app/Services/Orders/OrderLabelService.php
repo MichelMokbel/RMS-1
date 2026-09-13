@@ -71,7 +71,6 @@ class OrderLabelService
                 'snapshot' => $snapshot,
                 'copies' => $copies,
                 'sequence' => 1,
-                'qr_data_uri' => $this->renderer->qrDataUri($snapshot),
             ];
         })->all();
 
@@ -324,10 +323,16 @@ class OrderLabelService
     {
         return match ($sourceType) {
             'order' => Order::query()
-                ->with(['items' => fn ($query) => $query->orderBy('sort_order')->orderBy('id')])
+                ->with(['items' => fn ($query) => $query
+                    ->with('menuItem:id,code,name')
+                    ->orderBy('sort_order')
+                    ->orderBy('id')])
                 ->findOrFail($sourceId),
             'pastry_order' => PastryOrder::query()
-                ->with(['items' => fn ($query) => $query->orderBy('sort_order')->orderBy('id')])
+                ->with(['items' => fn ($query) => $query
+                    ->with('menuItem:id,code,name')
+                    ->orderBy('sort_order')
+                    ->orderBy('id')])
                 ->findOrFail($sourceId),
             default => throw ValidationException::withMessages(['source_type' => __('Unsupported order label source.')]),
         };
@@ -349,9 +354,28 @@ class OrderLabelService
             'destination' => (string) ($source->delivery_address_snapshot ?: __('Pickup')),
             'items' => $source->items->map(fn ($item): array => [
                 'quantity' => $this->formatQuantity($item->quantity),
-                'description' => Str::limit(trim((string) $item->description_snapshot), 90, '…'),
+                'description' => $this->labelItemName($item),
             ])->values()->all(),
         ];
+    }
+
+    private function labelItemName(Model $item): string
+    {
+        $snapshot = trim((string) $item->description_snapshot);
+        $name = trim((string) preg_replace('/^Daily\s+Dish\s*(?:\([^)]*\))?\s*-\s*/iu', '', $snapshot));
+        $menuCode = trim((string) $item->menuItem?->code);
+
+        if ($menuCode !== '') {
+            $name = trim((string) preg_replace('/^'.preg_quote($menuCode, '/').'\s+/iu', '', $name));
+        } else {
+            $name = trim((string) preg_replace('/^MI-\d+\s+/iu', '', $name));
+        }
+
+        if ($name === '') {
+            $name = trim((string) ($item->menuItem?->name ?: $snapshot));
+        }
+
+        return Str::limit($name, 90, '…');
     }
 
     private function assertUsableProfile(OrderLabelPrinterProfile $profile, int $branchId): void
