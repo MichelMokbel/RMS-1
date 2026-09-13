@@ -75,12 +75,16 @@ class OrderLabelService
             ];
         })->all();
 
+        $width = (int) $profile->width_tenths_mm;
         $height = collect($labels)->max(fn (array $label): int => $this->renderer->heightTenthsMm($label['snapshot'], $profile));
+        if ((string) $profile->media_mode === 'fixed' && $height > $width) {
+            [$width, $height] = [$height, $width];
+        }
 
         return [
             'profile' => $profile,
             'labels' => $labels,
-            'page_width_mm' => (int) $profile->width_tenths_mm / 10,
+            'page_width_mm' => $width / 10,
             'page_height_mm' => $height / 10,
         ];
     }

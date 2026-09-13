@@ -244,8 +244,8 @@ it('cancels and reassigns only queued labels without changing the order', functi
 it('opens an inactive label format in the local browser print dialog without queueing a job', function () {
     $fixture = labelFixture();
     $fixture['profile']->update([
-        'width_tenths_mm' => 570,
-        'height_tenths_mm' => 370,
+        'width_tenths_mm' => 370,
+        'height_tenths_mm' => 570,
         'is_verified' => false,
         'is_active' => false,
     ]);
@@ -258,8 +258,10 @@ it('opens an inactive label format in the local browser print dialog without que
     ]));
 
     $response->assertOk()
-        ->assertSee('@page { margin: 0; size: 57mm 37mm; }', false)
+        ->assertSee('@page order-label-landscape { margin: 0; size: 57mm 37mm; }', false)
         ->assertSee('window.print()', false)
+        ->assertSee('class="heading"', false)
+        ->assertDontSee('class="footer"', false)
         ->assertSee('Label Customer')
         ->assertSee('West Bay, Building 10')
         ->assertSee('Chicken Machboos')
@@ -318,7 +320,7 @@ it('prints the filtered service date as one local browser batch without queue st
     $response->assertOk()
         ->assertSee($fixture['order']->order_number)
         ->assertSee($second->order_number)
-        ->assertSee('@page { margin: 0; size: 57mm 37mm; }', false)
+        ->assertSee('@page order-label-landscape { margin: 0; size: 57mm 37mm; }', false)
         ->assertSee('window.print()', false);
     expect(OrderLabelPrint::query()->count())->toBe(0)
         ->and(PosPrintJob::query()->count())->toBe(0);
