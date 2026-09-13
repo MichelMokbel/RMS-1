@@ -1056,6 +1056,12 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|pastry-or
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|order-labels.print'])->group(function () {
     Volt::route('order-labels', 'order-labels.index')->name('order-labels.index');
+    Route::get('order-labels/print/batch', [\App\Http\Controllers\OrderLabelBrowserPrintController::class, 'batch'])
+        ->name('order-labels.print.batch');
+    Route::get('order-labels/print/{sourceType}/{sourceId}', [\App\Http\Controllers\OrderLabelBrowserPrintController::class, 'show'])
+        ->whereIn('sourceType', ['order', 'pastry_order'])
+        ->whereNumber('sourceId')
+        ->name('order-labels.print.show');
 });
 
 Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|cashier|operations.access'])->group(function () {

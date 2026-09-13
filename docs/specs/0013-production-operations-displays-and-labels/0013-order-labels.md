@@ -2,9 +2,11 @@
 
 ## Decision
 
-Extend the current POS print delivery queue rather than creating another retry and acknowledgement system. RMS renders a fixed size PDF label from a protected order snapshot. A local authenticated agent pulls the job and sends it to an allowlisted operating system printer queue.
+Use direct browser printing for the normal manual workflow. RMS renders a fixed size, price free print page from the current protected order projection. The authenticated operator opens it from the order labels page and the browser on that device launches the operating system print dialog.
 
-The cloud server never connects directly to a printer on the restaurant network. The printer profile names the assigned terminal and logical queue, while the local agent maps that logical queue to an installed operating system printer.
+The cloud server does not need network access to the printer. The printer is selected locally in the browser print dialog, so RMS may be hosted on a VM while the operator prints from any authorized phone, tablet, or computer with access to a local printer. A terminal, device token, activation, agent heartbeat, or background task is not required for this manual path.
+
+The existing POS queue and local agent remain available only as an optional unattended printing path. They must not gate or complicate manual printing.
 
 ## Default label
 
@@ -22,19 +24,19 @@ Prices, discounts, invoice state, payment method, and phone number are excluded.
 
 ## Print actions
 
-The first release supports one order print and one date batch print. It does not print automatically on payment, invoice, or order creation. This avoids duplicate or premature labels while the operation is run by one person.
+The first release supports one order print and one date batch print. Each click opens a new fixed size page and invokes the normal browser print dialog. It does not print automatically on payment, invoice, or order creation.
 
-The default is one label per order. The operator may choose a small bounded copy count for orders split across packages. Each physical copy carries its copy number. A batch skips cancelled orders and shows which jobs were already printed, queued, failed, or deliberately reprinted.
+The default is one label per order. The operator may choose a small bounded copy count for orders split across packages. Each physical copy carries its copy number. A batch skips cancelled orders. RMS does not claim a browser label was physically printed because the operator can cancel the operating system dialog.
 
-## Reliability
+## Browser print boundary
 
-The label record and POS print job are created in one database transaction. Rendering finishes before enqueue. A unique server UUID makes a retried RMS action return the same job. The agent stores the job ID and claim token before printing, acknowledges after the operating system accepts the job, and never prints the same claim twice.
+The print route rechecks the actor's permission, source branch, label format branch, supported source type, cancellation state, dimensions, and bounded copy count. The projection excludes prices, discounts, payment data, invoice data, and phone numbers. The response creates no label record, print job, order mutation, or finance mutation.
 
-If acknowledgement is lost after the operating system accepts a job, the persisted local claim prevents a duplicate on redelivery. An explicit reprint uses a new label sequence and requires a reason. Failure retries are bounded, visible, and independent of order and finance state.
+Browser printing is deliberately user controlled. Reopening a label is simply another print action, and physical output remains the operator's responsibility. If silent printing is enabled later, the existing queue retains its separate acknowledgement and duplicate protection rules.
 
 ## Printer profiles
 
-Profiles are configured in RMS Settings and begin inactive. Required fields are company, branch, name, department, verified model code, operating system queue name, connection description, resolution, media type, width, height or continuous bounds, and default copies. RMS provisions a dedicated print device automatically instead of asking the administrator for a POS terminal ID.
+Profiles are configured in RMS Settings and supply the label format: company, branch, name, department, resolution, media type, width, height or continuous bounds, and default copies. Existing queue fields may remain on the record for compatibility, but their activation and verification state do not gate browser printing.
 
 The administrator downloads one generated Windows setup script from the profile. It installs a native PowerShell agent as a system startup task, stores a token limited to print endpoints and one device, and creates the local queue allowlist from the profile. It downloads the pinned portable PDF renderer from its official HTTPS origin and verifies its checksum before use. The operator does not install Python or Bash, enter credentials, copy tokens, choose terminal IDs, or edit JSON.
 

@@ -8,7 +8,7 @@ The current pastry page combines management and worker use. It displays order to
 
 The current POS print service already provides terminal identity, branch alignment, queueing, claims, at least once delivery, acknowledgements, bounded retries, heartbeat, and failure visibility. Reimplementing these properties for labels would introduce two competing print systems. The first local adapter proved the protocol but required Python, manual JSON, a manually created POS terminal, user credentials, and a copied token. That setup is unsuitable for a restaurant operator and caused the first physical test to stall before the agent connected.
 
-Cloud hosted RMS code cannot safely or reliably open direct connections to USB or private LAN printers. Printing must be completed by an outbound local process that can reach both RMS and the operating system printer queues.
+Cloud hosted RMS code cannot open direct connections to USB or private LAN printers. It does not need to for user initiated printing: an authenticated browser can receive an exact size print page and hand it to the operating system print dialog on the user's device.
 
 ## Options considered
 
@@ -60,9 +60,9 @@ This creates a new application and print queue dedicated to production operation
 
 ## Rationale
 
-Option 2 fixes the current authorization problems and improves production usability without redesigning orders, invoices, fulfilment, or inventory. It respects the current one person operation by making both worker views read only and by using manual label printing first.
+The dedicated worker displays still fix the authorization problems without redesigning orders, invoices, fulfilment, or inventory. For manual labels, browser printing is the smallest correct boundary: the VM serves the document and the user's local browser and operating system handle the USB printer.
 
-Extending the existing print queue is smaller and safer than a second delivery system. Rendering PDF through an official operating system driver avoids hardcoding one vendor language, while the printer profile holds the media facts needed to produce a label that actually fits.
+The earlier agent first design solved unattended printing but imposed terminal activation, credentials, a scheduled task, renderer setup, and ambiguous acknowledgement on a workflow that is explicitly manual. Keeping that system as an optional adapter preserves the completed work without making it a prerequisite. Direct browser printing uses the official operating system driver and the configured label dimensions without inventing another delivery state.
 
 Keep the proven queue and replace only the workstation provisioning. Windows already includes PowerShell, so an authenticated RMS download can install the agent without adding Bash, WSL, Git, or a system Python runtime. A generated least privilege identity avoids storing an administrator password. A pinned portable PDF renderer provides a deterministic unattended print command while its checksum prevents a substituted download.
 

@@ -27,6 +27,64 @@ class OrderLabelService
         private readonly AccountingAuditLogService $audit,
     ) {}
 
+    /**
+     * Build price-free label data for a browser print dialog without creating a queue job.
+     *
+     * @param  array<int, int>  $sourceIds
+     * @return array{profile: OrderLabelPrinterProfile, labels: array<int, array<string, mixed>>, page_width_mm: float, page_height_mm: float}
+     */
+    public function browserDocument(
+        User $actor,
+        string $sourceType,
+        array $sourceIds,
+        int $profileId,
+        int $copies,
+    ): array {
+        $this->assertCanPrint($actor);
+        abort_unless(in_array($sourceType, ['order', 'pastry_order'], true), 422);
+        abort_unless($copies >= 1 && $copies <= 10, 422, __('Choose between 1 and 10 copies.'));
+
+        $sourceIds = collect($sourceIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->take(200)
+            ->values();
+        abort_if($sourceIds->isEmpty(), 422, __('Choose at least one order to print.'));
+
+        $profile = OrderLabelPrinterProfile::query()->findOrFail($profileId);
+        $this->assertBrowserProfile($profile);
+        abort_unless($this->branchAccess->canAccessBranch($actor, (int) $profile->branch_id), 403);
+        $branchCompanyId = (int) (DB::table('branches')->where('id', $profile->branch_id)->value('company_id') ?: 0);
+        $expectedCompanyId = $branchCompanyId > 0
+            ? $branchCompanyId
+            : (int) AccountingCompany::query()->where('is_default', true)->value('id');
+        abort_unless($expectedCompanyId > 0 && (int) $profile->company_id === $expectedCompanyId, 422, __('The label format belongs to another company.'));
+
+        $labels = $sourceIds->map(function (int $sourceId) use ($actor, $sourceType, $profile, $copies): array {
+            $source = $this->source($sourceType, $sourceId);
+            abort_unless($this->branchAccess->canAccessBranch($actor, (int) $source->branch_id), 403);
+            abort_unless((int) $source->branch_id === (int) $profile->branch_id, 422, __('The label format belongs to another branch.'));
+            $snapshot = $this->snapshot($sourceType, $source, $profile);
+
+            return [
+                'snapshot' => $snapshot,
+                'copies' => $copies,
+                'sequence' => 1,
+                'qr_data_uri' => $this->renderer->qrDataUri($snapshot),
+            ];
+        })->all();
+
+        $height = collect($labels)->max(fn (array $label): int => $this->renderer->heightTenthsMm($label['snapshot'], $profile));
+
+        return [
+            'profile' => $profile,
+            'labels' => $labels,
+            'page_width_mm' => (int) $profile->width_tenths_mm / 10,
+            'page_height_mm' => $height / 10,
+        ];
+    }
+
     public function request(
         User $actor,
         string $sourceType,
@@ -310,6 +368,23 @@ class OrderLabelService
                 __('Continuous media height limits are invalid.')
             );
         }
+    }
+
+    private function assertBrowserProfile(OrderLabelPrinterProfile $profile): void
+    {
+        abort_unless((int) $profile->width_tenths_mm > 0 && (int) $profile->resolution_dpi > 0, 422);
+        if ((string) $profile->media_mode === 'fixed') {
+            abort_unless((int) $profile->height_tenths_mm > 0, 422, __('Fixed media requires a height.'));
+
+            return;
+        }
+
+        abort_unless(
+            (int) $profile->min_height_tenths_mm > 0
+            && (int) $profile->max_height_tenths_mm >= (int) $profile->min_height_tenths_mm,
+            422,
+            __('Continuous media height limits are invalid.')
+        );
     }
 
     private function validateRequest(string $sourceType, int $sourceId, int $profileId, int $copies, string $uuid, ?int $reprintOfId, ?string $reason): void

@@ -24,15 +24,16 @@ it('lets administrators configure printers and open the label queue', function (
     $this->actingAs($admin)
         ->get('/settings/order-label-printers')
         ->assertOk()
-        ->assertSee('Order Label Printers')
-        ->assertSee('download Windows setup on the printer PC')
+        ->assertSee('Order Label Formats')
+        ->assertSee('Manual printing needs no activation or print agent')
         ->assertDontSee('Choose terminal');
 
     $this->actingAs($admin)
         ->get('/order-labels')
         ->assertOk()
         ->assertSee('Order labels')
-        ->assertSee('No verified active printer');
+        ->assertSee('normal browser print window')
+        ->assertDontSee('No verified active printer');
 });
 
 it('allows managers to print but not configure printers', function () {
@@ -53,5 +54,6 @@ it('denies unrelated users from label surfaces', function () {
     $user = User::factory()->create(['status' => 'active']);
 
     $this->actingAs($user)->get('/order-labels')->assertForbidden();
+    $this->actingAs($user)->get('/order-labels/print/order/1?profile_id=1')->assertForbidden();
     $this->actingAs($user)->get('/settings/order-label-printers')->assertForbidden();
 });

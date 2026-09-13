@@ -200,7 +200,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 <section class="w-full">
     @include('partials.settings-heading')
 
-    <x-settings.layout :heading="__('Order Label Printers')" :subheading="__('Configure exact media and route labels through a registered local print terminal.')" content-class="mt-5 w-full max-w-6xl">
+    <x-settings.layout :heading="__('Order Label Formats')" :subheading="__('Set the exact label size used by the browser print window on any device.')" content-class="mt-5 w-full max-w-6xl">
         @if (session('status'))
             <div class="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">{{ session('status') }}</div>
         @endif
@@ -211,6 +211,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         @endif
 
+        <div class="mb-5 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-100">
+            {{ __('Manual printing needs no activation or print agent. Open Order labels, click Print label, and select the printer installed on that device. The automation controls below are optional.') }}
+        </div>
+
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
             <div class="space-y-3">
                 @forelse ($profiles as $profile)
@@ -219,8 +223,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <div>
                                 <div class="flex flex-wrap items-center gap-2">
                                     <h3 class="font-bold text-neutral-950 dark:text-white">{{ $profile->name }}</h3>
-                                    <span class="rounded-full px-2 py-0.5 text-xs font-semibold {{ $profile->is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-neutral-100 text-neutral-600' }}">{{ $profile->is_active ? __('Active') : __('Inactive') }}</span>
-                                    <span class="rounded-full px-2 py-0.5 text-xs font-semibold {{ $profile->is_verified ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800' }}">{{ $profile->is_verified ? __('Verified') : __('Test required') }}</span>
+                                    <span class="rounded-full px-2 py-0.5 text-xs font-semibold {{ $profile->is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-neutral-100 text-neutral-600' }}">{{ $profile->is_active ? __('Automation active') : __('Browser print ready') }}</span>
                                 </div>
                                 <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-300">{{ $profile->model_code }} · {{ $profile->os_queue_name }}</p>
                                 <p class="mt-1 text-xs text-neutral-500">{{ $profile->width_tenths_mm / 10 }} mm × {{ $profile->media_mode === 'fixed' ? ($profile->height_tenths_mm / 10).' mm' : __('continuous') }} · {{ $profile->resolution_dpi }} dpi · {{ $profile->terminal?->code }}</p>
@@ -231,9 +234,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <flux:button size="sm" variant="ghost" wire:click="edit({{ $profile->id }})">{{ __('Edit') }}</flux:button>
                                 <flux:button size="sm" variant="ghost" :href="route('settings.order-label-printers.preview', $profile)" target="_blank">{{ __('Preview') }}</flux:button>
                                 @if (! $profile->is_active)
-                                    <flux:button size="sm" variant="primary" wire:click="downloadInstaller({{ $profile->id }})" wire:loading.attr="disabled">{{ __('Download Windows setup') }}</flux:button>
+                                    <flux:button size="sm" variant="primary" wire:click="downloadInstaller({{ $profile->id }})" wire:loading.attr="disabled">{{ __('Set up optional automation') }}</flux:button>
                                 @endif
-                                <flux:button size="sm" variant="ghost" wire:click="sendTest({{ $profile->id }})" wire:loading.attr="disabled">{{ __('Send test') }}</flux:button>
+                                <flux:button size="sm" variant="ghost" wire:click="sendTest({{ $profile->id }})" wire:loading.attr="disabled">{{ __('Test automation') }}</flux:button>
                                 @if (! $profile->is_verified)
                                     <flux:button size="sm" variant="ghost" wire:click="verify({{ $profile->id }})">{{ __('Verify printed test') }}</flux:button>
                                 @endif
@@ -248,7 +251,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             <form wire:submit="save" class="space-y-4 rounded-xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
                 <div class="flex items-center justify-between gap-3">
-                    <h3 class="font-bold text-neutral-950 dark:text-white">{{ $editingId ? __('Edit printer') : __('New printer') }}</h3>
+                    <h3 class="font-bold text-neutral-950 dark:text-white">{{ $editingId ? __('Edit label format') : __('New label format') }}</h3>
                     <flux:button type="button" size="sm" variant="ghost" wire:click="startCreate">{{ __('New') }}</flux:button>
                 </div>
 
@@ -259,7 +262,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </select>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm font-medium">{{ __('Windows print agent') }}</label>
+                    <label class="mb-1 block text-sm font-medium">{{ __('Optional unattended print device') }}</label>
                     <div class="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-3 text-sm text-neutral-700 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200">
                         @if ($terminalId && ($terminal = $terminals->firstWhere('id', $terminalId)))
                             <span class="font-medium">{{ $terminal->code }}</span>
@@ -291,8 +294,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <div class="grid grid-cols-2 gap-3"><flux:input wire:model="minHeightMm" type="number" step="0.1" :label="__('Min height (mm)')" /><flux:input wire:model="maxHeightMm" type="number" step="0.1" :label="__('Max height (mm)')" /></div>
                 @endif
                 <flux:input wire:model="defaultCopies" type="number" min="1" max="10" :label="__('Default copies')" />
-                <flux:button type="submit" variant="primary" class="w-full" wire:loading.attr="disabled">{{ __('Save printer profile') }}</flux:button>
-                <p class="text-xs leading-relaxed text-neutral-500">{{ __('After saving, download Windows setup on the printer PC. Then send a test, verify the printed label, and activate the profile.') }}</p>
+                <flux:button type="submit" variant="primary" class="w-full" wire:loading.attr="disabled">{{ __('Save label format') }}</flux:button>
+                <p class="text-xs leading-relaxed text-neutral-500">{{ __('After saving, manual browser printing is ready. Set up automation only if labels should print without opening the browser print dialog.') }}</p>
             </form>
         </div>
     </x-settings.layout>

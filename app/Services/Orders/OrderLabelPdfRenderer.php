@@ -15,21 +15,25 @@ class OrderLabelPdfRenderer
     {
         $width = (int) $profile->width_tenths_mm;
         $height = $this->heightTenthsMm($snapshot, $profile);
-        $qrValue = strtoupper((string) $snapshot['source_type']).':'.(int) $snapshot['source_id'];
-        $writer = new Writer(new ImageRenderer(new RendererStyle(120, 1), new SvgImageBackEnd));
-        $qrDataUri = 'data:image/svg+xml;base64,'.base64_encode($writer->writeString($qrValue));
-
         $pdf = Pdf::loadView('prints.order-label', [
             'snapshot' => $snapshot,
             'copies' => $copies,
             'sequence' => $sequence,
-            'qrDataUri' => $qrDataUri,
+            'qrDataUri' => $this->qrDataUri($snapshot),
             'pageWidthMm' => $width / 10,
             'pageHeightMm' => $height / 10,
         ]);
         $pdf->setPaper([0, 0, $this->points($width), $this->points($height)]);
 
         return $pdf->output();
+    }
+
+    public function qrDataUri(array $snapshot): string
+    {
+        $qrValue = strtoupper((string) $snapshot['source_type']).':'.(int) $snapshot['source_id'];
+        $writer = new Writer(new ImageRenderer(new RendererStyle(120, 1), new SvgImageBackEnd));
+
+        return 'data:image/svg+xml;base64,'.base64_encode($writer->writeString($qrValue));
     }
 
     public function heightTenthsMm(array $snapshot, OrderLabelPrinterProfile $profile): int

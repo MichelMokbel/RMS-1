@@ -18,6 +18,7 @@ This area owns ordinary orders, daily dish orders, subscription generation, kitc
 | `KitchenPreparationQueryService.php` | Branch scoped, read only preparation totals for all non cancelled scheduled orders. |
 | `OrderLabelService.php`, `OrderLabelPdfRenderer.php` | Immutable price free order snapshots, fixed size PDF rendering, queueing, reprints, cancellation, and reassignment. |
 | `OrderLabelPrinterProfileService.php`, `OrderLabelPrinterTestService.php` | Audited printer configuration, automatic print-device provisioning, test labels, verification, and activation gating. |
+| `OrderLabelService.php`, `OrderLabelPdfRenderer.php` | Price free label projection and exact media rendering. Direct browser printing uses a profile only as a label format and does not require agent activation or create queue state. |
 | `OrderLabelAgentInstallerService.php` | Generates the restricted Windows workstation setup and rotates its print-only device token while the profile is inactive. |
 
 ## Conventions
@@ -28,6 +29,7 @@ This area owns ordinary orders, daily dish orders, subscription generation, kitc
 * Generated order and invoice based subscription usage are different accounting paths. The tracking flag prevents generation from also consuming invoice tracked meals.
 * Kitchen preparation totals exclude only cancelled orders; they do not depend on routine status updates or expose order/customer/financial fields.
 * Order labels are operational snapshots. Printing, retrying, cancelling, or moving a label never changes the order or its invoice. Explicit reprints require a reason.
+* Manual label printing is browser owned. The server returns an authorized fixed size print page, then the device browser and operating system select the local printer. The POS label agent is optional for unattended printing only.
 
 ## Gotchas
 

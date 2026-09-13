@@ -27,6 +27,7 @@ This area declares browser, internal API, public website, customer portal, POS, 
 | POS setup and login | Credentialed controller actions outside the operational token group. |
 | POS terminal status | Sanctum authentication without the nested `pos.token` middleware. |
 | POS operational APIs | Sanctum plus `pos.token`; normal POS operations require `pos:*`, while label agent stream, pull, and acknowledgement accept the narrower `pos.print` ability with the same device and branch checks. |
+| Browser order labels | Authenticated active users with `order-labels.print` or the established admin or manager role, plus server enforced source and label format branch alignment. Browser printing creates no terminal or queue state. |
 | HR | `auth`, `active`, module permission, then action permissions and service access checks. |
 
 ## Conventions

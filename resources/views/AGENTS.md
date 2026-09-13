@@ -28,7 +28,7 @@ All paths in the first column are relative to `resources/views/livewire/`.
 | `inventory/` | [Inventory and transfers](../../app/Services/Inventory/AGENTS.md). |
 | `suppliers/`, `purchase-orders/` | [Purchasing and supplier references](../../app/Services/Purchasing/AGENTS.md). |
 | `orders/` | [Orders](../../app/Services/Orders/AGENTS.md). |
-| `order-labels/` | [Order label snapshots, printer routing, queue status, and reprints](../../app/Services/Orders/AGENTS.md), [POS delivery](../../app/Services/POS/AGENTS.md). |
+| `order-labels/` | Direct browser label printing through the local operating system print dialog, with [price free label projection](../../app/Services/Orders/AGENTS.md). POS delivery is optional for unattended printing. |
 | `storefront/` | [Customer storefront administration, catalog, delivery apps, analytics, and checkout upsells](../../app/Services/Storefront/AGENTS.md). |
 | `daily-dish/` | [Daily menus and preparation](../../app/Services/DailyDish/AGENTS.md), [pricing](../../app/Services/Pricing/AGENTS.md). |
 | `kitchen/` | [Kitchen transitions](../../app/Services/Orders/AGENTS.md). |
@@ -58,6 +58,7 @@ All paths in the first column are relative to `resources/views/livewire/`.
 
 * Profile, password, appearance, and two factor settings are user settings. Finance, accounting setup, payment terms, POS terminals, order label printers, organization, and logs are administrative surfaces with separate route gates.
 * Order label printer settings provision the print device automatically. An inactive profile can generate the Windows setup download, which rotates its restricted device credentials; activation still requires an acknowledged and verified physical test.
+* A saved order label profile is immediately usable as a browser label format regardless of its automation activation state. The manual print surface must not require a terminal, agent, token, heartbeat, or queue acknowledgement.
 * Organization settings manage accounting companies, branches, departments, and jobs. Those records are security and reporting dimensions, not just display labels.
 * The log page has separate operations and email filters and pagination names. Its query and actions check admin access.
 * The dashboard aggregates several domains directly in its Volt component. You can trace each metric's permission, branch filter, date range, and void handling rather than assuming one shared scope.

@@ -8,6 +8,7 @@
 * Report and export tests proving branch scope and proving pastry workers cannot call management surfaces.
 * Printer profile tests for company and branch ownership, validation, optimistic revision, audit, inactive defaults, activation gates, and sample preview.
 * Label rendering tests for exact PDF page dimensions, deterministic line wrapping, excluded finance and phone fields, multiple copies, long names, long addresses, and item overflow.
+* Browser label tests for exact page dimensions, automatic print dialog invocation, one order and date batch selection, inactive profile compatibility, no queue mutation, permission denial, branch isolation, cancellation exclusion, and excluded finance and phone fields.
 * Print queue tests for server origin idempotency, terminal assignment, branch alignment, claim replay, acknowledgement loss, bounded retry, cancellation, reassignment, and explicit reprint lineage.
 * Agent contract tests for local queue allowlisting, unsupported document types, oversized payloads, duplicate claim persistence, sanitized errors, offline recovery, and successful acknowledgement.
 * Existing POS receipt print tests must continue unchanged.
@@ -19,9 +20,9 @@ Check kitchen and pastry screens at about 360 px, 768 px, 1024 px, and the actua
 
 ## Physical printer evidence required
 
-For each printer, photograph or record the exact model label, connection, installed driver version, operating system queue name, media stock code, measured label dimensions, resolution, and connection method. Print synthetic short, normal, and maximum content labels. Verify margins, wrapping, cutter behavior, QR or barcode scanning, quantity readability, Arabic and English glyph behavior for stored data, and repeated delivery deduplication.
+For each printer, photograph or record the exact model label, connection, installed driver version, operating system queue name, media stock code, measured label dimensions, resolution, and connection method. From the Windows browser, open RMS, click Print label, select the locally installed printer, and print synthetic short, normal, and maximum content labels. Verify 57 × 37 mm paper selection, scale 100 percent, disabled browser headers and footers, margins, wrapping, cutter behavior, QR scanning, quantity readability, and Arabic and English glyph behavior.
 
-The profile remains inactive until the sample is signed off. After activation, print a controlled batch, disconnect and reconnect the printer, recover a failed job, perform one explicit reprint, and confirm no order or invoice data changed.
+Browser printing does not require profile activation. Print one label and a controlled batch, cancel one print dialog, reopen one label, and confirm no label queue, order, invoice, or payment data changed. Activation, disconnect recovery, and acknowledgement tests apply only if optional unattended agent printing is later enabled.
 
 ## Deployment gate
 

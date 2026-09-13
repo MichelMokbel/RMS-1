@@ -24,6 +24,7 @@ This area owns POS bootstrap, shifts, checkout, offline synchronization, numberi
 - Allocate receipt and order numbers only through `PosSequenceService`.
 - Create print jobs through the existing service and keep stream cursors and retention behavior compatible.
 - Server originated label jobs use `server_job_uuid`, a nullable source terminal, an assigned target terminal, and the same claim, retry, stream, and acknowledgement contract as receipts.
+- Server originated label jobs are the optional unattended path. Normal manual order label printing uses the browser print dialog and does not create a POS print job.
 
 ## Gotchas
 

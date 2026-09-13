@@ -240,3 +240,86 @@ it('cancels and reassigns only queued labels without changing the order', functi
         ->and($fixture['order']->fresh()->status)->toBe('Draft')
         ->and($fixture['order']->fresh()->total_amount)->toBe('777.000');
 });
+
+it('opens an inactive label format in the local browser print dialog without queueing a job', function () {
+    $fixture = labelFixture();
+    $fixture['profile']->update([
+        'width_tenths_mm' => 570,
+        'height_tenths_mm' => 370,
+        'is_verified' => false,
+        'is_active' => false,
+    ]);
+
+    $response = $this->actingAs($fixture['actor'])->get(route('order-labels.print.show', [
+        'sourceType' => 'order',
+        'sourceId' => $fixture['order']->id,
+        'profile_id' => $fixture['profile']->id,
+        'copies' => 1,
+    ]));
+
+    $response->assertOk()
+        ->assertSee('@page { margin: 0; size: 57mm 37mm; }', false)
+        ->assertSee('window.print()', false)
+        ->assertSee('Label Customer')
+        ->assertSee('West Bay, Building 10')
+        ->assertSee('Chicken Machboos')
+        ->assertDontSee('66752347')
+        ->assertDontSee('QAR')
+        ->assertDontSee('388.5');
+    expect(OrderLabelPrint::query()->count())->toBe(0)
+        ->and(PosPrintJob::query()->count())->toBe(0);
+});
+
+it('blocks browser label printing across branches and for cancelled orders', function () {
+    $fixture = labelFixture();
+    DB::table('branches')->insert([
+        'id' => 2,
+        'name' => 'Other Branch',
+        'company_id' => $fixture['company']->id,
+        'is_active' => true,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    $fixture['order']->update(['branch_id' => 2]);
+
+    $this->actingAs($fixture['actor'])->get(route('order-labels.print.show', [
+        'sourceType' => 'order',
+        'sourceId' => $fixture['order']->id,
+        'profile_id' => $fixture['profile']->id,
+    ]))->assertStatus(422);
+
+    $fixture['order']->update(['branch_id' => 1, 'status' => 'Cancelled']);
+    $this->actingAs($fixture['actor'])->get(route('order-labels.print.show', [
+        'sourceType' => 'order',
+        'sourceId' => $fixture['order']->id,
+        'profile_id' => $fixture['profile']->id,
+    ]))->assertStatus(422);
+});
+
+it('prints the filtered service date as one local browser batch without queue state', function () {
+    $fixture = labelFixture();
+    $fixture['profile']->update(['width_tenths_mm' => 570, 'height_tenths_mm' => 370]);
+    $second = Order::factory()->create([
+        'branch_id' => 1,
+        'status' => 'Draft',
+        'scheduled_date' => '2026-09-12',
+        'customer_name_snapshot' => 'Second Customer',
+        'delivery_address_snapshot' => 'Al Sadd',
+    ]);
+
+    $response = $this->actingAs($fixture['actor'])->get(route('order-labels.print.batch', [
+        'branch_id' => 1,
+        'date' => '2026-09-12',
+        'source_type' => 'order',
+        'profile_id' => $fixture['profile']->id,
+        'copies' => 1,
+    ]));
+
+    $response->assertOk()
+        ->assertSee($fixture['order']->order_number)
+        ->assertSee($second->order_number)
+        ->assertSee('@page { margin: 0; size: 57mm 37mm; }', false)
+        ->assertSee('window.print()', false);
+    expect(OrderLabelPrint::query()->count())->toBe(0)
+        ->and(PosPrintJob::query()->count())->toBe(0);
+});
