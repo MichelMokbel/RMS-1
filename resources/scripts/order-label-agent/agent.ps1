@@ -141,8 +141,14 @@ function Handle-Job {
         [IO.File]::WriteAllBytes($pdfPath, $pdf)
 
         try {
-            & $SumatraPath "-print-to" $Config.queue_name "-silent" $pdfPath
-            $printExitCode = $LASTEXITCODE
+            $queueArgument = '"' + ([string]$Config.queue_name).Replace('"', '\"') + '"'
+            $fileArgument = '"' + $pdfPath.Replace('"', '\"') + '"'
+            $printProcess = Start-Process `
+                -FilePath $SumatraPath `
+                -ArgumentList ("-print-to {0} -silent {1}" -f $queueArgument, $fileArgument) `
+                -Wait `
+                -PassThru
+            $printExitCode = [int]$printProcess.ExitCode
             if ($printExitCode -ne 0) {
                 Remove-Item -Force $submittingMarker -ErrorAction SilentlyContinue
                 throw ("OS_PRINT_FAILED_{0}" -f $printExitCode)
