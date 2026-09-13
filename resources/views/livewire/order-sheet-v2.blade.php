@@ -185,6 +185,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'extras' => collect($row['extras'] ?? [])->map(fn ($extra) => [
                     'menu_item_id' => $extra['menu_item_id'] ?? null,
                     'menu_item_name' => $extra['name'] ?? '',
+                    'portion_type' => $extra['portion_type'] ?? 'plate',
                     'quantity' => $extra['quantity'] ?? 0,
                 ])->all(),
                 'remarks' => $row['remarks'] ?? '',
@@ -225,6 +226,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'rows.*.extras' => ['array', 'max:100'],
             'rows.*.extras.*.menu_item_id' => ['required', 'integer'],
             'rows.*.extras.*.name' => ['required', 'string', 'max:255'],
+            'rows.*.extras.*.portion_type' => ['nullable', 'string', 'in:plate,half,full'],
             'rows.*.extras.*.quantity' => ['required', 'integer', 'min:1', 'max:10000'],
             'removedOrderIds' => ['array', 'max:500'],
             'removedOrderIds.*' => ['integer'],
@@ -338,9 +340,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </template>
                             <td class="border-b border-r border-zinc-200 p-2 align-top dark:border-zinc-700">
                                 <div class="flex flex-wrap gap-1.5">
-                                    <template x-for="(extra, extraIndex) in row.extras" :key="`${row.key}-${extra.menu_item_id}`">
+                                    <template x-for="(extra, extraIndex) in row.extras" :key="`${row.key}-${extra.menu_item_id}-${extra.portion_type}`">
                                         <div class="inline-flex min-h-10 items-center gap-1 rounded-lg bg-amber-50 px-2 text-xs text-amber-900 dark:bg-amber-900/30 dark:text-amber-100">
                                             <span class="max-w-28 truncate font-medium" x-text="extra.name"></span>
+                                            <span class="rounded bg-white/80 px-1.5 py-1 font-semibold dark:bg-zinc-800" x-text="portionShort(extra.portion_type)"></span>
                                             <span x-show="isSubscriptionAppetizer(row, extra)" class="rounded bg-emerald-100 px-1.5 py-1 font-semibold text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200">{{ __('Subscription') }}</span>
                                             <button x-show="!isSubscriptionAppetizer(row, extra)" type="button" x-on:click="adjustExtra(row, extraIndex, -1)" class="inline-flex size-8 items-center justify-center rounded-md hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 dark:hover:bg-amber-900" x-bind:aria-label="`{{ __('Decrease') }} ${extra.name}`"><flux:icon.minus class="size-3" /></button>
                                             <span class="min-w-5 text-center font-semibold tabular-nums" x-text="extra.quantity"></span>
@@ -410,6 +413,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         </form>
         <div class="p-4">
+            <fieldset class="mb-4">
+                <legend class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-200">{{ __('Portion') }}</legend>
+                <div class="grid grid-cols-3 gap-2">
+                    <template x-for="portion in portions" :key="`extra-${portion.key}`">
+                        <button type="button" x-on:click="dishSearch.portionType = portion.key" x-bind:class="dishSearch.portionType === portion.key ? 'border-zinc-900 bg-zinc-900 text-white dark:border-white dark:bg-white dark:text-zinc-900' : 'border-zinc-300 bg-white text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200'" class="min-h-11 rounded-lg border px-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600" x-text="portion.label"></button>
+                    </template>
+                </div>
+            </fieldset>
             <label for="dish-search" class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-200">{{ __('Search dishes') }}</label>
             <input id="dish-search" x-ref="dishSearchInput" type="search" x-model="dishSearch.term" x-on:input="searchDishes()" x-on:keydown="dishKeydown($event)" class="min-h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 dark:border-zinc-600 dark:bg-zinc-800 dark:text-white" autocomplete="off" />
             <div class="mt-3 max-h-80 overflow-auto" role="listbox" aria-label="{{ __('Dish results') }}">
@@ -479,7 +490,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         customerTimer: null,
         dishTimer: null,
         customerSearch: { open: false, rowKey: null, term: '', results: [], loading: false, activeIndex: 0, top: 0, left: 0, width: 320 },
-        dishSearch: { rowKey: null, term: '', results: [], loading: false, activeIndex: 0 },
+        dishSearch: { rowKey: null, term: '', results: [], loading: false, activeIndex: 0, portionType: 'plate' },
         customerCreator: { rowKey: null, name: '', phone: '', saving: false, error: '' },
         portions: [
             { key: 'plate', short: 'P', label: '{{ __('Plate') }}' },
@@ -537,7 +548,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 has_subscription: Boolean(row.has_subscription),
                 subscription_appetizer: row.subscription_appetizer || null,
                 quantities,
-                extras: (row.extras || []).map((extra) => ({ menu_item_id: Number(extra.menu_item_id), name: extra.name || '', quantity: Math.max(1, Number(extra.quantity || 1)) })),
+                extras: (row.extras || []).map((extra) => ({ menu_item_id: Number(extra.menu_item_id), name: extra.name || '', portion_type: this.normalizePortionType(extra.portion_type), quantity: Math.max(1, Number(extra.quantity || 1)) })),
                 remarks: row.remarks || '',
             };
         },
@@ -609,6 +620,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             return values.length ? values.join(' · ') : '0';
         },
 
+        normalizePortionType(portionType) {
+            return this.portions.some((portion) => portion.key === portionType) ? portionType : 'plate';
+        },
+
+        portionShort(portionType) {
+            return this.portions.find((portion) => portion.key === this.normalizePortionType(portionType))?.short || 'P';
+        },
+
         mainQuantity(row) {
             return this.menuItems
                 .filter((item) => item.role === 'main')
@@ -636,6 +655,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 row.extras.push({
                     menu_item_id: Number(row.subscription_appetizer.menu_item_id),
                     name: row.subscription_appetizer.name,
+                    portion_type: 'plate',
                     quantity,
                 });
             }
@@ -747,7 +767,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         },
 
         openDishPicker(row) {
-            this.dishSearch = { rowKey: row.key, term: '', results: [], loading: false, activeIndex: 0 };
+            this.dishSearch = { rowKey: row.key, term: '', results: [], loading: false, activeIndex: 0, portionType: 'plate' };
             this.$refs.dishDialog.showModal();
             this.$nextTick(() => this.$refs.dishSearchInput.focus());
         },
@@ -755,7 +775,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         closeDishPicker() {
             clearTimeout(this.dishTimer);
             this.dishRequest++;
-            this.dishSearch = { rowKey: null, term: '', results: [], loading: false, activeIndex: 0 };
+            this.dishSearch = { rowKey: null, term: '', results: [], loading: false, activeIndex: 0, portionType: 'plate' };
         },
 
         searchDishes() {
@@ -801,9 +821,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         selectDish(dish) {
             const row = this.rows.find((candidate) => candidate.key === this.dishSearch.rowKey);
             if (!row) return;
-            const existing = row.extras.find((extra) => Number(extra.menu_item_id) === Number(dish.id));
+            const portionType = this.normalizePortionType(this.dishSearch.portionType);
+            const existing = row.extras.find((extra) => Number(extra.menu_item_id) === Number(dish.id) && extra.portion_type === portionType);
             if (existing) existing.quantity += 1;
-            else row.extras.push({ menu_item_id: Number(dish.id), name: dish.name, quantity: 1 });
+            else row.extras.push({ menu_item_id: Number(dish.id), name: dish.name, portion_type: portionType, quantity: 1 });
             this.syncSubscriptionAppetizer(row);
             this.markDirty();
             this.ensureTrailingBlank();
@@ -955,7 +976,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     })
                     .join('');
                 const extraNames = extras
-                    .map((extra) => `${escapeHtml(extra.name)} ×${Number(extra.quantity)}`)
+                    .map((extra) => `${escapeHtml(extra.name)} (${this.portionShort(extra.portion_type)}) ×${Number(extra.quantity)}`)
                     .join(', ');
 
                 return `<tr><td>${escapeHtml(row.customer_name)}</td><td>${escapeHtml(row.location)}</td>${quantityCells}<td>${extraNames || '—'}</td><td>${this.rowTotal(row) || '—'}</td><td>${escapeHtml(row.remarks)}</td></tr>`;
@@ -964,7 +985,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             const extraTotals = new Map();
             printableRows.flatMap((row) => row.extras || []).forEach((extra) => {
                 if (Number(extra.quantity) > 0) {
-                    extraTotals.set(extra.name, Number(extraTotals.get(extra.name) || 0) + Number(extra.quantity));
+                    const key = `${extra.name} (${this.portionShort(extra.portion_type)})`;
+                    extraTotals.set(key, Number(extraTotals.get(key) || 0) + Number(extra.quantity));
                 }
             });
             const extraTotal = [...extraTotals.values()].reduce((sum, quantity) => sum + quantity, 0);

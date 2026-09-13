@@ -29,6 +29,7 @@ class OrderSheetPrintController extends Controller
                 'qty' => $row['quantities'],
                 'extras' => collect($row['extras'] ?? [])->map(fn ($extra) => [
                     'name' => $extra['name'],
+                    'portion_type' => $extra['portion_type'] ?? 'plate',
                     'quantity' => (int) $extra['quantity'],
                 ])->all(),
                 'order_id' => $row['order_id'],
@@ -55,8 +56,14 @@ class OrderSheetPrintController extends Controller
         foreach ($entries as $entry) {
             foreach ($entry['extras'] as $extra) {
                 $name = $extra['name'];
-                $extraTotals[$name] = $extraTotals[$name] ?? ['name' => $name, 'quantity' => 0];
-                $extraTotals[$name]['quantity'] += $extra['quantity'];
+                $portionType = in_array($extra['portion_type'], ['half', 'full'], true) ? $extra['portion_type'] : 'plate';
+                $key = $portionType === 'plate' ? $name : $name.'|'.$portionType;
+                $extraTotals[$key] = $extraTotals[$key] ?? [
+                    'name' => $name,
+                    'portion_type' => $portionType,
+                    'quantity' => 0,
+                ];
+                $extraTotals[$key]['quantity'] += $extra['quantity'];
             }
         }
 

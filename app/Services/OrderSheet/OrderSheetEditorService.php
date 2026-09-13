@@ -65,6 +65,7 @@ class OrderSheetEditorService
                 'extras' => $entry->extras->map(fn ($extra) => [
                     'menu_item_id' => (int) $extra->menu_item_id,
                     'name' => $extra->menu_item_name,
+                    'portion_type' => $this->normalizePortionType($extra->portion_type),
                     'quantity' => (int) $extra->quantity,
                 ])->values()->all(),
                 'remarks' => $entry->remarks ?? '',
@@ -101,6 +102,7 @@ class OrderSheetEditorService
                     $extras[] = [
                         'menu_item_id' => (int) $item->menu_item_id,
                         'name' => $item->menuItem?->name ?? $item->description_snapshot,
+                        'portion_type' => $this->portionTypeFromDescription($item->description_snapshot),
                         'quantity' => (int) round($item->quantity),
                     ];
                 }
@@ -248,6 +250,7 @@ class OrderSheetEditorService
                     $entry->extras()->create([
                         'menu_item_id' => $menuItemId,
                         'menu_item_name' => $extraNames->get($menuItemId),
+                        'portion_type' => $this->normalizePortionType($extra['portion_type'] ?? null),
                         'quantity' => $quantity,
                     ]);
                 }
@@ -315,6 +318,7 @@ class OrderSheetEditorService
                 $extras->push([
                     'menu_item_id' => $appetizer['menu_item_id'],
                     'name' => $appetizer['name'],
+                    'portion_type' => 'plate',
                     'quantity' => $mainQuantity,
                 ]);
             }
@@ -358,5 +362,22 @@ class OrderSheetEditorService
         return in_array($order->daily_dish_portion_type, ['half', 'full'], true)
             ? $order->daily_dish_portion_type
             : 'plate';
+    }
+
+    private function portionTypeFromDescription(string $description): string
+    {
+        if (stripos($description, '(Half Portion)') !== false) {
+            return 'half';
+        }
+        if (stripos($description, '(Full Portion)') !== false) {
+            return 'full';
+        }
+
+        return 'plate';
+    }
+
+    private function normalizePortionType(mixed $portionType): string
+    {
+        return in_array($portionType, self::PORTION_TYPES, true) ? $portionType : 'plate';
     }
 }

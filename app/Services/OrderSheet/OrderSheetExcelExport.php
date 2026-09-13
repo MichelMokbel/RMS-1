@@ -44,7 +44,15 @@ class OrderSheetExcelExport
             $extrasTotal += $extraQuantity;
             $grandTotal += $total;
             $export[] = array_merge([$date, $row['order_id'] ?? null, $row['customer_name'], $row['location']], $quantities, [
-                $extras->map(fn ($extra) => $extra['menu_item_name'].' × '.(int) $extra['quantity'])->implode('; '),
+                $extras->map(function ($extra) {
+                    $portionLabel = match ($extra['portion_type'] ?? 'plate') {
+                        'half' => __('Half Portion'),
+                        'full' => __('Full Portion'),
+                        default => __('Plate'),
+                    };
+
+                    return $extra['menu_item_name'].' ('.$portionLabel.') × '.(int) $extra['quantity'];
+                })->implode('; '),
                 $extraQuantity, $total, $row['remarks'],
             ]);
         }

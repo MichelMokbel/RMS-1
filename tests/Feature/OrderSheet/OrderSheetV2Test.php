@@ -196,6 +196,41 @@ it('recognizes portion labels from online daily dish orders', function () {
     expect($row['quantities'][$column->id])->toBe(orderSheetPortions(1, 2, 3));
 });
 
+it('saves, prints, and publishes portions for additional dishes separately', function () {
+    $extra = MenuItem::factory()->create(['name' => 'Additional Portion Dish']);
+    $row = editorRow([
+        'customer_id' => $this->customer->id,
+        'customer_name' => $this->customer->name,
+        'extras' => [
+            ['menu_item_id' => $extra->id, 'name' => $extra->name, 'portion_type' => 'plate', 'quantity' => 2],
+            ['menu_item_id' => $extra->id, 'name' => $extra->name, 'portion_type' => 'half', 'quantity' => 3],
+            ['menu_item_id' => $extra->id, 'name' => $extra->name, 'portion_type' => 'full', 'quantity' => 4],
+        ],
+    ]);
+
+    Volt::test('order-sheet-v2')
+        ->call('saveSheet', now()->toDateString(), [$row], [])
+        ->assertHasNoErrors()
+        ->call('publishSheet', now()->toDateString(), [$row], [])
+        ->assertHasNoErrors();
+
+    $entry = OrderSheet::firstOrFail()->entries()->firstOrFail();
+    expect($entry->extras()->pluck('quantity', 'portion_type')->all())
+        ->toMatchArray(['plate' => 2, 'half' => 3, 'full' => 4]);
+
+    $order = Order::whereKey($entry->order_id)->with('items')->firstOrFail();
+    expect($order->items)->toHaveCount(3)
+        ->and($order->items->firstWhere('quantity', '3.000')->description_snapshot)->toContain('(Half Portion)')
+        ->and($order->items->firstWhere('quantity', '4.000')->description_snapshot)->toContain('(Full Portion)');
+
+    $this->get(route('order-sheet.print.by-item'))
+        ->assertOk()
+        ->assertSee('Additional Portion Dish')
+        ->assertViewHas('extraTotals', fn (array $totals) => $totals[$extra->name]['quantity'] === 2
+            && $totals[$extra->name.'|half']['quantity'] === 3
+            && $totals[$extra->name.'|full']['quantity'] === 4);
+});
+
 it('automatically keeps the subscription appetizer equal to selected main dishes', function () {
     Config::set('subscriptions.default_appetizer_code', 'APP-ORDER-SHEET');
     $appetizer = MenuItem::factory()->create([

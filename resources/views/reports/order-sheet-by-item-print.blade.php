@@ -101,6 +101,7 @@
                     <thead>
                         <tr>
                             <th>Item</th>
+                            <th style="width:90px;">Portion</th>
                             <th style="width:60px; text-align:right;">Qty</th>
                         </tr>
                     </thead>
@@ -108,13 +109,14 @@
                         @foreach ($extraTotals as $et)
                             <tr>
                                 <td>{{ $et['name'] }}</td>
+                                <td>{{ match ($et['portion_type'] ?? 'plate') { 'half' => 'Half Portion', 'full' => 'Full Portion', default => 'Plate' } }}</td>
                                 <td class="qty">{{ $et['quantity'] }}</td>
                             </tr>
                         @endforeach
                     </tbody>
                     <tfoot>
                         <tr>
-                            <td><strong>Total</strong></td>
+                            <td colspan="2"><strong>Total</strong></td>
                             <td class="qty">{{ collect($extraTotals)->sum('quantity') }}</td>
                         </tr>
                     </tfoot>

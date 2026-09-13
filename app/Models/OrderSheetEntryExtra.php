@@ -9,7 +9,7 @@ class OrderSheetEntryExtra extends Model
 {
     public $timestamps = false;
 
-    protected $fillable = ['order_sheet_entry_id', 'menu_item_id', 'menu_item_name', 'quantity'];
+    protected $fillable = ['order_sheet_entry_id', 'menu_item_id', 'menu_item_name', 'portion_type', 'quantity'];
 
     public function entry(): BelongsTo
     {
