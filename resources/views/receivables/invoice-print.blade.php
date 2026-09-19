@@ -291,6 +291,22 @@
             overflow-wrap: anywhere;
         }
 
+        .fawran-details {
+            margin-top: 2mm;
+            padding-top: 1.5mm;
+            border-top: 1px solid #999;
+            font-size: 10px;
+        }
+
+        .fawran-details .label {
+            margin-right: 2mm;
+            font-weight: 700;
+        }
+
+        .fawran-details .value {
+            font-weight: 700;
+        }
+
         .totals-bar {
             display: flex;
             justify-content: space-between;
@@ -671,6 +687,12 @@
                         <tr><td class="bank-label">Bank</td><td class="bank-colon">:</td><td class="bank-value">{{ $bankDetails['bank_name'] ?? '-' }}</td></tr>
                         <tr><td class="bank-label">Address</td><td class="bank-colon">:</td><td class="bank-value">{{ $bankDetails['bank_address'] ?? '-' }}</td></tr>
                     </table>
+                    @if (! empty($bankDetails['fawran_transfer']))
+                        <div class="fawran-details">
+                            <span class="label">For Fawran Transfer:</span>
+                            <span class="value">{{ $bankDetails['fawran_transfer'] }}</span>
+                        </div>
+                    @endif
                 </div>
             @endif
 

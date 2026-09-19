@@ -71,7 +71,10 @@ it('shows the customer statement bank details on the invoice print page', functi
 
     $response = $this->actingAs($user)->get(route('invoices.print', $invoice));
 
-    $response->assertOk()->assertSee('Bank Account Details');
+    $response->assertOk()
+        ->assertSee('Bank Account Details')
+        ->assertSee('For Fawran Transfer:')
+        ->assertSee('CR-143782');
     foreach ($bankDetails as $value) {
         $response->assertSee((string) $value);
     }
