@@ -427,6 +427,7 @@ return [
             'swift_code' => 'QISBQAQAXXX',
             'bank_name' => 'QATAR ISLAMIC BANK',
             'bank_address' => 'GRAND HAMAD STREET– Doha, Qatar',
+            'fawran_transfer' => 'CR-143782',
         ],
     ],
 ];
