@@ -62,6 +62,21 @@ it('shows invoice and line-item notes on the invoice print page', function () {
         ->assertSee('Extra garlic sauce');
 });
 
+it('shows the customer statement bank details on the invoice print page', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $invoice = ArInvoice::factory()->create();
+    $bankDetails = (array) config('reports.customer_statement.bank_details', []);
+
+    $response = $this->actingAs($user)->get(route('invoices.print', $invoice));
+
+    $response->assertOk()->assertSee('Bank Account Details');
+    foreach ($bankDetails as $value) {
+        $response->assertSee((string) $value);
+    }
+});
+
 it('shows void details on the invoice show page', function () {
     $user = User::factory()->create();
     $user->assignRole('manager');
