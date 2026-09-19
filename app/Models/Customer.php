@@ -8,14 +8,15 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use App\Models\User;
 
 class Customer extends Model
 {
     use HasFactory;
 
     public const TYPE_RETAIL = 'retail';
+
     public const TYPE_CORPORATE = 'corporate';
+
     public const TYPE_SUBSCRIPTION = 'subscription';
 
     protected $table = 'customers';
@@ -118,6 +119,11 @@ class Customer extends Model
     public function invoices(): HasMany
     {
         return $this->hasMany(ArInvoice::class, 'customer_id');
+    }
+
+    public function deliveryNotes(): HasMany
+    {
+        return $this->hasMany(DeliveryNote::class);
     }
 
     public function payments(): HasMany

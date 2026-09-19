@@ -26,6 +26,7 @@ class ArInvoice extends Model
         'source_pastry_order_id',
         'source_quotation_id',
         'source_quotation_version_id',
+        'source_delivery_note_id',
         'pos_reference',
         'source',
         'client_uuid',
@@ -71,6 +72,7 @@ class ArInvoice extends Model
         'table_session_id' => 'integer',
         'source_quotation_id' => 'integer',
         'source_quotation_version_id' => 'integer',
+        'source_delivery_note_id' => 'integer',
         'payment_term_days' => 'integer',
         'payment_term_id' => 'integer',
         'subtotal_cents' => 'integer',
@@ -160,6 +162,16 @@ class ArInvoice extends Model
         return $this->belongsTo(QuotationVersion::class, 'source_quotation_version_id');
     }
 
+    public function sourceDeliveryNote(): BelongsTo
+    {
+        return $this->belongsTo(DeliveryNote::class, 'source_delivery_note_id');
+    }
+
+    public function deliveryNote(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(DeliveryNote::class, 'source_invoice_id');
+    }
+
     public function items(): HasMany
     {
         return $this->hasMany(ArInvoiceItem::class, 'invoice_id');
@@ -181,10 +193,33 @@ class ArInvoice extends Model
             ->whereNull('voided_at');
     }
 
-    public function isDraft(): bool { return $this->status === 'draft'; }
-    public function isIssued(): bool { return $this->status === 'issued'; }
-    public function isPartiallyPaid(): bool { return $this->status === 'partially_paid'; }
-    public function isPaid(): bool { return $this->status === 'paid'; }
-    public function isVoided(): bool { return $this->status === 'voided'; }
-    public function isCreditNote(): bool { return $this->type === 'credit_note'; }
+    public function isDraft(): bool
+    {
+        return $this->status === 'draft';
+    }
+
+    public function isIssued(): bool
+    {
+        return $this->status === 'issued';
+    }
+
+    public function isPartiallyPaid(): bool
+    {
+        return $this->status === 'partially_paid';
+    }
+
+    public function isPaid(): bool
+    {
+        return $this->status === 'paid';
+    }
+
+    public function isVoided(): bool
+    {
+        return $this->status === 'voided';
+    }
+
+    public function isCreditNote(): bool
+    {
+        return $this->type === 'credit_note';
+    }
 }

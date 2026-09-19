@@ -7,6 +7,7 @@ use App\Services\AR\ArAllocationService;
 use App\Services\AR\ArInvoiceService;
 use App\Services\AR\ArPaymentDeleteService;
 use App\Services\AR\ArPaymentService;
+use App\Services\AR\DeliveryNoteService;
 use App\Support\Money\MinorUnits;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
@@ -29,7 +30,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(ArInvoice $invoice): void
     {
-        $this->invoice = $invoice->load(['items', 'customer', 'job', 'paymentAllocations.payment']);
+        $this->invoice = $invoice->load(['items', 'customer', 'job', 'deliveryNote', 'sourceDeliveryNote', 'paymentAllocations.payment']);
         $this->payment_amount = $this->moneyZero();
         $this->credit_amount = $this->moneyZero();
         $this->advance_amount = $this->moneyZero();
@@ -57,7 +58,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            $this->invoice = $service->issue($this->invoice, $userId)->load(['items', 'customer', 'job', 'paymentAllocations.payment']);
+            $this->invoice = $service->issue($this->invoice, $userId)->load([
+                'items',
+                'customer',
+                'job',
+                'deliveryNote',
+                'sourceDeliveryNote',
+                'paymentAllocations.payment',
+            ]);
         } catch (ValidationException $e) {
             foreach ($e->errors() as $field => $messages) {
                 foreach ($messages as $m) {
@@ -68,6 +76,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         session()->flash('status', __('Invoice issued.'));
+    }
+
+    public function generateDeliveryNote(DeliveryNoteService $service): void
+    {
+        abort_unless(Auth::user()?->can('finance.write'), 403);
+        $note = $service->createFromInvoice($this->invoice, Auth::id());
+        session()->flash('status', __('Delivery note generated from invoice.'));
+        $this->redirectRoute('delivery-notes.show', $note, navigate: true);
     }
 
     public function voidInvoice(ArInvoiceService $service): void
@@ -369,6 +385,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             @if ($invoice->status !== 'draft')
                 <flux:button :href="route('invoices.print', $invoice)" target="_blank">{{ __('Print') }}</flux:button>
             @endif
+            @can('finance.write')
+                @if ($invoice->deliveryNote || $invoice->sourceDeliveryNote)
+                    <flux:button :href="route('delivery-notes.show', $invoice->deliveryNote ?: $invoice->sourceDeliveryNote)" wire:navigate>{{ __('Open Delivery Note') }}</flux:button>
+                @elseif ($invoice->type === 'invoice' && in_array($invoice->status, ['issued', 'partially_paid', 'paid'], true))
+                    <flux:button type="button" wire:click="generateDeliveryNote" wire:loading.attr="disabled">{{ __('Generate Delivery Note') }}</flux:button>
+                @endif
+            @endcan
         </div>
     </div>
 

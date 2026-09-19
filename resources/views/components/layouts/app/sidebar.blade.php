@@ -121,6 +121,9 @@
                             <flux:navlist.item icon="document-text" :href="route('invoices.index')" :current="request()->routeIs('invoices.*')" wire:navigate>
                                 {{ __('Invoices (AR)') }}
                             </flux:navlist.item>
+                            <flux:navlist.item icon="truck" :href="route('delivery-notes.index')" :current="request()->routeIs('delivery-notes.*')" wire:navigate>
+                                {{ __('Delivery Notes') }}
+                            </flux:navlist.item>
                             <flux:navlist.item icon="credit-card" :href="route('receivables.payments.index')" :current="request()->routeIs('receivables.payments.*')" wire:navigate>
                                 {{ __('Customer Payments') }}
                             </flux:navlist.item>
@@ -187,6 +190,9 @@
                         @endif
                         <flux:navlist.item icon="document-text" :href="route('invoices.index')" :current="request()->routeIs('invoices.*')" wire:navigate>
                             {{ __('Invoices (AR)') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="truck" :href="route('delivery-notes.index')" :current="request()->routeIs('delivery-notes.*')" wire:navigate>
+                            {{ __('Delivery Notes') }}
                         </flux:navlist.item>
                         <flux:navlist.item icon="credit-card" :href="route('receivables.payments.index')" :current="request()->routeIs('receivables.payments.*')" wire:navigate>
                             {{ __('Customer Payments') }}
