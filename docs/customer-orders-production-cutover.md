@@ -11,9 +11,30 @@ The application code and automated test suite are ready for deployment. Two data
 
 Daily Dish and existing customer account journeys can remain available independently of both gates.
 
+## Legacy cPanel database reconciliation
+
+The cPanel database migration ledger is not authoritative. Do not run `php artisan migrate` against that database or an unprepared copy. Some current migration files are absent from its ledger even though their schema changes were applied manually, and the ledger also contains historical migration names that were consolidated out of this repository.
+
+Use this process with the exact release commit and a fresh database snapshot:
+
+1. Restore the snapshot into an isolated rehearsal database and record its SHA 256 hash.
+2. Create a separate clean reference database by running every migration from the exact release commit.
+3. Compare tables, columns, indexes, foreign key signatures, triggers, and row counts. Treat collation and `NO ACTION` versus `RESTRICT` differences separately from missing structures.
+4. Create a reviewed baseline manifest for current migration files whose complete effects are already present. Never mark a migration as applied from its date or filename alone. Preserve historical ledger rows even when their migration files no longer exist.
+5. Run only the remaining forward migrations on another restored copy. A duplicate table, column, index, or constraint is a failed rehearsal and must be resolved through the baseline manifest or a new conditional forward migration.
+6. Confirm that the upgraded copy has no pending current migrations and matches the clean reference for all table, column, index, and trigger counts. Preserve stronger legacy foreign keys when their referenced columns and actions remain compatible.
+7. Compare exact row counts for every pre existing table. Only documented reference or permission changes may alter those counts.
+8. Run the core integrity, customer identity, accounting, queue, scheduler, and application smoke checks against the upgraded copy.
+
+The 2026 09 13 rehearsal snapshot with SHA 256 `5d1446d363fd5739005d92482bc7fb9a17c732b260bc04aa63f129f4c60ee4e9` proved the approach. The original copy had 188 tables and 121 ledger rows. The reviewed manifest in `database/sql/production_migration_baseline_20260913.sql` records 67 verified migration effects without changing business data or schema. After applying it, every remaining forward migration ran successfully and a second normal migration run reported nothing to migrate. The upgraded copy had 219 tables, the same 2,965 columns, 1,391 index entries, and 13 triggers as a clean current database. Every pre existing business table retained its exact row count. Expected changes were limited to reference permissions and one expired cache row.
+
+That snapshot also proved three manually applied order sheet changes that were absent from the migration ledger: excluded order IDs, quantity portion type, and extra portion type. Recheck those structures in the final snapshot before including their migration names in the final baseline manifest. Do not baseline the structured delivery location, production display permission, or order label migrations unless their complete effects are present in that final snapshot.
+
+The rehearsal found 26 active menu items without a branch assignment. This remains a catalog cleanup gate for normal menu ordering, not a blocker for deploying RMS with that feature disabled. Core foreign key checks and both posted ledger balancing checks passed. Customer identity review found three customers without normalized phone values, 89 historical verification timestamps that are not trusted SMS proof, and legacy user linked order references without a customer link. These are review inputs and must not be converted into invented identity proof or allowed to block ordinary order creation.
+
 ## Before deployment
 
-1. Take a recoverable database backup and preserve the current application release and environment configuration.
+1. Complete the legacy database reconciliation rehearsal above, then take a recoverable final database backup and preserve the current application release and environment configuration.
 2. Confirm the target meets the supported PHP and MySQL or MariaDB versions and has long-running queue and scheduler processes.
 3. Set a unique production `APP_KEY`, `APP_ENV=production`, `APP_DEBUG=false`, production URLs, trusted HTTPS proxy settings, database credentials, cache, queue, session, mail, and storage configuration. Never copy a development `.env` wholesale.
 4. Configure the RMS customer portal origin and the portal `DASHBOARD_BASE_URL` to their production HTTPS origins. The expected customer return path is `/orders/payment`; the RMS webhook path is `/api/integrations/skipcash/webhook`.
@@ -50,7 +71,7 @@ The normal-menu and checkout-upsell switches are stored in RMS rather than envir
 ## Deployment order
 
 1. Deploy RMS first with checkout and membership feature flags off.
-2. Run forward migrations once. Do not roll back financial migrations as a release shortcut.
+2. Apply the reviewed migration baseline to the final restored copy, then run the remaining forward migrations once. Do not point the new application at the database until the schema and row count checks pass. Do not roll back financial migrations as a release shortcut.
 3. Rebuild application caches, then restart the web, queue, and scheduler processes so they share the same release and configuration.
 4. Confirm the scheduler includes SkipCash recovery, customer matching, and payment consistency work. Confirm the queue is processing and has no unexplained failed jobs.
 5. Deploy the customer portal and verify that it can read the RMS public menu and configuration endpoints over HTTPS.
