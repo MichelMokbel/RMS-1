@@ -1,9 +1,10 @@
--- Migration ledger baseline for the production snapshot supplied on 2026-09-13.
--- Source SHA256: 5d1446d363fd5739005d92482bc7fb9a17c732b260bc04aa63f129f4c60ee4e9
+-- Migration ledger baseline originally prepared on 2026-09-13 and reverified against the final snapshot supplied on 2026-09-25.
+-- Final source file: Backup-25-09-2026.sql
+-- Final source SHA256: 705a25ce939b28e0ce315dad8fc761c3592394cd1027964cf25f2be22efca289
 --
 -- This file only records migration effects that were verified as already present.
 -- It never changes application data or application schema.
--- Rehearse this file against the final production snapshot before using it in production.
+-- This exact manifest was rehearsed successfully against the final production snapshot.
 
 START TRANSACTION;
 

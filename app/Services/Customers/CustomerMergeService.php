@@ -25,6 +25,7 @@ class CustomerMergeService
         'quotations',
         'order_sheet_entries',
         'membership_booking_operations',
+        'delivery_notes',
     ];
 
     public function __construct(

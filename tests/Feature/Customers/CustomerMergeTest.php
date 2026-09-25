@@ -2,6 +2,7 @@
 
 use App\Models\AccountingAuditLog;
 use App\Models\Customer;
+use App\Models\DeliveryNote;
 use App\Models\User;
 use App\Services\Customers\CustomerMergeService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -76,6 +77,26 @@ it('moves the source portal user to the target when the target has no user', fun
     expect($sourceUser->fresh()->status)->toBe('active');
     expect($source->fresh()->is_active)->toBeFalse();
     expect($source->fresh()->merged_into_customer_id)->toBe($target->id);
+});
+
+it('moves delivery notes to the destination customer', function () {
+    $admin = makeCustomerMergeAdmin();
+    $service = app(CustomerMergeService::class);
+    $source = Customer::factory()->create(['name' => 'Source Customer']);
+    $target = Customer::factory()->create(['name' => 'Target Customer']);
+    $deliveryNote = DeliveryNote::query()->create([
+        'branch_id' => 1,
+        'customer_id' => $source->id,
+        'status' => 'issued',
+        'delivery_date' => now()->toDateString(),
+        'customer_name_snapshot' => $source->name,
+        'issued_at' => now(),
+        'issued_by' => $admin->id,
+    ]);
+
+    $service->merge($source, $target, $admin->id);
+
+    expect($deliveryNote->fresh()->customer_id)->toBe($target->id);
 });
 
 it('keeps the original merge outcome when the same source and destination are submitted again', function () {
