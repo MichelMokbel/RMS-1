@@ -137,6 +137,11 @@ class Customer extends Model
         return $this->hasMany(ArInvoice::class, 'customer_id');
     }
 
+    public function deliveryNotes(): HasMany
+    {
+        return $this->hasMany(DeliveryNote::class);
+    }
+
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class, 'customer_id');

@@ -5,7 +5,6 @@ use App\Models\ArInvoice;
 use App\Models\ArInvoiceItem;
 use App\Models\Customer;
 use App\Models\Job;
-use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -60,6 +59,24 @@ it('shows invoice and line-item notes on the invoice print page', function () {
         ->assertOk()
         ->assertSee('Please deliver after 6 PM')
         ->assertSee('Extra garlic sauce');
+});
+
+it('shows the customer statement bank details on the invoice print page', function () {
+    $user = User::factory()->create();
+    $user->assignRole('manager');
+
+    $invoice = ArInvoice::factory()->create();
+    $bankDetails = (array) config('reports.customer_statement.bank_details', []);
+
+    $response = $this->actingAs($user)->get(route('invoices.print', $invoice));
+
+    $response->assertOk()
+        ->assertSee('Bank Account Details')
+        ->assertSee('For Fawran Transfer:')
+        ->assertSee('CR-143782');
+    foreach ($bankDetails as $value) {
+        $response->assertSee((string) $value);
+    }
 });
 
 it('shows void details on the invoice show page', function () {

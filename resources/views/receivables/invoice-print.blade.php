@@ -252,6 +252,61 @@
             white-space: pre-wrap;
         }
 
+        .bank-details {
+            margin-top: 6mm;
+            width: 92mm;
+            font-size: 10px;
+        }
+
+        .bank-details-title {
+            margin-bottom: 1.5mm;
+            font-size: 11px;
+            font-weight: 700;
+            text-decoration: underline;
+        }
+
+        .bank-details table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .bank-details td {
+            padding: 0.7mm 0;
+            vertical-align: top;
+        }
+
+        .bank-details .bank-label {
+            width: 29mm;
+            font-weight: 700;
+        }
+
+        .bank-details .bank-colon {
+            width: 4mm;
+            text-align: center;
+            font-weight: 700;
+        }
+
+        .bank-details .bank-value {
+            font-weight: 600;
+            overflow-wrap: anywhere;
+        }
+
+        .fawran-details {
+            margin-top: 2mm;
+            padding-top: 1.5mm;
+            border-top: 1px solid #999;
+            font-size: 10px;
+        }
+
+        .fawran-details .label {
+            margin-right: 2mm;
+            font-weight: 700;
+        }
+
+        .fawran-details .value {
+            font-weight: 700;
+        }
+
         .totals-bar {
             display: flex;
             justify-content: space-between;
@@ -385,6 +440,7 @@
     $subtotalCents = (int) ($invoice->subtotal_cents ?? 0);
     $grandTotalCents = (int) ($invoice->total_cents ?? 0);
     $invoiceNote = trim((string) ($invoice->notes ?? ''));
+    $bankDetails = (array) config('reports.customer_statement.bank_details', []);
     $isVoided = $invoice->voided_at !== null || $invoice->status === 'void';
 
     $numberToWords = function (int $number) use (&$numberToWords): string {
@@ -619,6 +675,26 @@
                     </tr>
                 </table>
             </div>
+
+            @if (! empty($bankDetails))
+                <div class="bank-details">
+                    <div class="bank-details-title">Bank Account Details</div>
+                    <table>
+                        <tr><td class="bank-label">Account Name</td><td class="bank-colon">:</td><td class="bank-value">{{ $bankDetails['account_name'] ?? '-' }}</td></tr>
+                        <tr><td class="bank-label">Account Number</td><td class="bank-colon">:</td><td class="bank-value">{{ $bankDetails['account_no'] ?? '-' }}</td></tr>
+                        <tr><td class="bank-label">IBAN</td><td class="bank-colon">:</td><td class="bank-value">{{ $bankDetails['iban'] ?? '-' }}</td></tr>
+                        <tr><td class="bank-label">SWIFT Code</td><td class="bank-colon">:</td><td class="bank-value">{{ $bankDetails['swift_code'] ?? '-' }}</td></tr>
+                        <tr><td class="bank-label">Bank</td><td class="bank-colon">:</td><td class="bank-value">{{ $bankDetails['bank_name'] ?? '-' }}</td></tr>
+                        <tr><td class="bank-label">Address</td><td class="bank-colon">:</td><td class="bank-value">{{ $bankDetails['bank_address'] ?? '-' }}</td></tr>
+                    </table>
+                    @if (! empty($bankDetails['fawran_transfer']))
+                        <div class="fawran-details">
+                            <span class="label">For Fawran Transfer:</span>
+                            <span class="value">{{ $bankDetails['fawran_transfer'] }}</span>
+                        </div>
+                    @endif
+                </div>
+            @endif
 
             <div class="bottom-area">
                 <div class="signatures-row">

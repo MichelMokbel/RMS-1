@@ -1334,6 +1334,17 @@ Route::middleware(['auth', 'active', 'role_or_permission:admin|manager|receivabl
 
     Volt::route('receivables/orders-to-invoice', 'receivables.orders-to-invoice')->name('receivables.orders-to-invoice');
 
+    Volt::route('delivery-notes', 'receivables.delivery-notes.index')->name('delivery-notes.index');
+    Volt::route('delivery-notes/create', 'receivables.delivery-notes.create')->name('delivery-notes.create');
+    Volt::route('delivery-notes/{deliveryNote}/edit', 'receivables.delivery-notes.create')->name('delivery-notes.edit');
+    Volt::route('delivery-notes/{deliveryNote}', 'receivables.delivery-notes.show')->name('delivery-notes.show');
+    Route::get('delivery-notes/{deliveryNote}/print', function (\App\Models\DeliveryNote $deliveryNote) {
+        abort_unless(in_array((int) $deliveryNote->branch_id, auth()->user()?->allowedBranchIds() ?? [], true), 403);
+        abort_unless($deliveryNote->status === 'issued', 404);
+
+        return view('receivables.delivery-note-print', ['deliveryNote' => $deliveryNote->load(['items', 'customer'])]);
+    })->name('delivery-notes.print');
+
     Volt::route('invoices', 'receivables.invoices.index')->name('invoices.index');
     Volt::route('invoices/create', 'receivables.invoices.create')->name('invoices.create');
     Volt::route('invoices/create/{order_id}', 'receivables.invoices.create')->name('invoices.create-from-order');
