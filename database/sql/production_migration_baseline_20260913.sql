@@ -1,6 +1,6 @@
--- Migration ledger baseline originally prepared on 2026-09-13 and reverified against the final snapshot supplied on 2026-09-25.
--- Final source file: Backup-25-09-2026.sql
--- Final source SHA256: 705a25ce939b28e0ce315dad8fc761c3592394cd1027964cf25f2be22efca289
+-- Migration ledger baseline originally prepared on 2026-09-13 and reverified against the final snapshot supplied on 2026-09-26.
+-- Final source file: ilwlvmmy_inventory (4).sql
+-- Final source SHA256: c167ceb3ed860d6e8b8ef4a3b5421e14cc9080e0a7d9c1e7af914bfa7f83220c
 --
 -- This file only records migration effects that were verified as already present.
 -- It never changes application data or application schema.
