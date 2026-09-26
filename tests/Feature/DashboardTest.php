@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Support\Money\MinorUnits;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -36,6 +37,38 @@ test('admin users can visit the dashboard', function () {
 
     $response = $this->get(route('dashboard'));
     $response->assertStatus(200);
+});
+
+test('sidebar separates orders quotations and receivables without changing access', function () {
+    $adminRole = Role::findOrCreate('admin', 'web');
+    $permissions = collect([
+        'order-labels.print',
+        'quotations.access',
+        'quotation-templates.manage',
+    ])->map(fn (string $name) => Permission::findOrCreate($name, 'web'));
+    $adminRole->givePermissionTo($permissions);
+    $admin = User::factory()->create(['status' => 'active']);
+    $admin->assignRole($adminRole);
+
+    $adminResponse = $this->actingAs($admin)->get(route('dashboard'));
+
+    $adminResponse->assertOk()
+        ->assertSee('Orders &amp; Fulfilment', false)
+        ->assertSee('Quotations')
+        ->assertSee('Receivables')
+        ->assertSee('Order Labels')
+        ->assertSee('Quotation Templates')
+        ->assertSee('Customer Payments');
+
+    $cashier = User::factory()->create(['status' => 'active']);
+    $cashier->assignRole(Role::findOrCreate('cashier', 'web'));
+
+    $cashierResponse = $this->actingAs($cashier)->get(route('dashboard'));
+
+    $cashierResponse->assertOk()
+        ->assertSee('Orders &amp; Fulfilment', false)
+        ->assertDontSee('Receivables')
+        ->assertDontSee('Quotation Templates');
 });
 
 test('authenticated non-admin users can visit the dashboard', function () {

@@ -32,12 +32,14 @@
                 $canManageStorefront = $isAdmin && ($user?->can('storefront.manage') ?? false);
                 $isAccounting = $user?->hasAnyRole(['admin', 'manager', 'accounting']) ?? false;
 
-                $inSales = request()->routeIs('orders.*')
+                $inOrders = request()->routeIs('orders.*')
                     || request()->routeIs('pastry-orders.*')
                     || request()->routeIs('order-sheet.*')
-                    || request()->routeIs('invoices.*')
-                    || request()->routeIs('quotations.*')
-                    || request()->routeIs('quotation-templates.*')
+                    || request()->routeIs('order-labels.*');
+                $inQuotations = request()->routeIs('quotations.*')
+                    || request()->routeIs('quotation-templates.*');
+                $inReceivables = request()->routeIs('invoices.*')
+                    || request()->routeIs('delivery-notes.*')
                     || request()->routeIs('receivables.payments.*')
                     || request()->routeIs('receivables.orders-to-invoice');
                 $inPrograms = request()->routeIs('meal-plan-requests.*')
@@ -125,7 +127,7 @@
                 @endif
 
                 @if ($isCashier)
-                    <flux:navlist.group expandable :expanded="$inSales" :heading="__('Sales')">
+                    <flux:navlist.group expandable :expanded="$inOrders" :heading="__('Orders & Fulfilment')">
                         <flux:navlist.item icon="clipboard-document" :href="route('orders.index')" :current="request()->routeIs('orders.*')" wire:navigate>
                             {{ __('Orders') }}
                         </flux:navlist.item>
@@ -140,6 +142,11 @@
                                 {{ __('Order Labels') }}
                             </flux:navlist.item>
                         @endif
+                    </flux:navlist.group>
+                @endif
+
+                @if ($canAccessQuotations || $canManageQuotationTemplates)
+                    <flux:navlist.group expandable :expanded="$inQuotations" :heading="__('Quotations')">
                         @if ($canAccessQuotations)
                             <flux:navlist.item icon="document-plus" :href="route('quotations.index')" :current="request()->routeIs('quotations.*')" wire:navigate>
                                 {{ __('Quotations') }}
@@ -150,22 +157,29 @@
                                 {{ __('Quotation Templates') }}
                             </flux:navlist.item>
                         @endif
+                    </flux:navlist.group>
+                @endif
+
+                @if ($isAccounting)
+                    <flux:navlist.group expandable :expanded="$inReceivables" :heading="__('Receivables')">
                         @if ($isManager)
                             <flux:navlist.item icon="clipboard-document-list" :href="route('receivables.orders-to-invoice')" :current="request()->routeIs('receivables.orders-to-invoice')" wire:navigate>
                                 {{ __('Orders to Invoice') }}
                             </flux:navlist.item>
-                            <flux:navlist.item icon="document-text" :href="route('invoices.index')" :current="request()->routeIs('invoices.*')" wire:navigate>
-                                {{ __('Invoices (AR)') }}
-                            </flux:navlist.item>
-                            <flux:navlist.item icon="truck" :href="route('delivery-notes.index')" :current="request()->routeIs('delivery-notes.*')" wire:navigate>
-                                {{ __('Delivery Notes') }}
-                            </flux:navlist.item>
-                            <flux:navlist.item icon="credit-card" :href="route('receivables.payments.index')" :current="request()->routeIs('receivables.payments.*')" wire:navigate>
-                                {{ __('Customer Payments') }}
-                            </flux:navlist.item>
                         @endif
+                        <flux:navlist.item icon="document-text" :href="route('invoices.index')" :current="request()->routeIs('invoices.*')" wire:navigate>
+                            {{ __('Invoices (AR)') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="truck" :href="route('delivery-notes.index')" :current="request()->routeIs('delivery-notes.*')" wire:navigate>
+                            {{ __('Delivery Notes') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="credit-card" :href="route('receivables.payments.index')" :current="request()->routeIs('receivables.payments.*')" wire:navigate>
+                            {{ __('Customer Payments') }}
+                        </flux:navlist.item>
                     </flux:navlist.group>
+                @endif
 
+                @if ($isCashier)
                     <flux:navlist.group expandable :expanded="$inSupplyChain" :heading="__('Supply Chain')">
                         <flux:navlist.item icon="archive-box" :href="route('inventory.index')" :current="request()->routeIs('inventory.*')" wire:navigate>
                             {{ __('Inventory') }}
@@ -209,43 +223,6 @@
                         <flux:navlist.item icon="building-office-2" :href="route('company-food.projects.index')" :current="request()->routeIs('company-food.*')" wire:navigate>
                             {{ __('Company Food') }}
                         </flux:navlist.item>
-                    </flux:navlist.group>
-                @endif
-
-                @if ($isAccounting && ! $isCashier)
-                    <flux:navlist.group expandable :expanded="$inSales" :heading="__('Sales')">
-                        @if ($canAccessQuotations)
-                            <flux:navlist.item icon="document-plus" :href="route('quotations.index')" :current="request()->routeIs('quotations.*')" wire:navigate>
-                                {{ __('Quotations') }}
-                            </flux:navlist.item>
-                        @endif
-                        @if ($canManageQuotationTemplates)
-                            <flux:navlist.item icon="swatch" :href="route('quotation-templates.index')" :current="request()->routeIs('quotation-templates.*')" wire:navigate>
-                                {{ __('Quotation Templates') }}
-                            </flux:navlist.item>
-                        @endif
-                        <flux:navlist.item icon="document-text" :href="route('invoices.index')" :current="request()->routeIs('invoices.*')" wire:navigate>
-                            {{ __('Invoices (AR)') }}
-                        </flux:navlist.item>
-                        <flux:navlist.item icon="truck" :href="route('delivery-notes.index')" :current="request()->routeIs('delivery-notes.*')" wire:navigate>
-                            {{ __('Delivery Notes') }}
-                        </flux:navlist.item>
-                        <flux:navlist.item icon="credit-card" :href="route('receivables.payments.index')" :current="request()->routeIs('receivables.payments.*')" wire:navigate>
-                            {{ __('Customer Payments') }}
-                        </flux:navlist.item>
-                    </flux:navlist.group>
-                @endif
-
-                @if ($canAccessQuotations && ! $isCashier && ! $isAccounting)
-                    <flux:navlist.group expandable :expanded="$inSales" :heading="__('Sales')">
-                        <flux:navlist.item icon="document-plus" :href="route('quotations.index')" :current="request()->routeIs('quotations.*')" wire:navigate>
-                            {{ __('Quotations') }}
-                        </flux:navlist.item>
-                        @if ($canManageQuotationTemplates)
-                            <flux:navlist.item icon="swatch" :href="route('quotation-templates.index')" :current="request()->routeIs('quotation-templates.*')" wire:navigate>
-                                {{ __('Quotation Templates') }}
-                            </flux:navlist.item>
-                        @endif
                     </flux:navlist.group>
                 @endif
 
